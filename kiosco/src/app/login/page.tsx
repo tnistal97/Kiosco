@@ -27,32 +27,36 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-sm">
-        <h1 className="text-2xl font-bold mb-6 text-center text-blue-700">Iniciar Sesión</h1>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 to-indigo-100">
+      <div className="bg-white shadow-xl rounded-2xl p-8 w-full max-w-md border border-gray-200">
+        <h1 className="text-3xl font-semibold text-center text-indigo-700 mb-6">Iniciar Sesión</h1>
 
-        {error && <p className="text-red-600 mb-4 text-sm text-center">{error}</p>}
+        {error && (
+          <div className="text-red-600 text-sm text-center mb-4">{error}</div>
+        )}
 
-        <input
-          type="text"
-          placeholder="Usuario"
-          className="w-full p-2 border border-gray-300 rounded mb-4"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
-        <input
-          type="password"
-          placeholder="Contraseña"
-          className="w-full p-2 border border-gray-300 rounded mb-4"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <button
-          onClick={handleLogin}
-          className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 transition"
-        >
-          Entrar
-        </button>
+        <div className="space-y-4">
+          <input
+            type="text"
+            placeholder="Usuario"
+            className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="Contraseña"
+            className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button
+            onClick={handleLogin}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg transition"
+          >
+            Entrar
+          </button>
+        </div>
       </div>
     </div>
   )

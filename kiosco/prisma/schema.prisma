@@ -9,13 +9,16 @@ datasource db {
 
 model Branch {
   id        Int       @id @default(autoincrement())
-  name      String    @unique  // ← AÑADIR ESTO
+  name      String    @unique
   address   String?
+  phone     String?
+  email     String?
+  createdAt DateTime  @default(now())
+
   users     User[]
   products  BranchStock[]
   sales     Sale[]
 }
-
 
 model Role {
   id        Int     @id @default(autoincrement())
@@ -25,7 +28,7 @@ model Role {
 
 model User {
   id        Int       @id @default(autoincrement())
-  username  String    @unique   // ✅ esto es obligatorio
+  username  String    @unique
   password  String
   name      String
   roleId    Int
@@ -38,18 +41,24 @@ model User {
   logs      AuditLog[]
 }
 
-
-
-
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  products  Product[]
+}
 
 model Product {
   id          Int       @id @default(autoincrement())
   name        String
   barcode     String?   @unique
-  category    String?
   description String?
+  price       Float
+  categoryId  Int
   supplierId  Int?
+
+  category    Category  @relation(fields: [categoryId], references: [id])
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
+
   stocks      BranchStock[]
   saleItems   SaleItem[]
 }
@@ -63,13 +72,12 @@ model BranchStock {
   branch     Branch   @relation(fields: [branchId], references: [id])
   product    Product  @relation(fields: [productId], references: [id])
 
-  @@unique([branchId, productId]) // ← ESTO es clave
+  @@unique([branchId, productId])
 }
-
 
 model Supplier {
   id        Int        @id @default(autoincrement())
-  name      String
+  name      String     @unique
   contact   String?
   products  Product[]
 }
