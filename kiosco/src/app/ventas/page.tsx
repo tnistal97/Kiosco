@@ -26,13 +26,17 @@ export default function VentasPage() {
     if (existing) {
       setCart(cart.map((i) => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i))
     } else {
-      setCart([...cart, { ...product, quantity: 1, price: 100 }]) // precio fijo por ahora
+      setCart([...cart, { ...product, quantity: 1, price: 100 }]) // Precio fijo por ahora
     }
   }
 
+  const removeFromCart = (id: number) => {
+    setCart(cart.filter((item) => item.id !== id))
+  }
+
   const makeSale = async () => {
-    const userId = 1 // reemplazar por ID real
-    const branchId = 1 // reemplazar por ID real
+    const userId = 1
+    const branchId = 1
 
     await fetch('/api/sales', {
       method: 'POST',
@@ -56,34 +60,75 @@ export default function VentasPage() {
   }, [])
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Ventas</h1>
+    <div className="min-h-screen bg-[color:var(--color-background)] text-[color:var(--color-foreground)] p-6">
+      <div className="max-w-6xl mx-auto space-y-8">
+        <h1 className="text-3xl font-bold">🛒 Punto de Venta</h1>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <div>
-          <h2 className="font-semibold mb-2">Productos</h2>
-          <ul className="bg-white rounded shadow divide-y">
-            {products.map(p => (
-              <li key={p.id} className="p-2 flex justify-between items-center">
-                <span>{p.name}</span>
-                <button onClick={() => addToCart(p)} className="bg-blue-600 text-white px-2 py-1 rounded text-sm hover:bg-blue-700">Agregar</button>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Lista de productos */}
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6">
+            <h2 className="text-xl font-semibold mb-4">📦 Productos</h2>
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
+              {products.map(p => (
+                <div
+                  key={p.id}
+                  className="flex justify-between items-center px-4 py-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
+                >
+                  <span>{p.name}</span>
+                  <button
+                    onClick={() => addToCart(p)}
+                    className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition"
+                  >
+                    Agregar
+                  </button>
+                </div>
+              ))}
+              {products.length === 0 && (
+                <div className="text-zinc-400 text-center py-4">No hay productos</div>
+              )}
+            </div>
+          </div>
 
-        <div>
-          <h2 className="font-semibold mb-2">Carrito</h2>
-          <ul className="bg-white rounded shadow divide-y">
-            {cart.map(c => (
-              <li key={c.id} className="p-2 flex justify-between">
-                <span>{c.name} x {c.quantity}</span>
-                <span>${c.quantity * c.price}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-4 text-right font-bold">Total: ${cart.reduce((acc, c) => acc + c.quantity * c.price, 0)}</div>
-          <button onClick={makeSale} className="mt-4 w-full bg-green-600 text-white py-2 rounded hover:bg-green-700">Confirmar venta</button>
+          {/* Carrito */}
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-6">
+            <h2 className="text-xl font-semibold mb-4">🧾 Carrito</h2>
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
+              {cart.map((c) => (
+                <div key={c.id} className="flex justify-between items-center px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800">
+                  <div className="flex flex-col">
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-sm text-zinc-500">Cantidad: {c.quantity}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold">${(c.quantity * c.price).toFixed(2)}</span>
+                    <button
+                      onClick={() => removeFromCart(c.id)}
+                      className="text-xs bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {cart.length === 0 && (
+                <div className="text-zinc-400 text-center py-4">Carrito vacío</div>
+              )}
+            </div>
+
+            {/* Total y botón */}
+            <div className="mt-6 border-t dark:border-zinc-700 pt-4 text-right">
+              <div className="text-lg font-bold mb-4">
+                Total: ${cart.reduce((acc, c) => acc + c.quantity * c.price, 0).toFixed(2)}
+              </div>
+              <button
+                onClick={makeSale}
+                disabled={cart.length === 0}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed transition"
+              >
+                Confirmar venta
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -3,7 +3,10 @@
 /* ==== Root Variables ==== */
 :root {
   --color-background: #ffffff;
-  --color-foreground: #171717;
+  --color-foreground: #111111;
+  --color-muted: #6b7280; /* Tailwind gray-500 */
+  --color-border: #e5e7eb; /* Tailwind gray-200 */
+  --color-primary: #2563eb; /* Tailwind blue-600 */
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'Fira Code', monospace;
 }
@@ -12,7 +15,10 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --color-background: #0a0a0a;
-    --color-foreground: #f1f1f1;
+    --color-foreground: #f9fafb;
+    --color-muted: #9ca3af; /* Tailwind gray-400 */
+    --color-border: #1f2937; /* Tailwind gray-800 */
+    --color-primary: #3b82f6; /* Tailwind blue-500 */
   }
 }
 
@@ -28,7 +34,35 @@
     @apply bg-[color:var(--color-background)] text-[color:var(--color-foreground)] antialiased;
   }
 
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold text-[color:var(--color-foreground)];
+  }
+
+  p {
+    @apply text-[color:var(--color-foreground)];
+  }
+
+  a {
+    color: var(--color-primary);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
   input, button, textarea, select {
     @apply font-sans;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    border-color: var(--color-border);
+  }
+
+  table th {
+    @apply text-[color:var(--color-foreground)] bg-[color:var(--color-border)];
+  }
+
+  table td {
+    @apply text-[color:var(--color-foreground)];
   }
 }
