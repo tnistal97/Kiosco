@@ -1,43 +1,24 @@
 import { PrismaClient } from '@prisma/client'
-import bcrypt from 'bcrypt'
-
 const prisma = new PrismaClient()
 
 async function main() {
-  const roleAdmin = await prisma.role.upsert({
-    where: { name: 'admin' },
-    update: {},
-    create: { name: 'admin' }
-  })
-
-  const roleEmpleado = await prisma.role.upsert({
-    where: { name: 'empleado' },
-    update: {},
-    create: { name: 'empleado' }
+  await prisma.role.createMany({
+    data: [
+      { name: 'Admin' },
+      { name: 'Atendedor' },
+    ],
+    skipDuplicates: true,
   })
 
   const branch = await prisma.branch.upsert({
-    where: { name: 'Sucursal Central' },
+    where: { name: 'Sucursal Centro' },
     update: {},
     create: {
-      name: 'Sucursal Central',
-      address: 'Av. Principal 123',
-      phone: '123456789',
-      email: 'central@sucursal.com'
-    }
-  })
-
-  const hashedPassword = await bcrypt.hash('admin123', 10)
-  await prisma.user.upsert({
-    where: { username: 'admin' },
-    update: {},
-    create: {
-      username: 'admin',
-      name: 'Administrador',
-      password: hashedPassword,
-      roleId: roleAdmin.id,
-      branchId: branch.id
-    }
+      name: 'Sucursal Centro',
+      address: 'Av. Siempreviva 123',
+      phone: '12345678',
+      email: 'centro@kiosco.com',
+    },
   })
 
   const supplier = await prisma.supplier.upsert({
@@ -45,79 +26,50 @@ async function main() {
     update: {},
     create: {
       name: 'Distribuidora Sur',
-      contact: 'contacto@sur.com'
-    }
+      contact: 'contacto@sur.com',
+    },
   })
 
-  const catAlimentos = await prisma.category.upsert({
-    where: { name: 'Alimentos' },
-    update: {},
-    create: { name: 'Alimentos' }
-  })
-
-  const catBebidas = await prisma.category.upsert({
-    where: { name: 'Bebidas' },
-    update: {},
-    create: { name: 'Bebidas' }
-  })
-
-  const producto1 = await prisma.product.upsert({
-    where: { barcode: '123456789' },
+  const category = await prisma.category.upsert({
+    where: { name: 'Golosinas' },
     update: {},
     create: {
-      name: 'Galletitas Oreo',
-      barcode: '123456789',
-      description: 'Paquete de galletitas Oreo',
-      price: 250,
-      categoryId: catAlimentos.id,
-      supplierId: supplier.id
+      name: 'Golosinas',
+    },
+  })
+
+  const product = await prisma.product.upsert({
+    where: {
+      barcode: "1234567890123"  // ESTE CAMPO ES @unique en tu modelo
+    },
+    update: {},
+    create: {
+      name: "Chicle Bazooka",
+      barcode: "1234567890123",
+      description: "Chicle clásico",
+      price: 50,
+      categoryId: 1,
+      supplierId: 1
     }
   })
 
-  const producto2 = await prisma.product.upsert({
-    where: { barcode: '987654321' },
-    update: {},
-    create: {
-      name: 'Coca-Cola 500ml',
-      barcode: '987654321',
-      description: 'Botella de Coca-Cola 500ml',
-      price: 300,
-      categoryId: catBebidas.id,
-      supplierId: supplier.id
-    }
-  })
 
   await prisma.branchStock.upsert({
     where: {
       branchId_productId: {
         branchId: branch.id,
-        productId: producto1.id
-      }
+        productId: product.id,
+      },
     },
     update: { quantity: 100 },
     create: {
       branchId: branch.id,
-      productId: producto1.id,
-      quantity: 100
-    }
-  })
-
-  await prisma.branchStock.upsert({
-    where: {
-      branchId_productId: {
-        branchId: branch.id,
-        productId: producto2.id
-      }
+      productId: product.id,
+      quantity: 100,
     },
-    update: { quantity: 60 },
-    create: {
-      branchId: branch.id,
-      productId: producto2.id,
-      quantity: 60
-    }
   })
 
-  console.log('✅ Datos iniciales insertados correctamente.')
+  console.log('✔ Datos insertados correctamente.')
 }
 
 main()
