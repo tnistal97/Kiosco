@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Branch {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique  // ← AÑADIR ESTO
+  address   String?
+  users     User[]
+  products  BranchStock[]
+  sales     Sale[]
+}
+
+
+model Role {
+  id        Int     @id @default(autoincrement())
+  name      String  @unique
+  users     User[]
+}
+
+model User {
+  id        Int       @id @default(autoincrement())
+  username  String    @unique   // ✅ esto es obligatorio
+  password  String
+  name      String
+  roleId    Int
+  branchId  Int
+  createdAt DateTime  @default(now())
+
+  role      Role      @relation(fields: [roleId], references: [id])
+  branch    Branch    @relation(fields: [branchId], references: [id])
+  sales     Sale[]
+  logs      AuditLog[]
+}
+
+
+
+
+
+model Product {
+  id          Int       @id @default(autoincrement())
+  name        String
+  barcode     String?   @unique
+  category    String?
+  description String?
+  supplierId  Int?
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  stocks      BranchStock[]
+  saleItems   SaleItem[]
+}
+
+model BranchStock {
+  id         Int      @id @default(autoincrement())
+  branchId   Int
+  productId  Int
+  quantity   Int
+
+  branch     Branch   @relation(fields: [branchId], references: [id])
+  product    Product  @relation(fields: [productId], references: [id])
+
+  @@unique([branchId, productId]) // ← ESTO es clave
+}
+
+
+model Supplier {
+  id        Int        @id @default(autoincrement())
+  name      String
+  contact   String?
+  products  Product[]
+}
+
+model Sale {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  branchId  Int
+  date      DateTime  @default(now())
+  items     SaleItem[]
+
+  user      User      @relation(fields: [userId], references: [id])
+  branch    Branch    @relation(fields: [branchId], references: [id])
+}
+
+model SaleItem {
+  id        Int      @id @default(autoincrement())
+  saleId    Int
+  productId Int
+  quantity  Int
+  price     Float
+
+  sale      Sale     @relation(fields: [saleId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+}
+
+model AuditLog {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  action    String
+  timestamp DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id])
+}
