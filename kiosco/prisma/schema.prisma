@@ -86,12 +86,16 @@ model Sale {
   id        Int       @id @default(autoincrement())
   userId    Int
   branchId  Int
-  date      DateTime  @default(now())
+  date      DateTime  @default(now()) // ← ya tenías esto
+
+  createdAt DateTime  @default(now()) // ← agregalo
+
   items     SaleItem[]
 
   user      User      @relation(fields: [userId], references: [id])
   branch    Branch    @relation(fields: [branchId], references: [id])
 }
+
 
 model SaleItem {
   id        Int      @id @default(autoincrement())
