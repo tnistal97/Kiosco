@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 interface Product {
   id: number
@@ -15,6 +16,7 @@ interface Sale {
 }
 
 export default function HomeDashboard() {
+  const router = useRouter()
   const [products, setProducts] = useState<Product[]>([])
   const [sales, setSales] = useState<Sale[]>([])
   const [search, setSearch] = useState('')
@@ -85,11 +87,18 @@ export default function HomeDashboard() {
         </div>
 
         {/* Quick Links */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4">
-          <a href="/ventas" className="p-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 text-center font-semibold">🛒 Nueva venta</a>
-          <a href="/stock" className="p-4 bg-yellow-500 text-white rounded-xl hover:bg-yellow-600 text-center font-semibold">📦 Stock</a>
-          <a href="/productos" className="p-4 bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-center font-semibold">📋 Productos</a>
-          <a href="/usuarios" className="p-4 bg-gray-700 text-white rounded-xl hover:bg-gray-800 text-center font-semibold">👥 Usuarios</a>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 pt-4"> {/* Adjusted grid for 5 items */}
+          <a href="/ventas" className="p-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 text-center font-semibold flex items-center justify-center">🛒 Nueva venta</a>
+          <a href="/stock" className="p-4 bg-yellow-500 text-white rounded-xl hover:bg-yellow-600 text-center font-semibold flex items-center justify-center">📦 Stock</a>
+          <a href="/productos" className="p-4 bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-center font-semibold flex items-center justify-center">📋 Productos</a>
+          {/* New Scan Product Button */}
+          <button
+            onClick={() => router.push('/scan')}
+            className="p-4 bg-green-500 text-white rounded-xl hover:bg-green-600 text-center font-semibold flex items-center justify-center"
+          >
+            📷 Escanear Producto
+          </button>
+          <a href="/usuarios" className="p-4 bg-gray-700 text-white rounded-xl hover:bg-gray-800 text-center font-semibold flex items-center justify-center">👥 Usuarios</a>
         </div>
       </div>
     </div>

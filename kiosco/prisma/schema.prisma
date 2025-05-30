@@ -8,78 +8,73 @@ datasource db {
 }
 
 model Branch {
-  id        Int       @id @default(autoincrement())
-  name      String    @unique
+  id        Int           @id @default(autoincrement())
+  name      String        @unique
   address   String?
-  phone     String?
+  createdAt DateTime      @default(now())
   email     String?
-  createdAt DateTime  @default(now())
-
-  users     User[]
+  phone     String?
   products  BranchStock[]
   sales     Sale[]
+  users     User[]
 }
 
 model Role {
-  id        Int     @id @default(autoincrement())
-  name      String  @unique
-  users     User[]
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  users User[]
 }
 
 model User {
-  id        Int       @id @default(autoincrement())
-  username  String    @unique
+  id        Int        @id @default(autoincrement())
   password  String
   name      String
   roleId    Int
   branchId  Int
-  createdAt DateTime  @default(now())
-
-  role      Role      @relation(fields: [roleId], references: [id])
-  branch    Branch    @relation(fields: [branchId], references: [id])
-  sales     Sale[]
+  createdAt DateTime   @default(now())
+  username  String     @unique
   logs      AuditLog[]
+  sales     Sale[]
+  branch    Branch     @relation(fields: [branchId], references: [id])
+  role      Role       @relation(fields: [roleId], references: [id])
 }
 
 model Category {
-  id        Int       @id @default(autoincrement())
-  name      String    @unique
-  products  Product[]
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  products Product[]
 }
 
 model Product {
-  id          Int       @id @default(autoincrement())
+  id          Int           @id @default(autoincrement())
   name        String
-  barcode     String?   @unique
+  barcode     String?       @unique
   description String?
-  price       Float
-  categoryId  Int
   supplierId  Int?
-
-  category    Category  @relation(fields: [categoryId], references: [id])
-  supplier    Supplier? @relation(fields: [supplierId], references: [id])
-
+  categoryId  Int
+  price       Float
   stocks      BranchStock[]
+  category    Category      @relation(fields: [categoryId], references: [id])
+  supplier    Supplier?     @relation(fields: [supplierId], references: [id])
   saleItems   SaleItem[]
 }
 
 model BranchStock {
-  id         Int      @id @default(autoincrement())
-  branchId   Int
-  productId  Int
-  quantity   Int
-
-  branch     Branch   @relation(fields: [branchId], references: [id])
-  product    Product  @relation(fields: [productId], references: [id])
+  id        Int     @id @default(autoincrement())
+  branchId  Int
+  productId Int
+  quantity  Int
+  branch    Branch  @relation(fields: [branchId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
 
   @@unique([branchId, productId])
 }
 
 model Supplier {
-  id        Int        @id @default(autoincrement())
-  name      String     @unique
-  contact   String?
-  products  Product[]
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  contact  String?
+  products Product[]
 }
 
 model Sale {
@@ -98,21 +93,19 @@ model Sale {
 
 
 model SaleItem {
-  id        Int      @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   saleId    Int
   productId Int
   quantity  Int
   price     Float
-
-  sale      Sale     @relation(fields: [saleId], references: [id])
-  product   Product  @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+  sale      Sale    @relation(fields: [saleId], references: [id])
 }
 
 model AuditLog {
-  id        Int       @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   userId    Int
   action    String
-  timestamp DateTime  @default(now())
-
-  user      User      @relation(fields: [userId], references: [id])
+  timestamp DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
 }
