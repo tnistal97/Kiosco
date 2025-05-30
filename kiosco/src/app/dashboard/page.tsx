@@ -3,103 +3,125 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-interface Product {
-  id: number
-  name: string
-  barcode?: string
-}
+import DashboardHeader from '@/components/dashboard/DashboardHeader'
+import StatsPanel from '@/components/dashboard/StatsPanel'
+import SearchBar from '@/components/dashboard/SearchBar'
+import ProductCard from '@/components/dashboard/ProductCard'
+import RecentSales from '@/components/dashboard/RecentSales'
+import CartSidebar from '@/components/dashboard/CartSidebar'
 
-interface Sale {
-  id: number
-  createdAt: string
-  total: number
-}
+import type { Product, Sale } from '@/types'
 
-export default function HomeDashboard() {
+export default function DashboardPage() {
   const router = useRouter()
   const [products, setProducts] = useState<Product[]>([])
   const [sales, setSales] = useState<Sale[]>([])
   const [search, setSearch] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const totalHoy = sales.reduce((sum, s) => sum + s.total, 0)
 
   useEffect(() => {
-    fetch('/api/products')
-      .then(res => res.json())
-      .then(setProducts)
-
-    fetch('/api/sales/recent')
-      .then(res => res.json())
-      .then(setSales)
+    const load = async () => {
+      try {
+        setIsLoading(true)
+        const [prodRes, salesRes] = await Promise.all([
+          fetch('/api/products'),
+          fetch('/api/sales/recent'),
+        ])
+        if (!prodRes.ok || !salesRes.ok) {
+          throw new Error('Error al cargar datos')
+        }
+        const [prodData, salesData] = await Promise.all([
+          prodRes.json(),
+          salesRes.json(),
+        ])
+        setProducts(prodData)
+        setSales(salesData)
+      } catch (e) {
+        console.error(e)
+        setError('No se pudieron cargar los datos. Intentá nuevamente más tarde.')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    load()
   }, [])
 
-  const filteredProducts = products.filter(p =>
+  const filtered = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     p.barcode?.includes(search)
   )
 
-  return (
-    <div className="min-h-screen p-6 bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-100">
-      <div className="max-w-6xl mx-auto space-y-10">
-
-        <h1 className="text-3xl font-bold">Bienvenido 👋</h1>
-
-        {/* Search bar */}
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Buscar productos por nombre o código..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full p-4 pl-12 bg-white dark:bg-gray-800 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <span className="absolute left-4 top-3.5 text-gray-400">🔍</span>
-        </div>
-
-        {/* Products */}
-        <div>
-          <h2 className="text-xl font-semibold mb-2">Productos</h2>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {filteredProducts.map((p) => (
-              <li key={p.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                <div className="font-medium">{p.name}</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">{p.barcode || '-'}</div>
-              </li>
-            ))}
-            {filteredProducts.length === 0 && (
-              <li className="col-span-full text-center text-gray-400">No se encontraron productos</li>
-            )}
-          </ul>
-        </div>
-
-        {/* Recent Sales */}
-        <div>
-          <h2 className="text-xl font-semibold mb-2">Ventas recientes</h2>
-          <ul className="space-y-2">
-            {sales.map((s) => (
-              <li key={s.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow flex justify-between items-center">
-                <span># {s.id} - {new Date(s.createdAt).toLocaleString()}</span>
-                <span className="font-bold text-green-600 dark:text-green-400">${s.total.toFixed(2)}</span>
-              </li>
-            ))}
-            {sales.length === 0 && (
-              <li className="text-center text-gray-400">No hay ventas recientes</li>
-            )}
-          </ul>
-        </div>
-
-        {/* Quick Links */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 pt-4"> {/* Adjusted grid for 5 items */}
-          <a href="/ventas" className="p-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 text-center font-semibold flex items-center justify-center">🛒 Nueva venta</a>
-          <a href="/stock" className="p-4 bg-yellow-500 text-white rounded-xl hover:bg-yellow-600 text-center font-semibold flex items-center justify-center">📦 Stock</a>
-          <a href="/productos" className="p-4 bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-center font-semibold flex items-center justify-center">📋 Productos</a>
-          {/* New Scan Product Button */}
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-[color:var(--color-background)]">
+        <div className="bg-white dark:bg-[color:var(--color-background)] p-6 rounded-lg shadow text-center max-w-md">
+          <p className="text-xl mb-4">⚠️ {error}</p>
           <button
-            onClick={() => router.push('/scan')}
-            className="p-4 bg-green-500 text-white rounded-xl hover:bg-green-600 text-center font-semibold flex items-center justify-center"
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
           >
-            📷 Escanear Producto
+            Reintentar
           </button>
-          <a href="/usuarios" className="p-4 bg-gray-700 text-white rounded-xl hover:bg-gray-800 text-center font-semibold flex items-center justify-center">👥 Usuarios</a>
         </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-[color:var(--color-background)]">
+      <main className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+        <DashboardHeader />
+
+        <StatsPanel
+          isLoading={isLoading}
+          totalProducts={products.length}
+          recentSalesCount={sales.length}
+          totalToday={totalHoy}
+        />
+
+        <SearchBar
+          value={search}
+          onChange={(q) => setSearch(q)}
+          disabled={isLoading}
+        />
+
+        <section>
+          <h2 className="text-xl font-semibold mb-3">Productos</h2>
+          {isLoading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {Array(6).fill(null).map((_, i) => (
+                <div key={i} className="h-32 rounded-xl bg-gray-200 dark:bg-gray-800 animate-pulse" />
+              ))}
+            </div>
+          ) : filtered.length > 0 ? (
+            <ul className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {filtered.map((p) => (
+                <li key={p.id}>
+                  <ProductCard product={p} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl">
+              <span className="text-4xl text-gray-400">🔍</span>
+              <p className="mt-2 text-lg font-medium">No se encontraron productos</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Probá otra búsqueda</p>
+            </div>
+          )}
+        </section>
+
+        <RecentSales sales={sales} isLoading={isLoading} />
+      </main>
+
+      {/* Cart Sidebar (mobile fixed bottom, desktop static on right) */}
+      <div className="block lg:hidden fixed bottom-0 left-0 w-full z-50">
+        <CartSidebar />
+      </div>
+
+      <div className="hidden lg:block fixed top-0 right-0 h-full w-80 p-4 overflow-y-auto bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700">
+        <CartSidebar />
       </div>
     </div>
   )

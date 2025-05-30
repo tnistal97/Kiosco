@@ -1,79 +1,85 @@
-"use client";
-import { useEffect, useRef, useState } from "react";
-import { BrowserMultiFormatReader } from "@zxing/browser";
+'use client'
 
-export default function BarcodeScanner({ onDetected }: { onDetected: (code: string) => void }) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const codeReaderRef = useRef(new BrowserMultiFormatReader());
+import { useEffect, useRef, useState } from 'react'
+import { BrowserMultiFormatReader } from '@zxing/browser'
+
+interface Producto {
+  name: string
+  brand: string
+  image: string
+}
+
+export default function BarcodeScanner() {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [code, setCode] = useState<string | null>(null)
+  const [product, setProduct] = useState<Producto | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const codeReader = codeReaderRef.current;
-    let active = true;
-    let currentStream: MediaStream | null = null;
+    const reader = new BrowserMultiFormatReader()
 
-    if (videoRef.current) {
-      if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-          .then(stream => {
-            if (!active) { // Component unmounted before stream started
-              stream.getTracks().forEach(track => track.stop());
-              return;
-            }
-            currentStream = stream;
-            if (videoRef.current) { // Double check videoRef.current as it might become null
-              videoRef.current.srcObject = stream;
-              videoRef.current.play().catch(playErr => {
-                console.error("Error playing video:", playErr);
-                setError("Error al iniciar la cámara.");
-              });
-
-              codeReader.decodeFromVideoElement(videoRef.current, (result, decodeErr) => {
-                console.log("ZXing intentando decodificar fotograma..."); // Debug: Verificar si ZXing procesa fotogramas
-                if (!active) return; // Stop processing if component unmounted
-                
-                console.log(result, decodeErr)
-                if (result) {
-                  console.log("ZXing decodificó el código:", result.getText()); // Debug: Verificar el código decodificado
-                  onDetected(result.getText());
-                  active = false; // Stop further detections after one success
-                  // Stop the stream tracks here as well if you want the camera to release immediately
-                  if (currentStream) {
-                    currentStream.getTracks().forEach(track => track.stop());
-                  }
-                }
-                if (decodeErr && decodeErr.name !== 'NotFoundException') {
-                  console.error("Barcode decoding error:", decodeErr);
-                  setError("Error leyendo el código.");
-                }
-              });
-            }
-          })
-          .catch(getUserMediaErr => {
-            console.error("Error accessing camera:", getUserMediaErr);
-            setError("No se pudo acceder a la cámara. Verifique los permisos.");
-          });
-      } else {
-        setError("El acceso a la cámara no está soportado o la página no es segura (HTTPS).");
-        console.error("navigator.mediaDevices.getUserMedia is not available.");
+    reader.decodeFromVideoDevice(undefined, videoRef.current!, (result, err) => {
+      if (result) {
+        const barcode = result.getText()
+        if (barcode !== code) {
+          setCode(barcode)
+          fetchProduct(barcode)
+        }
+      } else if (err && err.name !== 'NotFoundException') {
+        setError('Error al escanear')
+        console.error(err)
       }
-    }
+    })
 
     return () => {
-      active = false;
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
+      const video = videoRef.current
+      if (video?.srcObject) {
+        const stream = video.srcObject as MediaStream
+        stream.getTracks().forEach(track => track.stop())
       }
-      // The BrowserMultiFormatReader instance (codeReader) might have its own reset/stop methods
-      // depending on the version or specific continuous decoding methods, but for single decodeFromVideoElement
-      // and releasing the camera, stopping the stream tracks is the primary concern.
-    };
-  }, [onDetected]);
+    }
+  }, [code])
+
+  const fetchProduct = async (barcode: string) => {
+    try {
+      const res = await fetch(`https://world.openfoodfacts.org/api/v9/product/${barcode}.json`)
+      const data = await res.json()
+      if (data.status === 1) {
+        setProduct({
+          name: data.product.product_name || 'Sin nombre',
+          brand: data.product.brands || 'Marca desconocida',
+          image: data.product.image_front_url || ''
+        })
+      } else {
+        setProduct(null)
+      }
+    } catch (e) {
+      console.error(e)
+      setError('No se pudo obtener información del producto')
+    }
+  }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <video ref={videoRef} style={{ width: 320, height: 240, borderRadius: 8, background: "#000" }} autoPlay muted playsInline />
-      {error && <p style={{ color: "red" }}>{error}</p>}
+    <div className="flex flex-col items-center gap-4">
+      <div className="border border-gray-300 rounded-md overflow-hidden">
+        <video ref={videoRef} className="w-[280px] h-[200px] object-cover" muted autoPlay />
+      </div>
+
+      {code && (
+        <div className="text-sm text-green-600 dark:text-green-400">
+          Código escaneado: <strong>{code}</strong>
+        </div>
+      )}
+
+      {product && (
+        <div className="mt-2 text-center bg-white dark:bg-gray-800 p-4 rounded shadow w-full max-w-xs">
+          <img src={product.image} alt={product.name} className="w-24 h-24 mx-auto object-contain mb-2" />
+          <h2 className="font-bold">{product.name}</h2>
+          <p className="text-gray-500">{product.brand}</p>
+        </div>
+      )}
+
+      {error && <p className="text-red-500 text-sm">{error}</p>}
     </div>
-  );
+  )
 }
