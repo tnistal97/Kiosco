@@ -6,13 +6,23 @@ import LoadingSpinner from '@/components/admin/sales/LoadingSpinner'
 import SalesMetrics from '@/components/admin/sales/SalesMetrics'
 import SalesTable from '@/components/admin/sales/SalesTable'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
-import { parseVentas, type VentaDTO } from '@/modules/sales/dto'
+import { parsePaginaVentas, type TotalesVentas, type VentaDTO } from '@/modules/sales/dto'
 
 export type { ItemVentaDTO as SaleItem, VentaDTO as Sale } from '@/modules/sales/dto'
+
+/** Ventas por pagina. El servidor no acepta mas de 100. */
+const POR_PAGINA = 50
 
 export default function AdminSalesPage() {
   const [range, setRange] = useState({ start: '', end: '' })
   const [sales, setSales] = useState<VentaDTO[]>([])
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totales, setTotales] = useState<TotalesVentas>({
+    ventas: 0,
+    anuladas: 0,
+    recaudado: 0,
+  })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -25,12 +35,24 @@ export default function AdminSalesPage() {
     return { start: fmt(first), end: fmt(last) }
   }, [])
 
-  const fetchSales = useCallback(async (start: string, end: string) => {
+  const fetchSales = useCallback(async (start: string, end: string, pagina: number) => {
     setIsLoading(true)
     setError(null)
     try {
-      const query = new URLSearchParams({ start, end })
-      setSales(await apiRequest(`/api/admin/sales?${query.toString()}`, { parse: parseVentas }))
+      const query = new URLSearchParams({
+        start,
+        end,
+        page: String(pagina),
+        pageSize: String(POR_PAGINA),
+      })
+      const resultado = await apiRequest(`/api/admin/sales?${query.toString()}`, {
+        parse: parsePaginaVentas,
+      })
+      setSales(resultado.data)
+      setTotalPages(resultado.totalPages)
+      // Los totales son del rango completo, no de la pagina: cambiar de
+      // pagina no debe cambiar la recaudacion del mes.
+      setTotales(resultado.totales)
     } catch (err) {
       console.error(err)
       setError(mensajeDeError(err, 'Error al obtener ventas'))
@@ -46,12 +68,16 @@ export default function AdminSalesPage() {
     setRange(initCurrentMonth())
   }, [initCurrentMonth])
 
-  // Al cambiar rango
+  // Cambiar el rango vuelve a la primera pagina.
+  useEffect(() => {
+    setPage(1)
+  }, [range])
+
   useEffect(() => {
     if (range.start && range.end) {
-      void fetchSales(range.start, range.end)
+      void fetchSales(range.start, range.end, page)
     }
-  }, [range, fetchSales])
+  }, [range, page, fetchSales])
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8 space-y-6">
@@ -82,8 +108,30 @@ export default function AdminSalesPage() {
         </div>
       ) : (
         <>
-          <SalesMetrics sales={sales} />
+          <SalesMetrics sales={sales} totales={totales} />
           <SalesTable sales={sales} />
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-4 pt-4">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:opacity-40 transition"
+              >
+                Anterior
+              </button>
+              <span className="text-gray-300">
+                Página {page} de {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:opacity-40 transition"
+              >
+                Siguiente
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

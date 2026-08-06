@@ -55,13 +55,11 @@ export const anularVentaSchema = z
 
 const fechaSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato esperado: YYYY-MM-DD')
 
-/** Reporte administrativo por rango de fechas. */
-export const reporteVentasQuerySchema = z
-  .object({
-    start: fechaSchema,
-    end: fechaSchema,
-  })
-  .strict()
+/** Reporte administrativo por rango de fechas, paginado. */
+export const reporteVentasQuerySchema = paginationQuerySchema.extend({
+  start: fechaSchema,
+  end: fechaSchema,
+})
 
 export const listarVentasQuerySchema = paginationQuerySchema.extend({
   start: fechaSchema.optional(),

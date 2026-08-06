@@ -10,6 +10,14 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
+ * Tope duro. Estos catalogos son chicos por naturaleza --un almacen tiene
+ * una sucursal, decenas de categorias y proveedores-- pero un `findMany` sin
+ * limite es una bomba de tiempo: el dia que alguien cargue diez mil filas,
+ * la pantalla intenta traerlas todas.
+ */
+const TOPE = 500
+
+/**
  * Proveedores.
  *
  * El `include: { products: true }` anterior devolvia el catalogo entero de
@@ -31,6 +39,7 @@ export const GET = handler(
         _count: { select: { products: { where: { branchId: session.branchId } } } },
       },
       orderBy: { name: 'asc' },
+      take: TOPE,
     }),
 )
 

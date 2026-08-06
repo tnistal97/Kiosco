@@ -77,6 +77,40 @@ export function parseVenta(raw: unknown): VentaDTO {
 }
 
 export function parseVentas(raw: unknown): VentaDTO[] {
+  // `/api/admin/sales` pagina desde la Fase 1 y devuelve { data, pagination,
+  // totales }. Antes devolvia { sales }, y se conserva por compatibilidad.
+  if (esObjeto(raw) && 'data' in raw) return lista(raw.data, parseVenta)
   if (esObjeto(raw) && 'sales' in raw) return lista(raw.sales, parseVenta)
   return lista(raw, parseVenta)
+}
+
+export interface TotalesVentas {
+  ventas: number
+  anuladas: number
+  recaudado: number
+}
+
+export interface PaginaVentas {
+  data: VentaDTO[]
+  page: number
+  totalPages: number
+  totales: TotalesVentas
+}
+
+/** Igual que `parseVentas`, pero conservando totales y paginacion. */
+export function parsePaginaVentas(raw: unknown): PaginaVentas {
+  const data = parseVentas(raw)
+  const paginacion = esObjeto(raw) && esObjeto(raw.pagination) ? raw.pagination : {}
+  const totales = esObjeto(raw) && esObjeto(raw.totales) ? raw.totales : {}
+
+  return {
+    data,
+    page: numero(paginacion.page, 1),
+    totalPages: numero(paginacion.totalPages, 1),
+    totales: {
+      ventas: numero(totales.ventas, data.length),
+      anuladas: numero(totales.anuladas),
+      recaudado: numero(totales.recaudado),
+    },
+  }
 }

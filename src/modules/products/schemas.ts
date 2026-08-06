@@ -10,6 +10,15 @@ import { paginationQuerySchema, sortSchema } from '@/server/http/pagination'
 export const STOCK_MAX = 1_000_000
 
 /**
+ * Umbral por debajo del cual un producto se considera con stock critico.
+ *
+ * Vive aca y no en el servicio a proposito: la pantalla de productos lo
+ * necesita, y este modulo solo importa zod. Importarlo del servicio
+ * arrastraria Prisma al paquete del navegador.
+ */
+export const STOCK_CRITICO = 10
+
+/**
  * Codigo de barras.
  *
  * Se acepta vacio y se guarda como null, no como cadena vacia: `barcode` es

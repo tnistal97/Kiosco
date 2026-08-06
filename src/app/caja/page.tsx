@@ -27,7 +27,7 @@ export default function CashRegisterPage() {
     buscarPorCodigo,
     isLoading,
     error,
-  } = useProducts({ buscarEnServidor: true })
+  } = useProducts({ enServidor: true })
   const [isCartOpenMobile, setIsCartOpenMobile] = useState(false)
 
   // Union type para método de pago

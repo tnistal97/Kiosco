@@ -12,57 +12,78 @@ export type Product = ProductoDTO
 export type Category = CategoriaDTO
 
 /** Tope por peticion. Coincide con PAGE_SIZE_MAX del servidor. */
-const PAGE_SIZE = 100
+const PAGE_SIZE_MAX = 100
 
 /** Espera antes de consultar al servidor mientras el usuario escribe. */
 const DEBOUNCE_MS = 250
 
+export type CampoOrden = 'name' | 'price' | 'id'
+
 export interface UseProductsOptions {
   /**
-   * Si es true, la busqueda la resuelve el servidor.
+   * La busqueda y la paginacion las resuelve el servidor.
    *
-   * La caja lo usa: con el catalogo completo en el navegador, cada apertura
-   * de pantalla descargaba todos los productos, y eso crece sin limite. Con
-   * la busqueda en el servidor se traen como mucho una pagina.
-   *
-   * Las pantallas administrativas lo dejan en false y filtran en memoria
-   * sobre la pagina que ya tienen.
+   * La caja y la pantalla de productos lo usan. Con el catalogo completo en
+   * el navegador, cada apertura de pantalla lo descargaba entero, y eso crece
+   * sin limite; peor todavia, con un tope de pagina en el servidor los
+   * productos que no entraran desaparecian de la pantalla sin aviso.
    */
-  buscarEnServidor?: boolean
+  enServidor?: boolean
+  /** Cuantos por pagina. Se recorta al maximo que acepta el servidor. */
+  pageSize?: number
+}
+
+export interface FiltrosProductos {
+  categoryId?: number
+  lowStock?: boolean
+  sortBy?: CampoOrden
+  sortDir?: 'asc' | 'desc'
 }
 
 export function useProducts(options: UseProductsOptions = {}) {
-  const { buscarEnServidor = false } = options
+  const { enServidor = false, pageSize = PAGE_SIZE_MAX } = options
+  const tamanoPagina = Math.min(pageSize, PAGE_SIZE_MAX)
 
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [searchTerm, setSearchTerm] = useState<string>('')
+  const [page, setPage] = useState<number>(1)
+  const [filtros, setFiltros] = useState<FiltrosProductos>({})
   const [total, setTotal] = useState<number>(0)
+  const [totalPages, setTotalPages] = useState<number>(1)
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
 
   /** Aborta la consulta anterior si el usuario sigue escribiendo. */
   const enCurso = useRef<AbortController | null>(null)
 
-  const fetchProducts = useCallback(
-    async (termino?: string) => {
+  const consultar = useCallback(
+    async (termino: string, pagina: number, f: FiltrosProductos) => {
       setIsLoading(true)
       enCurso.current?.abort()
       const control = new AbortController()
       enCurso.current = control
 
       try {
-        const params = new URLSearchParams({ pageSize: String(PAGE_SIZE) })
-        const q = (termino ?? '').trim()
-        if (buscarEnServidor && q) params.set('q', q)
+        const params = new URLSearchParams({
+          pageSize: String(tamanoPagina),
+          page: String(pagina),
+        })
+        const q = termino.trim()
+        if (enServidor && q) params.set('q', q)
+        if (f.categoryId !== undefined) params.set('categoryId', String(f.categoryId))
+        if (f.lowStock) params.set('lowStock', 'true')
+        if (f.sortBy) params.set('sortBy', f.sortBy)
+        if (f.sortDir) params.set('sortDir', f.sortDir)
 
-        const pagina = await apiRequest(`/api/products?${params.toString()}`, {
+        const resultado = await apiRequest(`/api/products?${params.toString()}`, {
           parse: parsePaginaProductos,
           signal: control.signal,
         })
 
-        setProducts(pagina.data)
-        setTotal(pagina.total)
+        setProducts(resultado.data)
+        setTotal(resultado.total)
+        setTotalPages(resultado.totalPages)
         setError(null)
       } catch (err) {
         // Una consulta cancelada no es un fallo: la reemplazo otra mas nueva.
@@ -73,7 +94,13 @@ export function useProducts(options: UseProductsOptions = {}) {
         if (enCurso.current === control) setIsLoading(false)
       }
     },
-    [buscarEnServidor],
+    [enServidor, tamanoPagina],
+  )
+
+  /** Recarga la vista actual. Para usar despues de crear o borrar. */
+  const fetchProducts = useCallback(
+    () => consultar(searchTerm, page, filtros),
+    [consultar, searchTerm, page, filtros],
   )
 
   /**
@@ -82,8 +109,8 @@ export function useProducts(options: UseProductsOptions = {}) {
    * Existe aparte de la busqueda por texto porque el lector no puede depender
    * de que el producto ya este en la lista cargada. Antes se buscaba en el
    * array local, lo cual funcionaba solo porque el navegador tenia el
-   * catalogo entero; con la busqueda en el servidor, escanear un producto que
-   * no estuviera en la pagina actual habria abierto el alta de producto nuevo
+   * catalogo entero; con la busqueda paginada, escanear un producto que no
+   * estuviera en la pagina actual habria abierto el alta de producto nuevo
    * sobre uno que ya existe.
    */
   const buscarPorCodigo = useCallback(async (codigo: string): Promise<Product | null> => {
@@ -117,27 +144,40 @@ export function useProducts(options: UseProductsOptions = {}) {
     void fetchCategories()
   }, [fetchCategories])
 
-  // Carga inicial y, si la busqueda es del servidor, recarga al escribir.
+  // Carga inicial y recarga al cambiar busqueda, pagina o filtros.
   useEffect(() => {
-    if (!buscarEnServidor) {
-      void fetchProducts()
+    if (!enServidor) {
+      void consultar('', 1, {})
       return
     }
-
-    const t = setTimeout(() => void fetchProducts(searchTerm), DEBOUNCE_MS)
+    const t = setTimeout(() => void consultar(searchTerm, page, filtros), DEBOUNCE_MS)
     return () => clearTimeout(t)
-  }, [buscarEnServidor, searchTerm, fetchProducts])
+  }, [enServidor, searchTerm, page, filtros, consultar])
+
+  /** Cambiar la busqueda o un filtro vuelve a la primera pagina. */
+  const buscar = useCallback((termino: string) => {
+    setSearchTerm(termino)
+    setPage(1)
+  }, [])
+
+  const aplicarFiltros = useCallback((f: FiltrosProductos) => {
+    setFiltros(f)
+    setPage(1)
+  }, [])
 
   return {
     products,
     categories,
     searchTerm,
-    setSearchTerm,
+    setSearchTerm: buscar,
+    filtros,
+    aplicarFiltros,
+    page,
+    setPage,
+    totalPages,
+    total,
     fetchProducts,
     buscarPorCodigo,
-    total,
-    /** true si el servidor tiene mas resultados de los que se trajeron. */
-    hayMas: total > products.length,
     isLoading,
     error,
   }

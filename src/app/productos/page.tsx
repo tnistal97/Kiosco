@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 
 import toast from 'react-hot-toast'
-import { useProducts, Product } from '@/hooks/useProducts'
+import { useProducts, type CampoOrden, type Product } from '@/hooks/useProducts'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import { STOCK_CRITICO } from '@/modules/products/schemas'
 
 import ProductsHeader from '@/components/productos/ProductsHeader'
 import ProductsMetrics from '@/components/productos/ProductsMetrics'
@@ -16,13 +17,32 @@ import ProductoModal from '@/components/productos/ProductoModal'
 type SortKey = 'id' | 'name' | 'category' | 'stock' | 'price'
 type SortDirection = 'asc' | 'desc'
 
+/** Campos que el servidor sabe ordenar. Ver CAMPOS_ORDEN_PRODUCTO. */
+const ORDEN_EN_SERVIDOR: Partial<Record<SortKey, CampoOrden>> = {
+  id: 'id',
+  name: 'name',
+  price: 'price',
+}
+
 export default function ProductosPage() {
-  const { products, categories, searchTerm, setSearchTerm, fetchProducts } = useProducts()
+  // La busqueda, el filtrado, el orden y la paginacion los resuelve el
+  // servidor. Antes se traia el catalogo entero y se hacia todo en memoria;
+  // con el tope de pagina eso habria ocultado productos sin avisar.
+  const {
+    products,
+    categories,
+    searchTerm,
+    setSearchTerm,
+    aplicarFiltros,
+    page: currentPage,
+    setPage: setCurrentPage,
+    totalPages,
+    total,
+    fetchProducts,
+  } = useProducts({ enServidor: true, pageSize: 20 })
 
   const [categoryFilter, setCategoryFilter] = useState<string>('Todas')
   const [lowStockFilter, setLowStockFilter] = useState<boolean>(false)
-  const [currentPage, setCurrentPage] = useState<number>(1)
-  const itemsPerPage = 20
 
   const [sortConfig, setSortConfig] = useState<{
     key: SortKey
@@ -36,64 +56,41 @@ export default function ProductosPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
 
-  // 1️⃣ Filtrar (búsqueda + categoría + stock crítico)
-  const filtered = useMemo(() => {
-    let arr = products.filter((p) => {
-      const term = searchTerm.trim().toLowerCase()
-      const matchesSearch =
-        p.name.toLowerCase().includes(term) || (p.barcode ?? '').toLowerCase().includes(term)
-      const matchesCategory = categoryFilter === 'Todas' || p.category.name === categoryFilter
-      return matchesSearch && matchesCategory
+  // Los filtros que el servidor entiende se le mandan a el.
+  useEffect(() => {
+    const categoria = categories.find((c) => c.name === categoryFilter)
+    aplicarFiltros({
+      ...(categoryFilter !== 'Todas' && categoria ? { categoryId: categoria.id } : {}),
+      ...(lowStockFilter ? { lowStock: true } : {}),
+      ...(ORDEN_EN_SERVIDOR[sortConfig.key]
+        ? { sortBy: ORDEN_EN_SERVIDOR[sortConfig.key], sortDir: sortConfig.direction }
+        : {}),
     })
+  }, [categoryFilter, lowStockFilter, sortConfig, categories, aplicarFiltros])
 
-    if (lowStockFilter) {
-      arr = arr.filter((p) => p.totalStock < 10)
-    }
+  // `categoria` y `stock` no son campos de la tabla Product, asi que el
+  // servidor no los ordena. Se ordena la pagina recibida, que es lo unico
+  // que se puede hacer sin agregar un join solo para esto.
+  const paginated = useMemo(() => {
+    const { key, direction } = sortConfig
+    if (ORDEN_EN_SERVIDOR[key]) return products
 
-    return arr
-  }, [products, searchTerm, categoryFilter, lowStockFilter])
-
-  // 2️⃣ Ordenar
-  const sorted = useMemo(() => {
-    const copy = [...filtered]
+    const copy = [...products]
     copy.sort((a, b) => {
-      const { key, direction } = sortConfig
-      let cmp = 0
-      switch (key) {
-        case 'id':
-          cmp = a.id - b.id
-          break
-        case 'name':
-          cmp = a.name.localeCompare(b.name)
-          break
-        case 'category':
-          cmp = a.category.name.localeCompare(b.category.name)
-          break
-        case 'stock':
-          cmp = a.totalStock - b.totalStock
-          break
-        case 'price':
-          cmp = a.price - b.price
-          break
-      }
+      const cmp =
+        key === 'category'
+          ? a.category.name.localeCompare(b.category.name)
+          : a.totalStock - b.totalStock
       return direction === 'asc' ? cmp : -cmp
     })
     return copy
-  }, [filtered, sortConfig])
+  }, [products, sortConfig])
 
-  // 3️⃣ Paginación
-  const totalPages = Math.max(1, Math.ceil(sorted.length / itemsPerPage))
-  const paginated = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage
-    return sorted.slice(start, start + itemsPerPage)
-  }, [sorted, currentPage])
+  // Métricas de la página visible. El total sí es del servidor.
+  const totalProductos = total
+  const totalUnidades = products.reduce((sum, p) => sum + p.totalStock, 0)
+  const stockCriticoCount = products.filter((p) => p.totalStock < STOCK_CRITICO).length
 
-  // 4️⃣ Métricas
-  const totalProductos = filtered.length
-  const totalUnidades = filtered.reduce((sum, p) => sum + p.totalStock, 0)
-  const stockCriticoCount = filtered.filter((p) => p.totalStock < 10).length
-
-  // 5️⃣ Handlers
   const handleSort = (key: SortKey) => {
     setCurrentPage(1)
     setSortConfig((prev) => {

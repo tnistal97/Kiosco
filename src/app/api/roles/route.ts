@@ -7,6 +7,14 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
+ * Tope duro. Estos catalogos son chicos por naturaleza --un almacen tiene
+ * una sucursal, decenas de categorias y proveedores-- pero un `findMany` sin
+ * limite es una bomba de tiempo: el dia que alguien cargue diez mil filas,
+ * la pantalla intenta traerlas todas.
+ */
+const TOPE = 500
+
+/**
  * Roles disponibles, con los permisos que otorga cada uno.
  *
  * Ya no existe `POST /api/roles`. Crear un rol desde la API no servia de
@@ -27,6 +35,7 @@ export const GET = handler(
     const roles = await prisma.role.findMany({
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
+      take: TOPE,
     })
 
     return roles.map((rol) => ({

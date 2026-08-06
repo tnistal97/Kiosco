@@ -171,15 +171,45 @@ describe('Una venta anulada sigue apareciendo en los reportes', () => {
 
     const hoy = new Date().toISOString().slice(0, 10)
     const { GET } = await import('@/app/api/admin/sales/route')
-    const res = await call<{ sales: Array<{ id: number; status: string }> }>(
-      GET,
-      `/api/admin/sales?start=${hoy}&end=${hoy}`,
-      { cookie: await sessionCookie(fx.admin) },
-    )
+    const res = await call<{
+      data: Array<{ id: number; status: string }>
+      totales: { ventas: number; anuladas: number; recaudado: number }
+    }>(GET, `/api/admin/sales?start=${hoy}&end=${hoy}`, {
+      cookie: await sessionCookie(fx.admin),
+    })
 
     expect(res.status).toBe(200)
-    const venta = res.body.sales.find((s) => s.id === saleId)
+    const venta = res.body.data.find((s) => s.id === saleId)
     expect(venta, 'La venta anulada desaparecio del reporte').toBeDefined()
     expect(venta?.status).toBe('canceled')
+  })
+
+  it('la venta anulada no suma a la recaudacion del reporte', async () => {
+    const saleId = await venderDosUnidades()
+    const hoy = new Date().toISOString().slice(0, 10)
+    const { GET } = await import('@/app/api/admin/sales/route')
+
+    const cookie = await sessionCookie(fx.admin)
+    const consultar = () =>
+      call<{ totales: { ventas: number; anuladas: number; recaudado: number } }>(
+        GET,
+        `/api/admin/sales?start=${hoy}&end=${hoy}`,
+        { cookie },
+      )
+
+    const antes = await consultar()
+    expect(antes.body.totales.ventas).toBe(1)
+    expect(antes.body.totales.anuladas).toBe(0)
+    expect(antes.body.totales.recaudado).toBe(fx.productoA.price * 2)
+
+    await anular(saleId, { reason: 'No suma' })
+
+    const despues = await consultar()
+    expect(despues.body.totales.ventas).toBe(0)
+    expect(despues.body.totales.anuladas).toBe(1)
+    expect(
+      despues.body.totales.recaudado,
+      'Una venta anulada seguia sumando a la recaudacion del reporte',
+    ).toBe(0)
   })
 })

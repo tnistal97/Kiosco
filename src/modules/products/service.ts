@@ -13,10 +13,12 @@ import { audit } from '@/server/audit/audit'
 import { conflict, invalid, notFound } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
-import type { CrearProductoInput, EditarProductoInput, ListarProductosQuery } from './schemas'
-
-/** Umbral por debajo del cual un producto se considera con stock critico. */
-export const STOCK_CRITICO = 10
+import {
+  STOCK_CRITICO,
+  type CrearProductoInput,
+  type EditarProductoInput,
+  type ListarProductosQuery,
+} from './schemas'
 
 export interface ProductoListado {
   id: number
