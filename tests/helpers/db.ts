@@ -42,9 +42,9 @@ export interface Fixture {
   cajeroB: TestUser
   /** Usuario dado de baja. */
   inactivo: TestUser
-  productoA: { id: number; name: string; price: number }
+  productoA: { id: number; name: string; price: number; barcode: string }
   /** Producto de la sucursal B. Un usuario de A no debe poder tocarlo. */
-  productoB: { id: number; name: string; price: number }
+  productoB: { id: number; name: string; price: number; barcode: string }
   categoryId: number
   /** Un usuario por cada rol del catalogo, todos en la sucursal A. */
   porRol: Record<string, TestUser>
@@ -148,8 +148,18 @@ export async function seedFixture(): Promise<Fixture> {
     cajero,
     cajeroB,
     inactivo,
-    productoA: { id: productoA.id, name: productoA.name, price: productoA.price },
-    productoB: { id: productoB.id, name: productoB.name, price: productoB.price },
+    productoA: {
+      id: productoA.id,
+      name: productoA.name,
+      price: productoA.price,
+      barcode: productoA.barcode ?? '',
+    },
+    productoB: {
+      id: productoB.id,
+      name: productoB.name,
+      price: productoB.price,
+      barcode: productoB.barcode ?? '',
+    },
     categoryId: category.id,
     porRol,
   }

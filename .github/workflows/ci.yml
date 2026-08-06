@@ -1,0 +1,219 @@
+# Integración continua
+#
+# Corre en cada push a una rama de trabajo y en cada pull request. NO despliega
+# nada: la Fase 1 deja la base lista, el despliegue automático es una decisión
+# aparte que exige credenciales del servidor.
+#
+# La base de datos es un contenedor efímero que vive lo que dura el trabajo.
+# Las variables son ficticias y están escritas acá a la vista: si alguna
+# pareciera un secreto de verdad, sería un error.
+
+name: CI
+
+on:
+  push:
+    branches-ignore:
+      # main se protege con revisión de pull request, no con este paso.
+      - main
+  pull_request:
+    branches: ['**']
+
+# Un push nuevo sobre la misma rama cancela el anterior: no tiene sentido
+# esperar el resultado de un commit que ya fue reemplazado.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Ficticias, solo para CI.
+  DATABASE_URL: postgresql://kiosco_ci:kiosco_ci@127.0.0.1:5432/kiosco_test?schema=public
+  JWT_SECRET: secreto-solo-de-integracion-continua-0000000000
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Calidad: formato, lint y tipos. No necesita base de datos, así que corre
+  # aparte y da resultado en menos de un minuto.
+  # ---------------------------------------------------------------------------
+  calidad:
+    name: Formato, lint y tipos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # `prisma generate` va antes del typecheck: sin el cliente generado,
+      # `tsc` falla con cientos de errores que no tienen nada que ver con el
+      # código del proyecto.
+      - name: Generar el cliente de Prisma
+        run: npx prisma generate
+
+      - name: Formato
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tipos
+        run: npm run typecheck
+
+  # ---------------------------------------------------------------------------
+  # Pruebas. Necesitan PostgreSQL.
+  # ---------------------------------------------------------------------------
+  pruebas:
+    name: Pruebas
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: kiosco_ci
+          POSTGRES_PASSWORD: kiosco_ci
+          POSTGRES_DB: kiosco_test
+        ports:
+          - 5432:5432
+        # Sin esto el trabajo arranca antes de que la base acepte conexiones.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar el cliente de Prisma
+        run: npx prisma generate
+
+      # Las pruebas de migraciones crean y destruyen bases *_migtest, así que
+      # el usuario necesita poder crear bases.
+      - name: Permitir crear bases de datos
+        run: |
+          PGPASSWORD=kiosco_ci psql -h 127.0.0.1 -U kiosco_ci -d kiosco_test \
+            -c "ALTER ROLE kiosco_ci CREATEDB;"
+
+      # La cadena oficial, con el mismo comando que se usaría en el servidor.
+      # Si una migración tiene un error de SQL, el trabajo falla acá.
+      - name: Aplicar la cadena de migraciones
+        run: npx prisma migrate deploy
+
+      - name: Comprobar que no hay deriva de esquema
+        run: |
+          npx prisma migrate diff \
+            --from-schema-datamodel prisma/schema.prisma \
+            --to-schema-datasource prisma/schema.prisma \
+            --exit-code
+
+      - name: Pruebas
+        run: npm test
+
+      - name: Cobertura
+        run: npm run test:coverage
+
+      - name: Guardar el informe de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura
+          path: coverage/
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Construcción. Comprueba además que el middleware quedó en el paquete, que
+  # es el fallo que la Fase 0 corrigió y el que más fácil se vuelve a colar:
+  # mover el archivo a la raíz compila igual y deja la autenticación de
+  # navegación sin ejecutarse.
+  # ---------------------------------------------------------------------------
+  construccion:
+    name: Construcción
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar el cliente de Prisma
+        run: npx prisma generate
+
+      - name: Construir
+        run: npm run build
+
+      - name: El middleware tiene que estar en el paquete
+        run: |
+          MANIFIESTO=.next/server/middleware-manifest.json
+          if [ ! -f "$MANIFIESTO" ]; then
+            echo "No existe $MANIFIESTO"
+            exit 1
+          fi
+          if ! grep -q '"middleware"' "$MANIFIESTO"; then
+            echo "El manifiesto no declara ningun middleware."
+            echo "Con un directorio src/, Next solo reconoce src/middleware.ts."
+            echo "En la raiz se excluye del paquete sin dar ningun error."
+            cat "$MANIFIESTO"
+            exit 1
+          fi
+          echo "Middleware presente en el paquete."
+
+      - name: El service worker no debe cachear rutas privadas
+        run: |
+          if [ ! -f public/sw.js ]; then
+            echo "next-pwa no genero public/sw.js"
+            exit 1
+          fi
+          if ! grep -q 'NetworkOnly' public/sw.js; then
+            echo "El service worker no declara NetworkOnly para las rutas privadas."
+            exit 1
+          fi
+          echo "Service worker correcto."
+
+  # ---------------------------------------------------------------------------
+  # Auditoría de dependencias.
+  #
+  # Falla ante críticas y altas, que son las que hay que atender. Las
+  # moderadas y bajas se informan sin cortar: cortar la construcción por una
+  # vulnerabilidad baja en una herramienta de compilación entrena a todo el
+  # mundo a ignorar el paso, y entonces tampoco se mira cuando aparece una
+  # crítica.
+  # ---------------------------------------------------------------------------
+  dependencias:
+    name: Auditoría de dependencias
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Criticas y altas (corta la construccion)
+        run: npm audit --audit-level=high
+
+      - name: Moderadas y bajas (informativo)
+        if: always()
+        run: npm audit || true
