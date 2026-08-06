@@ -1,137 +1,163 @@
 // src/app/api/cash/route.ts
+import { z } from 'zod'
 import { NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
 import { prisma } from '@/lib/prisma'
+import { handler } from '@/server/http/handler'
+import { amountSchema, optionalText, paymentMethodSchema } from '@/server/http/validate'
+import { audit } from '@/server/audit/audit'
+import { invalid } from '@/server/http/errors'
 
-interface JwtPayload {
-  userId: number
-  role: string
-  branchId: number
-  iat?: number
-  exp?: number
-}
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-// Helper para leer/verificar el JWT desde la cookie
-function getUserFromCookie(req: Request): { userId: number; branchId: number } {
-  const cookieHeader = req.headers.get('cookie') || ''
-  const match = cookieHeader.match(/token=([^;]+)/)
-  if (!match) throw new Error('No token cookie')
-  const token = match[1]
-  const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload
-  return { userId: decoded.userId, branchId: decoded.branchId }
-}
+/**
+ * Movimientos de caja de la sucursal, de ayer y de hoy.
+ *
+ * Cambios respecto de la version anterior:
+ *
+ *  - Los items de cada venta se traen con un `include` sobre la relacion
+ *    `sale`, no con una consulta por movimiento. Con 26 movimientos eran 27
+ *    consultas; ahora es una.
+ *  - La relacion se resuelve por la clave foranea `saleId`, no parseando
+ *    "Venta #123" del texto de la descripcion.
+ */
+export const GET = handler(
+  {
+    auth: 'session',
+    permission: 'cash.view',
+    audit: 'GET /api/cash',
+  },
+  async ({ session }) => {
+    const ahora = new Date()
+    const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate())
+    const finHoy = new Date(inicioHoy.getTime() + 24 * 60 * 60 * 1000 - 1)
+    const inicioAyer = new Date(inicioHoy.getTime() - 24 * 60 * 60 * 1000)
 
-// GET /api/cash
-export async function GET(req: Request) {
-  // 1) Verificar JWT → extraer branchId
-  let branchId: number
-  try {
-    ({ branchId } = getUserFromCookie(req))
-  } catch {
-    return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
-  }
-
-  // 2) Calcular rango “desde ayer 00:00” hasta “hoy 23:59:59”
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
-  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000)
-
-  // 3) Consultar movimientos de esta sucursal entre “ayer 00:00” y “hoy 23:59:59”
-  const movements = await prisma.cashRegisterMovement.findMany({
-    where: {
-      branchId,
-      date: {
-        gte: yesterdayStart,
-        lte: todayEnd,
+    const movimientos = await prisma.cashRegisterMovement.findMany({
+      where: {
+        branchId: session.branchId,
+        date: { gte: inicioAyer, lte: finHoy },
       },
-    },
-    include: {
-      user: { select: { id: true, name: true } },
-      branch: { select: { id: true, name: true } },
-    },
-    orderBy: { date: 'desc' },
-  })
-
-  // 4) Enriquecer cada movimiento: si description empieza por “Venta #<saleId>”
-    const enriched = await Promise.all(
-    movements.map(async (m: {
-      id: number
-      amount: number
-      paymentMethod: string
-      description: string | null
-      date: Date
-      user: { id: number; name: string }
-      branch: { id: number; name: string }
-    }) => {
-      const match = (m.description || '').match(/^Venta\s*#(\d+)/i)
-      if (match) {
-        const saleId = parseInt(match[1], 10)
-        const items = await prisma.saleItem.findMany({
-          where: { saleId },
-          include: { product: { select: { id: true, name: true } } },
-        })
-        const saleItems = items.map((i: {
-          id: number
-          quantity: number
-          price: number
-          product: { id: number; name: string }
-        }) => ({
-          id: i.id,
-          product: { id: i.product.id, name: i.product.name },
-          quantity: i.quantity,
-          price: i.price,
-        }))
-        return { ...m, saleItems }
-      } else {
-        return { ...m, saleItems: null }
-      }
+      select: {
+        id: true,
+        amount: true,
+        paymentMethod: true,
+        description: true,
+        date: true,
+        type: true,
+        saleId: true,
+        user: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
+        sale: {
+          select: {
+            id: true,
+            status: true,
+            items: {
+              select: {
+                id: true,
+                quantity: true,
+                price: true,
+                product: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { date: 'desc' },
     })
-  )
 
+    return movimientos.map(({ sale, ...mov }) => ({
+      ...mov,
+      saleStatus: sale?.status ?? null,
+      saleItems: sale?.items ?? null,
+    }))
+  },
+)
 
-  return NextResponse.json(enriched)
-}
-
-// POST /api/cash
-export async function POST(req: Request) {
-  // 1) Verificar JWT y extraer userId + branchId
-  let userId: number, branchId: number
-  try {
-    const payload = getUserFromCookie(req)
-    userId = payload.userId
-    branchId = payload.branchId
-  } catch {
-    return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
-  }
-
-  // 2) Leer body
-  const data = await req.json()
-  const { amount, paymentMethod, description, movementType } = data as {
-    amount: number
-    paymentMethod: string
-    description?: string
-    movementType: 'manual' | 'retiro' | 'deposit'
-  }
-
-  if (amount == null || !paymentMethod || !movementType) {
-    return NextResponse.json(
-      { error: 'Faltan campos obligatorios (amount, paymentMethod, movementType)' },
-      { status: 400 }
-    )
-  }
-
-  // 3) Crear movimiento de caja (incluyendo `type: movementType`)
-  const movement = await prisma.cashRegisterMovement.create({
-    data: {
-      amount,
-      paymentMethod,
-      description: description ?? '',
-      branchId,
-      userId,
-      type: movementType,
-    },
+/**
+ * Movimiento manual de caja: ingreso, retiro o deposito.
+ *
+ * La version anterior guardaba el movimiento y no tocaba `currentCash`, asi
+ * que el saldo que mostraba la pantalla nunca reflejaba los retiros. Ahora
+ * el saldo se actualiza en la misma transaccion, con incremento atomico.
+ */
+const movimientoSchema = z
+  .object({
+    amount: amountSchema.refine((n) => n > 0, 'El monto debe ser mayor que cero'),
+    paymentMethod: paymentMethodSchema,
+    description: optionalText(300),
+    movementType: z.enum(['ingreso', 'retiro', 'deposito']),
   })
+  .strict()
 
-  return NextResponse.json(movement, { status: 201 })
-}
+export const POST = handler(
+  {
+    auth: 'session',
+    permission: 'cash.movement.create',
+    body: movimientoSchema,
+    audit: 'POST /api/cash',
+  },
+  async ({ session, body }) => {
+    // Un retiro o un deposito solo tienen sentido en efectivo: mueven el
+    // dinero fisico del cajon.
+    if (body.movementType !== 'ingreso' && body.paymentMethod !== 'efectivo') {
+      throw invalid('Los retiros y depositos solo aplican a movimientos en efectivo')
+    }
+
+    // Signo segun el tipo: un retiro saca dinero del cajon.
+    const signo = body.movementType === 'retiro' ? -1 : 1
+    const importe = Math.round(body.amount * signo * 100) / 100
+
+    const movimiento = await prisma.$transaction(async (tx) => {
+      if (body.paymentMethod === 'efectivo') {
+        const sucursal = await tx.branch.findUniqueOrThrow({
+          where: { id: session.branchId },
+          select: { currentCash: true },
+        })
+
+        if (signo < 0 && sucursal.currentCash + importe < 0) {
+          throw invalid(
+            `No se puede retirar ${body.amount}: el saldo en caja es ${sucursal.currentCash}`,
+          )
+        }
+
+        await tx.branch.update({
+          where: { id: session.branchId },
+          data: { currentCash: { increment: importe } },
+        })
+      }
+
+      const creado = await tx.cashRegisterMovement.create({
+        data: {
+          branchId: session.branchId,
+          userId: session.userId,
+          amount: importe,
+          paymentMethod: body.paymentMethod,
+          description: body.description ?? '',
+          type: body.movementType,
+        },
+        select: {
+          id: true,
+          amount: true,
+          paymentMethod: true,
+          description: true,
+          date: true,
+          type: true,
+        },
+      })
+
+      await audit(tx, {
+        userId: session.userId,
+        table: 'CashRegisterMovement',
+        recordId: creado.id,
+        action: 'create',
+        after: creado,
+        origin: 'POST /api/cash',
+      })
+
+      return creado
+    })
+
+    return NextResponse.json(movimiento, { status: 201 })
+  },
+)

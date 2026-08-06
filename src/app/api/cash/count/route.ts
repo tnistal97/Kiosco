@@ -1,41 +1,74 @@
+// src/app/api/cash/count/route.ts
+import { z } from 'zod'
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import jwt from 'jsonwebtoken'
 import { prisma } from '@/lib/prisma'
+import { handler } from '@/server/http/handler'
+import { amountSchema, optionalText } from '@/server/http/validate'
+import { audit } from '@/server/audit/audit'
 
-export async function POST(req: Request) {
-  // ✅ Esperar la promesa de cookies()
-  const cookieStore = await cookies()
-  const token = cookieStore.get('token')?.value
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-  if (!token) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-  }
+const arqueoSchema = z
+  .object({
+    amount: amountSchema,
+    notes: optionalText(500),
+  })
+  .strict()
 
-  try {
-    const { userId } = jwt.verify(token, process.env.JWT_SECRET!) as { userId: number }
-    const { amount, notes } = await req.json()
+/**
+ * Arqueo de caja: cuanto dinero hay fisicamente en el cajon.
+ *
+ * Se guarda ademas el saldo que el sistema esperaba y la diferencia. Antes se
+ * registraba solo el importe contado y nadie lo comparaba con nada, asi que
+ * un faltante no se detectaba nunca.
+ */
+export const POST = handler(
+  {
+    auth: 'session',
+    permission: 'cash.count.create',
+    body: arqueoSchema,
+    audit: 'POST /api/cash/count',
+  },
+  async ({ session, body }) => {
+    const resultado = await prisma.$transaction(async (tx) => {
+      const sucursal = await tx.branch.findUniqueOrThrow({
+        where: { id: session.branchId },
+        select: { currentCash: true },
+      })
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { branchId: true },
+      const esperado = sucursal.currentCash
+      const diferencia = Math.round((body.amount - esperado) * 100) / 100
+
+      const notas = [
+        body.notes,
+        `Esperado: ${esperado}. Contado: ${body.amount}. Diferencia: ${diferencia}.`,
+      ]
+        .filter(Boolean)
+        .join(' | ')
+
+      const arqueo = await tx.cashCount.create({
+        data: {
+          userId: session.userId,
+          branchId: session.branchId,
+          amount: body.amount,
+          notes: notas,
+        },
+        select: { id: true, amount: true, date: true, notes: true },
+      })
+
+      await audit(tx, {
+        userId: session.userId,
+        table: 'CashCount',
+        recordId: arqueo.id,
+        action: 'create',
+        after: { contado: body.amount, esperado, diferencia, branchId: session.branchId },
+        origin: 'POST /api/cash/count',
+      })
+
+      return { ...arqueo, esperado, diferencia }
     })
-    if (!user) {
-      return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
-    }
 
-    const cashCount = await prisma.cashCount.create({
-      data: {
-        userId,
-        branchId: user.branchId,
-        amount,
-        notes,
-      },
-    })
-
-    return NextResponse.json({ ok: true, cashCount })
-  } catch (err) {
-    console.error(err)
-    return NextResponse.json({ error: 'Error interno' }, { status: 500 })
-  }
-}
+    return NextResponse.json({ ok: true, cashCount: resultado }, { status: 201 })
+  },
+)

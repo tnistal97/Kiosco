@@ -1,143 +1,86 @@
 // src/app/api/admin/sales/route.ts
-import { NextResponse, type NextRequest } from 'next/server'
+import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
-import jwt from 'jsonwebtoken'
-import { cookies } from 'next/headers'
+import { handler } from '@/server/http/handler'
+import { invalid } from '@/server/http/errors'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type PaymentMethod = 'efectivo' | 'tarjeta' | 'mercado_pago'
+const rangoSchema = z
+  .object({
+    start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato esperado: YYYY-MM-DD'),
+    end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato esperado: YYYY-MM-DD'),
+  })
+  .strict()
 
-interface JwtPayload {
-  userId: number
-  role: string
-  branchId: number
-  iat?: number
-  exp?: number
-}
+/** Tope de rango: evita que una consulta traiga anos enteros de una vez. */
+const MAX_DIAS = 366
 
-interface SaleItem {
-  id: number
-  product: { id: number; name: string }
-  quantity: number
-  price: number
-}
+/**
+ * Ventas de un rango de fechas, para la pantalla administrativa.
+ *
+ * El medio de pago sale del movimiento de caja vinculado por `saleId`. Antes
+ * se deducia parseando "Venta #123" del texto de la descripcion y, si no
+ * encontraba coincidencia, asumia "efectivo" en silencio: cualquier venta con
+ * tarjeta cuya descripcion no coincidiera figuraba como efectivo en el reporte.
+ *
+ * Las ventas anuladas se incluyen con su estado. No desaparecen del historial.
+ */
+export const GET = handler(
+  {
+    auth: 'session',
+    permission: 'reports.view',
+    query: rangoSchema,
+    audit: 'GET /api/admin/sales',
+  },
+  async ({ session, query }) => {
+    const desde = new Date(`${query.start}T00:00:00.000Z`)
+    const hasta = new Date(`${query.end}T23:59:59.999Z`)
 
-interface Sale {
-  id: number
-  date: Date
-  user: { id: number; name: string }
-  items: SaleItem[]
-}
-
-interface SaleResult {
-  id: number
-  date: string
-  user: { id: number; name: string }
-  paymentMethod: PaymentMethod
-  items: SaleItem[]
-}
-
-function normalizePaymentMethod(s: string | null | undefined): PaymentMethod {
-  switch (s) {
-    case 'tarjeta':
-    case 'mercado_pago':
-    case 'efectivo':
-      return s
-    default:
-      return 'efectivo'
-  }
-}
-
-async function getBranchIdFromCookie(): Promise<number> {
-  const store = await cookies()
-  const token = store.get('token')?.value
-  if (!token) throw new Error('No token cookie')
-  const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload
-  return decoded.branchId
-}
-
-export async function GET(req: NextRequest) {
-  try {
-    // 1) Autenticación
-    let branchId: number
-    try {
-      branchId = await getBranchIdFromCookie()
-    } catch {
-      return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    if (Number.isNaN(desde.getTime()) || Number.isNaN(hasta.getTime())) {
+      throw invalid('Fechas invalidas')
     }
+    if (desde > hasta) throw invalid('La fecha inicial es posterior a la final')
 
-    // 2) Rango de fechas
-    const { searchParams } = new URL(req.url)
-    const startParam = searchParams.get('start')
-    const endParam = searchParams.get('end')
+    const dias = (hasta.getTime() - desde.getTime()) / (24 * 60 * 60 * 1000)
+    if (dias > MAX_DIAS) throw invalid(`El rango no puede superar ${MAX_DIAS} dias`)
 
-    if (!startParam || !endParam) {
-      return NextResponse.json(
-        { error: 'Debe proporcionar start y end en formato YYYY-MM-DD' },
-        { status: 400 }
-      )
-    }
-
-    const startDate = new Date(`${startParam}T00:00:00.000Z`)
-    const endDate = new Date(`${endParam}T23:59:59.999Z`)
-
-    // 3) Movimientos de caja del rango (solo lo necesario para mapear)
-    const movements = await prisma.cashRegisterMovement.findMany({
-      where: {
-        branchId,
-        date: { gte: startDate, lte: endDate },
-        type: 'sale',
-      },
-      select: { description: true, paymentMethod: true },
-    })
-
-    // 4) Mapear saleId -> paymentMethod (normalizado al union)
-    const paymentMap: Record<number, PaymentMethod> = {}
-    movements.forEach((m) => {
-      const match = m.description?.match(/Venta\s*#(\d+)/i)
-      if (match) {
-        const saleId = parseInt(match[1], 10)
-        paymentMap[saleId] = normalizePaymentMethod(m.paymentMethod)
-      }
-    })
-
-    // 5) Ventas del rango (con items y usuario)
-    const sales = await prisma.sale.findMany({
-      where: {
-        branchId,
-        date: { gte: startDate, lte: endDate },
-      },
+    const ventas = await prisma.sale.findMany({
+      where: { branchId: session.branchId, date: { gte: desde, lte: hasta } },
       orderBy: { date: 'desc' },
-      include: {
+      select: {
+        id: true,
+        date: true,
+        status: true,
+        canceledAt: true,
+        cancelReason: true,
         user: { select: { id: true, name: true } },
+        canceledBy: { select: { id: true, name: true } },
         items: {
-          include: { product: { select: { id: true, name: true } } },
+          select: {
+            id: true,
+            quantity: true,
+            price: true,
+            product: { select: { id: true, name: true } },
+          },
+        },
+        cashMovements: {
+          where: { type: 'sale' },
+          select: { paymentMethod: true },
+          take: 1,
         },
       },
     })
 
-    // 6) Respuesta
-    const result: SaleResult[] = sales.map((s: Sale) => ({
-      id: s.id,
-      date: s.date.toISOString(),
-      user: { id: s.user.id, name: s.user.name },
-      paymentMethod: paymentMap[s.id] ?? 'efectivo',
-      items: s.items.map((it: SaleItem) => ({
-        id: it.id,
-        product: { id: it.product.id, name: it.product.name },
-        quantity: it.quantity,
-        price: it.price,
+    return {
+      sales: ventas.map(({ cashMovements, ...venta }) => ({
+        ...venta,
+        date: venta.date.toISOString(),
+        paymentMethod: cashMovements[0]?.paymentMethod ?? null,
+        total:
+          Math.round(venta.items.reduce((s, i) => s + i.price * i.quantity, 0) * 100) / 100,
       })),
-    }))
-
-    return NextResponse.json({ sales: result })
-  } catch (err: any) {
-    console.error('Error en GET /api/admin/sales:', err)
-    return NextResponse.json(
-      { error: 'Error interno al cargar ventas' },
-      { status: 500 }
-    )
-  }
-}
+    }
+  },
+)

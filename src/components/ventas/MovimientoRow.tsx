@@ -32,6 +32,8 @@ export default function MovimientoRow({
   onDeleted,
 }: Props) {
   const isSale = Array.isArray(m.saleItems) && m.saleItems.length > 0
+  // Una venta ya anulada no se puede volver a anular.
+  const sePuedeAnular = isSale && m.saleId !== null && m.saleStatus === 'completed'
 
   return (
     <>
@@ -102,13 +104,12 @@ export default function MovimientoRow({
           )}
         </td>
 
-        {/* Botón eliminar */}
+        {/* Anular venta */}
         <td className="px-4 py-2 text-center">
-          {isSale ? (
-            <DeleteButton
-              saleId={m.id}
-              onDeleted={onDeleted}
-            />
+          {sePuedeAnular ? (
+            <DeleteButton saleId={m.saleId!} onDeleted={onDeleted} />
+          ) : m.saleStatus === 'canceled' ? (
+            <span className="text-amber-400 text-xs font-medium">Anulada</span>
           ) : (
             <span className="text-gray-500">—</span>
           )}

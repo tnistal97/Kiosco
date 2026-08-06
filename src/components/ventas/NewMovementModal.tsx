@@ -14,34 +14,44 @@ interface Props {
   onSaved: () => void
 }
 
+type MovementType = 'ingreso' | 'retiro' | 'deposito'
+
 export default function NewMovementModal({ isOpen, onClose, onSaved }: Props) {
   const [amount, setAmount] = useState<number>(0)
   const [paymentMethod, setPaymentMethod] = useState<
     'efectivo' | 'tarjeta' | 'mercado_pago'
   >('efectivo')
   const [description, setDescription] = useState<string>('')
+  // El endpoint exige el tipo de movimiento. El formulario no lo enviaba
+  // nunca, asi que toda alta manual fallaba con 400.
+  const [movementType, setMovementType] = useState<MovementType>('ingreso')
+  const [error, setError] = useState<string>('')
 
   const handleRegister = async () => {
-    if (amount === 0) {
-      alert('El monto no puede ser cero.')
+    if (!amount || amount <= 0) {
+      setError('El monto debe ser mayor que cero.')
       return
     }
 
+    setError('')
     try {
-      const payload = { amount, paymentMethod, description }
+      const payload = { amount, paymentMethod, description, movementType }
       const res = await fetch('/api/cash', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      if (!res.ok) throw new Error('Error al registrar movimiento')
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Error al registrar movimiento')
+      }
       onSaved()
       setAmount(0)
       setPaymentMethod('efectivo')
+      setMovementType('ingreso')
       setDescription('')
-    } catch (err: any) {
-      console.error(err)
-      alert(err.message || 'Ocurrió un error al registrar.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ocurrio un error al registrar.')
     }
   }
 
@@ -54,6 +64,20 @@ export default function NewMovementModal({ isOpen, onClose, onSaved }: Props) {
             <Dialog.Title className="text-xl font-bold">➕ Nuevo Movimiento</Dialog.Title>
 
             <div className="space-y-4">
+              {/* Tipo de movimiento */}
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Tipo *</label>
+                <select
+                  value={movementType}
+                  onChange={(e) => setMovementType(e.target.value as MovementType)}
+                  className="w-full min-h-[44px] p-2 bg-gray-700 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="ingreso">Ingreso (entra dinero)</option>
+                  <option value="retiro">Retiro (sale dinero)</option>
+                  <option value="deposito">Deposito (refuerzo de caja)</option>
+                </select>
+              </div>
+
               {/* Monto */}
               <div>
                 <label className="block text-sm text-gray-300 mb-1">Monto *</label>
@@ -93,6 +117,12 @@ export default function NewMovementModal({ isOpen, onClose, onSaved }: Props) {
                 />
               </div>
             </div>
+
+            {error ? (
+              <p role="alert" className="text-sm text-red-300 bg-red-900/40 rounded p-2">
+                {error}
+              </p>
+            ) : null}
 
             {/* Botones */}
             <div className="flex justify-end gap-3 mt-4">
