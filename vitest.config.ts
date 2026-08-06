@@ -46,10 +46,10 @@ export default defineConfig({
        * cobertura real suba, no antes.
        *
        * Medicion al cierre de la Fase 1:
-       *   lineas      80,9 %
-       *   sentencias  78,6 %
-       *   funciones   82,3 %
-       *   ramas       56,0 %
+       *   lineas      84,1 %
+       *   sentencias  82,0 %
+       *   funciones   85,4 %
+       *   ramas       61,8 %
        *
        * Las ramas van muy por detras, y es esperable: cada `?? null`, cada
        * `?.` y cada campo opcional de un esquema cuentan como dos ramas, y

@@ -15,7 +15,7 @@
 | TypeScript  | `strict: true`, evadido por 35 `: any`     | `strict` + 4 opciones más. **0 `any` en `src/`**                         |
 | CI          | Ninguna                                    | GitHub Actions: formato, lint, tipos, migraciones, pruebas, build, audit |
 | `npm audit` | 25 avisos, **1 crítico**                   | **0**                                                                    |
-| Cobertura   | —                                          | 80,9 % líneas · 78,6 % sentencias · 82,3 % funciones · 56,0 % ramas      |
+| Cobertura   | —                                          | 84,1 % líneas · 82,0 % sentencias · 85,4 % funciones · 61,8 % ramas      |
 
 ### Opciones de TypeScript, una por una
 
@@ -158,8 +158,8 @@ Este es el único que exige infraestructura real: transacciones concurrentes con
 > | `tests/performance`   |       8 | Paginación, N+1, escrituras por venta                                                                         |
 > | `tests/concurrency`   |       4 | Ventas simultáneas, sobreventa, coherencia de caja                                                            |
 >
-> **Cobertura sobre el código de servidor:** 80,9 % líneas · 78,6 % sentencias
-> · 82,3 % funciones · 56,0 % ramas. Los umbrales están unos puntos por debajo
+> **Cobertura sobre el código de servidor:** 84,1 % líneas · 82,0 % sentencias
+> · 85,4 % funciones · 61,8 % ramas. Los umbrales están unos puntos por debajo
 > (75 / 73 / 75 / 50). No son una meta: son una alarma, para que una caída se
 > note sin que el número oscile por un par de líneas.
 >

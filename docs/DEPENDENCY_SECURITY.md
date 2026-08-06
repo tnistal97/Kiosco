@@ -71,7 +71,7 @@ paquete que la pide no declaró soportar. Después de aplicarlos se comprobó:
 | -------------- | ----------------------------------------------------- |
 | `tsc --noEmit` | 0 errores                                             |
 | `eslint .`     | 0 errores                                             |
-| `vitest run`   | 334 / 334                                             |
+| `vitest run`   | 354 / 354                                             |
 | `next build`   | Compila, `ƒ Middleware 39.4 kB`                       |
 | Service worker | Regenerado, con `NetworkOnly` para las rutas privadas |
 
