@@ -54,11 +54,27 @@ export interface RouteContext<A extends AuthMode, TBody, TQuery> {
 /**
  * Forma exacta que exige el verificador de tipos de rutas de Next 15: el
  * segundo argumento es obligatorio y `params` es una promesa.
+ *
+ * El tipo miente sobre la ejecucion, y hay que saberlo: Next solo pasa ese
+ * argumento a las rutas con segmento dinamico. A las demas --que son casi
+ * todas-- las llama con un unico argumento. Declararlo opcional haria que el
+ * verificador de rutas rechace el build, asi que el que se defiende es el
+ * handler, con un valor por omision.
  */
 export type NextRouteArgs = {
   params: Promise<Record<string, string | string[] | undefined>>
 }
 type NextRouteHandler = (req: NextRequest, args: NextRouteArgs) => Promise<Response>
+
+/**
+ * Lo que recibe una ruta sin segmento dinamico.
+ *
+ * Confiar en el tipo, y hacer `await args.params` sin mas, dejaba toda la API
+ * respondiendo 500 en el navegador con las pruebas en verde: el ayudante de
+ * tests construia siempre un `params` vacio, es decir, probaba una forma de
+ * llamada que en ejecucion no ocurre nunca.
+ */
+const SIN_PARAMETROS: NextRouteArgs = { params: Promise.resolve({}) }
 
 /** Rutas catch-all pueden traer arrays; ninguna del proyecto lo hace hoy. */
 function normalizarParams(
@@ -77,7 +93,10 @@ export function handler<A extends AuthMode, TBody = undefined, TQuery = undefine
   // cookie; cualquier otro valor se serializa como JSON con estado 200.
   fn: (ctx: RouteContext<A, TBody, TQuery>) => Promise<unknown>,
 ): NextRouteHandler {
-  return async function route(req: NextRequest, args: NextRouteArgs): Promise<Response> {
+  return async function route(
+    req: NextRequest,
+    args: NextRouteArgs = SIN_PARAMETROS,
+  ): Promise<Response> {
     const requestId = requestIdDe(req)
 
     // Todo lo que ocurra dentro --incluidos los servicios y `audit()`-- ve

@@ -14,9 +14,25 @@ import type { TestUser } from './db'
 
 const BASE = 'http://localhost:3000'
 
+/** Tal como Next lo declara: segundo argumento obligatorio. */
 export type RouteHandler = (
   req: NextRequest,
   args: { params: Promise<Record<string, string | string[] | undefined>> },
+) => Promise<Response>
+
+/**
+ * Tal como Next lo invoca: a las rutas sin segmento dinamico les pasa un
+ * unico argumento.
+ *
+ * El tipo de arriba dice otra cosa porque es lo que exige el verificador de
+ * rutas de Next, no porque describa la ejecucion. Probar solo la forma que
+ * declara el tipo es lo que hizo que las 354 pruebas no vieran que
+ * `handler()` hacia `await args.params` sin comprobar nada, con toda la API
+ * respondiendo 500 en el navegador.
+ */
+export type InvocacionReal = (
+  req: NextRequest,
+  args?: { params: Promise<Record<string, string | string[] | undefined>> },
 ) => Promise<Response>
 
 export interface CallOptions {
@@ -59,9 +75,14 @@ export async function call<T = unknown>(
   options: CallOptions = {},
 ): Promise<CallResult<T>> {
   const req = buildRequest(path, options)
-  const args = { params: Promise.resolve(options.params ?? {}) }
 
-  const res = await route(req, args)
+  // Sin `params` declarados se llama al handler tal como lo hace Next con una
+  // ruta estatica: con el segundo argumento ausente.
+  const invocar = route as InvocacionReal
+  const res = await invocar(
+    req,
+    options.params === undefined ? undefined : { params: Promise.resolve(options.params) },
+  )
   const text = await res.text()
 
   let parsed: unknown = null
