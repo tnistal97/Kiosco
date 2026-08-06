@@ -1,55 +1,32 @@
-import { NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
-import prisma from '@/lib/prisma'
+// src/app/api/auth/validate/route.ts
+import { handler } from '@/server/http/handler'
 
-export async function POST(req: Request) {
-  const token = req.headers.get('cookie')?.split('token=')[1]?.split(';')[0]
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-  if (!token) {
-    return NextResponse.json({ valid: false }, { status: 401 })
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: number }
-
-    // Buscamos el usuario y su rol (solo los campos necesarios)
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true,
-        name: true,
-        role: {
-          select: {
-            name: true, // Así obtenemos el nombre del rol (ej. "admin")
-          },
-        },
-      },
-    })
-
-    if (!user) {
-      return NextResponse.json({ valid: false }, { status: 401 })
-    }
-
-
-    console.log({
-      valid: true,
-      user: {
-        id: user.id,
-        name: user.name,
-        role: user.role.name, // 👈
-      },
-    })
-    console.log('queee')
-    // Devolvemos el user con role.name
-    return NextResponse.json({
-      valid: true,
-      user: {
-        id: user.id,
-        name: user.name,
-        role: user.role.name, // 👈
-      },
-    })
-  } catch {
-    return NextResponse.json({ valid: false }, { status: 401 })
-  }
-}
+/**
+ * Datos de la sesion actual, para que la interfaz sepa a quien tiene delante
+ * y que puede mostrarle.
+ *
+ * Devuelve la lista de permisos, no solo el nombre del rol: asi la navegacion
+ * puede ocultar lo que el usuario no puede usar sin duplicar la tabla de
+ * permisos en el cliente. Ocultar en el cliente es comodidad; la decision
+ * real la sigue tomando cada endpoint.
+ */
+export const POST = handler(
+  {
+    auth: 'session',
+    audit: 'POST /api/auth/validate',
+  },
+  async ({ session }) => ({
+    valid: true,
+    user: {
+      id: session.userId,
+      name: session.name,
+      username: session.username,
+      role: session.role,
+      branchId: session.branchId,
+      permissions: [...session.permissions].sort(),
+    },
+  }),
+)
