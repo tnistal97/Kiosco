@@ -1,190 +1,200 @@
-// src/app/api/stock/[productId]/route.ts
-import { NextResponse, type NextRequest } from 'next/server'
-import { cookies } from 'next/headers'
-import jwt from 'jsonwebtoken'
+// src/app/api/stock/[id]/route.ts
+import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
-import type { Prisma } from '@prisma/client'
+import { handler } from '@/server/http/handler'
+import { idSchema, parseWith, shortText } from '@/server/http/validate'
+import { audit } from '@/server/audit/audit'
+import { conflict, notFound } from '@/server/http/errors'
+import type { Session } from '@/server/auth/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type JwtPayload = {
-  userId: number
-  role: string
-  branchId: number
-  iat?: number
-  exp?: number
+/**
+ * Ajustes de inventario de UN producto de la sucursal propia.
+ *
+ * El id de la URL es el del producto. La sucursal nunca se recibe: sale de la
+ * sesion. El endpoint de coleccion `/api/stock`, que aceptaba branchId del
+ * cliente sin autenticacion, fue eliminado.
+ *
+ * Todo ajuste exige motivo y queda auditado con usuario, sucursal, cantidad
+ * anterior y posterior. Es el paso previo a `StockMovement`: cuando exista el
+ * libro de movimientos, estas mismas llamadas escribiran una fila alli en vez
+ * de sobrescribir `quantity`.
+ */
+async function comprobarProducto(session: Session, productId: number): Promise<void> {
+  const producto = await prisma.product.findFirst({
+    where: { id: productId, branchId: session.branchId },
+    select: { id: true },
+  })
+  if (!producto) throw notFound('Producto no encontrado')
 }
 
-async function getAuth(): Promise<{ userId: number; branchId: number }> {
-  const store = await cookies()
-  const token = store.get('token')?.value
-  if (!token) throw new Error('no_token')
-  const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload
-  if (!decoded?.userId || !decoded?.branchId) throw new Error('token_missing_claims')
-  return { userId: decoded.userId, branchId: decoded.branchId }
-}
+export const GET = handler(
+  {
+    auth: 'session',
+    permission: 'stock.view',
+    audit: 'GET /api/stock/:productId',
+  },
+  async ({ session, params }) => {
+    const productId = parseWith(idSchema, params.id)
 
-function getProductId(req: NextRequest): number | null {
-  const { pathname } = new URL(req.url)
-  const idStr = pathname.split('/').pop() ?? ''
-  const id = Number(idStr)
-  return Number.isFinite(id) ? id : null
-}
-
-// GET one product stock
-export async function GET(req: NextRequest) {
-  try {
-    const { branchId } = await getAuth()
-    const productId = getProductId(req)
-    if (productId === null) return NextResponse.json({ error: 'ID inválido' }, { status: 400 })
-
-    // ensure product belongs to branch
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
+    const producto = await prisma.product.findFirst({
+      where: { id: productId, branchId: session.branchId },
       select: {
-        id: true, name: true, barcode: true, price: true, branchId: true,
+        id: true,
+        name: true,
+        barcode: true,
+        price: true,
         category: { select: { id: true, name: true } },
       },
     })
-    if (!product || product.branchId !== branchId) {
-      return NextResponse.json({ error: 'Producto no encontrado o no autorizado' }, { status: 404 })
-    }
+    if (!producto) throw notFound('Producto no encontrado')
 
     const stock = await prisma.branchStock.findUnique({
-      where: { branchId_productId: { branchId, productId } },
-      select: { id: true, quantity: true },
+      where: { branchId_productId: { branchId: session.branchId, productId } },
+      select: { quantity: true },
     })
 
-    return NextResponse.json({
-      productId: product.id,
-      name: product.name,
-      barcode: product.barcode,
-      price: product.price,
-      category: product.category,
-      quantity: stock?.quantity ?? 0,
-    })
-  } catch (e: any) {
-    const msg = e?.message === 'no_token' ? 'No autenticado' : 'Error al obtener stock'
-    const code = e?.message === 'no_token' ? 401 : 500
-    console.error('GET /api/stock/:productId error:', e)
-    return NextResponse.json({ error: msg }, { status: code })
-  }
-}
+    return { ...producto, productId: producto.id, quantity: stock?.quantity ?? 0 }
+  },
+)
 
-// PUT set absolute quantity
-export async function PUT(req: NextRequest) {
-  try {
-    const { userId, branchId } = await getAuth()
-    const productId = getProductId(req)
-    if (productId === null) return NextResponse.json({ error: 'ID inválido' }, { status: 400 })
+const ajusteAbsolutoSchema = z
+  .object({
+    quantity: z.number().int().min(0).max(1_000_000),
+    reason: shortText(200),
+  })
+  .strict()
 
-    const body = await req.json()
-    const quantity = Number(body?.quantity)
-    if (!Number.isFinite(quantity) || quantity < 0) {
-      return NextResponse.json({ error: 'quantity debe ser >= 0' }, { status: 400 })
-    }
+/** PUT: fija la cantidad exacta (recuento de inventario). */
+export const PUT = handler(
+  {
+    auth: 'session',
+    permission: 'stock.adjust',
+    body: ajusteAbsolutoSchema,
+    audit: 'PUT /api/stock/:productId',
+  },
+  async ({ session, body, params }) => {
+    const productId = parseWith(idSchema, params.id)
+    await comprobarProducto(session, productId)
 
-    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const prod = await tx.product.findUnique({
-        where: { id: productId },
-        select: { id: true, branchId: true },
-      })
-      if (!prod || prod.branchId !== branchId) throw new Error('PRODUCT_FORBIDDEN')
-
-      const before = await tx.branchStock.findUnique({
-        where: { branchId_productId: { branchId, productId } },
-      })
-      const updated = await tx.branchStock.upsert({
-        where: { branchId_productId: { branchId, productId } },
-        update: { quantity },
-        create: { branchId, productId, quantity },
+    return prisma.$transaction(async (tx) => {
+      const antes = await tx.branchStock.findUnique({
+        where: { branchId_productId: { branchId: session.branchId, productId } },
+        select: { quantity: true },
       })
 
-      await tx.auditLog.create({
-        data: {
-          userId,
-          tableName: 'BranchStock',
-          recordId: updated.id,
-          actionType: before ? 'update' : 'create',
-          changes: { before, after: updated },
-          origin: 'api-stock-id-route',
+      const despues = await tx.branchStock.upsert({
+        where: { branchId_productId: { branchId: session.branchId, productId } },
+        update: { quantity: body.quantity },
+        create: { branchId: session.branchId, productId, quantity: body.quantity },
+        select: { id: true, quantity: true },
+      })
+
+      await audit(tx, {
+        userId: session.userId,
+        table: 'BranchStock',
+        recordId: despues.id,
+        action: 'update',
+        before: { quantity: antes?.quantity ?? 0 },
+        after: {
+          quantity: despues.quantity,
+          diferencia: despues.quantity - (antes?.quantity ?? 0),
+          motivo: body.reason,
+          branchId: session.branchId,
         },
+        origin: 'PUT /api/stock/:productId',
       })
 
-      return updated
+      return { productId, quantity: despues.quantity }
     })
+  },
+)
 
-    return NextResponse.json({ productId, quantity: result.quantity })
-  } catch (e: any) {
-    if (e?.message === 'PRODUCT_FORBIDDEN') {
-      return NextResponse.json({ error: 'Producto no autorizado para esta sucursal' }, { status: 403 })
-    }
-    const msg = e?.message === 'no_token' ? 'No autenticado' : 'Error al actualizar stock'
-    const code = e?.message === 'no_token' ? 401 : 500
-    console.error('PUT /api/stock/:productId error:', e)
-    return NextResponse.json({ error: msg }, { status: code })
-  }
-}
+const ajusteRelativoSchema = z
+  .object({
+    delta: z
+      .number()
+      .int('El ajuste debe ser un numero entero')
+      .refine((n) => n !== 0, 'El ajuste no puede ser cero')
+      .refine((n) => Math.abs(n) <= 1_000_000, 'Ajuste fuera de rango'),
+    reason: shortText(200),
+  })
+  .strict()
 
-// PATCH adjust by delta
-export async function PATCH(req: NextRequest) {
-  try {
-    const { userId, branchId } = await getAuth()
-    const productId = getProductId(req)
-    if (productId === null) return NextResponse.json({ error: 'ID inválido' }, { status: 400 })
+/** PATCH: suma o resta unidades (entrada de mercaderia, rotura, faltante). */
+export const PATCH = handler(
+  {
+    auth: 'session',
+    permission: 'stock.adjust',
+    body: ajusteRelativoSchema,
+    audit: 'PATCH /api/stock/:productId',
+  },
+  async ({ session, body, params }) => {
+    const productId = parseWith(idSchema, params.id)
+    await comprobarProducto(session, productId)
 
-    const body = await req.json()
-    const delta = Number(body?.delta)
-    if (!Number.isFinite(delta)) {
-      return NextResponse.json({ error: 'delta debe ser numérico' }, { status: 400 })
-    }
+    return prisma.$transaction(async (tx) => {
+      // Ajuste condicional: si el resultado quedaria negativo, no se aplica.
+      // La comprobacion va dentro del UPDATE para que sea atomica.
+      const filas = await tx.$executeRaw`
+        UPDATE "BranchStock"
+        SET "quantity" = "quantity" + ${body.delta}
+        WHERE "branchId" = ${session.branchId}
+          AND "productId" = ${productId}
+          AND "quantity" + ${body.delta} >= 0
+      `
 
-    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const prod = await tx.product.findUnique({
-        where: { id: productId },
-        select: { id: true, branchId: true },
+      if (filas !== 1) {
+        // O no hay fila de stock todavia, o el ajuste dejaria negativo.
+        const actual = await tx.branchStock.findUnique({
+          where: { branchId_productId: { branchId: session.branchId, productId } },
+          select: { quantity: true },
+        })
+
+        if (!actual && body.delta > 0) {
+          const creado = await tx.branchStock.create({
+            data: { branchId: session.branchId, productId, quantity: body.delta },
+            select: { id: true, quantity: true },
+          })
+          await audit(tx, {
+            userId: session.userId,
+            table: 'BranchStock',
+            recordId: creado.id,
+            action: 'create',
+            after: { quantity: creado.quantity, motivo: body.reason, branchId: session.branchId },
+            origin: 'PATCH /api/stock/:productId',
+          })
+          return { productId, quantity: creado.quantity }
+        }
+
+        throw conflict(
+          `El ajuste dejaria el stock en negativo: hay ${actual?.quantity ?? 0} y se pidio ${body.delta}`,
+        )
+      }
+
+      const despues = await tx.branchStock.findUniqueOrThrow({
+        where: { branchId_productId: { branchId: session.branchId, productId } },
+        select: { id: true, quantity: true },
       })
-      if (!prod || prod.branchId !== branchId) throw new Error('PRODUCT_FORBIDDEN')
 
-      const before = await tx.branchStock.findUnique({
-        where: { branchId_productId: { branchId, productId } },
-      })
-      const current = before?.quantity ?? 0
-      const next = current + delta
-      if (next < 0) throw new Error('NEGATIVE_RESULT')
-
-      const updated = await tx.branchStock.upsert({
-        where: { branchId_productId: { branchId, productId } },
-        update: { quantity: next },
-        create: { branchId, productId, quantity: next },
-      })
-
-      await tx.auditLog.create({
-        data: {
-          userId,
-          tableName: 'BranchStock',
-          recordId: updated.id,
-          actionType: before ? 'update' : 'create',
-          changes: { before, after: updated },
-          origin: 'api-stock-id-route',
+      await audit(tx, {
+        userId: session.userId,
+        table: 'BranchStock',
+        recordId: despues.id,
+        action: 'update',
+        before: { quantity: despues.quantity - body.delta },
+        after: {
+          quantity: despues.quantity,
+          diferencia: body.delta,
+          motivo: body.reason,
+          branchId: session.branchId,
         },
+        origin: 'PATCH /api/stock/:productId',
       })
 
-      return updated
+      return { productId, quantity: despues.quantity }
     })
-
-    return NextResponse.json({ productId, quantity: result.quantity })
-  } catch (e: any) {
-    if (e?.message === 'PRODUCT_FORBIDDEN') {
-      return NextResponse.json({ error: 'Producto no autorizado para esta sucursal' }, { status: 403 })
-    }
-    if (e?.message === 'NEGATIVE_RESULT') {
-      return NextResponse.json({ error: 'El ajuste dejaría el stock en negativo' }, { status: 400 })
-    }
-    const msg = e?.message === 'no_token' ? 'No autenticado' : 'Error al ajustar stock'
-    const code = e?.message === 'no_token' ? 401 : 500
-    console.error('PATCH /api/stock/:productId error:', e)
-    return NextResponse.json({ error: msg }, { status: code })
-  }
-}
+  },
+)

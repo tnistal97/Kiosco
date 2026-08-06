@@ -1,205 +1,132 @@
 // src/app/api/products/route.ts
-import { prisma } from '@/lib/prisma'
+import { z } from 'zod'
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import jwt from 'jsonwebtoken'
-import type { Prisma } from '@prisma/client'
+import { prisma } from '@/lib/prisma'
+import { handler } from '@/server/http/handler'
+import { amountSchema, idSchema, optionalText, shortText } from '@/server/http/validate'
+import { audit } from '@/server/audit/audit'
+import { conflict, invalid } from '@/server/http/errors'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type JwtPayload = {
-  userId: number
-  role: string
-  branchId: number
-  iat?: number
-  exp?: number
-}
-
-async function getUserFromCookie(): Promise<{ userId: number; branchId: number }> {
-  const store = await cookies()
-  const token = store.get('token')?.value
-  if (!token) throw new Error('no_token')
-
-  let decoded: JwtPayload
-  try {
-    decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload
-  } catch (e: any) {
-    if (e?.name === 'TokenExpiredError') throw new Error('token_expired')
-    if (e?.name === 'JsonWebTokenError') throw new Error('token_invalid')
-    throw new Error('token_verify_failed')
-  }
-
-  if (!decoded?.userId || !decoded?.branchId) throw new Error('token_missing_claims')
-  return { userId: decoded.userId, branchId: decoded.branchId }
-}
-
-// GET: productos por sucursal
-export async function GET() {
-  try {
-    let branchId: number
-    try {
-      ({ branchId } = await getUserFromCookie())
-    } catch (e: any) {
-      return NextResponse.json({ error: 'No autenticado', reason: e?.message }, { status: 401 })
-    }
-
+/**
+ * Catalogo de la sucursal.
+ *
+ * El stock se lee acotado a la sucursal de la sesion. La version anterior
+ * sumaba todas las filas de BranchStock del producto, sin filtrar.
+ */
+export const GET = handler(
+  {
+    auth: 'session',
+    permission: 'products.view',
+    audit: 'GET /api/products',
+  },
+  async ({ session }) => {
     const products = await prisma.product.findMany({
-      where: { branchId },
-      include: { category: true, stocks: { select: { quantity: true } } },
+      where: { branchId: session.branchId },
+      select: {
+        id: true,
+        name: true,
+        barcode: true,
+        description: true,
+        price: true,
+        category: { select: { id: true, name: true } },
+        stocks: {
+          where: { branchId: session.branchId },
+          select: { quantity: true },
+        },
+      },
       orderBy: { name: 'asc' },
     })
 
-    const withStock = products.map((p: {
-      id: number
-      name: string
-      barcode: string | null
-      description: string | null
-      price: number
-      category: any
-      stocks: { quantity: number }[]
-    }) => {
-      const totalStock = p.stocks.reduce((sum: number, s: { quantity: number }) => sum + s.quantity, 0)
-      return {
-        id: p.id,
-        name: p.name,
-        barcode: p.barcode,
-        description: p.description,
-        price: p.price,
-        category: p.category,
-        totalStock,
-      }
-    })
+    return products.map(({ stocks, ...producto }) => ({
+      ...producto,
+      totalStock: stocks.reduce((suma, s) => suma + s.quantity, 0),
+    }))
+  },
+)
 
-    return NextResponse.json(withStock)
-  } catch (error) {
-    console.error('Error fetching products:', error)
-    return NextResponse.json({ error: 'Error fetching products' }, { status: 500 })
-  }
-}
+const crearProductoSchema = z
+  .object({
+    name: shortText(150),
+    barcode: z
+      .string()
+      .trim()
+      .max(64)
+      .regex(/^[0-9A-Za-z-]*$/, 'Codigo de barras invalido')
+      .transform((v) => (v === '' ? null : v))
+      .nullable()
+      .optional(),
+    description: optionalText(500),
+    price: amountSchema,
+    categoryId: idSchema,
+    totalStock: z.number().int().min(0).max(1_000_000).default(0),
+  })
+  .strict()
 
-// POST: crear producto + stock + auditoría
-export async function POST(req: Request) {
-  try {
-    let userId: number, branchId: number
-    try {
-      ({ userId, branchId } = await getUserFromCookie())
-    } catch (e: any) {
-      return NextResponse.json({ error: 'No autenticado', reason: e?.message }, { status: 401 })
+export const POST = handler(
+  {
+    auth: 'session',
+    permission: 'products.create',
+    body: crearProductoSchema,
+    audit: 'POST /api/products',
+  },
+  async ({ session, body }) => {
+    const categoria = await prisma.category.findUnique({ where: { id: body.categoryId } })
+    if (!categoria) throw invalid('La categoria indicada no existe')
+
+    if (body.barcode) {
+      const repetido = await prisma.product.findUnique({ where: { barcode: body.barcode } })
+      if (repetido) throw conflict('Ya existe un producto con ese codigo de barras')
     }
 
-    const body = await req.json()
-    const { name, barcode, description, price, categoryId, totalStock } = body || {}
-
-    if (!name || price == null || !categoryId) {
-      return NextResponse.json(
-        { error: 'Faltan campos requeridos: name, price, categoryId' },
-        { status: 400 }
-      )
-    }
-
-    const initialQty = Number.isFinite(Number(totalStock)) ? Number(totalStock) : 0
-
-    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const product = await tx.product.create({
+    const resultado = await prisma.$transaction(async (tx) => {
+      const producto = await tx.product.create({
         data: {
-          name: String(name),
-          barcode: barcode ? String(barcode) : null,
-          description: description ? String(description) : null,
-          price: Number(price),
-          categoryId: Number(categoryId),
-          branchId,
+          name: body.name,
+          barcode: body.barcode ?? null,
+          description: body.description ?? null,
+          price: body.price,
+          categoryId: body.categoryId,
+          // La sucursal la fija el servidor, siempre.
+          branchId: session.branchId,
         },
       })
 
-      const branchStock = await tx.branchStock.create({
-        data: { branchId, productId: product.id, quantity: initialQty },
-      })
-
-      await tx.auditLog.create({
+      const stock = await tx.branchStock.create({
         data: {
-          userId,
-          tableName: 'Product',
-          recordId: product.id,
-          actionType: 'create',
-          changes: { before: null, after: product },
-          origin: 'api-products-route',
+          branchId: session.branchId,
+          productId: producto.id,
+          quantity: body.totalStock,
         },
       })
 
-      await tx.auditLog.create({
-        data: {
-          userId,
-          tableName: 'BranchStock',
-          recordId: branchStock.id,
-          actionType: 'create',
-          changes: { before: null, after: branchStock },
-          origin: 'api-products-route',
-        },
+      await audit(tx, {
+        userId: session.userId,
+        table: 'Product',
+        recordId: producto.id,
+        action: 'create',
+        after: { ...producto, stockInicial: stock.quantity },
+        origin: 'POST /api/products',
       })
 
-      return { product, branchStock }
+      return { producto, stock }
     })
 
     return NextResponse.json(
-      { ...result.product, totalStock: result.branchStock.quantity },
-      { status: 201 }
+      { ...resultado.producto, totalStock: resultado.stock.quantity },
+      { status: 201 },
     )
-  } catch (error: any) {
-    if (error?.code === 'P2002') {
-      return NextResponse.json({ error: 'Barcode duplicado', meta: error.meta }, { status: 409 })
-    }
-    console.error('Error creating product:', error)
-    return NextResponse.json({ error: 'Error creating product' }, { status: 500 })
-  }
-}
+  },
+)
 
-// DELETE: eliminar todos los productos de la sucursal (con auditoría)
-export async function DELETE() {
-  try {
-    let userId: number, branchId: number
-    try {
-      ({ userId, branchId } = await getUserFromCookie())
-    } catch (e: any) {
-      return NextResponse.json({ error: 'No autenticado', reason: e?.message }, { status: 401 })
-    }
-
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const products = await tx.product.findMany({
-        where: { branchId },
-        select: { id: true },
-      })
-      const ids: number[] = products.map((p) => p.id)
-      if (!ids.length) return
-
-      await tx.branchStock.deleteMany({ where: { branchId, productId: { in: ids } } })
-      await tx.auditLog.create({
-        data: {
-          userId,
-          tableName: 'BranchStock',
-          recordId: 0,
-          actionType: 'bulk_delete',
-          changes: { before: { branchId, productIds: ids }, after: null },
-          origin: 'api-products-route',
-        },
-      })
-
-      await tx.product.deleteMany({ where: { id: { in: ids } } })
-      await tx.auditLog.create({
-        data: {
-          userId,
-          tableName: 'Product',
-          recordId: 0,
-          actionType: 'bulk_delete',
-          changes: { before: { ids }, after: null },
-          origin: 'api-products-route',
-        },
-      })
-    })
-
-    return NextResponse.json({ message: 'Productos de la sucursal eliminados' })
-  } catch (error) {
-    console.error('Error deleting products:', error)
-    return NextResponse.json({ error: 'Error deleting products' }, { status: 500 })
-  }
-}
+/**
+ * No existe DELETE en esta ruta.
+ *
+ * Habia un `DELETE /api/products` que borraba TODOS los productos de la
+ * sucursal y todas sus filas de stock, sin comprobar rol y sin confirmacion.
+ * Ninguna pantalla lo usaba. Para dar de baja un producto puntual esta
+ * `DELETE /api/products/:id`, que exige el permiso products.delete y se niega
+ * si el producto participa en alguna venta.
+ */

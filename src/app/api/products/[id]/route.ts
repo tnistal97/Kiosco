@@ -1,217 +1,212 @@
 // src/app/api/products/[id]/route.ts
-import { NextResponse, type NextRequest } from 'next/server'
-import { cookies } from 'next/headers'
-import jwt from 'jsonwebtoken'
-import { prisma } from '@/lib/prisma' // ← if you export default, use: import prisma from '@/lib/prisma'
-import type { Prisma } from '@prisma/client'
+import { z } from 'zod'
+import { prisma } from '@/lib/prisma'
+import { handler } from '@/server/http/handler'
+import {
+  amountSchema,
+  idSchema,
+  optionalText,
+  parseWith,
+  shortText,
+} from '@/server/http/validate'
+import { audit } from '@/server/audit/audit'
+import { conflict, notFound } from '@/server/http/errors'
+import type { Session } from '@/server/auth/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type JwtPayload = {
-  userId: number
-  role: string
-  branchId: number
-  iat?: number
-  exp?: number
+/**
+ * Carga el producto comprobando que pertenezca a la sucursal de la sesion.
+ *
+ * Devuelve 404 tanto si no existe como si es de otra sucursal: no hay que
+ * confirmarle a nadie que el producto existe en otro lado.
+ */
+async function productoDeLaSucursal(session: Session, id: number) {
+  const producto = await prisma.product.findFirst({
+    where: { id, branchId: session.branchId },
+  })
+  if (!producto) throw notFound('Producto no encontrado')
+  return producto
 }
 
-async function getAuth(): Promise<{ userId: number; branchId: number }> {
-  const store = await cookies()
-  const token = store.get('token')?.value
-  if (!token) throw new Error('no_token')
+export const GET = handler(
+  {
+    auth: 'session',
+    permission: 'products.view',
+    audit: 'GET /api/products/:id',
+  },
+  async ({ session, params }) => {
+    const id = parseWith(idSchema, params.id)
+    const producto = await productoDeLaSucursal(session, id)
 
-  const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload
-  if (!decoded?.userId || !decoded?.branchId) throw new Error('token_missing_claims')
-  return { userId: decoded.userId, branchId: decoded.branchId }
-}
-
-function getIdFromRequest(req: NextRequest): number | null {
-  const { pathname } = new URL(req.url)
-  const idStr = pathname.split('/').pop() ?? ''
-  const id = Number(idStr)
-  return Number.isFinite(id) ? id : null
-}
-
-// ========== GET /api/products/:id ==========
-export async function GET(req: NextRequest) {
-  try {
-    const { branchId } = await getAuth()
-    const id = getIdFromRequest(req)
-    if (id === null) return NextResponse.json({ error: 'ID inválido' }, { status: 400 })
-
-    const product = await prisma.product.findFirst({
-      where: { id, branchId },
-      include: { category: true, stocks: { select: { quantity: true } } },
+    const stock = await prisma.branchStock.findUnique({
+      where: { branchId_productId: { branchId: session.branchId, productId: id } },
+      select: { quantity: true },
     })
-    if (!product) {
-      return NextResponse.json({ error: 'Producto no encontrado o no autorizado' }, { status: 404 })
+
+    const categoria = await prisma.category.findUnique({
+      where: { id: producto.categoryId },
+      select: { id: true, name: true },
+    })
+
+    return { ...producto, category: categoria, totalStock: stock?.quantity ?? 0 }
+  },
+)
+
+/**
+ * Edicion del producto.
+ *
+ * `totalStock` sigue aceptandose porque la pantalla de productos lo usa, pero
+ * ahora exige el permiso stock.adjust ademas de products.update, y queda
+ * auditado como un ajuste de inventario aparte. En la fase siguiente el stock
+ * deja de editarse desde aca y pasa a StockMovement.
+ */
+const editarProductoSchema = z
+  .object({
+    name: shortText(150).optional(),
+    barcode: z
+      .string()
+      .trim()
+      .max(64)
+      .regex(/^[0-9A-Za-z-]*$/, 'Codigo de barras invalido')
+      .transform((v) => (v === '' ? null : v))
+      .nullable()
+      .optional(),
+    description: optionalText(500),
+    price: amountSchema.optional(),
+    categoryId: idSchema.optional(),
+    totalStock: z.number().int().min(0).max(1_000_000).optional(),
+  })
+  .strict()
+
+export const PUT = handler(
+  {
+    auth: 'session',
+    permission: 'products.update',
+    body: editarProductoSchema,
+    audit: 'PUT /api/products/:id',
+  },
+  async ({ session, body, params }) => {
+    const id = parseWith(idSchema, params.id)
+    const antes = await productoDeLaSucursal(session, id)
+
+    if (body.totalStock !== undefined && !session.permissions.has('stock.adjust')) {
+      throw conflict('No tiene permiso para ajustar el stock desde la ficha del producto')
     }
 
-    const totalStock = product.stocks.reduce((sum: number, s: { quantity: number }) => sum + s.quantity, 0)
-    // opcional: no devuelvas "stocks" crudos
-    const { stocks, ...rest } = product as any
-    return NextResponse.json({ ...rest, totalStock })
-  } catch (e: any) {
-    const msg = e?.message === 'no_token' ? 'No autenticado' : 'Error al obtener producto'
-    const code = e?.message === 'no_token' ? 401 : 500
-    console.error('GET /products/:id error:', e)
-    return NextResponse.json({ error: msg }, { status: code })
-  }
-}
-
-// ========== PUT /api/products/:id ==========
-export async function PUT(req: NextRequest) {
-  try {
-    const { userId, branchId } = await getAuth()
-    const productId = getIdFromRequest(req)
-    if (productId === null) return NextResponse.json({ error: 'ID inválido' }, { status: 400 })
-
-    const body = await req.json()
-    const {
-      name,
-      barcode,
-      description,
-      price,
-      categoryId,
-      totalStock,
-    }: {
-      name?: string
-      barcode?: string | null
-      description?: string | null
-      price?: number
-      categoryId?: number
-      totalStock?: number
-    } = body || {}
-
-    // Verificar que el producto exista y sea de la sucursal
-    const before = await prisma.product.findUnique({ where: { id: productId } })
-    if (!before || before.branchId !== branchId) {
-      return NextResponse.json({ error: 'Producto no encontrado o no autorizado' }, { status: 404 })
+    if (body.barcode) {
+      const repetido = await prisma.product.findFirst({
+        where: { barcode: body.barcode, id: { not: id } },
+      })
+      if (repetido) throw conflict('Ya existe un producto con ese codigo de barras')
     }
 
-    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const updatedProduct = await tx.product.update({
-        where: { id: productId },
+    if (body.categoryId !== undefined) {
+      const categoria = await prisma.category.findUnique({ where: { id: body.categoryId } })
+      if (!categoria) throw notFound('La categoria indicada no existe')
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const despues = await tx.product.update({
+        where: { id },
         data: {
-          ...(name !== undefined ? { name: String(name) } : {}),
-          ...(barcode !== undefined ? { barcode: barcode || null } : {}),
-          ...(description !== undefined ? { description: description || null } : {}),
-          ...(price !== undefined ? { price: Number(price) } : {}),
-          ...(categoryId !== undefined ? { categoryId: Number(categoryId) } : {}),
+          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.barcode !== undefined ? { barcode: body.barcode } : {}),
+          ...(body.description !== undefined ? { description: body.description } : {}),
+          ...(body.price !== undefined ? { price: body.price } : {}),
+          ...(body.categoryId !== undefined ? { categoryId: body.categoryId } : {}),
         },
       })
 
-      await tx.auditLog.create({
-        data: {
-          userId,
-          tableName: 'Product',
-          recordId: updatedProduct.id,
-          actionType: 'update',
-          changes: { before, after: updatedProduct },
-          origin: 'api-products-id-route',
-        },
+      await audit(tx, {
+        userId: session.userId,
+        table: 'Product',
+        recordId: id,
+        action: 'update',
+        before: antes,
+        after: despues,
+        origin: 'PUT /api/products/:id',
       })
 
-      let updatedStockRow: { id: number; quantity: number } | null = null
-      if (typeof totalStock === 'number' && totalStock >= 0) {
-        const beforeStock = await tx.branchStock.findUnique({
-          where: { branchId_productId: { branchId, productId } },
-          select: { id: true, quantity: true },
-        })
-
-        const updatedStock = await tx.branchStock.upsert({
-          where: { branchId_productId: { branchId, productId } },
-          update: { quantity: totalStock },
-          create: { branchId, productId, quantity: totalStock },
-          select: { id: true, quantity: true },
-        })
-        updatedStockRow = updatedStock
-
-        await tx.auditLog.create({
-          data: {
-            userId,
-            tableName: 'BranchStock',
-            recordId: updatedStock.id,
-            actionType: beforeStock ? 'update' : 'create',
-            changes: { before: beforeStock, after: updatedStock },
-            origin: 'api-products-id-route',
-          },
-        })
-      }
-
-      return { updatedProduct, updatedStockRow }
-    })
-
-    const total = typeof totalStock === 'number' && totalStock >= 0
-      ? totalStock
-      : (await prisma.branchStock.findUnique({
-          where: { branchId_productId: { branchId, productId } },
+      let cantidad: number
+      if (body.totalStock !== undefined) {
+        const stockAntes = await tx.branchStock.findUnique({
+          where: { branchId_productId: { branchId: session.branchId, productId: id } },
           select: { quantity: true },
-        }))?.quantity ?? 0
-
-    return NextResponse.json({ ...result.updatedProduct, totalStock: total })
-  } catch (e: any) {
-    if (e?.code === 'P2002') {
-      return NextResponse.json({ error: 'Barcode duplicado' }, { status: 409 })
-    }
-    const msg = e?.message === 'no_token' ? 'No autenticado' : 'Error al actualizar el producto'
-    const code = e?.message === 'no_token' ? 401 : 500
-    console.error('PUT /products/:id error:', e)
-    return NextResponse.json({ error: msg }, { status: code })
-  }
-}
-
-// ========== DELETE /api/products/:id ==========
-export async function DELETE(req: NextRequest) {
-  try {
-    const { userId, branchId } = await getAuth()
-    const id = getIdFromRequest(req)
-    if (id === null) return NextResponse.json({ error: 'ID inválido' }, { status: 400 })
-
-    const product = await prisma.product.findUnique({
-      where: { id },
-      include: { stocks: true },
-    })
-    if (!product || product.branchId !== branchId) {
-      return NextResponse.json({ error: 'Producto no encontrado o no autorizado' }, { status: 404 })
-    }
-
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      if (product.stocks.length) {
-        await tx.branchStock.deleteMany({
-          where: { branchId, productId: id },
         })
-        await tx.auditLog.create({
-          data: {
-            userId,
-            tableName: 'BranchStock',
-            recordId: 0,
-            actionType: 'bulk_delete',
-            changes: { before: product.stocks, after: null },
-            origin: 'api-products-id-route',
-          },
+
+        const stockDespues = await tx.branchStock.upsert({
+          where: { branchId_productId: { branchId: session.branchId, productId: id } },
+          update: { quantity: body.totalStock },
+          create: { branchId: session.branchId, productId: id, quantity: body.totalStock },
+          select: { id: true, quantity: true },
         })
+
+        await audit(tx, {
+          userId: session.userId,
+          table: 'BranchStock',
+          recordId: stockDespues.id,
+          action: 'update',
+          before: { quantity: stockAntes?.quantity ?? 0 },
+          after: { quantity: stockDespues.quantity, motivo: 'Ajuste desde la ficha del producto' },
+          origin: 'PUT /api/products/:id',
+        })
+
+        cantidad = stockDespues.quantity
+      } else {
+        const actual = await tx.branchStock.findUnique({
+          where: { branchId_productId: { branchId: session.branchId, productId: id } },
+          select: { quantity: true },
+        })
+        cantidad = actual?.quantity ?? 0
       }
 
+      return { ...despues, totalStock: cantidad }
+    })
+  },
+)
+
+/**
+ * Baja de un producto.
+ *
+ * Se niega si el producto figura en alguna venta: borrarlo dejaria items de
+ * venta apuntando a un producto inexistente y falsearia los reportes
+ * historicos. En la fase siguiente esto se resuelve con `Product.isActive`,
+ * que permite sacarlo del catalogo sin tocar el historial.
+ */
+export const DELETE = handler(
+  {
+    auth: 'session',
+    permission: 'products.delete',
+    audit: 'DELETE /api/products/:id',
+  },
+  async ({ session, params }) => {
+    const id = parseWith(idSchema, params.id)
+    const producto = await productoDeLaSucursal(session, id)
+
+    const ventas = await prisma.saleItem.count({ where: { productId: id } })
+    if (ventas > 0) {
+      throw conflict(
+        `No se puede eliminar: el producto figura en ${ventas} venta(s). ` +
+          'Borrarlo destruiria el historial de ventas.',
+      )
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.branchStock.deleteMany({ where: { productId: id } })
       await tx.product.delete({ where: { id } })
-      await tx.auditLog.create({
-        data: {
-          userId,
-          tableName: 'Product',
-          recordId: id,
-          actionType: 'delete',
-          changes: { before: product, after: null },
-          origin: 'api-products-id-route',
-        },
+
+      await audit(tx, {
+        userId: session.userId,
+        table: 'Product',
+        recordId: id,
+        action: 'delete',
+        before: producto,
+        origin: 'DELETE /api/products/:id',
       })
     })
 
-    return NextResponse.json({ message: 'Producto eliminado correctamente' })
-  } catch (e: any) {
-    const msg = e?.message === 'no_token' ? 'No autenticado' : 'Error al eliminar el producto'
-    const code = e?.message === 'no_token' ? 401 : 500
-    console.error('DELETE /products/:id error:', e)
-    return NextResponse.json({ error: msg }, { status: code })
-  }
-}
+    return { ok: true, message: 'Producto eliminado' }
+  },
+)
