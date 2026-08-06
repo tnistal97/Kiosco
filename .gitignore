@@ -76,3 +76,6 @@ ecosystem.config.js
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# configuracion local de herramientas de asistencia
+.claude/

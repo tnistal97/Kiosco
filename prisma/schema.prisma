@@ -38,8 +38,18 @@ model User {
   createdAt DateTime @default(now())
   username  String   @unique
 
+  /// Un usuario dado de baja conserva su historial pero no puede iniciar sesion.
+  /// Nunca se borra: los registros financieros lo referencian.
+  isActive Boolean @default(true)
+
+  /// Se incrementa para invalidar todas las sesiones abiertas del usuario
+  /// (cambio de contrasena, baja, revocacion manual). El JWT lleva el valor
+  /// con el que fue emitido; si no coincide con el actual, la sesion se rechaza.
+  sessionVersion Int @default(0)
+
   logs          AuditLog[]
-  sales         Sale[]
+  sales         Sale[]                 @relation("SaleCreatedBy")
+  canceledSales Sale[]                 @relation("SaleCanceledBy")
   stockChecks   StockCheck[]
   cashMovements CashRegisterMovement[] // ← relación inversa agregada
   branch        Branch                 @relation(fields: [branchId], references: [id])
@@ -110,9 +120,21 @@ model Sale {
   date       DateTime   @default(now())
   createdAt  DateTime   @default(now())
   isVerified Boolean    @default(false)
-  items      SaleItem[]
-  user       User       @relation(fields: [userId], references: [id])
-  branch     Branch     @relation(fields: [branchId], references: [id])
+
+  /// "completed" | "canceled". Una venta nunca se borra: se anula.
+  status       String    @default("completed")
+  canceledAt   DateTime?
+  canceledById Int?
+  cancelReason String?
+
+  items         SaleItem[]
+  cashMovements CashRegisterMovement[]
+  user          User                  @relation("SaleCreatedBy", fields: [userId], references: [id])
+  canceledBy    User?                 @relation("SaleCanceledBy", fields: [canceledById], references: [id])
+  branch        Branch                @relation(fields: [branchId], references: [id])
+
+  @@index([branchId, date])
+  @@index([status])
 }
 
 model SaleItem {
@@ -148,8 +170,17 @@ model CashRegisterMovement {
   description   String?
   date          DateTime @default(now())
   type          String
-  branch        Branch   @relation(fields: [branchId], references: [id])
-  user          User     @relation(fields: [userId], references: [id])
+
+  /// Vinculo explicito con la venta. Reemplaza el parseo de "Venta #123"
+  /// sobre el campo description, que era la unica forma de relacionarlos.
+  saleId Int?
+
+  branch Branch @relation(fields: [branchId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+  sale   Sale?  @relation(fields: [saleId], references: [id])
+
+  @@index([branchId, date])
+  @@index([saleId])
 }
 
 
