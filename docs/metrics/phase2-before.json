@@ -1,0 +1,51 @@
+{
+  "peticionesApiAlAbrirCaja": 2,
+  "peticionesApiPorBusqueda": 1,
+  "rutasConScrollHorizontal": {
+    "375x812": [
+      "/",
+      "/caja",
+      "/productos",
+      "/ventas",
+      "/control/caja",
+      "/admin/sales",
+      "/admin/auditoria"
+    ],
+    "768x1024": [
+      "/",
+      "/caja",
+      "/productos",
+      "/ventas",
+      "/control/caja",
+      "/admin/sales",
+      "/admin/auditoria"
+    ],
+    "1366x768": [],
+    "1920x1080": []
+  },
+  "objetivosTactilesChicos": {
+    "375x812": 164,
+    "768x1024": 158,
+    "1366x768": 179,
+    "1920x1080": 179
+  },
+  "objetivoTactilMinimoPx": {
+    "375x812": 20,
+    "768x1024": 20,
+    "1366x768": 20,
+    "1920x1080": 20
+  },
+  "anchoNavegacionMovilPx": 375,
+  "divClickeables": {
+    "375x812": 0,
+    "768x1024": 0,
+    "1366x768": 0,
+    "1920x1080": 0
+  },
+  "camposSinEtiqueta": {
+    "375x812": 7,
+    "768x1024": 7,
+    "1366x768": 7,
+    "1920x1080": 7
+  }
+}

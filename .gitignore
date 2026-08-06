@@ -85,3 +85,9 @@ next-env.d.ts
 /public/sw.js.map
 /public/workbox-*.js
 /public/fallback-*.js
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/.playwright/
