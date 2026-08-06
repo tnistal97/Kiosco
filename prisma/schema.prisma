@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Branch {
+  id            Int                    @id @default(autoincrement())
+  name          String                 @unique
+  address       String?
+  createdAt     DateTime               @default(now())
+  email         String?
+  phone         String?
+  products      BranchStock[]
+  sales         Sale[]
+  users         User[]
+  cashMovements CashRegisterMovement[]
+  cashCounts    CashCount[]
+  productsList  Product[]  
+  currentCash   Float                  @default(0)
+}
+
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  users User[]
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  password  String
+  name      String
+  roleId    Int
+  branchId  Int
+  createdAt DateTime @default(now())
+  username  String   @unique
+
+  logs          AuditLog[]
+  sales         Sale[]
+  stockChecks   StockCheck[]
+  cashMovements CashRegisterMovement[] // ← relación inversa agregada
+  branch        Branch                 @relation(fields: [branchId], references: [id])
+  role          Role                   @relation(fields: [roleId], references: [id])
+  cashCounts    CashCount[]
+}
+
+model Category {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  products Product[]
+}
+
+model Product {
+  id          Int     @id @default(autoincrement())
+  name        String
+  barcode     String? @unique
+  description String?
+  supplierId  Int?
+  categoryId  Int
+  price       Float
+  value       Int?
+  branchId    Int  
+  stocks    BranchStock[]
+  saleItems SaleItem[]
+  category  Category      @relation(fields: [categoryId], references: [id])
+  supplier  Supplier?     @relation(fields: [supplierId], references: [id])
+  branch    Branch        @relation(fields: [branchId], references: [id]) 
+}
+
+
+model BranchStock {
+  id        Int @id @default(autoincrement())
+  branchId  Int
+  productId Int
+  quantity  Int
+
+  branch  Branch       @relation(fields: [branchId], references: [id])
+  product Product      @relation(fields: [productId], references: [id])
+  checks  StockCheck[] // back-relation para StockCheck
+
+  @@unique([branchId, productId])
+}
+
+model StockCheck {
+  id      Int      @id @default(autoincrement())
+  stockId Int
+  userId  Int
+  date    DateTime @default(now())
+
+  stock BranchStock @relation(fields: [stockId], references: [id])
+  user  User        @relation(fields: [userId], references: [id])
+
+  @@unique([stockId, userId, date])
+}
+
+model Supplier {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  contact  String?
+  products Product[]
+}
+
+model Sale {
+  id         Int        @id @default(autoincrement())
+  userId     Int
+  branchId   Int
+  date       DateTime   @default(now())
+  createdAt  DateTime   @default(now())
+  isVerified Boolean    @default(false)
+  items      SaleItem[]
+  user       User       @relation(fields: [userId], references: [id])
+  branch     Branch     @relation(fields: [branchId], references: [id])
+}
+
+model SaleItem {
+  id        Int   @id @default(autoincrement())
+  saleId    Int
+  productId Int
+  quantity  Int
+  price     Float
+
+  sale    Sale    @relation(fields: [saleId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  tableName  String
+  recordId   Int?
+  actionType String
+  changes    Json?
+  origin     String?
+  timestamp  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model CashRegisterMovement {
+  id            Int      @id @default(autoincrement())
+  branchId      Int
+  userId        Int
+  amount        Float
+  paymentMethod String
+  description   String?
+  date          DateTime @default(now())
+  type          String
+  branch        Branch   @relation(fields: [branchId], references: [id])
+  user          User     @relation(fields: [userId], references: [id])
+}
+
+
+
+
+
+model CashCount {
+  id          Int      @id @default(autoincrement())
+  branchId    Int
+  userId      Int
+  amount      Float
+  date        DateTime @default(now())
+  notes       String?  // notas u observaciones opcionales
+
+  branch      Branch   @relation(fields: [branchId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+}

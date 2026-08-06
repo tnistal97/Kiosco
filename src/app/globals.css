@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    font-family: theme('fontFamily.sans'); /* default Tailwind sans font (Inter) */
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  body {
+    background-color: #ffffff;
+    color: #111827;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+
+
+ @keyframes slide-in {
+   from { opacity: 0; transform: translateY(1rem); }
+   to   { opacity: 1; transform: translateY(0); }
+ }

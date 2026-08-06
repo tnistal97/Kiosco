@@ -1,0 +1,78 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# logs
+/logs
+*.log
+
+# env files — nunca versionar valores reales
+.env
+.env.*
+!.env.example
+
+# secretos y material criptografico
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+*.jks
+ecosystem.config.js
+
+# bases de datos locales y dumps
+*.sqlite
+*.sqlite3
+*.db
+*.sql
+*.dump
+# ...pero las migraciones de Prisma SI deben versionarse
+!prisma/migrations/**/*.sql
+
+# backups y comprimidos de despliegue
+/backups
+*.zip
+*.tar.gz
+
+# cache y temporales
+.cache/
+/tmp
+*.tmp
+
+# cliente Prisma generado
+/prisma/client
+/generated
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

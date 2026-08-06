@@ -1,13 +1,15 @@
-version: '3.8'
+# Entorno de desarrollo local.
+# Los valores se leen de un archivo .env local (ver .env.example).
+# No incluye credenciales: cada variable tiene un default apto solo para desarrollo.
 services:
   db:
     image: postgres:16
     container_name: kiosco-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: kiosco
-      POSTGRES_PASSWORD: kiosco
-      POSTGRES_DB: kiosco
+      POSTGRES_USER: ${POSTGRES_USER:-kiosco}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kiosco}
+      POSTGRES_DB: ${POSTGRES_DB:-kiosco}
     ports:
       - "5432:5432"
     volumes:
@@ -16,24 +18,22 @@ services:
     image: node:22
     container_name: kiosco-app
     restart: unless-stopped
-    network_mode: host # Use host network
-    # ports: # Not needed with network_mode: host
-    #   - "3000:3000"
-    working_dir: /app # Set working directory for consistency
+    network_mode: host
+    working_dir: /app
     volumes:
-      # Mount the ./kiosco subdirectory (relative to this docker-compose.yml) to /app
-      - ./kiosco:/app
-      # Use a named volume for node_modules to prevent host's node_modules from overwriting the container's
+      # El proyecto vive en la raiz del repositorio (antes estaba anidado en ./kiosco)
+      - .:/app
+      # Volumen propio para node_modules: evita que el del host pise al del contenedor
       - app_node_modules:/app/node_modules
-      # Similarly, keep .next directory in a volume
+      # Idem para el directorio de build de Next
       - app_next:/app/.next
     depends_on:
       - db
     command: npm run dev
     environment:
       - NODE_ENV=development
-      - DATABASE_URL="postgresql://kiosco:kiosco@localhost:5432/kiosco"
-      - JWT_SECRET="tararira"
+      - DATABASE_URL=${DATABASE_URL:-postgresql://kiosco:kiosco@localhost:5432/kiosco?schema=public}
+      - JWT_SECRET=${JWT_SECRET:?definir JWT_SECRET en el .env local}
 volumes:
   db_data:
   app_node_modules:
