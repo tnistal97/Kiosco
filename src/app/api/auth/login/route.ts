@@ -67,12 +67,19 @@ export const POST = handler(
       // El intento fallido se registra solo si el usuario existe: para uno
       // inexistente no hay a quien asociarlo, y AuditLog.userId es obligatorio.
       if (user) {
+        const motivo = !claveOk ? 'contrasena incorrecta' : 'usuario dado de baja'
         await audit(prisma, {
           userId: user.id,
+          branchId: user.branchId,
           table: 'User',
           recordId: user.id,
           action: 'login_failed',
-          after: { origen, motivo: !claveOk ? 'contrasena' : 'usuario inactivo' },
+          result: 'failure',
+          // El motivo queda en la bitacora, que solo ve un administrador.
+          // La respuesta al cliente sigue siendo el mismo texto generico
+          // para los dos casos.
+          reason: motivo,
+          after: { origen },
           origin: 'POST /api/auth/login',
         })
       }
@@ -91,10 +98,11 @@ export const POST = handler(
 
     await audit(prisma, {
       userId: user.id,
+      branchId: user.branchId,
       table: 'User',
       recordId: user.id,
       action: 'login',
-      after: { origen },
+      after: { origen, rol: user.role.name },
       origin: 'POST /api/auth/login',
     })
 

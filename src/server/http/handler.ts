@@ -16,7 +16,8 @@ import type { z } from 'zod'
 import { getSession, type Session } from '@/server/auth/session'
 import { requirePermission, requireUser } from '@/server/authz/require'
 import type { Permission } from '@/server/authz/permissions'
-import { forbidden, type ApiErrorBody } from '@/server/http/errors'
+import { AppError, forbidden, type ApiErrorBody } from '@/server/http/errors'
+import { ipDe, runWithRequestContext } from '@/server/http/requestContext'
 import { traducirError } from '@/server/http/prismaErrors'
 import { REQUEST_ID_HEADER, requestIdDe } from '@/server/http/requestId'
 import { parseJsonBody, parseQuery } from '@/server/http/validate'
@@ -79,41 +80,89 @@ export function handler<A extends AuthMode, TBody = undefined, TQuery = undefine
   return async function route(req: NextRequest, args: NextRouteArgs): Promise<Response> {
     const requestId = requestIdDe(req)
 
-    try {
-      const session =
-        config.auth === 'public' ? await getSessionQuietly(req) : await getSession(req)
+    // Todo lo que ocurra dentro --incluidos los servicios y `audit()`-- ve
+    // este contexto sin que haya que pasarlo como parametro.
+    return runWithRequestContext({ requestId, ip: ipDe(req) }, async () => {
+      try {
+        const session =
+          config.auth === 'public' ? await getSessionQuietly(req) : await getSession(req)
 
-      if (config.auth === 'session') {
-        if (config.permission) {
-          const needed = Array.isArray(config.permission) ? config.permission : [config.permission]
-          requireAny(session, needed)
-        } else {
-          requireUser(session)
+        if (config.auth === 'session') {
+          if (config.permission) {
+            const needed = Array.isArray(config.permission)
+              ? config.permission
+              : [config.permission]
+            requireAny(session, needed)
+          } else {
+            requireUser(session)
+          }
         }
+
+        const body = config.body ? await parseJsonBody(req, config.body) : (undefined as TBody)
+        const query = config.query ? parseQuery(req, config.query) : (undefined as TQuery)
+        const params = normalizarParams(await args.params)
+
+        const result = await fn({
+          req,
+          // Seguro: si auth === 'session', requireUser/requireAny ya
+          // garantizaron que no es null.
+          session: session as SessionFor<A>,
+          body,
+          query,
+          params,
+          requestId,
+          origin: config.audit,
+        })
+
+        const res = result instanceof Response ? result : NextResponse.json(result ?? { ok: true })
+        res.headers.set(REQUEST_ID_HEADER, requestId)
+        return res
+      } catch (error) {
+        // Un intento rechazado por falta de permiso deja rastro: es
+        // justamente el que interesa mirar despues.
+        await auditarRechazo(error, config, req)
+        return toErrorResponse(error, config.audit, requestId)
       }
+    })
+  }
+}
 
-      const body = config.body ? await parseJsonBody(req, config.body) : (undefined as TBody)
-      const query = config.query ? parseQuery(req, config.query) : (undefined as TQuery)
-      const params = normalizarParams(await args.params)
+/**
+ * Registra en la bitacora los intentos rechazados por autorizacion.
+ *
+ * Solo 403: un 401 significa que no hay sesion, y sin usuario no hay a quien
+ * atribuir la entrada (AuditLog.userId es obligatorio). Esos quedan en el
+ * log del servidor con su requestId.
+ *
+ * Nunca propaga su propio error: si falla el registro del rechazo, el
+ * rechazo tiene que responderse igual.
+ */
+async function auditarRechazo(
+  error: unknown,
+  config: { audit: string },
+  req: NextRequest,
+): Promise<void> {
+  if (!(error instanceof AppError) || error.status !== 403) return
 
-      const result = await fn({
-        req,
-        // Seguro: si auth === 'session', requireUser/requireAny ya
-        // garantizaron que no es null.
-        session: session as SessionFor<A>,
-        body,
-        query,
-        params,
-        requestId,
-        origin: config.audit,
-      })
+  try {
+    const session = await getSessionQuietly(req)
+    if (!session) return
 
-      const res = result instanceof Response ? result : NextResponse.json(result ?? { ok: true })
-      res.headers.set(REQUEST_ID_HEADER, requestId)
-      return res
-    } catch (error) {
-      return toErrorResponse(error, config.audit, requestId)
-    }
+    const { prisma } = await import('@/lib/prisma')
+    const { audit } = await import('@/server/audit/audit')
+
+    await audit(prisma, {
+      userId: session.userId,
+      branchId: session.branchId,
+      table: 'Authorization',
+      action: 'deny',
+      result: 'failure',
+      reason: error.message,
+      after: { rol: session.role },
+      origin: config.audit,
+    })
+  } catch (fallo) {
+    console.error('[audit] No se pudo registrar el rechazo:', fallo)
   }
 }
 

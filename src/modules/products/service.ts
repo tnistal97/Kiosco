@@ -152,6 +152,7 @@ export async function crearProducto(session: Session, input: CrearProductoInput)
 
     await audit(tx, {
       userId: session.userId,
+      branchId: session.branchId,
       table: 'Product',
       recordId: producto.id,
       action: 'create',
@@ -209,6 +210,7 @@ export async function editarProducto(session: Session, id: number, input: Editar
 
     await audit(tx, {
       userId: session.userId,
+      branchId: session.branchId,
       table: 'Product',
       recordId: id,
       action: 'update',
@@ -233,9 +235,11 @@ export async function editarProducto(session: Session, id: number, input: Editar
 
       await audit(tx, {
         userId: session.userId,
+        branchId: session.branchId,
         table: 'BranchStock',
         recordId: stockDespues.id,
         action: 'update',
+        reason: 'Ajuste desde la ficha del producto',
         before: { quantity: stockAntes?.quantity ?? 0 },
         after: {
           quantity: stockDespues.quantity,
@@ -286,6 +290,7 @@ export async function eliminarProducto(session: Session, id: number) {
 
     await audit(tx, {
       userId: session.userId,
+      branchId: session.branchId,
       table: 'Product',
       recordId: id,
       action: 'delete',

@@ -20,6 +20,7 @@ model Branch {
   cashMovements CashRegisterMovement[]
   cashCounts    CashCount[]
   productsList  Product[]
+  auditLogs     AuditLog[]
   currentCash   Float                  @default(0)
 }
 
@@ -157,7 +158,30 @@ model AuditLog {
   origin     String?
   timestamp  DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  /// Sucursal en la que ocurrio. Se copia del evento y no se deduce del
+  /// usuario: un traslado de sucursal no debe reescribir la historia.
+  branchId Int?
+
+  /// Identificador de la peticion. Une esta fila con la linea del log del
+  /// servidor y con el error que vio el usuario.
+  requestId String?
+
+  /// Direccion de origen. Hasta 45 caracteres: una IPv6 con zona.
+  ip String? @db.VarChar(45)
+
+  /// Motivo declarado por el usuario, cuando la operacion lo exige
+  /// (anulacion, ajuste de stock).
+  reason String?
+
+  /// 'success' | 'failure'. Un intento rechazado tambien se audita.
+  result String @default("success")
+
+  user   User    @relation(fields: [userId], references: [id])
+  branch Branch? @relation(fields: [branchId], references: [id])
+
+  @@index([branchId, timestamp])
+  @@index([tableName, actionType, timestamp])
+  @@index([requestId])
 }
 
 model CashRegisterMovement {

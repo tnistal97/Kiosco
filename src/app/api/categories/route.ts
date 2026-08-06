@@ -40,6 +40,7 @@ export const POST = handler(
       })
       await audit(tx, {
         userId: session.userId,
+        branchId: session.branchId,
         table: 'Category',
         recordId: creada.id,
         action: 'create',

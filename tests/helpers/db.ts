@@ -7,6 +7,7 @@
 
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcrypt'
+import { knownRoles } from '@/server/authz/permissions'
 
 export { prisma }
 
@@ -45,6 +46,8 @@ export interface Fixture {
   /** Producto de la sucursal B. Un usuario de A no debe poder tocarlo. */
   productoB: { id: number; name: string; price: number }
   categoryId: number
+  /** Un usuario por cada rol del catalogo, todos en la sucursal A. */
+  porRol: Record<string, TestUser>
 }
 
 export interface TestUser {
@@ -101,6 +104,15 @@ export async function seedFixture(): Promise<Fixture> {
   const cajeroB = await mkUser('cajero2', cajeroRole.id, 'cajero', branchB.id)
   const inactivo = await mkUser('baja1', cajeroRole.id, 'cajero', branchA.id, false)
 
+  // Un usuario por cada perfil operativo, para poder probar la matriz de
+  // permisos completa y no solo los dos extremos.
+  const porRol: Record<string, TestUser> = { admin, cajero }
+  for (const nombre of knownRoles()) {
+    if (nombre in porRol) continue
+    const rol = await prisma.role.create({ data: { name: nombre } })
+    porRol[nombre] = await mkUser(`u_${nombre}`, rol.id, nombre, branchA.id)
+  }
+
   const category = await prisma.category.create({ data: { name: 'Almacen' } })
 
   const productoA = await prisma.product.create({
@@ -139,6 +151,7 @@ export async function seedFixture(): Promise<Fixture> {
     productoA: { id: productoA.id, name: productoA.name, price: productoA.price },
     productoB: { id: productoB.id, name: productoB.name, price: productoB.price },
     categoryId: category.id,
+    porRol,
   }
 }
 

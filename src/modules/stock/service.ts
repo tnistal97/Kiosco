@@ -90,9 +90,11 @@ export async function fijarStock(
 
     await audit(tx, {
       userId: session.userId,
+      branchId: session.branchId,
       table: 'BranchStock',
       recordId: despues.id,
       action: 'update',
+      reason: input.reason,
       before: { quantity: antes?.quantity ?? 0 },
       after: {
         quantity: despues.quantity,
@@ -141,9 +143,11 @@ export async function ajustarStock(
         })
         await audit(tx, {
           userId: session.userId,
+          branchId: session.branchId,
           table: 'BranchStock',
           recordId: creado.id,
           action: 'create',
+          reason: input.reason,
           after: {
             quantity: creado.quantity,
             diferencia: input.delta,
@@ -169,9 +173,11 @@ export async function ajustarStock(
 
     await audit(tx, {
       userId: session.userId,
+      branchId: session.branchId,
       table: 'BranchStock',
       recordId: despues.id,
       action: 'update',
+      reason: input.reason,
       before: { quantity: despues.quantity - input.delta },
       after: {
         quantity: despues.quantity,

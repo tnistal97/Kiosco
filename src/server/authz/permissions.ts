@@ -54,7 +54,26 @@ export type Permission = (typeof PERMISSIONS)[number]
  * preferible que un rol nuevo no pueda hacer nada y haya que darle permisos,
  * a que herede todo por descuido.
  */
+const PERFIL_CAJA: readonly Permission[] = [
+  'sales.create',
+  'sales.view',
+  'products.view',
+  'stock.view',
+  'cash.view',
+  'cash.count.create',
+]
+
 const ROLE_PRESETS: Record<string, readonly Permission[]> = {
+  /**
+   * Duenio del negocio. Hoy identico a `admin`.
+   *
+   * Existe separado porque cuando haya varias sucursales van a divergir:
+   * `admin` administra la suya, `duenio` las ve todas. Mientras no exista esa
+   * distincion, tener dos nombres para lo mismo es preferible a tener que
+   * migrar los usuarios despues.
+   */
+  duenio: [...PERMISSIONS],
+
   admin: [...PERMISSIONS],
 
   encargado: [
@@ -75,29 +94,65 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'branches.view',
   ],
 
-  cajero: [
-    'sales.create',
-    'sales.view',
-    'products.view',
-    'stock.view',
-    'cash.view',
-    'cash.count.create',
+  /**
+   * Supervisor de turno.
+   *
+   * Igual que el cajero, mas anular ventas y hacer movimientos de caja. Es el
+   * escalon que hoy falta: sin el, cada anulacion necesita al administrador.
+   */
+  supervisor: [
+    ...PERFIL_CAJA,
+    'sales.cancel',
+    'cash.movement.create',
+    'reports.view',
+    'stock.adjust',
   ],
+
+  cajero: PERFIL_CAJA,
 
   /**
    * Nombre historico del rol de caja en la base actual. Mismo alcance que
-   * `cajero`. No se renombra en Fase 0 para no tocar datos existentes.
+   * `cajero`. No se renombra para no tocar datos existentes.
    */
-  vendedor: [
-    'sales.create',
+  vendedor: PERFIL_CAJA,
+
+  repositor: ['products.view', 'stock.view', 'stock.adjust'],
+
+  /**
+   * Compras. Ve el catalogo y los proveedores y da entrada a la mercaderia.
+   *
+   * No vende y no toca la caja: separar quien compra de quien cobra es el
+   * control basico contra el desvio de mercaderia.
+   */
+  compras: [
+    'products.view',
+    'products.create',
+    'products.update',
+    'categories.manage',
+    'stock.view',
+    'stock.adjust',
+    'suppliers.view',
+    'suppliers.manage',
+    'reports.view',
+  ],
+
+  /**
+   * Auditor. Solo lectura, incluida la bitacora.
+   *
+   * Ni un solo permiso de escritura, a proposito: quien revisa no debe poder
+   * modificar lo que revisa.
+   */
+  auditor: [
     'sales.view',
     'products.view',
     'stock.view',
     'cash.view',
-    'cash.count.create',
+    'reports.view',
+    'audit.view',
+    'users.view',
+    'branches.view',
+    'suppliers.view',
   ],
-
-  repositor: ['products.view', 'stock.view', 'stock.adjust'],
 }
 
 const EMPTY: ReadonlySet<Permission> = new Set()

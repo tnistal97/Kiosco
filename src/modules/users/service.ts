@@ -117,6 +117,7 @@ export async function crearUsuario(
 
     await audit(tx, {
       userId: session.userId,
+      branchId: session.branchId,
       table: 'User',
       recordId: user.id,
       action: 'create',

@@ -34,6 +34,7 @@ export const POST = handler(
 
       await audit(prisma, {
         userId: session.userId,
+        branchId: session.branchId,
         table: 'User',
         recordId: session.userId,
         action: 'logout',

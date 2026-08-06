@@ -2,7 +2,7 @@
  * Entradas de la bitacora de auditoria tal como viajan por la API.
  */
 
-import { esObjeto, lista, numero, texto } from '@/lib/api-client'
+import { esObjeto, lista, numero, numeroOpcional, texto, textoOpcional } from '@/lib/api-client'
 import type { Pagination } from '@/server/http/pagination'
 
 export interface EntradaAuditoriaDTO {
@@ -16,6 +16,12 @@ export interface EntradaAuditoriaDTO {
     before: Record<string, unknown> | null
     after: Record<string, unknown> | null
   }
+  branchId: number | null
+  /** Codigo de la peticion. Lo que el usuario ve cuando algo falla. */
+  requestId: string | null
+  reason: string | null
+  /** 'success' | 'failure'. Un intento rechazado tambien queda registrado. */
+  result: string
   user: { id: number; name: string }
 }
 
@@ -45,6 +51,10 @@ export function parseEntradaAuditoria(raw: unknown): EntradaAuditoriaDTO {
     origin: typeof raw.origin === 'string' ? raw.origin : null,
     timestamp: texto(raw.timestamp),
     changes: parseCambios(raw.changes),
+    branchId: numeroOpcional(raw.branchId),
+    requestId: textoOpcional(raw.requestId),
+    reason: textoOpcional(raw.reason),
+    result: texto(raw.result, 'success'),
     user: esObjeto(raw.user)
       ? { id: numero(raw.user.id), name: texto(raw.user.name, 'Desconocido') }
       : { id: 0, name: 'Desconocido' },

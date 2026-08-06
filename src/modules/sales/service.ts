@@ -189,6 +189,7 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
 
       await audit(tx, {
         userId: session.userId,
+        branchId: session.branchId,
         table: 'Sale',
         recordId: venta.id,
         action: 'create',
@@ -311,9 +312,11 @@ export async function cancelSale(
 
       await audit(tx, {
         userId: session.userId,
+        branchId: session.branchId,
         table: 'Sale',
         recordId: saleId,
         action: 'cancel',
+        reason: motivo,
         before: { status: 'completed', items, vendedorId: venta.userId, fecha: venta.date },
         after: {
           status: 'canceled',

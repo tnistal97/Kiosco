@@ -66,6 +66,7 @@ export const POST = handler(
       })
       await audit(tx, {
         userId: session.userId,
+        branchId: session.branchId,
         table: 'Branch',
         recordId: creada.id,
         action: 'create',
@@ -104,6 +105,7 @@ export const PATCH = handler(
 
       await audit(tx, {
         userId: session.userId,
+        branchId: session.branchId,
         table: 'Branch',
         recordId: despues.id,
         action: 'update',

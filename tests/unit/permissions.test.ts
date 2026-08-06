@@ -36,22 +36,80 @@ describe('Resolucion de permisos por rol', () => {
     expect(cajero.has('reports.view')).toBe(false)
   })
 
-  it('ningun rol salvo admin puede administrar usuarios', () => {
+  /**
+   * Roles con alcance administrativo completo.
+   *
+   * Se enumeran a mano y no se leen de ROLE_PRESETS a proposito: si alguien
+   * agrega un rol nuevo con permisos de administracion, estas pruebas fallan
+   * y obligan a decidirlo explicitamente en vez de que pase inadvertido.
+   */
+  const ADMINISTRATIVOS = ['admin', 'duenio']
+
+  it('ningun rol operativo puede administrar usuarios', () => {
     for (const rol of knownRoles()) {
-      if (rol === 'admin') continue
+      if (ADMINISTRATIVOS.includes(rol)) continue
       expect(permissionsForRole(rol).has('users.manage'), `${rol} puede administrar usuarios`).toBe(
         false,
       )
     }
   })
 
-  it('ningun rol salvo admin puede borrar productos', () => {
+  it('ningun rol operativo puede borrar productos', () => {
     for (const rol of knownRoles()) {
-      if (rol === 'admin') continue
+      if (ADMINISTRATIVOS.includes(rol)) continue
       expect(permissionsForRole(rol).has('products.delete'), `${rol} puede borrar productos`).toBe(
         false,
       )
     }
+  })
+
+  it('los roles administrativos son exactamente los declarados', () => {
+    const conTodo = knownRoles().filter(
+      (r) => permissionsForRole(r).has('users.manage') && permissionsForRole(r).has('audit.view'),
+    )
+    expect(
+      conTodo.sort(),
+      'Aparecio un rol con alcance administrativo que no estaba previsto',
+    ).toEqual([...ADMINISTRATIVOS].sort())
+  })
+
+  it('el auditor ve todo pero no puede escribir nada', () => {
+    const auditor = permissionsForRole('auditor')
+    expect(auditor.has('audit.view')).toBe(true)
+    expect(auditor.has('reports.view')).toBe(true)
+
+    for (const escritura of [
+      'sales.create',
+      'sales.cancel',
+      'products.create',
+      'products.update',
+      'products.delete',
+      'stock.adjust',
+      'cash.movement.create',
+      'cash.count.create',
+      'users.manage',
+      'branches.manage',
+      'suppliers.manage',
+      'categories.manage',
+    ] as const) {
+      expect(auditor.has(escritura), `El auditor puede "${escritura}"`).toBe(false)
+    }
+  })
+
+  it('compras no vende ni toca la caja', () => {
+    const compras = permissionsForRole('compras')
+    expect(compras.has('stock.adjust')).toBe(true)
+    expect(compras.has('suppliers.manage')).toBe(true)
+
+    // Separar quien compra de quien cobra es el control contra el desvio.
+    expect(compras.has('sales.create')).toBe(false)
+    expect(compras.has('cash.view')).toBe(false)
+    expect(compras.has('cash.movement.create')).toBe(false)
+  })
+
+  it('el supervisor puede anular, el cajero no', () => {
+    expect(permissionsForRole('supervisor').has('sales.cancel')).toBe(true)
+    expect(permissionsForRole('cajero').has('sales.cancel')).toBe(false)
   })
 
   it('el repositor no puede vender ni ver la caja', () => {

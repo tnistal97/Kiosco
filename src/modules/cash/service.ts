@@ -209,9 +209,11 @@ export async function registrarMovimientoManual(
 
     await audit(tx, {
       userId: session.userId,
+      branchId: session.branchId,
       table: 'CashRegisterMovement',
       recordId: creado.id,
       action: 'create',
+      reason: input.description ?? null,
       after: creado,
       origin: 'POST /api/cash',
     })
@@ -276,9 +278,11 @@ export async function registrarArqueo(
 
     await audit(tx, {
       userId: session.userId,
+      branchId: session.branchId,
       table: 'CashCount',
       recordId: arqueo.id,
       action: 'create',
+      reason: input.notes ?? null,
       after: {
         contado,
         esperado,
