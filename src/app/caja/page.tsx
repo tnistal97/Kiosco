@@ -79,11 +79,15 @@ async function confirmSale() {
     }
 
     // 2️⃣ Payload
+    //
+    // No se manda el precio. El servidor lo toma del catalogo y rechaza la
+    // peticion si el navegador intenta enviarlo. Antes se mandaba, y se
+    // guardaba tal cual: bastaba con editar la peticion para llevarse un
+    // producto de $12.500 por $1.
     const body = {
       items: items.map((item) => ({
         productId: item.product.id,
         quantity: item.quantity,
-        price: item.product.price,
       })),
       paymentMethod: selectedPaymentMethod,
     }
@@ -99,8 +103,6 @@ async function confirmSale() {
       const err = await response.json()
       throw new Error(err.error || 'Error en la venta')
     }
-
-    const { sale } = await response.json()
 
     // 4️⃣ Notificación de éxito
     toast.success(`✅ Venta registrada correctamente!`, {
