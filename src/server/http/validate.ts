@@ -1,0 +1,94 @@
+/**
+ * Validacion de entrada centralizada.
+ *
+ * Todos los esquemas son estrictos: una propiedad no declarada hace fallar la
+ * peticion en vez de colarse hasta Prisma. Es lo que convertia
+ * `prisma.user.create({ data: { ...body } })` en una escalada de privilegios.
+ */
+
+import { z } from 'zod'
+import { invalid } from '@/server/http/errors'
+
+/** Entero positivo, tambien desde string (parametros de ruta y query). */
+export const idSchema = z.coerce.number().int().positive().max(2_147_483_647)
+
+/**
+ * Cantidad de unidades vendidas o ajustadas.
+ *
+ * `z.coerce.number()` rechaza NaN e Infinity por si mismo, pero lo dejamos
+ * explicito porque es justamente lo que hoy pasa sin control: `Number(body.qty)`
+ * con "abc" da NaN, y NaN sobrevive hasta el UPDATE.
+ *
+ * Entero por ahora. Cuando se agregue venta por peso (kg, g, l), este es el
+ * unico lugar que cambia a decimal con precision fija.
+ */
+export const quantitySchema = z
+  .number()
+  .int('La cantidad debe ser un numero entero')
+  .positive('La cantidad debe ser mayor que cero')
+  .max(100_000, 'Cantidad fuera de rango')
+  .finite()
+
+/** Importe de dinero. Positivo, con dos decimales como maximo. */
+export const amountSchema = z
+  .number()
+  .finite('Importe invalido')
+  .nonnegative('El importe no puede ser negativo')
+  .max(1_000_000_000, 'Importe fuera de rango')
+  .refine((n) => Number.isInteger(Math.round(n * 100)) && Math.abs(n * 100 - Math.round(n * 100)) < 1e-6, {
+    message: 'El importe admite como maximo dos decimales',
+  })
+
+/** Texto corto obligatorio con longitud maxima. */
+export const shortText = (max = 200) => z.string().trim().min(1).max(max)
+
+/** Texto opcional que normaliza "" a null. */
+export const optionalText = (max = 500) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .transform((v) => (v === '' ? null : v))
+    .nullable()
+    .optional()
+
+export const paymentMethodSchema = z.enum(['efectivo', 'tarjeta', 'mercado_pago'])
+
+/** Paginacion uniforme para los listados. */
+export const paginationSchema = z.object({
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+})
+
+/**
+ * Parsea y valida el cuerpo JSON. Un cuerpo ausente o mal formado da 400,
+ * no 500.
+ */
+export async function parseJsonBody<T>(req: Request, schema: z.ZodType<T>): Promise<T> {
+  let raw: unknown
+  try {
+    raw = await req.json()
+  } catch {
+    throw invalid('El cuerpo de la peticion debe ser JSON valido')
+  }
+  return parseWith(schema, raw)
+}
+
+/** Valida los parametros de query de la URL. */
+export function parseQuery<T>(req: Request, schema: z.ZodType<T>): T {
+  const params = Object.fromEntries(new URL(req.url).searchParams.entries())
+  return parseWith(schema, params)
+}
+
+export function parseWith<T>(schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value)
+  if (result.success) return result.data
+
+  // Se devuelve que campo fallo y por que, pero nunca el valor recibido:
+  // podria contener una contrasena.
+  const details = result.error.issues.map((issue) => ({
+    campo: issue.path.join('.') || '(raiz)',
+    problema: issue.message,
+  }))
+  throw invalid('Datos invalidos', details)
+}

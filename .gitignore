@@ -79,3 +79,9 @@ next-env.d.ts
 
 # configuracion local de herramientas de asistencia
 .claude/
+
+# service worker generado por next-pwa en cada build
+/public/sw.js
+/public/sw.js.map
+/public/workbox-*.js
+/public/fallback-*.js
