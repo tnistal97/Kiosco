@@ -23,21 +23,21 @@ Hoy cada pantalla elige, y el modo oscuro lo decide el sistema operativo porque 
 
 ```css
 /* globals.css */
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
-  --color-fondo:        #0f1115;   /* fondo de la aplicación */
-  --color-superficie:   #171a21;   /* tarjetas, tablas */
-  --color-superficie-2: #1f242e;   /* filas alternas, hover */
-  --color-borde:        #2b323d;
+  --color-fondo: #0f1115; /* fondo de la aplicación */
+  --color-superficie: #171a21; /* tarjetas, tablas */
+  --color-superficie-2: #1f242e; /* filas alternas, hover */
+  --color-borde: #2b323d;
 
-  --color-texto:        #f2f4f7;   /* 15.8:1 sobre fondo */
-  --color-texto-suave:  #a8b0be;   /*  7.1:1 sobre fondo — legible de verdad */
+  --color-texto: #f2f4f7; /* 15.8:1 sobre fondo */
+  --color-texto-suave: #a8b0be; /*  7.1:1 sobre fondo — legible de verdad */
 
-  --color-accion:       #2563eb;   /* azul: acción primaria */
-  --color-exito:        #16a34a;   /* verde: cobrar, confirmar */
-  --color-alerta:       #d97706;   /* ámbar: stock bajo, por vencer */
-  --color-peligro:      #dc2626;   /* rojo: anular, eliminar */
+  --color-accion: #2563eb; /* azul: acción primaria */
+  --color-exito: #16a34a; /* verde: cobrar, confirmar */
+  --color-alerta: #d97706; /* ámbar: stock bajo, por vencer */
+  --color-peligro: #dc2626; /* rojo: anular, eliminar */
 }
 ```
 
@@ -45,23 +45,23 @@ Hoy cada pantalla elige, y el modo oscuro lo decide el sistema operativo porque 
 
 ### 1.2 Colores con significado, no decorativos
 
-| Color | Significa | Dónde |
-|---|---|---|
-| Verde | Dinero entrando, confirmación | Cobrar, total, stock sano |
-| Ámbar | Requiere atención pronto | Stock bajo, por vencer, compra pendiente |
-| Rojo | Destructivo o diferencia negativa | Anular, eliminar, faltante de caja, stock cero |
-| Azul | Acción neutra | Guardar, filtrar, navegar |
+| Color | Significa                         | Dónde                                          |
+| ----- | --------------------------------- | ---------------------------------------------- |
+| Verde | Dinero entrando, confirmación     | Cobrar, total, stock sano                      |
+| Ámbar | Requiere atención pronto          | Stock bajo, por vencer, compra pendiente       |
+| Rojo  | Destructivo o diferencia negativa | Anular, eliminar, faltante de caja, stock cero |
+| Azul  | Acción neutra                     | Guardar, filtrar, navegar                      |
 
 Nunca color solo: siempre ícono o texto al lado. Un cajero con daltonismo tiene que poder trabajar.
 
 ### 1.3 Escala tipográfica y densidad
 
-| Uso | Tamaño | Por qué |
-|---|---|---|
-| Total a cobrar | 48 px, seminegrita, tabular | Legible desde el otro lado del mostrador |
-| Precios en tabla | 18 px, cifras tabulares | Las columnas de números tienen que alinearse |
-| Texto de tabla | 16 px | Hoy hay `text-sm` (14 px) en las tablas de caja |
-| Etiquetas | 14 px | |
+| Uso              | Tamaño                      | Por qué                                         |
+| ---------------- | --------------------------- | ----------------------------------------------- |
+| Total a cobrar   | 48 px, seminegrita, tabular | Legible desde el otro lado del mostrador        |
+| Precios en tabla | 18 px, cifras tabulares     | Las columnas de números tienen que alinearse    |
+| Texto de tabla   | 16 px                       | Hoy hay `text-sm` (14 px) en las tablas de caja |
+| Etiquetas        | 14 px                       |                                                 |
 
 **Cifras tabulares** (`font-variant-numeric: tabular-nums`) en toda columna de dinero: sin eso los importes bailan y el ojo no puede comparar de un vistazo.
 
@@ -101,12 +101,12 @@ Un cajero típico ve tres entradas: Inicio, Venta rápida, Caja. Un encargado ve
 
 ### 2.2 Nombres que dicen lo que hacen
 
-| Hoy | Propuesto | Motivo |
-|---|---|---|
-| Caja | **Venta rápida** | Es el punto de venta |
-| Ventas | **Caja** | Es el movimiento de caja |
-| Cierre Caja | **Arqueo** dentro de Caja | Hoy no cierra nada, solo cuenta |
-| `/control/caja` | *(se elimina)* | Duplicado del modal |
+| Hoy             | Propuesto                 | Motivo                          |
+| --------------- | ------------------------- | ------------------------------- |
+| Caja            | **Venta rápida**          | Es el punto de venta            |
+| Ventas          | **Caja**                  | Es el movimiento de caja        |
+| Cierre Caja     | **Arqueo** dentro de Caja | Hoy no cierra nada, solo cuenta |
+| `/control/caja` | _(se elimina)_            | Duplicado del modal             |
 
 ### 2.3 Modo caja
 
@@ -154,19 +154,19 @@ La pantalla más importante. Objetivo: **una venta común con lector = escanear,
 
 ### 3.2 Atajos de teclado
 
-| Tecla | Acción |
-|---|---|
-| *(escribir)* | Va al buscador siempre, salvo que haya un modal abierto |
-| `Enter` | Agrega el resultado exacto; si no existe, ofrece crearlo |
-| `3 * Enter` | Multiplica: agrega 3 unidades del último producto |
-| `F2` | Buscar por nombre |
-| `F4` | Cambiar cantidad del ítem seleccionado |
-| `F8` | Dejar la venta en espera |
-| `F9` | Descuento (pide permiso si el rol no lo tiene) |
-| `F12` | Cobrar |
-| `Supr` | Quitar el ítem seleccionado |
-| `Esc` | Vaciar (con confirmación si hay ítems) |
-| `↑` `↓` | Navegar el ticket |
+| Tecla        | Acción                                                   |
+| ------------ | -------------------------------------------------------- |
+| _(escribir)_ | Va al buscador siempre, salvo que haya un modal abierto  |
+| `Enter`      | Agrega el resultado exacto; si no existe, ofrece crearlo |
+| `3 * Enter`  | Multiplica: agrega 3 unidades del último producto        |
+| `F2`         | Buscar por nombre                                        |
+| `F4`         | Cambiar cantidad del ítem seleccionado                   |
+| `F8`         | Dejar la venta en espera                                 |
+| `F9`         | Descuento (pide permiso si el rol no lo tiene)           |
+| `F12`        | Cobrar                                                   |
+| `Supr`       | Quitar el ítem seleccionado                              |
+| `Esc`        | Vaciar (con confirmación si hay ítems)                   |
+| `↑` `↓`      | Navegar el ticket                                        |
 
 **El lector se aísla.** Hoy escucha en `window` y captura teclas incluso con un modal abierto — se verificó que eso mete productos al carrito sin que el cajero lo vea. Propuesta: detectar la ráfaga del lector (más de 3 caracteres a menos de 30 ms) y **suspender la captura mientras haya un diálogo abierto**.
 
@@ -407,17 +407,17 @@ El rol es un preajuste; el permiso es lo que se verifica. Así "Bruno puede hace
 
 ## 6. Patrones transversales
 
-| Patrón | Regla |
-|---|---|
+| Patrón           | Regla                                                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Confirmación** | Proporcional al daño: cambio reversible → sin confirmar, con deshacer; irreversible → modal nombrando el objeto; financiero → modal + motivo + permiso |
-| **Estado vacío** | Explica qué es la sección y ofrece la acción para empezar. Nunca una tabla en blanco |
-| **Errores** | Junto al campo que falló, en lenguaje de almacén: "El stock quedaría en −3. Autorizá la venta en negativo o corregí la cantidad" |
-| **Carga** | Esqueleto con la forma del contenido; nunca spinner y datos viejos a la vez |
-| **Guardado** | Optimista con posibilidad de deshacer, salvo en dinero y stock, donde se espera la confirmación del servidor |
-| **Modales** | Solo para decisiones que bloquean. Editar un producto es una página o un panel lateral, no un modal |
-| **Tablas** | Cabecera fija, filas alternas, cifras tabulares, orden por columna, densidad configurable |
-| **Dinero** | Siempre con signo y color: `+13.600` verde, `−8.400` rojo |
-| **Fechas** | Relativas hasta 7 días ("hace 2 h"), absolutas después |
+| **Estado vacío** | Explica qué es la sección y ofrece la acción para empezar. Nunca una tabla en blanco                                                                   |
+| **Errores**      | Junto al campo que falló, en lenguaje de almacén: "El stock quedaría en −3. Autorizá la venta en negativo o corregí la cantidad"                       |
+| **Carga**        | Esqueleto con la forma del contenido; nunca spinner y datos viejos a la vez                                                                            |
+| **Guardado**     | Optimista con posibilidad de deshacer, salvo en dinero y stock, donde se espera la confirmación del servidor                                           |
+| **Modales**      | Solo para decisiones que bloquean. Editar un producto es una página o un panel lateral, no un modal                                                    |
+| **Tablas**       | Cabecera fija, filas alternas, cifras tabulares, orden por columna, densidad configurable                                                              |
+| **Dinero**       | Siempre con signo y color: `+13.600` verde, `−8.400` rojo                                                                                              |
+| **Fechas**       | Relativas hasta 7 días ("hace 2 h"), absolutas después                                                                                                 |
 
 ---
 
@@ -436,15 +436,15 @@ No todo hay que rehacerlo. Se conserva:
 
 ## 8. Orden de implementación
 
-| # | Entrega | Depende de |
-|---|---|---|
-| 1 | Base visual: tema en CSS, tipografía, colores semánticos, componentes (botón, campo, tabla, modal, estado vacío) | — |
-| 2 | Barra de navegación por permisos + inicio accionable | permisos del servidor (Fase 1) |
-| 3 | **Venta rápida**: cuadrícula, favoritos, atajos, cobro con vuelto, ventas en espera | precios del servidor (Fase 0) |
-| 4 | Caja: turnos, arqueo con diferencia, cierre inmutable | modelo `CashSession` (Fase 2) |
-| 5 | Productos y stock: costos, mínimos, ajustes con motivo | esquema ampliado (Fase 3) |
-| 6 | Compras y recepción | módulo de compras (Fase 3) |
-| 7 | Reportes | — |
-| 8 | Usuarios, permisos, sucursales, configuración | permisos (Fase 1) |
+| #   | Entrega                                                                                                          | Depende de                     |
+| --- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| 1   | Base visual: tema en CSS, tipografía, colores semánticos, componentes (botón, campo, tabla, modal, estado vacío) | —                              |
+| 2   | Barra de navegación por permisos + inicio accionable                                                             | permisos del servidor (Fase 1) |
+| 3   | **Venta rápida**: cuadrícula, favoritos, atajos, cobro con vuelto, ventas en espera                              | precios del servidor (Fase 0)  |
+| 4   | Caja: turnos, arqueo con diferencia, cierre inmutable                                                            | modelo `CashSession` (Fase 2)  |
+| 5   | Productos y stock: costos, mínimos, ajustes con motivo                                                           | esquema ampliado (Fase 3)      |
+| 6   | Compras y recepción                                                                                              | módulo de compras (Fase 3)     |
+| 7   | Reportes                                                                                                         | —                              |
+| 8   | Usuarios, permisos, sucursales, configuración                                                                    | permisos (Fase 1)              |
 
 Detalle y dependencias completas en [MASTER_ROADMAP.md](MASTER_ROADMAP.md).

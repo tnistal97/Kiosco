@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import type { AuditLog } from '@/types/audit'   // ← importar del archivo de tipos
+import type { AuditLog } from '@/types/audit' // ← importar del archivo de tipos
 
 interface ProductSectionProps {
   registrosProductos: AuditLog[]
@@ -60,12 +60,8 @@ export default function ProductSection({
 
               <div className="px-4 py-3 space-y-1">
                 <p className="text-white font-semibold">{data?.name ?? 'Producto'}</p>
-                <p className="text-gray-400 text-sm">
-                  Precio: ${data?.price?.toFixed(2) ?? 'N/A'}
-                </p>
-                <p className="text-gray-400 text-sm">
-                  Código: {data?.barcode || 'Sin código'}
-                </p>
+                <p className="text-gray-400 text-sm">Precio: ${data?.price?.toFixed(2) ?? 'N/A'}</p>
+                <p className="text-gray-400 text-sm">Código: {data?.barcode || 'Sin código'}</p>
               </div>
             </article>
           )

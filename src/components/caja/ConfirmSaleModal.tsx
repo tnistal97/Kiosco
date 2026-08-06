@@ -48,9 +48,7 @@ export default function ConfirmSaleModal({
           <p className="text-sm text-gray-700 dark:text-gray-300">
             ¿Está seguro de registrar esta venta? <br />
             <span className="font-medium">Método de pago:</span>{' '}
-            <span className="capitalize">
-              {paymentMethod.replace('_', ' ')}
-            </span>
+            <span className="capitalize">{paymentMethod.replace('_', ' ')}</span>
           </p>
 
           <div className="max-h-60 overflow-auto border border-gray-200 dark:border-gray-700 rounded-lg">
@@ -75,7 +73,7 @@ export default function ConfirmSaleModal({
                     <tr
                       key={item.product.id}
                       className={clsx(
-                        idx % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-700'
+                        idx % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-700',
                       )}
                     >
                       <td className="px-4 py-2 text-gray-900 dark:text-gray-100">

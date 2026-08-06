@@ -29,10 +29,7 @@ export default function ProductTable({
         <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-4" />
         <div className="space-y-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-12 bg-gray-200 dark:bg-gray-700 rounded"
-            />
+            <div key={i} className="h-12 bg-gray-200 dark:bg-gray-700 rounded" />
           ))}
         </div>
       </div>
@@ -46,9 +43,7 @@ export default function ProductTable({
         <p className="mt-4 text-lg font-medium text-gray-900 dark:text-gray-100">
           No hay productos
         </p>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          Ajusta tu búsqueda “{search}”
-        </p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Ajusta tu búsqueda “{search}”</p>
       </div>
     )
   }

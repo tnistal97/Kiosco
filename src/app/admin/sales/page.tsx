@@ -31,8 +31,8 @@ export default function AdminSalesPage() {
   const initCurrentMonth = useCallback(() => {
     const now = new Date()
     const first = new Date(now.getFullYear(), now.getMonth(), 1)
-    const last  = new Date(now.getFullYear(), now.getMonth()+1, 0)
-    const fmt = (d: Date) => d.toISOString().slice(0,10)
+    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    const fmt = (d: Date) => d.toISOString().slice(0, 10)
     return { start: fmt(first), end: fmt(last) }
   }, [])
 
@@ -40,7 +40,9 @@ export default function AdminSalesPage() {
     setIsLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/admin/sales?start=${start}&end=${end}`, { credentials: 'include' })
+      const res = await fetch(`/api/admin/sales?start=${start}&end=${end}`, {
+        credentials: 'include',
+      })
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || 'Error al obtener ventas')
@@ -79,12 +81,10 @@ export default function AdminSalesPage() {
         <DateRangePicker
           start={range.start}
           end={range.end}
-          onChange={(r: {start:string,end:string}) => setRange(r)}
+          onChange={(r: { start: string; end: string }) => setRange(r)}
         />
         <p className="text-gray-300">
-          Mostrando ventas de{' '}
-          <span className="font-semibold text-white">{range.start}</span>{' '}
-          a{' '}
+          Mostrando ventas de <span className="font-semibold text-white">{range.start}</span> a{' '}
           <span className="font-semibold text-white">{range.end}</span>
         </p>
       </div>

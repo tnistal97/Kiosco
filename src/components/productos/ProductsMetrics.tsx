@@ -1,8 +1,4 @@
-import {
-  DocumentChartBarIcon,
-  ChevronUpIcon,
-  ChevronDownIcon,
-} from '@heroicons/react/24/outline'
+import { DocumentChartBarIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import clsx from 'clsx'
 import React, { Dispatch, SetStateAction } from 'react'
 
@@ -41,7 +37,7 @@ export default function ProductsMetrics({
           lowStockFilter === false &&
             categoryFilter === 'Todas' &&
             searchTerm === '' &&
-            'ring-2 ring-blue-500'
+            'ring-2 ring-blue-500',
         )}
       >
         <div className="bg-blue-500/20 p-3 rounded-full">
@@ -71,7 +67,7 @@ export default function ProductsMetrics({
         }}
         className={clsx(
           'flex items-center bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 cursor-pointer transition hover:bg-gray-700',
-          lowStockFilter && 'ring-2 ring-red-500'
+          lowStockFilter && 'ring-2 ring-red-500',
         )}
       >
         <div className="bg-red-500/20 p-3 rounded-full">

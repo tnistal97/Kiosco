@@ -51,10 +51,9 @@ describe('Caso 9 — ventas simultaneas', () => {
       'Se perdieron actualizaciones de caja: dos ventas leyeron el mismo saldo',
     ).toBe(fx.productoA.price * N)
 
-    expect(
-      await stockOf(fx.branchA.id, fx.productoA.id),
-      'Se perdieron descuentos de stock',
-    ).toBe(50 - N)
+    expect(await stockOf(fx.branchA.id, fx.productoA.id), 'Se perdieron descuentos de stock').toBe(
+      50 - N,
+    )
 
     expect(await prisma.sale.count()).toBe(N)
     expect(await prisma.cashRegisterMovement.count()).toBe(N)

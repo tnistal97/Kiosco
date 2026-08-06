@@ -13,7 +13,9 @@ export default function CartModal() {
   const total = items.reduce((sum, i) => sum + i.product.price * i.quantity, 0)
 
   const handleConfirm = () => {
-    alert(`Venta registrada: $${total.toFixed(2)} — ${paymentType === 'efectivo' ? 'Efectivo' : 'MercadoPago'}`)
+    alert(
+      `Venta registrada: $${total.toFixed(2)} — ${paymentType === 'efectivo' ? 'Efectivo' : 'MercadoPago'}`,
+    )
     clearCart()
     setOpen(false)
   }
@@ -28,11 +30,7 @@ export default function CartModal() {
       </button>
 
       <Transition appear show={open} as={React.Fragment}>
-        <Dialog
-          open={open}
-          onClose={() => setOpen(false)}
-          className="relative z-50"
-        >
+        <Dialog open={open} onClose={() => setOpen(false)} className="relative z-50">
           {/* Overlay */}
           <Transition.Child
             as={React.Fragment}
@@ -87,7 +85,7 @@ export default function CartModal() {
                             <p className="text-xs text-muted">Cantidad: {item.quantity}</p>
                           </div>
                           <span className="text-sm font-semibold text-green-600 dark:text-green-400">
-                            ${ (item.product.price * item.quantity).toFixed(2) }
+                            ${(item.product.price * item.quantity).toFixed(2)}
                           </span>
                         </li>
                       ))}

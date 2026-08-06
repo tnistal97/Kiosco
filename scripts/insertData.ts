@@ -3,10 +3,7 @@ const prisma = new PrismaClient()
 
 async function main() {
   await prisma.role.createMany({
-    data: [
-      { name: 'Admin' },
-      { name: 'Atendedor' },
-    ],
+    data: [{ name: 'Admin' }, { name: 'Atendedor' }],
     skipDuplicates: true,
   })
 
@@ -40,20 +37,19 @@ async function main() {
 
   const product = await prisma.product.upsert({
     where: {
-      barcode: "1234567890123"  // ESTE CAMPO ES @unique en tu modelo
+      barcode: '1234567890123', // ESTE CAMPO ES @unique en tu modelo
     },
     update: {},
     create: {
-      name: "Chicle Bazooka",
-      barcode: "1234567890123",
-      description: "Chicle clásico",
+      name: 'Chicle Bazooka',
+      barcode: '1234567890123',
+      description: 'Chicle clásico',
       price: 50,
       categoryId: category.id,
       supplierId: supplier.id,
-      branchId: branch.id
-    }
+      branchId: branch.id,
+    },
   })
-
 
   await prisma.branchStock.upsert({
     where: {

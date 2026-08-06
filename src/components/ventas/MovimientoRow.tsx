@@ -41,7 +41,7 @@ export default function MovimientoRow({
         className={clsx(
           index % 2 === 0 ? 'bg-gray-700' : 'bg-gray-800',
           'hover:bg-gray-600 transition-colors',
-          isSale ? 'cursor-pointer' : ''
+          isSale ? 'cursor-pointer' : '',
         )}
         onClick={() => isSale && onToggleExpand(m.id)}
       >
@@ -49,15 +49,13 @@ export default function MovimientoRow({
         <td className="px-4 py-2 text-gray-100">{m.id}</td>
 
         {/* Método de pago */}
-        <td className="px-4 py-2 text-gray-100 capitalize">
-          {m.paymentMethod.replace('_', ' ')}
-        </td>
+        <td className="px-4 py-2 text-gray-100 capitalize">{m.paymentMethod.replace('_', ' ')}</td>
 
         {/* Monto */}
         <td
           className={clsx(
             'px-4 py-2 text-right font-semibold',
-            m.amount < 0 ? 'text-red-400' : 'text-green-400'
+            m.amount < 0 ? 'text-red-400' : 'text-green-400',
           )}
         >
           {formatCurrency(m.amount)}
@@ -89,9 +87,7 @@ export default function MovimientoRow({
                 onToggleExpand(m.id)
               }}
               className="p-1 rounded-full hover:bg-gray-600 text-gray-100 focus:outline-none"
-              aria-label={
-                isExpanded ? 'Ocultar detalle' : 'Mostrar detalle'
-              }
+              aria-label={isExpanded ? 'Ocultar detalle' : 'Mostrar detalle'}
             >
               {isExpanded ? (
                 <ChevronUpIcon className="w-5 h-5" />

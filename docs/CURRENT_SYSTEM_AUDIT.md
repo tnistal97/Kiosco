@@ -10,16 +10,16 @@
 
 Kiosco es una aplicación Next.js 15 (App Router) que hoy resuelve **un solo caso de uso completo**: cargar un carrito y registrar una venta. Todo lo demás está a medio construir, duplicado o desconectado.
 
-| Dimensión | Estado |
-|---|---|
-| Superficie real | 8 páginas, 16 rutas de API, 13 modelos Prisma |
-| Código muerto | **19 archivos** (14 % del código fuente) nunca importados |
+| Dimensión                        | Estado                                                                       |
+| -------------------------------- | ---------------------------------------------------------------------------- |
+| Superficie real                  | 8 páginas, 16 rutas de API, 13 modelos Prisma                                |
+| Código muerto                    | **19 archivos** (14 % del código fuente) nunca importados                    |
 | Funcionalidad rota en producción | Eliminar venta (405), alta de movimiento de caja (400), export CSV (`alert`) |
-| Validación de entrada | **Ninguna** — no hay Zod ni equivalente en ninguna ruta |
-| Atomicidad de la venta | **No transaccional** — 4 escrituras independientes |
-| Autorización | 3 de 16 rutas verifican rol; el resto solo verifica que exista sesión |
-| Tests | **0** |
-| Configuración de lint | **Inexistente** (el script `lint` abre un asistente interactivo) |
+| Validación de entrada            | **Ninguna** — no hay Zod ni equivalente en ninguna ruta                      |
+| Atomicidad de la venta           | **No transaccional** — 4 escrituras independientes                           |
+| Autorización                     | 3 de 16 rutas verifican rol; el resto solo verifica que exista sesión        |
+| Tests                            | **0**                                                                        |
+| Configuración de lint            | **Inexistente** (el script `lint` abre un asistente interactivo)             |
 
 El sistema **funciona** para una sucursal, un cajero y poco volumen. No resiste ni concurrencia, ni un segundo empleado con intenciones, ni un catálogo grande, ni una segunda sucursal.
 
@@ -29,18 +29,18 @@ El sistema **funciona** para una sucursal, un cajero y poco volumen. No resiste 
 
 ### 2.1 Páginas
 
-| Ruta | Archivo | Rol requerido | Qué hace | Estado |
-|---|---|---|---|---|
-| `/` | `src/app/page.tsx` | público | Landing con logo y botón "Iniciar sesión" | Funciona, pero es una landing de marketing, no un panel |
-| `/login` | `src/app/login/page.tsx` | público | Usuario + contraseña | Funciona |
-| `/caja` | `src/app/caja/page.tsx` | autenticado | **Punto de venta.** Búsqueda, tabla de productos, carrito, método de pago, confirmación | Funciona; ver bugs en §5 |
-| `/ventas` | `src/app/ventas/page.tsx` | autenticado | Lista de movimientos de caja (ayer + hoy) y saldo | Funciona parcialmente; el borrado está roto |
-| `/productos` | `src/app/productos/page.tsx` | autenticado | Catálogo con filtros, orden, paginación, alta/edición/baja | Funciona; expone precios a todos |
-| `/control/caja` | `src/app/control/caja/page.tsx` | autenticado | Formulario de arqueo (monto contado + notas) | Funciona, pero **no está enlazada desde ningún lado** |
-| `/camera` | `src/app/camera/page.tsx` | autenticado | Escáner de cámara que consulta OpenFoodFacts | Funciona, **no enlazada**, no integrada con el catálogo propio |
-| `/admin/auditoria` | `src/app/admin/auditoria/page.tsx` | admin (solo en middleware) | Bitácora filtrable por fecha/tabla/acción | Funciona; sin paginación |
-| `/admin/sales` | `src/app/admin/sales/page.tsx` | admin (solo en middleware) | Reporte de ventas por rango de fechas | Funciona |
-| `/not-found` | `src/app/not-found.tsx` | — | 404 | Funciona |
+| Ruta               | Archivo                            | Rol requerido              | Qué hace                                                                                | Estado                                                         |
+| ------------------ | ---------------------------------- | -------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `/`                | `src/app/page.tsx`                 | público                    | Landing con logo y botón "Iniciar sesión"                                               | Funciona, pero es una landing de marketing, no un panel        |
+| `/login`           | `src/app/login/page.tsx`           | público                    | Usuario + contraseña                                                                    | Funciona                                                       |
+| `/caja`            | `src/app/caja/page.tsx`            | autenticado                | **Punto de venta.** Búsqueda, tabla de productos, carrito, método de pago, confirmación | Funciona; ver bugs en §5                                       |
+| `/ventas`          | `src/app/ventas/page.tsx`          | autenticado                | Lista de movimientos de caja (ayer + hoy) y saldo                                       | Funciona parcialmente; el borrado está roto                    |
+| `/productos`       | `src/app/productos/page.tsx`       | autenticado                | Catálogo con filtros, orden, paginación, alta/edición/baja                              | Funciona; expone precios a todos                               |
+| `/control/caja`    | `src/app/control/caja/page.tsx`    | autenticado                | Formulario de arqueo (monto contado + notas)                                            | Funciona, pero **no está enlazada desde ningún lado**          |
+| `/camera`          | `src/app/camera/page.tsx`          | autenticado                | Escáner de cámara que consulta OpenFoodFacts                                            | Funciona, **no enlazada**, no integrada con el catálogo propio |
+| `/admin/auditoria` | `src/app/admin/auditoria/page.tsx` | admin (solo en middleware) | Bitácora filtrable por fecha/tabla/acción                                               | Funciona; sin paginación                                       |
+| `/admin/sales`     | `src/app/admin/sales/page.tsx`     | admin (solo en middleware) | Reporte de ventas por rango de fechas                                                   | Funciona                                                       |
+| `/not-found`       | `src/app/not-found.tsx`            | —                          | 404                                                                                     | Funciona                                                       |
 
 **No existen** pantallas de: stock, proveedores, compras, clientes, usuarios, sucursales, configuración, reportes más allá de ventas.
 
@@ -48,57 +48,57 @@ El sistema **funciona** para una sucursal, un cajero y poco volumen. No resiste 
 
 Leyenda de autorización: **A** = verifica sesión · **R** = verifica rol · **S** = filtra por sucursal · **—** = ninguna verificación propia (depende únicamente del middleware).
 
-| Ruta | Métodos | Auth | Observación crítica |
-|---|---|---|---|
-| `/api/auth/login` | POST | público | Sin límite de intentos |
-| `/api/auth/logout` | POST | público | Solo borra la cookie; el token sigue siendo válido |
-| `/api/auth/validate` | POST | A | Deja dos `console.log` de depuración |
-| `/api/sales` | POST | A·S | **No transaccional. Confía en el precio del cliente. No valida stock.** |
-| `/api/sales/[id]` | — | — | **Archivo 100 % comentado.** La UI llama a `DELETE` → 405 |
-| `/api/sales/recent` | GET | **—** | Sin auth propia. Devuelve ventas de **todas** las sucursales |
-| `/api/cash` | GET·POST | A·S | GET tiene N+1. POST no impacta el saldo. Rango de fechas fijo |
-| `/api/cash/[id]` | GET·DELETE | A·S | DELETE es transaccional (bien), pero **borra físicamente** venta e ítems |
-| `/api/cash/balance` | GET | A·S | Lee `Branch.currentCash` |
-| `/api/cash/count` | POST | A | Registra arqueo; **nunca se compara con lo esperado** |
-| `/api/products` | GET·POST·DELETE | A·S | **`DELETE` sin `id` borra todo el catálogo de la sucursal, sin rol** |
-| `/api/products/[id]` | GET·PUT·DELETE | A·S | Transaccional. Sin verificación de rol |
-| `/api/stock` | GET·POST | **—** | GET devuelve stock de **todas** las sucursales. POST acepta `branchId` arbitrario |
-| `/api/stock/[id]` | GET·PUT·PATCH | A·S | La mejor ruta del proyecto: transaccional, valida negativos, audita |
-| `/api/categories` | GET·POST | **—** | Sin auth ni rol |
-| `/api/roles` | GET·POST | **—** | Sin auth ni rol. Permite crear roles arbitrarios |
-| `/api/suppliers` | GET·POST | **—** | Sin auth ni rol |
-| `/api/users` | GET·POST | **—** | **GET devuelve el hash de contraseña de todos los usuarios.** POST permite crear un admin |
-| `/api/branches` | GET·POST·PATCH·DELETE | A·R·S | Única ruta con control de rol correcto |
-| `/api/audit` | GET | A·S | Sin control de rol: un cajero lee toda la bitácora |
-| `/api/logs` | GET·POST | **—** | GET expone hashes. **POST permite falsificar la bitácora** |
+| Ruta                 | Métodos               | Auth    | Observación crítica                                                                       |
+| -------------------- | --------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `/api/auth/login`    | POST                  | público | Sin límite de intentos                                                                    |
+| `/api/auth/logout`   | POST                  | público | Solo borra la cookie; el token sigue siendo válido                                        |
+| `/api/auth/validate` | POST                  | A       | Deja dos `console.log` de depuración                                                      |
+| `/api/sales`         | POST                  | A·S     | **No transaccional. Confía en el precio del cliente. No valida stock.**                   |
+| `/api/sales/[id]`    | —                     | —       | **Archivo 100 % comentado.** La UI llama a `DELETE` → 405                                 |
+| `/api/sales/recent`  | GET                   | **—**   | Sin auth propia. Devuelve ventas de **todas** las sucursales                              |
+| `/api/cash`          | GET·POST              | A·S     | GET tiene N+1. POST no impacta el saldo. Rango de fechas fijo                             |
+| `/api/cash/[id]`     | GET·DELETE            | A·S     | DELETE es transaccional (bien), pero **borra físicamente** venta e ítems                  |
+| `/api/cash/balance`  | GET                   | A·S     | Lee `Branch.currentCash`                                                                  |
+| `/api/cash/count`    | POST                  | A       | Registra arqueo; **nunca se compara con lo esperado**                                     |
+| `/api/products`      | GET·POST·DELETE       | A·S     | **`DELETE` sin `id` borra todo el catálogo de la sucursal, sin rol**                      |
+| `/api/products/[id]` | GET·PUT·DELETE        | A·S     | Transaccional. Sin verificación de rol                                                    |
+| `/api/stock`         | GET·POST              | **—**   | GET devuelve stock de **todas** las sucursales. POST acepta `branchId` arbitrario         |
+| `/api/stock/[id]`    | GET·PUT·PATCH         | A·S     | La mejor ruta del proyecto: transaccional, valida negativos, audita                       |
+| `/api/categories`    | GET·POST              | **—**   | Sin auth ni rol                                                                           |
+| `/api/roles`         | GET·POST              | **—**   | Sin auth ni rol. Permite crear roles arbitrarios                                          |
+| `/api/suppliers`     | GET·POST              | **—**   | Sin auth ni rol                                                                           |
+| `/api/users`         | GET·POST              | **—**   | **GET devuelve el hash de contraseña de todos los usuarios.** POST permite crear un admin |
+| `/api/branches`      | GET·POST·PATCH·DELETE | A·R·S   | Única ruta con control de rol correcto                                                    |
+| `/api/audit`         | GET                   | A·S     | Sin control de rol: un cajero lee toda la bitácora                                        |
+| `/api/logs`          | GET·POST              | **—**   | GET expone hashes. **POST permite falsificar la bitácora**                                |
 
 ### 2.3 Componentes
 
-| Directorio | Archivos | Estado |
-|---|---|---|
-| `components/caja/` | 10 | **En uso** — es la UI del punto de venta |
-| `components/productos/` | 7 | **En uso** |
-| `components/ventas/` | 10 | **En uso** |
-| `components/auditoria/` | 7 | **En uso** |
-| `components/admin/sales/` | 6 | **En uso** |
-| `components/ui/` | 2 | `Modal`, `Spinner`. En uso |
-| `components/cashregister/` | **8** | **CÓDIGO MUERTO** — ninguna página lo importa |
-| `components/dashboard/` | **8** | **CÓDIGO MUERTO** — ninguna página lo importa |
-| Sueltos | 4 | `Navbar`, `CashControlModal`, `BarcodeScanner` en uso; `ClientAuthCheck` **muerto** |
+| Directorio                 | Archivos | Estado                                                                              |
+| -------------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `components/caja/`         | 10       | **En uso** — es la UI del punto de venta                                            |
+| `components/productos/`    | 7        | **En uso**                                                                          |
+| `components/ventas/`       | 10       | **En uso**                                                                          |
+| `components/auditoria/`    | 7        | **En uso**                                                                          |
+| `components/admin/sales/`  | 6        | **En uso**                                                                          |
+| `components/ui/`           | 2        | `Modal`, `Spinner`. En uso                                                          |
+| `components/cashregister/` | **8**    | **CÓDIGO MUERTO** — ninguna página lo importa                                       |
+| `components/dashboard/`    | **8**    | **CÓDIGO MUERTO** — ninguna página lo importa                                       |
+| Sueltos                    | 4        | `Navbar`, `CashControlModal`, `BarcodeScanner` en uso; `ClientAuthCheck` **muerto** |
 
 `cashregister/` y `dashboard/` son dos generaciones anteriores de la misma pantalla de venta que nunca se borraron. Contienen `CartSidebar`, `ProductTable`, `SearchBar`, `CartItem` — nombres idénticos a los de `caja/`, con comportamiento levemente distinto. Es la principal fuente de confusión al leer el proyecto.
 
 ### 2.4 Hooks, stores y librerías
 
-| Archivo | Qué hace | Observación |
-|---|---|---|
-| `hooks/useProducts.ts` | Trae productos y categorías | Refetch completo en cada montaje; sin caché ni deduplicación |
-| `store/cart.ts` | Carrito Zustand | **En uso.** Sin persistencia: recargar la página pierde la venta |
-| `app/store/cart.ts` | Carrito Zustand | **CÓDIGO MUERTO** — duplicado con lógica distinta (`updateQuantity(0)` elimina, en el otro hace `Math.max(1,…)`) |
-| `lib/prisma.ts` | Singleton de Prisma | Correcto |
-| `lib/formatCurrency.ts` | Formato ARS | Correcto, pero `ventas/page.tsx` define su propia versión duplicada |
-| `lib/utils.ts` | — | 12 líneas |
-| `types/` | 4 archivos | `CashMovement` está definido dos veces (`types/index.ts` y `types/caja.ts`) |
+| Archivo                 | Qué hace                    | Observación                                                                                                      |
+| ----------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `hooks/useProducts.ts`  | Trae productos y categorías | Refetch completo en cada montaje; sin caché ni deduplicación                                                     |
+| `store/cart.ts`         | Carrito Zustand             | **En uso.** Sin persistencia: recargar la página pierde la venta                                                 |
+| `app/store/cart.ts`     | Carrito Zustand             | **CÓDIGO MUERTO** — duplicado con lógica distinta (`updateQuantity(0)` elimina, en el otro hace `Math.max(1,…)`) |
+| `lib/prisma.ts`         | Singleton de Prisma         | Correcto                                                                                                         |
+| `lib/formatCurrency.ts` | Formato ARS                 | Correcto, pero `ventas/page.tsx` define su propia versión duplicada                                              |
+| `lib/utils.ts`          | —                           | 12 líneas                                                                                                        |
+| `types/`                | 4 archivos                  | `CashMovement` está definido dos veces (`types/index.ts` y `types/caja.ts`)                                      |
 
 ---
 
@@ -130,25 +130,25 @@ erDiagram
 
 ### 3.2 Problemas del esquema
 
-| # | Problema | Modelo | Gravedad |
-|---|---|---|---|
-| D1 | **`Product.barcode` es `@unique` global y `Product.branchId` es obligatorio.** Dos sucursales no pueden tener el mismo producto: la segunda choca con el índice único. El proyecto es estructuralmente incapaz de escalar a más de una sucursal | `Product` | **Crítica** |
-| D2 | **Dinero en `Float`** — `Product.price`, `SaleItem.price`, `CashRegisterMovement.amount`, `CashCount.amount`, `Branch.currentCash`. Errores de redondeo acumulativos en caja | 5 modelos | **Crítica** |
-| D3 | **`Branch.currentCash` es un total mutable**, actualizado con leer-modificar-escribir sin transacción. Dos ventas simultáneas pierden una | `Branch` | **Crítica** |
-| D4 | **No existe el concepto de turno / sesión de caja.** No hay apertura, ni saldo inicial, ni cierre. `currentCash` crece desde el origen de los tiempos | — | **Crítica** |
-| D5 | **`CashCount` (arqueo) no se compara con nada.** Se guarda el monto contado y nunca se calcula la diferencia | `CashCount` | Alta |
-| D6 | **No hay libro de movimientos de stock.** `BranchStock.quantity` se muta directamente; el historial solo vive en `AuditLog`, que es texto libre | `BranchStock` | Alta |
-| D7 | **La relación venta ↔ pago es una cadena de texto.** El método de pago se recupera parseando `description` con `/Venta\s*#(\d+)/i`. Si alguien edita la descripción, el reporte miente | `CashRegisterMovement` | Alta |
-| D8 | `Sale` no guarda `total`, ni número de comprobante, ni estado (anulada/devuelta) | `Sale` | Alta |
-| D9 | Borrado físico de `Sale` y `SaleItem` en `/api/cash/[id]` — destruye registros financieros | `Sale` | Alta |
-| D10 | `paymentMethod` y `type` son `String` libres, no enums | 2 modelos | Media |
-| D11 | `StockCheck` está definido y **nunca se usa**. Su `@@unique([stockId, userId, date])` sobre un `DateTime @default(now())` no restringe nada | `StockCheck` | Media |
-| D12 | `Sale.date` y `Sale.createdAt` son dos campos con el mismo default | `Sale` | Baja |
-| D13 | Sin `updatedAt` en ningún modelo | todos | Media |
-| D14 | Sin índices declarados para las consultas reales (`CashRegisterMovement` por `branchId`+`date`, `AuditLog` por `timestamp`) | 2 modelos | Media |
-| D15 | `Product.value Int?` — semántica no documentada; parece ser el costo. Solo lo escribe el seed | `Product` | Media |
-| D16 | `Supplier` existe con API, sin ninguna pantalla que lo use | `Supplier` | Media |
-| D17 | `AuditLog.changes` guarda snapshots JSON completos del registro. Crecerá sin control y **filtra costos** a quien pueda leer la bitácora | `AuditLog` | Media |
+| #   | Problema                                                                                                                                                                                                                                        | Modelo                 | Gravedad    |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ----------- |
+| D1  | **`Product.barcode` es `@unique` global y `Product.branchId` es obligatorio.** Dos sucursales no pueden tener el mismo producto: la segunda choca con el índice único. El proyecto es estructuralmente incapaz de escalar a más de una sucursal | `Product`              | **Crítica** |
+| D2  | **Dinero en `Float`** — `Product.price`, `SaleItem.price`, `CashRegisterMovement.amount`, `CashCount.amount`, `Branch.currentCash`. Errores de redondeo acumulativos en caja                                                                    | 5 modelos              | **Crítica** |
+| D3  | **`Branch.currentCash` es un total mutable**, actualizado con leer-modificar-escribir sin transacción. Dos ventas simultáneas pierden una                                                                                                       | `Branch`               | **Crítica** |
+| D4  | **No existe el concepto de turno / sesión de caja.** No hay apertura, ni saldo inicial, ni cierre. `currentCash` crece desde el origen de los tiempos                                                                                           | —                      | **Crítica** |
+| D5  | **`CashCount` (arqueo) no se compara con nada.** Se guarda el monto contado y nunca se calcula la diferencia                                                                                                                                    | `CashCount`            | Alta        |
+| D6  | **No hay libro de movimientos de stock.** `BranchStock.quantity` se muta directamente; el historial solo vive en `AuditLog`, que es texto libre                                                                                                 | `BranchStock`          | Alta        |
+| D7  | **La relación venta ↔ pago es una cadena de texto.** El método de pago se recupera parseando `description` con `/Venta\s*#(\d+)/i`. Si alguien edita la descripción, el reporte miente                                                          | `CashRegisterMovement` | Alta        |
+| D8  | `Sale` no guarda `total`, ni número de comprobante, ni estado (anulada/devuelta)                                                                                                                                                                | `Sale`                 | Alta        |
+| D9  | Borrado físico de `Sale` y `SaleItem` en `/api/cash/[id]` — destruye registros financieros                                                                                                                                                      | `Sale`                 | Alta        |
+| D10 | `paymentMethod` y `type` son `String` libres, no enums                                                                                                                                                                                          | 2 modelos              | Media       |
+| D11 | `StockCheck` está definido y **nunca se usa**. Su `@@unique([stockId, userId, date])` sobre un `DateTime @default(now())` no restringe nada                                                                                                     | `StockCheck`           | Media       |
+| D12 | `Sale.date` y `Sale.createdAt` son dos campos con el mismo default                                                                                                                                                                              | `Sale`                 | Baja        |
+| D13 | Sin `updatedAt` en ningún modelo                                                                                                                                                                                                                | todos                  | Media       |
+| D14 | Sin índices declarados para las consultas reales (`CashRegisterMovement` por `branchId`+`date`, `AuditLog` por `timestamp`)                                                                                                                     | 2 modelos              | Media       |
+| D15 | `Product.value Int?` — semántica no documentada; parece ser el costo. Solo lo escribe el seed                                                                                                                                                   | `Product`              | Media       |
+| D16 | `Supplier` existe con API, sin ninguna pantalla que lo use                                                                                                                                                                                      | `Supplier`             | Media       |
+| D17 | `AuditLog.changes` guarda snapshots JSON completos del registro. Crecerá sin control y **filtra costos** a quien pueda leer la bitácora                                                                                                         | `AuditLog`             | Media       |
 
 ### 3.3 Migraciones
 
@@ -169,7 +169,7 @@ Siete migraciones que **no forman una cadena aplicable**. La séptima (`20250605
 ### 4.2 Problemas
 
 - **Cuatro implementaciones distintas del mismo helper.** `getUserFromCookie` aparece copiado en `/api/sales`, `/api/cash`, `/api/cash/balance` y `/api/audit` usando `req.headers.get('cookie')` con regex; `getAuth` aparece en `/api/products`, `/api/products/[id]`, `/api/stock/[id]`, `/api/cash/[id]` y `/api/branches` usando `cookies()`. Difieren en el manejo de errores y en qué claims exigen.
-- **El rol se verifica en 3 de 16 rutas.** Solo `/api/branches` lo hace bien. La protección de `/admin/*` vive únicamente en el middleware, que protege *las páginas*, no las APIs: `GET /api/audit` y `GET /api/admin/sales` son accesibles para cualquier cajero.
+- **El rol se verifica en 3 de 16 rutas.** Solo `/api/branches` lo hace bien. La protección de `/admin/*` vive únicamente en el middleware, que protege _las páginas_, no las APIs: `GET /api/audit` y `GET /api/admin/sales` son accesibles para cualquier cajero.
 - **El middleware exime cualquier ruta que contenga un punto**: `if (/\.(.*)$/.test(pathname))`. La intención era dejar pasar `.css`/`.png`, pero es una exención de autenticación por patrón, no por tipo de recurso.
 - **Roles con nombres inconsistentes.** `prisma/seed.ts` crea `admin` / `vendedor`; `scripts/insertData.ts` crea `Admin` / `Atendedor`. La comparación es sensible a mayúsculas: un usuario con rol `Admin` no pasa el control de `/admin/*`.
 - **No hay permisos, solo un booleano `isAdmin`.** No se puede expresar "este encargado puede anular ventas pero no cambiar precios".
@@ -300,7 +300,7 @@ Siete migraciones que **no forman una cadena aplicable**. La séptima (`20250605
 
 - `next-pwa` genera `public/sw.js` en cada build (aparece como cambio sin commitear; conviene ignorarlo o versionarlo deliberadamente).
 - **El service worker cachea `/api/*`** con estrategia `NetworkFirst`, excluyendo solo `/api/auth/`. Respuestas autenticadas —catálogo con precios, movimientos de caja— quedan en `CacheStorage` y sobreviven al logout.
-- `manifest.json` describe otra aplicación: *"Kiosco Argentino — Escanea y consulta productos argentinos"*, `start_url: "/"` (la landing, no la caja).
+- `manifest.json` describe otra aplicación: _"Kiosco Argentino — Escanea y consulta productos argentinos"_, `start_url: "/"` (la landing, no la caja).
 - Sin estrategia offline real: la venta requiere red. Para un almacén, poder vender con internet caído es un requisito, no un lujo.
 
 ### 5.10 Integraciones
@@ -315,26 +315,26 @@ Siete migraciones que **no forman una cadena aplicable**. La séptima (`20250605
 
 ### 6.1 Nunca importado (19 archivos)
 
-| Archivo | Motivo |
-|---|---|
-| `src/components/cashregister/` (8 archivos) | Generación anterior de la pantalla de venta |
-| `src/components/dashboard/` (8 archivos) | Generación anterior del panel |
-| `src/app/store/cart.ts` | Duplicado de `src/store/cart.ts` con lógica divergente |
-| `src/components/ClientAuthCheck.tsx` | Reemplazado por `middleware.ts` |
-| `src/app/api/sales/[id]/route.ts` | 192 líneas dentro de un bloque de comentario |
-| `test.js` | Script destructivo suelto en la raíz |
+| Archivo                                     | Motivo                                                 |
+| ------------------------------------------- | ------------------------------------------------------ |
+| `src/components/cashregister/` (8 archivos) | Generación anterior de la pantalla de venta            |
+| `src/components/dashboard/` (8 archivos)    | Generación anterior del panel                          |
+| `src/app/store/cart.ts`                     | Duplicado de `src/store/cart.ts` con lógica divergente |
+| `src/components/ClientAuthCheck.tsx`        | Reemplazado por `middleware.ts`                        |
+| `src/app/api/sales/[id]/route.ts`           | 192 líneas dentro de un bloque de comentario           |
+| `test.js`                                   | Script destructivo suelto en la raíz                   |
 
 ### 6.2 Duplicado real
 
-| Concepto | Dónde |
-|---|---|
-| Helper de autenticación | 9 rutas, 2 implementaciones, 4 variantes |
-| Carrito Zustand | `store/cart.ts` + `app/store/cart.ts` |
-| `formatCurrency` | `lib/formatCurrency.ts` + copia local en `ventas/page.tsx` |
-| Tipo `CashMovement` | `types/index.ts` + `types/caja.ts` |
-| Formulario de arqueo | `/control/caja` + `CashControlModal` |
-| Scripts de datos | `.js` y `.ts` de `seed`, `insertData`, `insertCategories`, `insertUsers` |
-| Umbral de stock crítico `< 10` | 3 archivos |
+| Concepto                       | Dónde                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------ |
+| Helper de autenticación        | 9 rutas, 2 implementaciones, 4 variantes                                 |
+| Carrito Zustand                | `store/cart.ts` + `app/store/cart.ts`                                    |
+| `formatCurrency`               | `lib/formatCurrency.ts` + copia local en `ventas/page.tsx`               |
+| Tipo `CashMovement`            | `types/index.ts` + `types/caja.ts`                                       |
+| Formulario de arqueo           | `/control/caja` + `CashControlModal`                                     |
+| Scripts de datos               | `.js` y `.ts` de `seed`, `insertData`, `insertCategories`, `insertUsers` |
+| Umbral de stock crítico `< 10` | 3 archivos                                                               |
 
 ### 6.3 Configuración inerte
 
@@ -345,30 +345,30 @@ Siete migraciones que **no forman una cadena aplicable**. La séptima (`20250605
 
 ### 6.4 Dependencias declaradas y no usadas
 
-| Paquete | Uso real | Nota |
-|---|---|---|
-| `next-auth` | **0 archivos** | Es la **única vulnerabilidad crítica** del proyecto. Se puede desinstalar |
-| `@faker-js/faker` | 0 archivos | |
-| `lucide-react` | 0 archivos | Se usa `@heroicons/react` |
-| `react-icons` | 0 archivos | |
-| `ts-node` | 0 | Se usa `tsx` |
-| `@types/eslint`, `@types/estree`, `@types/trusted-types` | — | Tipos sin la librería correspondiente |
-| `@prisma/client` | intensivo | **Está en `devDependencies`** siendo una dependencia de ejecución |
+| Paquete                                                  | Uso real       | Nota                                                                      |
+| -------------------------------------------------------- | -------------- | ------------------------------------------------------------------------- |
+| `next-auth`                                              | **0 archivos** | Es la **única vulnerabilidad crítica** del proyecto. Se puede desinstalar |
+| `@faker-js/faker`                                        | 0 archivos     |                                                                           |
+| `lucide-react`                                           | 0 archivos     | Se usa `@heroicons/react`                                                 |
+| `react-icons`                                            | 0 archivos     |                                                                           |
+| `ts-node`                                                | 0              | Se usa `tsx`                                                              |
+| `@types/eslint`, `@types/estree`, `@types/trusted-types` | —              | Tipos sin la librería correspondiente                                     |
+| `@prisma/client`                                         | intensivo      | **Está en `devDependencies`** siendo una dependencia de ejecución         |
 
 ---
 
 ## 7. Rendimiento
 
-| # | Problema | Impacto |
-|---|---|---|
-| P1 | `GET /api/products` devuelve el catálogo completo sin paginar, y `caja/page.tsx` lo vuelve a pedir **después de cada venta** | En hora pico, con catálogo grande, cada venta dispara una descarga de varios MB |
-| P2 | `GET /api/cash` hace N+1: un `saleItem.findMany` por movimiento | Con 200 movimientos diarios son 201 consultas |
-| P3 | `GET /api/audit` sin límite ni paginación | Crece sin techo; terminará colgando el navegador |
-| P4 | El layout raíz ejecuta `jwt.verify` + `prisma.user.findUnique` en **cada** petición renderizada | Una consulta extra por navegación |
-| P5 | `middleware.ts` consulta la base en cada request a `/admin/*` | Round-trip adicional por request |
-| P6 | Todas las rutas con `dynamic = 'force-dynamic'`; sin caché ni revalidación | Nada se reutiliza |
-| P7 | Sin índices en `CashRegisterMovement(branchId, date)` ni `AuditLog(timestamp)` | Escaneos completos al crecer |
-| P8 | `useProducts` refetch completo en cada montaje, sin caché compartida | El catálogo se descarga de nuevo al cambiar de pantalla |
+| #   | Problema                                                                                                                     | Impacto                                                                         |
+| --- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| P1  | `GET /api/products` devuelve el catálogo completo sin paginar, y `caja/page.tsx` lo vuelve a pedir **después de cada venta** | En hora pico, con catálogo grande, cada venta dispara una descarga de varios MB |
+| P2  | `GET /api/cash` hace N+1: un `saleItem.findMany` por movimiento                                                              | Con 200 movimientos diarios son 201 consultas                                   |
+| P3  | `GET /api/audit` sin límite ni paginación                                                                                    | Crece sin techo; terminará colgando el navegador                                |
+| P4  | El layout raíz ejecuta `jwt.verify` + `prisma.user.findUnique` en **cada** petición renderizada                              | Una consulta extra por navegación                                               |
+| P5  | `middleware.ts` consulta la base en cada request a `/admin/*`                                                                | Round-trip adicional por request                                                |
+| P6  | Todas las rutas con `dynamic = 'force-dynamic'`; sin caché ni revalidación                                                   | Nada se reutiliza                                                               |
+| P7  | Sin índices en `CashRegisterMovement(branchId, date)` ni `AuditLog(timestamp)`                                               | Escaneos completos al crecer                                                    |
+| P8  | `useProducts` refetch completo en cada montaje, sin caché compartida                                                         | El catálogo se descarga de nuevo al cambiar de pantalla                         |
 
 ---
 
@@ -392,17 +392,17 @@ Siete migraciones que **no forman una cadena aplicable**. La séptima (`20250605
 
 ## 9. Veredicto por módulo
 
-| Módulo | Conservar | Refactorizar | Eliminar |
-|---|---|---|---|
-| Venta (`/caja`) | Flujo escaneo→carrito→confirmación; alta rápida de producto | `POST /api/sales` completo; foco y teclado | — |
-| Caja | Tabla de movimientos con detalle | Modelo entero (turnos, apertura/cierre, arqueo con diferencia) | `/control/caja`; `NewMovementModal` roto |
-| Productos | Patrón filtros+métricas+tabla+paginación | Mover al servidor; rol; stock por delta | — |
-| Stock | `/api/stock/[id]` | Construir la pantalla que falta | `/api/stock` (raíz) |
-| Auditoría | Disciplina `before`/`after` | Centralizar, paginar, restringir por rol | `/api/logs` |
-| Reportes | Rango de fechas + métricas | Vincular pago a venta por FK, no por texto | — |
-| Sucursales | `/api/branches` (referencia de cómo hacerlo bien) | Construir la pantalla | — |
-| Usuarios | — | Reescribir por completo | `/api/users` tal como está |
-| PWA | Instalabilidad | Excluir APIs privadas del caché; manifest real | — |
-| Auth | Cookie httpOnly + JWT | Helper único, permisos granulares, revocación | — |
-| Código muerto | — | — | 19 archivos (§6.1) |
-| Dependencias | — | — | `next-auth`, `faker`, `lucide-react`, `react-icons`, `ts-node` |
+| Módulo          | Conservar                                                   | Refactorizar                                                   | Eliminar                                                       |
+| --------------- | ----------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------- |
+| Venta (`/caja`) | Flujo escaneo→carrito→confirmación; alta rápida de producto | `POST /api/sales` completo; foco y teclado                     | —                                                              |
+| Caja            | Tabla de movimientos con detalle                            | Modelo entero (turnos, apertura/cierre, arqueo con diferencia) | `/control/caja`; `NewMovementModal` roto                       |
+| Productos       | Patrón filtros+métricas+tabla+paginación                    | Mover al servidor; rol; stock por delta                        | —                                                              |
+| Stock           | `/api/stock/[id]`                                           | Construir la pantalla que falta                                | `/api/stock` (raíz)                                            |
+| Auditoría       | Disciplina `before`/`after`                                 | Centralizar, paginar, restringir por rol                       | `/api/logs`                                                    |
+| Reportes        | Rango de fechas + métricas                                  | Vincular pago a venta por FK, no por texto                     | —                                                              |
+| Sucursales      | `/api/branches` (referencia de cómo hacerlo bien)           | Construir la pantalla                                          | —                                                              |
+| Usuarios        | —                                                           | Reescribir por completo                                        | `/api/users` tal como está                                     |
+| PWA             | Instalabilidad                                              | Excluir APIs privadas del caché; manifest real                 | —                                                              |
+| Auth            | Cookie httpOnly + JWT                                       | Helper único, permisos granulares, revocación                  | —                                                              |
+| Código muerto   | —                                                           | —                                                              | 19 archivos (§6.1)                                             |
+| Dependencias    | —                                                           | —                                                              | `next-auth`, `faker`, `lucide-react`, `react-icons`, `ts-node` |

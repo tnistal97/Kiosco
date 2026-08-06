@@ -4,7 +4,7 @@ import React from 'react'
 
 interface DatePickerProps {
   label: string
-  value: string           // formato "YYYY-MM-DD"
+  value: string // formato "YYYY-MM-DD"
   onChange: (newDate: string) => void
 }
 

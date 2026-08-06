@@ -5,13 +5,13 @@
 
 ## Cómo se levantó el entorno
 
-| | |
-|---|---|
-| Base | Instancia PostgreSQL 18 **aislada**, creada con `initdb` en el directorio temporal de la sesión, escuchando en `127.0.0.1:5433` |
-| Aislamiento | No se tocó el PostgreSQL del sistema (puerto 5432) ni ninguna base existente. La instancia es descartable |
-| Esquema | Aplicado con `psql` desde `prisma/migrations/20250605201717_.../migration.sql`. **No se usó `prisma db push`, `migrate deploy`, `migrate reset` ni `db seed`**, según la restricción del brief |
-| Datos | Script propio con productos y precios ficticios de almacén argentino. Ningún dato real |
-| Producción | **No se tocó.** El servidor sigue con PM2 detenido |
+|             |                                                                                                                                                                                                |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base        | Instancia PostgreSQL 18 **aislada**, creada con `initdb` en el directorio temporal de la sesión, escuchando en `127.0.0.1:5433`                                                                |
+| Aislamiento | No se tocó el PostgreSQL del sistema (puerto 5432) ni ninguna base existente. La instancia es descartable                                                                                      |
+| Esquema     | Aplicado con `psql` desde `prisma/migrations/20250605201717_.../migration.sql`. **No se usó `prisma db push`, `migrate deploy`, `migrate reset` ni `db seed`**, según la restricción del brief |
+| Datos       | Script propio con productos y precios ficticios de almacén argentino. Ningún dato real                                                                                                         |
+| Producción  | **No se tocó.** El servidor sigue con PM2 detenido                                                                                                                                             |
 
 **Limitación:** no se pudieron tomar capturas de pantalla porque el panel de navegador no estaba visible durante la sesión. En su lugar se midieron directamente las propiedades geométricas del DOM, que dan datos más precisos que una imagen. Las capturas quedan pendientes si se las quiere para el expediente.
 
@@ -44,7 +44,9 @@ El cajero no lo ve. Si después confirma la venta, le cobra $12.500 de más al c
 **Causa:** `src/components/caja/SearchBar.tsx:23-25`:
 
 ```ts
-useEffect(() => { inputRef.current?.focus() })   // sin array de dependencias
+useEffect(() => {
+  inputRef.current?.focus()
+}) // sin array de dependencias
 ```
 
 Sin array de dependencias, se ejecuta **en cada render**. Mientras el modal esté abierto, cualquier cosa que haga re-renderizar la página de caja —una recarga de productos, un cambio en el carrito, el debounce de búsqueda— devuelve el foco al buscador y lo saca del formulario.
@@ -68,12 +70,12 @@ La operación correcta (`DELETE /api/cash/[id]`) sí está implementada, es tran
 
 **Reproducido.** Con la sesión de "Bruno Cajero" (rol `vendedor`):
 
-| Acción | Resultado |
-|---|---|
-| Cambiar el precio del Fernet de $12.500 a **$1** | HTTP 200 — aplicado |
-| Borrar un producto del catálogo | HTTP 200 — borrado |
-| Abrir `/admin/auditoria` escribiendo la URL | **Se abrió.** Vio la bitácora de la dueña |
-| Consultar `/api/users`, `/api/audit`, `/api/admin/sales` | HTTP 200 en todos |
+| Acción                                                   | Resultado                                 |
+| -------------------------------------------------------- | ----------------------------------------- |
+| Cambiar el precio del Fernet de $12.500 a **$1**         | HTTP 200 — aplicado                       |
+| Borrar un producto del catálogo                          | HTTP 200 — borrado                        |
+| Abrir `/admin/auditoria` escribiendo la URL              | **Se abrió.** Vio la bitácora de la dueña |
+| Consultar `/api/users`, `/api/audit`, `/api/admin/sales` | HTTP 200 en todos                         |
 
 La barra de navegación **sí oculta** los enlaces de administración a los no-admin. Pero ocultar el botón no cierra la puerta: la página se abre escribiendo la dirección. Además, la respuesta de edición de producto devuelve el campo `value` (el costo), de modo que el cajero ve el margen.
 
@@ -87,14 +89,14 @@ Detalle técnico completo en [SECURITY_AUDIT.md](SECURITY_AUDIT.md).
 
 Medido en 1366×768, la resolución típica de un monitor de caja:
 
-| Elemento | Alto |
-|---|---|
-| Barra de navegación (`sticky`) | 65 px |
-| Cabecera de búsqueda (`sticky`) | 71 px |
-| Relleno y márgenes | 64 px |
-| **Total antes del primer producto** | **200 px — el 26 % de la pantalla** |
-| Alto de cada fila de producto | 61 px |
-| **Productos visibles sin scrollear** | **9** |
+| Elemento                             | Alto                                |
+| ------------------------------------ | ----------------------------------- |
+| Barra de navegación (`sticky`)       | 65 px                               |
+| Cabecera de búsqueda (`sticky`)      | 71 px                               |
+| Relleno y márgenes                   | 64 px                               |
+| **Total antes del primer producto**  | **200 px — el 26 % de la pantalla** |
+| Alto de cada fila de producto        | 61 px                               |
+| **Productos visibles sin scrollear** | **9**                               |
 
 Con 47 productos hay que scrollear cinco pantallas. En un almacén con mil artículos, la tabla es inutilizable sin buscar.
 
@@ -116,18 +118,18 @@ La barra tiene tres enlaces (Caja, Productos, Ventas), un botón (Cierre Caja) y
 
 Y los nombres confunden:
 
-| Etiqueta | Lo que realmente es |
-|---|---|
-| **Caja** | El punto de venta |
-| **Ventas** | El listado de movimientos de caja |
+| Etiqueta        | Lo que realmente es                                   |
+| --------------- | ----------------------------------------------------- |
+| **Caja**        | El punto de venta                                     |
+| **Ventas**      | El listado de movimientos de caja                     |
 | **Cierre Caja** | Un arqueo (registra el monto contado, no cierra nada) |
-| `/control/caja` | El mismo arqueo, en una página sin enlaces |
+| `/control/caja` | El mismo arqueo, en una página sin enlaces            |
 
 Un empleado nuevo va a "Ventas" buscando las ventas y encuentra la caja. Va a "Caja" buscando la caja y encuentra el punto de venta.
 
 ### 2.4 · El inicio no es un panel
 
-`/` es una landing de marketing con el eslogan *"Controlá productos, ventas y stock con una app simple, rápida y elegante"* y un botón "¿Necesitás ayuda?" que ejecuta `alert('Contacto: soporte@kioscoapp.com')`. Un empleado que abre el sistema no ve nada accionable: ni la caja del día, ni alertas de stock, ni ventas.
+`/` es una landing de marketing con el eslogan _"Controlá productos, ventas y stock con una app simple, rápida y elegante"_ y un botón "¿Necesitás ayuda?" que ejecuta `alert('Contacto: soporte@kioscoapp.com')`. Un empleado que abre el sistema no ve nada accionable: ni la caja del día, ni alertas de stock, ni ventas.
 
 ---
 
@@ -137,13 +139,13 @@ Un empleado nuevo va a "Ventas" buscando las ventas y encuentra la caja. Va a "C
 
 Medido en el HTML servido:
 
-| Pantalla | Clase de fondo | Comportamiento |
-|---|---|---|
-| `/caja` | `bg-gray-100 dark:bg-gray-900` | Sigue la preferencia del sistema operativo |
-| `/productos` | `bg-gray-900` | **Siempre oscuro** |
-| `/ventas` | `bg-gray-900` | **Siempre oscuro** |
-| `/admin/auditoria` | `bg-gray-900` | **Siempre oscuro** |
-| `/login`, `/` | `bg-gradient-to-br from-blue-100…` | Degradado celeste, sigue el sistema |
+| Pantalla           | Clase de fondo                     | Comportamiento                             |
+| ------------------ | ---------------------------------- | ------------------------------------------ |
+| `/caja`            | `bg-gray-100 dark:bg-gray-900`     | Sigue la preferencia del sistema operativo |
+| `/productos`       | `bg-gray-900`                      | **Siempre oscuro**                         |
+| `/ventas`          | `bg-gray-900`                      | **Siempre oscuro**                         |
+| `/admin/auditoria` | `bg-gray-900`                      | **Siempre oscuro**                         |
+| `/login`, `/`      | `bg-gradient-to-br from-blue-100…` | Degradado celeste, sigue el sistema        |
 
 En una máquina con el sistema en modo claro, el cajero pasa de una caja blanca a un catálogo negro y vuelve. En modo oscuro, de una caja negra a un login celeste.
 
@@ -167,23 +169,23 @@ El mismo objeto de estilo de ocho propiedades (`background: '#1f2937'`, `fontSiz
 
 Probado en las cuatro resoluciones pedidas.
 
-| Resolución | Resultado |
-|---|---|
-| **1920×1080** (escritorio) | Correcto. El carrito lateral ocupa un tercio; sobra espacio horizontal sin aprovechar |
-| **1366×768** (monitor de caja) | Funcional pero apretado: 26 % de cromo, 9 productos visibles |
-| **768×1024** (tablet) | El carrito lateral desaparece (`hidden md:flex` corta en 768). Se pasa al modal de carrito. Aceptable |
-| **375×812** (móvil) | **Falla.** Ver abajo |
+| Resolución                     | Resultado                                                                                             |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| **1920×1080** (escritorio)     | Correcto. El carrito lateral ocupa un tercio; sobra espacio horizontal sin aprovechar                 |
+| **1366×768** (monitor de caja) | Funcional pero apretado: 26 % de cromo, 9 productos visibles                                          |
+| **768×1024** (tablet)          | El carrito lateral desaparece (`hidden md:flex` corta en 768). Se pasa al modal de carrito. Aceptable |
+| **375×812** (móvil)            | **Falla.** Ver abajo                                                                                  |
 
 ### 4.1 · La barra de navegación desborda en móvil
 
 Medido a 375 px de ancho:
 
-| | |
-|---|---|
-| Ancho del contenedor | 375 px |
-| Suma del ancho de sus hijos | **718 px** |
-| Lista de enlaces (`ul`) sola | 395 px |
-| ¿Hay menú hamburguesa? | **No** |
+|                              |            |
+| ---------------------------- | ---------- |
+| Ancho del contenedor         | 375 px     |
+| Suma del ancho de sus hijos  | **718 px** |
+| Lista de enlaces (`ul`) sola | 395 px     |
+| ¿Hay menú hamburguesa?       | **No**     |
 
 Los elementos se comprimen y superponen dentro de un contenedor que mide la mitad de lo necesario. No hay menú colapsable, ni scroll horizontal deliberado, ni versión reducida. El `<body>` no desborda solo porque los hijos se achican, no porque el diseño se adapte.
 
@@ -199,13 +201,13 @@ Los peores son los del flujo de venta: los botones `−` / `+` / `❌` de cada f
 
 ### 5.1 · Diálogos nativos del navegador
 
-| Dónde | Qué usa |
-|---|---|
-| `productos/page.tsx:130` | `confirm('¿Confirma que desea eliminar este producto?')` |
-| `productos/page.tsx:126` | `alert('Función de exportar CSV no implementada.')` |
-| `caja/NewProductModal.tsx:50` | `alert('✅ Producto creado correctamente.')` |
-| `ventas/NewMovementModal.tsx:26,44` | `alert('El monto no puede ser cero.')` |
-| `page.tsx:25` | `alert('Contacto: soporte@kioscoapp.com')` |
+| Dónde                               | Qué usa                                                  |
+| ----------------------------------- | -------------------------------------------------------- |
+| `productos/page.tsx:130`            | `confirm('¿Confirma que desea eliminar este producto?')` |
+| `productos/page.tsx:126`            | `alert('Función de exportar CSV no implementada.')`      |
+| `caja/NewProductModal.tsx:50`       | `alert('✅ Producto creado correctamente.')`             |
+| `ventas/NewMovementModal.tsx:26,44` | `alert('El monto no puede ser cero.')`                   |
+| `page.tsx:25`                       | `alert('Contacto: soporte@kioscoapp.com')`               |
 
 Los diálogos nativos bloquean el hilo, no se pueden estilar, en algunos navegadores se pueden silenciar, y en pantalla táctil aparecen fuera de contexto. El proyecto **ya tiene** `react-hot-toast` y un componente `Modal` propio; conviven sin criterio.
 
@@ -226,20 +228,20 @@ Lo que está bien:
 
 Lo que falta:
 
-- El estado vacío de la tabla de caja dice *"Ajusta el filtro de fechas o método de pago"* — **esos filtros no existen** en la pantalla.
+- El estado vacío de la tabla de caja dice _"Ajusta el filtro de fechas o método de pago"_ — **esos filtros no existen** en la pantalla.
 - `/ventas` muestra el spinner "Actualizando..." **y** la tabla al mismo tiempo, así que la tabla parpadea entre datos viejos y nuevos.
 - La auditoría no tiene estado vacío: si no hay registros, se ve una sección en blanco.
 - Ningún formulario muestra estado de error por campo; todo va a un toast global.
 
 ### 5.4 · Acciones peligrosas sin fricción proporcional
 
-| Acción | Confirmación actual | Debería |
-|---|---|---|
-| Eliminar producto | `confirm()` nativo | Modal, nombre del producto, aviso si tiene stock o ventas |
-| Anular venta | Modal (correcto) — pero está roto | Modal + motivo obligatorio + permiso |
-| Vaciar carrito | **Ninguna** | Confirmación si hay ítems cargados |
-| Registrar arqueo | Doble paso (correcto) | Mantener, y mostrar la diferencia esperada |
-| Borrar catálogo completo | **Ninguna** (`DELETE /api/products`) | Que no exista como endpoint |
+| Acción                   | Confirmación actual                  | Debería                                                   |
+| ------------------------ | ------------------------------------ | --------------------------------------------------------- |
+| Eliminar producto        | `confirm()` nativo                   | Modal, nombre del producto, aviso si tiene stock o ventas |
+| Anular venta             | Modal (correcto) — pero está roto    | Modal + motivo obligatorio + permiso                      |
+| Vaciar carrito           | **Ninguna**                          | Confirmación si hay ítems cargados                        |
+| Registrar arqueo         | Doble paso (correcto)                | Mantener, y mostrar la diferencia esperada                |
+| Borrar catálogo completo | **Ninguna** (`DELETE /api/products`) | Que no exista como endpoint                               |
 
 El único flujo con doble confirmación bien hecho es el arqueo de `CashControlModal`: valida, muestra el monto y pide confirmar. Es el patrón a replicar.
 
@@ -253,17 +255,17 @@ Camino más corto para vender un producto con lector, hoy:
 
 Bien. El problema aparece en todo lo demás:
 
-| Situación | Acciones hoy |
-|---|---|
-| Cambiar la cantidad de un ítem | Buscarlo en la tabla y hacer clic en `+` tantas veces como haga falta. **No se puede escribir la cantidad** |
-| Cobrar | Elegir método en un `<select>` → clic "Confirmar Venta" → clic "Confirmar Venta" en el modal. **3 acciones** |
-| Calcular el vuelto | **No existe.** Lo hace el cajero de cabeza |
-| Cobrar en dos medios | **No existe** |
-| Aplicar un descuento | **No existe** |
-| Dejar una venta en espera | **No existe.** Hay que vaciar el carrito y perderla |
-| Vender algo sin código de barras | Buscarlo por nombre en una tabla de 47+ filas y hacer clic en "Agregar" |
-| Devolver un producto | **No existe** |
-| Reimprimir un comprobante | **No existe** (tampoco hay comprobante) |
+| Situación                        | Acciones hoy                                                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Cambiar la cantidad de un ítem   | Buscarlo en la tabla y hacer clic en `+` tantas veces como haga falta. **No se puede escribir la cantidad**  |
+| Cobrar                           | Elegir método en un `<select>` → clic "Confirmar Venta" → clic "Confirmar Venta" en el modal. **3 acciones** |
+| Calcular el vuelto               | **No existe.** Lo hace el cajero de cabeza                                                                   |
+| Cobrar en dos medios             | **No existe**                                                                                                |
+| Aplicar un descuento             | **No existe**                                                                                                |
+| Dejar una venta en espera        | **No existe.** Hay que vaciar el carrito y perderla                                                          |
+| Vender algo sin código de barras | Buscarlo por nombre en una tabla de 47+ filas y hacer clic en "Agregar"                                      |
+| Devolver un producto             | **No existe**                                                                                                |
+| Reimprimir un comprobante        | **No existe** (tampoco hay comprobante)                                                                      |
 
 **No hay ningún atajo de teclado** más allá del Enter del escáner. Ni F-teclas para el método de pago, ni Escape para cancelar, ni un campo de cantidad tipo `3 * <código>`.
 
@@ -288,14 +290,14 @@ Y el carrito **no persiste**: vive solo en memoria (`store/cart.ts`, Zustand sin
 
 ## 8. Rendimiento percibido
 
-| Observación | Medición |
-|---|---|
-| La caja recarga **todo** el catálogo después de cada venta (`fetchProducts()`) | 47 productos hoy; con miles, cada venta congela la pantalla |
-| Las 46 filas están todas en el DOM, sin virtualización | Confirmado |
-| `/ventas` hace N+1 consultas: una por movimiento para traer sus ítems | 26 movimientos → 27 consultas |
-| `/admin/auditoria` trae toda la bitácora sin paginar | 37 registros hoy; crece sin techo |
-| Cada navegación ejecuta `jwt.verify` + una consulta a la base en el layout raíz | Una consulta extra por página |
-| Advertencia del servidor de desarrollo | `⚠ Webpack is configured while Turbopack is not` — `next-pwa` configura Webpack pero `npm run dev` usa `--turbopack` |
+| Observación                                                                     | Medición                                                                                                             |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| La caja recarga **todo** el catálogo después de cada venta (`fetchProducts()`)  | 47 productos hoy; con miles, cada venta congela la pantalla                                                          |
+| Las 46 filas están todas en el DOM, sin virtualización                          | Confirmado                                                                                                           |
+| `/ventas` hace N+1 consultas: una por movimiento para traer sus ítems           | 26 movimientos → 27 consultas                                                                                        |
+| `/admin/auditoria` trae toda la bitácora sin paginar                            | 37 registros hoy; crece sin techo                                                                                    |
+| Cada navegación ejecuta `jwt.verify` + una consulta a la base en el layout raíz | Una consulta extra por página                                                                                        |
+| Advertencia del servidor de desarrollo                                          | `⚠ Webpack is configured while Turbopack is not` — `next-pwa` configura Webpack pero `npm run dev` usa `--turbopack` |
 
 ---
 

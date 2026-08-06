@@ -13,7 +13,7 @@ interface SelectFilterProps {
   options: Option[]
   selected: string[]
   onChange: (newArray: string[]) => void
-  multiple?: boolean   // si es true, podemos seleccionar varios
+  multiple?: boolean // si es true, podemos seleccionar varios
 }
 
 /**
@@ -50,7 +50,7 @@ export default function SelectFilter({
                   'px-3 py-1 rounded-lg text-sm font-medium focus:outline-none transition',
                   isActive
                     ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600',
                 )}
               >
                 {lbl}

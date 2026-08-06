@@ -78,8 +78,7 @@ export const GET = handler(
         ...venta,
         date: venta.date.toISOString(),
         paymentMethod: cashMovements[0]?.paymentMethod ?? null,
-        total:
-          Math.round(venta.items.reduce((s, i) => s + i.price * i.quantity, 0) * 100) / 100,
+        total: Math.round(venta.items.reduce((s, i) => s + i.price * i.quantity, 0) * 100) / 100,
       })),
     }
   },

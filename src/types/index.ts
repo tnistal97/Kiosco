@@ -29,7 +29,7 @@ export interface SaleItem {
 export interface Sale {
   id: number
   createdAt: string // fecha ISO
-  total: number     // total de la venta
+  total: number // total de la venta
   user: {
     id: number
     name: string

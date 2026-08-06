@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import type { AuditLog } from '@/types/audit'   // ← importar del archivo de tipos
+import type { AuditLog } from '@/types/audit' // ← importar del archivo de tipos
 
 interface SalesSectionProps {
   registrosVentas: AuditLog[]
@@ -65,9 +65,7 @@ export default function SalesSection({
                     className="flex justify-between items-center py-2 border-b border-gray-700/50 last:border-0"
                   >
                     <div>
-                      <p className="text-white">
-                        {productsMap[it.productId] || 'Producto'}
-                      </p>
+                      <p className="text-white">{productsMap[it.productId] || 'Producto'}</p>
                       <p className="text-gray-400 text-sm">
                         {it.quantity} × ${it.price.toFixed(2)}
                       </p>

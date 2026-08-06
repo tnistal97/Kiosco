@@ -48,7 +48,7 @@ async function main() {
       username: 'lautaro',
       name: 'Lautaro',
       password: passwordHash,
-      roleId: adminRole.id,       // change to sellerRole.id if you prefer
+      roleId: adminRole.id, // change to sellerRole.id if you prefer
       branchId: branch.id,
     },
   })
@@ -99,5 +99,10 @@ async function main() {
 }
 
 main()
-  .catch((e) => { console.error(e); process.exit(1) })
-  .finally(async () => { await prisma.$disconnect() })
+  .catch((e) => {
+    console.error(e)
+    process.exit(1)
+  })
+  .finally(async () => {
+    await prisma.$disconnect()
+  })

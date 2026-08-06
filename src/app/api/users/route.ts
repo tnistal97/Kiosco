@@ -63,10 +63,7 @@ const crearUsuarioSchema = z
       .max(50)
       .regex(/^[a-zA-Z0-9._-]+$/, 'Solo letras, numeros, punto, guion y guion bajo'),
     name: shortText(100),
-    password: z
-      .string()
-      .min(10, 'La contrasena debe tener al menos 10 caracteres')
-      .max(200),
+    password: z.string().min(10, 'La contrasena debe tener al menos 10 caracteres').max(200),
     roleId: idSchema,
   })
   .strict()

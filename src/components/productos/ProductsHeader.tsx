@@ -1,6 +1,4 @@
-import {
-  DocumentChartBarIcon,
-} from '@heroicons/react/24/outline'
+import { DocumentChartBarIcon } from '@heroicons/react/24/outline'
 import React from 'react'
 
 interface Props {
@@ -25,12 +23,7 @@ export default function ProductsHeader({ onCreate }: Props) {
           viewBox="0 0 24 24"
           stroke="currentColor"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M12 4v16m8-8H4"
-          />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
         Nuevo Producto
       </button>

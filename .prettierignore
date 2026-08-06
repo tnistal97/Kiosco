@@ -1,0 +1,33 @@
+# Artefactos de compilacion y dependencias
+.next/
+node_modules/
+coverage/
+out/
+build/
+.vercel/
+
+# Generado por TypeScript / Next
+next-env.d.ts
+*.tsbuildinfo
+
+# Cliente Prisma generado
+prisma/client/
+generated/
+
+# Service worker y runtime generados por next-pwa en cada build
+public/sw.js
+public/sw.js.map
+public/workbox-*.js
+public/fallback-*.js
+
+# SQL de migraciones: el formato lo fija Prisma, no Prettier.
+# Reformatearlo cambiaria el contenido de migraciones ya aplicadas.
+prisma/migrations/
+
+# Bloqueo de dependencias
+package-lock.json
+
+# Registros y volcados
+*.log
+*.dump
+*.sql

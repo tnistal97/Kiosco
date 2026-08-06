@@ -1,7 +1,4 @@
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-} from '@heroicons/react/24/outline'
+import { ArrowLeftIcon, ArrowRightIcon } from '@heroicons/react/24/outline'
 import clsx from 'clsx'
 import React, { Dispatch, SetStateAction } from 'react'
 
@@ -12,11 +9,7 @@ interface Props {
   setCurrentPage: Dispatch<SetStateAction<number>>
 }
 
-export default function ProductsPagination({
-  currentPage,
-  totalPages,
-  setCurrentPage,
-}: Props) {
+export default function ProductsPagination({ currentPage, totalPages, setCurrentPage }: Props) {
   return (
     <div className="flex justify-between items-center mt-6">
       <button
@@ -26,7 +19,7 @@ export default function ProductsPagination({
           'flex items-center gap-1 px-4 py-2 rounded-md font-medium transition',
           currentPage === 1
             ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-            : 'bg-blue-600 text-white hover:bg-blue-700'
+            : 'bg-blue-600 text-white hover:bg-blue-700',
         )}
       >
         <ArrowLeftIcon className="w-4 h-4" />
@@ -39,7 +32,7 @@ export default function ProductsPagination({
           'flex items-center gap-1 px-4 py-2 rounded-md font-medium transition',
           currentPage === 1
             ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-            : 'bg-blue-600 text-white hover:bg-blue-700'
+            : 'bg-blue-600 text-white hover:bg-blue-700',
         )}
       >
         Anterior
@@ -54,7 +47,7 @@ export default function ProductsPagination({
           'flex items-center gap-1 px-4 py-2 rounded-md font-medium transition',
           currentPage === totalPages
             ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-            : 'bg-blue-600 text-white hover:bg-blue-700'
+            : 'bg-blue-600 text-white hover:bg-blue-700',
         )}
       >
         Siguiente
@@ -67,7 +60,7 @@ export default function ProductsPagination({
           'flex items-center gap-1 px-4 py-2 rounded-md font-medium transition',
           currentPage === totalPages
             ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-            : 'bg-blue-600 text-white hover:bg-blue-700'
+            : 'bg-blue-600 text-white hover:bg-blue-700',
         )}
       >
         Última

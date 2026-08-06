@@ -15,21 +15,21 @@ En producción corre en [kiosco.nistal.net](https://kiosco.nistal.net).
 
 ## Tecnologías
 
-| Área | Stack |
-|---|---|
+| Área      | Stack                                             |
+| --------- | ------------------------------------------------- |
 | Framework | Next.js 15 (App Router) · React 19 · TypeScript 5 |
-| Estilos | Tailwind CSS 4 · Headless UI · Heroicons · Lucide |
-| Datos | Prisma 6 · PostgreSQL |
-| Auth | next-auth · JWT · bcrypt |
-| Estado | Zustand |
-| PWA | next-pwa · Workbox |
-| Escaneo | @zxing/browser |
+| Estilos   | Tailwind CSS 4 · Headless UI · Heroicons · Lucide |
+| Datos     | Prisma 6 · PostgreSQL                             |
+| Auth      | next-auth · JWT · bcrypt                          |
+| Estado    | Zustand                                           |
+| PWA       | next-pwa · Workbox                                |
+| Escaneo   | @zxing/browser                                    |
 
 ## Requisitos
 
 - Node.js 18.20 o superior (producción corre sobre 18.20.3)
 - PostgreSQL 16
-- npm (el proyecto usa `package-lock.json`; ver *Gestor de paquetes*)
+- npm (el proyecto usa `package-lock.json`; ver _Gestor de paquetes_)
 
 ## Instalación
 
@@ -53,14 +53,14 @@ npx prisma generate
 
 Definidas en `.env.example`. Ninguna trae valores reales.
 
-| Variable | Descripción |
-|---|---|
-| `NODE_ENV` | `development` o `production` |
-| `PORT` | Puerto de escucha (producción usa 3099) |
-| `DATABASE_URL` | Cadena de conexión PostgreSQL para Prisma |
-| `JWT_SECRET` | Secreto de firma de tokens. Generar uno propio |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Solo para `docker-compose` local |
-| `OPENFOOD_DB_*` | Solo para `tools/scrap.py`, sobre una base independiente |
+| Variable                                              | Descripción                                              |
+| ----------------------------------------------------- | -------------------------------------------------------- |
+| `NODE_ENV`                                            | `development` o `production`                             |
+| `PORT`                                                | Puerto de escucha (producción usa 3099)                  |
+| `DATABASE_URL`                                        | Cadena de conexión PostgreSQL para Prisma                |
+| `JWT_SECRET`                                          | Secreto de firma de tokens. Generar uno propio           |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Solo para `docker-compose` local                         |
+| `OPENFOOD_DB_*`                                       | Solo para `tools/scrap.py`, sobre una base independiente |
 
 ## Desarrollo
 

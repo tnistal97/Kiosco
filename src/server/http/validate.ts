@@ -35,9 +35,12 @@ export const amountSchema = z
   .finite('Importe invalido')
   .nonnegative('El importe no puede ser negativo')
   .max(1_000_000_000, 'Importe fuera de rango')
-  .refine((n) => Number.isInteger(Math.round(n * 100)) && Math.abs(n * 100 - Math.round(n * 100)) < 1e-6, {
-    message: 'El importe admite como maximo dos decimales',
-  })
+  .refine(
+    (n) => Number.isInteger(Math.round(n * 100)) && Math.abs(n * 100 - Math.round(n * 100)) < 1e-6,
+    {
+      message: 'El importe admite como maximo dos decimales',
+    },
+  )
 
 /** Texto corto obligatorio con longitud maxima. */
 export const shortText = (max = 200) => z.string().trim().min(1).max(max)

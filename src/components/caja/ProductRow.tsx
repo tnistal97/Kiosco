@@ -10,10 +10,7 @@ interface ProductRowProps {
   quantityInCart: number
 }
 
-export default function ProductRow({
-  product,
-  quantityInCart,
-}: ProductRowProps) {
+export default function ProductRow({ product, quantityInCart }: ProductRowProps) {
   const addItem = useCartStore((s) => s.addToCart)
   const updateQty = useCartStore((s) => s.updateQuantity)
   const removeFromCart = useCartStore((s) => s.removeFromCart)
@@ -69,9 +66,7 @@ export default function ProductRow({
               }}
               disabled={qty >= stock}
               className={`px-3 py-1 ${
-                qty >= stock
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-green-600 hover:bg-green-700'
+                qty >= stock ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
               } text-white font-medium rounded-lg`}
               aria-label={`Aumentar cantidad de ${product.name}`}
             >
@@ -86,9 +81,7 @@ export default function ProductRow({
             }}
             disabled={stock === 0}
             className={`px-4 py-2 ${
-              stock === 0
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700'
+              stock === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
             } text-white font-medium rounded-lg`}
             aria-label={`Agregar ${product.name} al carrito`}
           >

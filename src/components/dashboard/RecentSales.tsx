@@ -17,7 +17,10 @@ export default function RecentSales({ isLoading, sales }: Props) {
         {Array(5)
           .fill(0)
           .map((_, i) => (
-            <div key={i} className="h-16 rounded-xl bg-gray-200 dark:bg-gray-800 animate-pulse mb-2" />
+            <div
+              key={i}
+              className="h-16 rounded-xl bg-gray-200 dark:bg-gray-800 animate-pulse mb-2"
+            />
           ))}
       </>
     )
@@ -33,7 +36,7 @@ export default function RecentSales({ isLoading, sales }: Props) {
 
   return (
     <div className="bg-white dark:bg-[color:var(--color-background)] rounded-xl shadow divide-y divide-gray-200 dark:divide-gray-700">
-      {sales.map(s => (
+      {sales.map((s) => (
         <div
           key={s.id}
           onClick={() => router.push(`/sales/${s.id}`)}

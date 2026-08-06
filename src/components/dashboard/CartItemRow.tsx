@@ -12,12 +12,7 @@ interface CartItemRowProps {
   onRemove: (productId: number) => void
 }
 
-export default function CartItemRow({
-  item,
-  onIncrease,
-  onDecrease,
-  onRemove,
-}: CartItemRowProps) {
+export default function CartItemRow({ item, onIncrease, onDecrease, onRemove }: CartItemRowProps) {
   const { product, quantity } = item
   const subtotal = product.price * quantity
 
@@ -25,9 +20,7 @@ export default function CartItemRow({
     <li className="flex justify-between items-start py-4 border-b border-gray-200 dark:border-gray-700">
       {/* Product Info */}
       <div className="flex-1">
-        <p className="font-medium text-gray-900 dark:text-gray-100">
-          {product.name}
-        </p>
+        <p className="font-medium text-gray-900 dark:text-gray-100">{product.name}</p>
         <p className="text-sm text-gray-700 dark:text-gray-300">
           {formatCurrency(product.price)} c/u
         </p>

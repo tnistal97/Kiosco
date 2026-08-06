@@ -30,13 +30,12 @@ export default function SortableHeader({
     >
       <div className={`flex items-center ${alignRight ? 'justify-end' : ''}`}>
         {label}
-        {isActive && (
-          direction === 'asc' ? (
+        {isActive &&
+          (direction === 'asc' ? (
             <ChevronUpIcon className="w-4 h-4 ml-1 text-gray-100" />
           ) : (
             <ChevronDownIcon className="w-4 h-4 ml-1 text-gray-100" />
-          )
-        )}
+          ))}
       </div>
     </th>
   )

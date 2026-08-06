@@ -46,7 +46,7 @@ DATABASE_URL=postgresql://kiosco_dev:kiosco_dev@127.0.0.1:5433/kiosco_dev?schema
 JWT_SECRET=dev-only-not-a-real-secret-0000000000
 ```
 
-> **Atención:** el CLI de Prisma **no lee `.env.local`**, solo `.env`. Para correr comandos de Prisma hay que pasar la variable en línea o mantener un `.env` local con el mismo valor. Es una fuente habitual de confusión: la aplicación funciona y `npx prisma …` falla con *"Environment variable not found: DATABASE_URL"*.
+> **Atención:** el CLI de Prisma **no lee `.env.local`**, solo `.env`. Para correr comandos de Prisma hay que pasar la variable en línea o mantener un `.env` local con el mismo valor. Es una fuente habitual de confusión: la aplicación funciona y `npx prisma …` falla con _"Environment variable not found: DATABASE_URL"_.
 
 ## Esquema
 

@@ -12,9 +12,7 @@ interface Props {
 export default function SalesTable({ sales }: Props) {
   const [expanded, setExpanded] = useState<number[]>([])
   const toggle = (id: number) =>
-    setExpanded(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    )
+    setExpanded((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
 
   return (
     <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700 overflow-x-auto">
@@ -37,16 +35,10 @@ export default function SalesTable({ sales }: Props) {
               </td>
             </tr>
           )}
-          {sales.map(sale => (
+          {sales.map((sale) => (
             <React.Fragment key={sale.id}>
-              <SaleRow
-                sale={sale}
-                isExpanded={expanded.includes(sale.id)}
-                onToggle={toggle}
-              />
-              {expanded.includes(sale.id) && (
-                <SaleItemsRow items={sale.items} />
-              )}
+              <SaleRow sale={sale} isExpanded={expanded.includes(sale.id)} onToggle={toggle} />
+              {expanded.includes(sale.id) && <SaleItemsRow items={sale.items} />}
             </React.Fragment>
           ))}
         </tbody>

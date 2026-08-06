@@ -19,7 +19,7 @@ model Branch {
   users         User[]
   cashMovements CashRegisterMovement[]
   cashCounts    CashCount[]
-  productsList  Product[]  
+  productsList  Product[]
   currentCash   Float                  @default(0)
 }
 
@@ -64,22 +64,21 @@ model Category {
 }
 
 model Product {
-  id          Int     @id @default(autoincrement())
+  id          Int           @id @default(autoincrement())
   name        String
-  barcode     String? @unique
+  barcode     String?       @unique
   description String?
   supplierId  Int?
   categoryId  Int
   price       Float
   value       Int?
-  branchId    Int  
-  stocks    BranchStock[]
-  saleItems SaleItem[]
-  category  Category      @relation(fields: [categoryId], references: [id])
-  supplier  Supplier?     @relation(fields: [supplierId], references: [id])
-  branch    Branch        @relation(fields: [branchId], references: [id]) 
+  branchId    Int
+  stocks      BranchStock[]
+  saleItems   SaleItem[]
+  category    Category      @relation(fields: [categoryId], references: [id])
+  supplier    Supplier?     @relation(fields: [supplierId], references: [id])
+  branch      Branch        @relation(fields: [branchId], references: [id])
 }
-
 
 model BranchStock {
   id        Int @id @default(autoincrement())
@@ -114,12 +113,12 @@ model Supplier {
 }
 
 model Sale {
-  id         Int        @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
   userId     Int
   branchId   Int
-  date       DateTime   @default(now())
-  createdAt  DateTime   @default(now())
-  isVerified Boolean    @default(false)
+  date       DateTime @default(now())
+  createdAt  DateTime @default(now())
+  isVerified Boolean  @default(false)
 
   /// "completed" | "canceled". Una venta nunca se borra: se anula.
   status       String    @default("completed")
@@ -129,9 +128,9 @@ model Sale {
 
   items         SaleItem[]
   cashMovements CashRegisterMovement[]
-  user          User                  @relation("SaleCreatedBy", fields: [userId], references: [id])
-  canceledBy    User?                 @relation("SaleCanceledBy", fields: [canceledById], references: [id])
-  branch        Branch                @relation(fields: [branchId], references: [id])
+  user          User                   @relation("SaleCreatedBy", fields: [userId], references: [id])
+  canceledBy    User?                  @relation("SaleCanceledBy", fields: [canceledById], references: [id])
+  branch        Branch                 @relation(fields: [branchId], references: [id])
 
   @@index([branchId, date])
   @@index([status])
@@ -183,18 +182,14 @@ model CashRegisterMovement {
   @@index([saleId])
 }
 
-
-
-
-
 model CashCount {
-  id          Int      @id @default(autoincrement())
-  branchId    Int
-  userId      Int
-  amount      Float
-  date        DateTime @default(now())
-  notes       String?  // notas u observaciones opcionales
+  id       Int      @id @default(autoincrement())
+  branchId Int
+  userId   Int
+  amount   Float
+  date     DateTime @default(now())
+  notes    String? // notas u observaciones opcionales
 
-  branch      Branch   @relation(fields: [branchId], references: [id])
-  user        User     @relation(fields: [userId], references: [id])
+  branch Branch @relation(fields: [branchId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
 }

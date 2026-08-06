@@ -16,9 +16,7 @@ export default function CartItemRow({ item }: CartItemRowProps) {
   return (
     <li className="flex justify-between items-center bg-gray-50 dark:bg-gray-700 rounded-lg p-3 shadow-sm">
       <div className="flex-1">
-        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-          {item.product.name}
-        </p>
+        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.product.name}</p>
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {item.quantity} × {formatCurrency(item.product.price)}
         </p>
@@ -31,9 +29,7 @@ export default function CartItemRow({ item }: CartItemRowProps) {
         >
           −
         </button>
-        <span className="text-gray-900 dark:text-gray-100">
-          {item.quantity}
-        </span>
+        <span className="text-gray-900 dark:text-gray-100">{item.quantity}</span>
         <button
           onClick={() => updateQty(item.product.id, item.quantity + 1)}
           disabled={item.quantity >= item.product.totalStock}

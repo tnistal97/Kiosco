@@ -72,7 +72,8 @@ export function handler<A extends AuthMode, TBody = undefined, TQuery = undefine
 ): NextRouteHandler {
   return async function route(req: NextRequest, args: NextRouteArgs): Promise<Response> {
     try {
-      const session = config.auth === 'public' ? await getSessionQuietly(req) : await getSession(req)
+      const session =
+        config.auth === 'public' ? await getSessionQuietly(req) : await getSession(req)
 
       if (config.auth === 'session') {
         if (config.permission) {

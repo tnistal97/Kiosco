@@ -21,9 +21,7 @@ export default function CartSidebar({ onConfirm, onClear }: CartSidebarProps) {
         </h2>
         <div className="flex-1 overflow-auto px-6 py-4">
           {items.length === 0 ? (
-            <p className="text-center text-gray-500 dark:text-gray-400">
-              No hay artículos
-            </p>
+            <p className="text-center text-gray-500 dark:text-gray-400">No hay artículos</p>
           ) : (
             <ul className="space-y-3">
               {items.map((item) => (
@@ -35,9 +33,7 @@ export default function CartSidebar({ onConfirm, onClear }: CartSidebarProps) {
         <div className="border-t border-gray-200 dark:border-gray-700 px-6 py-4 space-y-4">
           <div className="flex justify-between font-semibold text-gray-900 dark:text-gray-100 text-lg">
             <span>Total:</span>
-            <span className="text-green-600 dark:text-green-400">
-              {formatCurrency(total)}
-            </span>
+            <span className="text-green-600 dark:text-green-400">{formatCurrency(total)}</span>
           </div>
           <button
             onClick={onConfirm}

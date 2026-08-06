@@ -6,7 +6,10 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -35,6 +38,8 @@
     "zustand": "^5.0.5"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@next/eslint-plugin-next": "^15.5.22",
     "@tailwindcss/postcss": "^4",
     "@types/bcrypt": "^5.0.2",
     "@types/eslint": "^9.6.1",
@@ -43,10 +48,19 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/trusted-types": "^2.0.7",
+    "@vitest/eslint-plugin": "^1.6.26",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.9.0",
+    "prettier": "^3.9.6",
+    "prettier-plugin-prisma": "^5.0.0",
     "prisma": "^6.19.3",
     "tailwindcss": "^4.1.8",
     "tsx": "^4.19.4",
     "typescript": "^5.9.2",
+    "typescript-eslint": "^8.66.0",
     "vitest": "^4.1.10"
   }
 }

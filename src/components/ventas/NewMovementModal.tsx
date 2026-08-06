@@ -2,11 +2,7 @@
 
 import { Fragment, useState } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
-import {
-  ChevronDownIcon,
-  CurrencyDollarIcon,
-  CreditCardIcon,
-} from '@heroicons/react/24/outline'
+import { ChevronDownIcon, CurrencyDollarIcon, CreditCardIcon } from '@heroicons/react/24/outline'
 
 interface Props {
   isOpen: boolean
@@ -18,9 +14,9 @@ type MovementType = 'ingreso' | 'retiro' | 'deposito'
 
 export default function NewMovementModal({ isOpen, onClose, onSaved }: Props) {
   const [amount, setAmount] = useState<number>(0)
-  const [paymentMethod, setPaymentMethod] = useState<
-    'efectivo' | 'tarjeta' | 'mercado_pago'
-  >('efectivo')
+  const [paymentMethod, setPaymentMethod] = useState<'efectivo' | 'tarjeta' | 'mercado_pago'>(
+    'efectivo',
+  )
   const [description, setDescription] = useState<string>('')
   // El endpoint exige el tipo de movimiento. El formulario no lo enviaba
   // nunca, asi que toda alta manual fallaba con 400.

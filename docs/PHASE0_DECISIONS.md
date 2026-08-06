@@ -57,13 +57,13 @@ de tipo ocurre en ese archivo y se propaga solo.
 
 ### Qué falta, y en qué orden
 
-| Paso | Cambio | Riesgo |
-|---|---|---|
-| 1 | `Product.unit` (`unidad` \| `kg` \| `g` \| `l` \| `ml`) y `Product.sellsByWeight` | Bajo, aditivo |
-| 2 | `SaleItem.quantity` y `BranchStock.quantity` de `Int` a `Decimal(12,3)` | **Alto** — cambia el tipo de columnas con datos |
-| 3 | `quantitySchema` pasa a decimal con precisión según la unidad del producto | Bajo |
-| 4 | La comparación de stock (`quantity >= n`) sigue siendo válida en `Decimal` | Ninguno |
-| 5 | Lectura de balanza (protocolo del equipo, códigos EAN-13 con peso embebido) | Aparte |
+| Paso | Cambio                                                                            | Riesgo                                          |
+| ---- | --------------------------------------------------------------------------------- | ----------------------------------------------- |
+| 1    | `Product.unit` (`unidad` \| `kg` \| `g` \| `l` \| `ml`) y `Product.sellsByWeight` | Bajo, aditivo                                   |
+| 2    | `SaleItem.quantity` y `BranchStock.quantity` de `Int` a `Decimal(12,3)`           | **Alto** — cambia el tipo de columnas con datos |
+| 3    | `quantitySchema` pasa a decimal con precisión según la unidad del producto        | Bajo                                            |
+| 4    | La comparación de stock (`quantity >= n`) sigue siendo válida en `Decimal`        | Ninguno                                         |
+| 5    | Lectura de balanza (protocolo del equipo, códigos EAN-13 con peso embebido)       | Aparte                                          |
 
 El paso 2 conviene hacerlo **junto con la migración de dinero a `Decimal`**
 (M4): son la misma clase de cambio sobre las mismas tablas, y hacer dos
@@ -137,14 +137,14 @@ hay forma de reconstruir cómo llegó a ese valor.
 No se creó el libro de movimientos, pero **todo ajuste ya pasa por un único
 camino** y deja rastro:
 
-| Operación | Ruta | Permiso | Motivo | Auditoría |
-|---|---|---|---|---|
-| Venta | `POST /api/sales` | `sales.create` | implícito | sí |
-| Anulación | `POST /api/sales/:id/cancel` | `sales.cancel` | **obligatorio** | sí |
-| Recuento | `PUT /api/stock/:productId` | `stock.adjust` | **obligatorio** | sí |
-| Ajuste ± | `PATCH /api/stock/:productId` | `stock.adjust` | **obligatorio** | sí |
-| Alta | `POST /api/products` | `products.create` | implícito | sí |
-| Ficha | `PUT /api/products/:id` | `stock.adjust` | implícito | sí |
+| Operación | Ruta                          | Permiso           | Motivo          | Auditoría |
+| --------- | ----------------------------- | ----------------- | --------------- | --------- |
+| Venta     | `POST /api/sales`             | `sales.create`    | implícito       | sí        |
+| Anulación | `POST /api/sales/:id/cancel`  | `sales.cancel`    | **obligatorio** | sí        |
+| Recuento  | `PUT /api/stock/:productId`   | `stock.adjust`    | **obligatorio** | sí        |
+| Ajuste ±  | `PATCH /api/stock/:productId` | `stock.adjust`    | **obligatorio** | sí        |
+| Alta      | `POST /api/products`          | `products.create` | implícito       | sí        |
+| Ficha     | `PUT /api/products/:id`       | `stock.adjust`    | implícito       | sí        |
 
 Cada entrada de auditoría guarda cantidad anterior, posterior, diferencia,
 motivo, usuario y sucursal. **Esa información es exactamente la que necesita
@@ -161,18 +161,18 @@ grep -rn "branchStock" src/ --include=*.ts
 
 ```prisma
 model StockMovement {
-  id         Int      @id @default(autoincrement())
-  branchId   Int
-  productId  Int
+  id        Int      @id @default(autoincrement())
+  branchId  Int
+  productId Int
   /// venta | anulacion | ajuste | recuento | compra | rotura | transferencia
-  type       String
+  type      String
   /// Negativo para salidas. La suma de deltas = quantity actual.
-  delta      Int
-  balance    Int      // stock resultante, para no recalcular la serie entera
-  reason     String?
-  userId     Int
-  saleId     Int?
-  date       DateTime @default(now())
+  delta     Int
+  balance   Int // stock resultante, para no recalcular la serie entera
+  reason    String?
+  userId    Int
+  saleId    Int?
+  date      DateTime @default(now())
 
   @@index([branchId, productId, date])
 }
@@ -229,11 +229,11 @@ catálogo. Los roles reconocidos hoy son `admin`, `encargado`, `cajero`,
 
 ## 6 · Lo que sigue pendiente y por qué
 
-| Pendiente | Por qué no está en la Fase 0 |
-|---|---|
-| Dinero en `Decimal` | Cambia el tipo de columnas con datos productivos. Conviene junto con el paso 2 de la venta por peso. |
+| Pendiente                     | Por qué no está en la Fase 0                                                                                                                                                      |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dinero en `Decimal`           | Cambia el tipo de columnas con datos productivos. Conviene junto con el paso 2 de la venta por peso.                                                                              |
 | Turno de caja (`CashSession`) | `currentCash` es un total corrido desde que se instaló el sistema. Sin turnos, el arqueo no puede compararse con nada real. Es el cambio que vuelve confiable el control de caja. |
-| ESLint, Prettier, CI | Estaban clasificados P1. Ver [QUALITY_STRATEGY.md](QUALITY_STRATEGY.md). |
-| `Product.isActive` | Hoy un producto que figura en ventas no se puede dar de baja: el borrado se rechaza para no destruir el historial. |
-| Límite de intentos compartido | El contador vive en la memoria del proceso. Alcanza para un único proceso PM2, que es el despliegue actual. Con varias instancias hay que moverlo a la base o a Redis. |
-| Paginación del catálogo | `/api/products` sigue devolviendo el catálogo completo. Es un problema de rendimiento, no de seguridad. |
+| ESLint, Prettier, CI          | Estaban clasificados P1. Ver [QUALITY_STRATEGY.md](QUALITY_STRATEGY.md).                                                                                                          |
+| `Product.isActive`            | Hoy un producto que figura en ventas no se puede dar de baja: el borrado se rechaza para no destruir el historial.                                                                |
+| Límite de intentos compartido | El contador vive en la memoria del proceso. Alcanza para un único proceso PM2, que es el despliegue actual. Con varias instancias hay que moverlo a la base o a Redis.            |
+| Paginación del catálogo       | `/api/products` sigue devolviendo el catálogo completo. Es un problema de rendimiento, no de seguridad.                                                                           |

@@ -159,10 +159,9 @@ describe('Un visitante sin sesion no accede a ninguna API privada', () => {
         params: target.params?.(),
       })
 
-      expect(
-        res.status,
-        `${target.nombre} respondio ${res.status} a un visitante anonimo`,
-      ).toBe(401)
+      expect(res.status, `${target.nombre} respondio ${res.status} a un visitante anonimo`).toBe(
+        401,
+      )
     })
   }
 

@@ -10,14 +10,12 @@ import DetalleVenta from './DetalleVenta'
 interface Props {
   movements: Array<
     CashMovement & {
-      saleItems:
-        | Array<{
-            id: number
-            product: { id: number; name: string }
-            quantity: number
-            price: number
-          }>
-        | null
+      saleItems: Array<{
+        id: number
+        product: { id: number; name: string }
+        quantity: number
+        price: number
+      }> | null
     }
   >
   /** Callback que se dispara después de que una venta se eliminó exitosamente */
@@ -63,9 +61,7 @@ export default function CajaTable({ movements, onSaleDeleted }: Props) {
           cmp = a.amount - b.amount
           break
         case 'date':
-          cmp =
-            new Date(a.date).getTime() -
-            new Date(b.date).getTime()
+          cmp = new Date(a.date).getTime() - new Date(b.date).getTime()
           break
         case 'user':
           cmp = a.user.name.localeCompare(b.user.name)
@@ -91,9 +87,7 @@ export default function CajaTable({ movements, onSaleDeleted }: Props) {
 
   // ─── 6) Alternar fila expandida ───────────────────────────────────────────────────
   const toggleExpand = (id: number) => {
-    setExpandedRows((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    )
+    setExpandedRows((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
   // ─── 7) Remover movimiento localmente y notificar al padre ────────────────────────
@@ -131,9 +125,7 @@ export default function CajaTable({ movements, onSaleDeleted }: Props) {
               onClick={() => handleSort('amount')}
               alignRight
             />
-            <th className="px-4 py-3 font-semibold text-gray-100">
-              Descripción
-            </th>
+            <th className="px-4 py-3 font-semibold text-gray-100">Descripción</th>
             <SortableHeader
               label="Fecha"
               sortKey="date"
@@ -148,12 +140,8 @@ export default function CajaTable({ movements, onSaleDeleted }: Props) {
               direction={sortConfig.direction}
               onClick={() => handleSort('user')}
             />
-            <th className="px-4 py-3 font-semibold text-gray-100 text-center">
-              Detalle
-            </th>
-            <th className="px-4 py-3 font-semibold text-gray-100 text-center">
-              Acciones
-            </th>
+            <th className="px-4 py-3 font-semibold text-gray-100 text-center">Detalle</th>
+            <th className="px-4 py-3 font-semibold text-gray-100 text-center">Acciones</th>
           </tr>
         </thead>
 
@@ -173,9 +161,7 @@ export default function CajaTable({ movements, onSaleDeleted }: Props) {
 
                   {Array.isArray(m.saleItems) &&
                     m.saleItems.length > 0 &&
-                    expandedRows.includes(m.id) && (
-                      <DetalleVenta saleItems={m.saleItems} />
-                    )}
+                    expandedRows.includes(m.id) && <DetalleVenta saleItems={m.saleItems} />}
                 </React.Fragment>
               )
             })
@@ -184,9 +170,7 @@ export default function CajaTable({ movements, onSaleDeleted }: Props) {
               <td colSpan={8} className="text-center py-8 text-gray-400">
                 <div className="flex flex-col items-center gap-2">
                   <span className="text-4xl">💤</span>
-                  <p className="font-medium text-gray-100">
-                    No hay movimientos
-                  </p>
+                  <p className="font-medium text-gray-100">No hay movimientos</p>
                   <p className="text-sm text-gray-300">
                     Ajusta el filtro de fechas o método de pago.
                   </p>

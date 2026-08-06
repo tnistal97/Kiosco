@@ -14,13 +14,7 @@ import type { Prisma, PrismaClient } from '@prisma/client'
 export type DbClient = PrismaClient | Prisma.TransactionClient
 
 export type AuditAction =
-  | 'create'
-  | 'update'
-  | 'delete'
-  | 'cancel'
-  | 'login'
-  | 'login_failed'
-  | 'logout'
+  'create' | 'update' | 'delete' | 'cancel' | 'login' | 'login_failed' | 'logout'
 
 export interface AuditEntry {
   /** Siempre de la sesion verificada. Nunca del cuerpo de la peticion. */

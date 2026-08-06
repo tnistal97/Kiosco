@@ -83,10 +83,7 @@ describe('Caso 7 — no se vende mas stock del disponible', () => {
     })
 
     expect(res.status).toBeGreaterThanOrEqual(400)
-    expect(
-      await stockOf(fx.branchA.id, fx.productoA.id),
-      'El stock quedo en negativo',
-    ).toBe(10)
+    expect(await stockOf(fx.branchA.id, fx.productoA.id), 'El stock quedo en negativo').toBe(10)
     expect(await prisma.sale.count()).toBe(0)
   })
 
@@ -167,10 +164,22 @@ describe('Validacion de la entrada de la venta', () => {
     ['cantidad cero', { items: [{ productId: 1, quantity: 0 }], paymentMethod: 'efectivo' }],
     ['cantidad negativa', { items: [{ productId: 1, quantity: -5 }], paymentMethod: 'efectivo' }],
     ['cantidad decimal', { items: [{ productId: 1, quantity: 1.5 }], paymentMethod: 'efectivo' }],
-    ['cantidad no numerica', { items: [{ productId: 1, quantity: 'dos' }], paymentMethod: 'efectivo' }],
-    ['cantidad infinita', { items: [{ productId: 1, quantity: 1e400 }], paymentMethod: 'efectivo' }],
-    ['id de producto negativo', { items: [{ productId: -1, quantity: 1 }], paymentMethod: 'efectivo' }],
-    ['medio de pago inventado', { items: [{ productId: 1, quantity: 1 }], paymentMethod: 'trueque' }],
+    [
+      'cantidad no numerica',
+      { items: [{ productId: 1, quantity: 'dos' }], paymentMethod: 'efectivo' },
+    ],
+    [
+      'cantidad infinita',
+      { items: [{ productId: 1, quantity: 1e400 }], paymentMethod: 'efectivo' },
+    ],
+    [
+      'id de producto negativo',
+      { items: [{ productId: -1, quantity: 1 }], paymentMethod: 'efectivo' },
+    ],
+    [
+      'medio de pago inventado',
+      { items: [{ productId: 1, quantity: 1 }], paymentMethod: 'trueque' },
+    ],
     ['sin medio de pago', { items: [{ productId: 1, quantity: 1 }] }],
   ]
 

@@ -40,9 +40,7 @@ export default function DeleteConfirmationModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-amber-50 dark:bg-amber-900">
           <div className="flex items-center gap-2">
             <ExclamationTriangleIcon className="w-6 h-6 text-amber-600 dark:text-amber-300" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Anular venta
-            </h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Anular venta</h2>
           </div>
           <button
             onClick={onCancel}
@@ -55,8 +53,8 @@ export default function DeleteConfirmationModal({
 
         <div className="px-6 py-5 space-y-4">
           <p className="text-sm text-gray-700 dark:text-gray-300">
-            La venta no se borra: queda registrada como anulada, con tu nombre y el motivo.
-            El stock se devuelve al inventario y el importe se descuenta de la caja.
+            La venta no se borra: queda registrada como anulada, con tu nombre y el motivo. El stock
+            se devuelve al inventario y el importe se descuenta de la caja.
           </p>
 
           <div>

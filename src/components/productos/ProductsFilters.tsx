@@ -29,9 +29,7 @@ export default function ProductsFilters({
     <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700 p-6 flex flex-col md:flex-row items-center gap-4">
       {/* Filtro por categoría */}
       <div className="w-full md:w-1/4">
-        <label className="block text-sm font-medium text-gray-300 mb-1">
-          Categoría
-        </label>
+        <label className="block text-sm font-medium text-gray-300 mb-1">Categoría</label>
         <select
           value={categoryFilter}
           onChange={(e) => {
@@ -51,9 +49,7 @@ export default function ProductsFilters({
 
       {/* Buscador */}
       <div className="relative w-full md:w-1/2">
-        <label className="block text-sm font-medium text-gray-300 mb-1">
-          Buscar producto
-        </label>
+        <label className="block text-sm font-medium text-gray-300 mb-1">Buscar producto</label>
         <div className="relative">
           <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
@@ -77,7 +73,6 @@ export default function ProductsFilters({
         >
           Limpiar filtros
         </button>
-
       </div>
     </div>
   )

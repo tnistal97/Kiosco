@@ -48,13 +48,9 @@ export default function SaleRow({ sale, isExpanded, onToggle }: Props) {
       <td className="px-4 py-3 text-gray-100">{sale.user.name}</td>
       <td className="px-4 py-3 text-gray-100 flex items-center gap-1">
         <MethodIcon className="w-5 h-5 text-gray-200" />
-        <span className="capitalize">
-          {sale.paymentMethod.replace('_', ' ')}
-        </span>
+        <span className="capitalize">{sale.paymentMethod.replace('_', ' ')}</span>
       </td>
-      <td className="px-4 py-3 text-gray-100 text-right font-semibold">
-        ${total.toFixed(2)}
-      </td>
+      <td className="px-4 py-3 text-gray-100 text-right font-semibold">${total.toFixed(2)}</td>
       <td className="px-4 py-3 text-gray-100 text-center">
         {isExpanded ? (
           <ChevronUpIcon className="w-5 h-5 inline-block" />

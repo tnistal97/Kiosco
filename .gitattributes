@@ -1,0 +1,30 @@
+# Normalizacion de fin de linea.
+#
+# Prettier esta configurado con `endOfLine: "lf"`. Sin esto, en Windows git
+# convierte a CRLF al hacer checkout (core.autocrlf=true) y `npm run
+# format:check` falla en la maquina del desarrollador aunque pase en CI.
+# Forzar LF en el arbol de trabajo hace que las dos den el mismo resultado.
+
+* text=auto eol=lf
+
+# Binarios: nunca tocar.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.svg text eol=lf
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.gz binary
+
+# Los .sql de migraciones ya aplicadas no deben cambiar nunca de contenido.
+prisma/migrations/**/*.sql text eol=lf
+
+# Excluir de las estadisticas de lenguaje y de los diffs por defecto.
+package-lock.json -diff linguist-generated

@@ -9,11 +9,7 @@ interface Props {
   className?: string // ✅ Agregado para que acepte className
 }
 
-export default function PaymentMethodSelector({
-  value,
-  onChange,
-  className = '',
-}: Props) {
+export default function PaymentMethodSelector({ value, onChange, className = '' }: Props) {
   const options: { label: string; value: 'efectivo' | 'tarjeta' | 'mercado_pago' }[] = [
     { label: 'Efectivo', value: 'efectivo' },
     { label: 'Tarjeta', value: 'tarjeta' },

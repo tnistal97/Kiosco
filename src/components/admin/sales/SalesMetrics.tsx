@@ -24,7 +24,7 @@ export default function SalesMetrics({ sales }: Props) {
         mercado_pago: 0,
         total: 0,
         count: 0,
-      }
+      },
     )
   }, [sales])
 
@@ -39,33 +39,25 @@ export default function SalesMetrics({ sales }: Props) {
       {/* Recaudación total */}
       <div className="bg-gray-700 p-6 rounded-lg shadow flex flex-col">
         <span className="text-sm text-gray-300">Recaudación Total</span>
-        <span className="mt-2 text-3xl font-bold">
-          {formatCurrency(totals.total)}
-        </span>
+        <span className="mt-2 text-3xl font-bold">{formatCurrency(totals.total)}</span>
       </div>
 
       {/* Efectivo */}
       <div className="bg-green-700 p-6 rounded-lg shadow flex flex-col">
         <span className="text-sm text-green-200">Efectivo</span>
-        <span className="mt-2 text-3xl font-bold">
-          {formatCurrency(totals.efectivo)}
-        </span>
+        <span className="mt-2 text-3xl font-bold">{formatCurrency(totals.efectivo)}</span>
       </div>
 
       {/* Tarjeta */}
       <div className="bg-indigo-700 p-6 rounded-lg shadow flex flex-col">
         <span className="text-sm text-indigo-200">Tarjeta</span>
-        <span className="mt-2 text-3xl font-bold">
-          {formatCurrency(totals.tarjeta)}
-        </span>
+        <span className="mt-2 text-3xl font-bold">{formatCurrency(totals.tarjeta)}</span>
       </div>
 
       {/* Mercado Pago (se extiende) */}
       <div className="bg-yellow-700 p-6 rounded-lg shadow flex flex-col sm:col-span-2 lg:col-span-1">
         <span className="text-sm text-yellow-200">Mercado Pago</span>
-        <span className="mt-2 text-3xl font-bold">
-          {formatCurrency(totals.mercado_pago)}
-        </span>
+        <span className="mt-2 text-3xl font-bold">{formatCurrency(totals.mercado_pago)}</span>
       </div>
     </div>
   )

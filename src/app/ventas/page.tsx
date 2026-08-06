@@ -16,14 +16,12 @@ export default function CajaPage() {
   const [movements, setMovements] = useState<
     Array<
       CashMovement & {
-        saleItems:
-          | Array<{
-              id: number
-              product: { id: number; name: string }
-              quantity: number
-              price: number
-            }>
-          | null
+        saleItems: Array<{
+          id: number
+          product: { id: number; name: string }
+          quantity: number
+          price: number
+        }> | null
       }
     >
   >([])
@@ -95,9 +93,7 @@ export default function CajaPage() {
       {/* ══ Mostrar balance actual ════════════════════════════════════════ */}
       <div className="flex items-center space-x-4">
         <span className="text-lg font-medium text-gray-300">Saldo actual:</span>
-        <span className="text-2xl font-bold text-green-400">
-          {formatCurrency(balance)}
-        </span>
+        <span className="text-2xl font-bold text-green-400">{formatCurrency(balance)}</span>
       </div>
 
       {/* ══ Indicador de carga al recargar datos ═══════════════════════════ */}

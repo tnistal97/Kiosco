@@ -1,12 +1,6 @@
 // src/components/ui/Modal.tsx
 'use client'
-import React, {
-  ReactNode,
-  useEffect,
-  useRef,
-  KeyboardEvent,
-  FocusEvent,
-} from 'react'
+import React, { ReactNode, useEffect, useRef, KeyboardEvent, FocusEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { XMarkIcon } from '@heroicons/react/24/solid'
 
@@ -40,7 +34,7 @@ export default function Modal({ isOpen, onClose, children }: ModalProps) {
   useEffect(() => {
     if (isOpen) {
       const btn = dialogRef.current?.querySelector<HTMLElement>(
-        'button, input, [tabindex]:not([tabindex="-1"])'
+        'button, input, [tabindex]:not([tabindex="-1"])',
       )
       btn?.focus()
     }
@@ -73,8 +67,6 @@ export default function Modal({ isOpen, onClose, children }: ModalProps) {
         {children}
       </div>
     </div>,
-    document.body
+    document.body,
   )
 }
-
-

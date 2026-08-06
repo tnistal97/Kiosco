@@ -8,10 +8,7 @@ interface CartButtonProps {
   total: number
 }
 
-export default function CartButton({ 
-  onClick, 
-  total 
-}: CartButtonProps) {
+export default function CartButton({ onClick, total }: CartButtonProps) {
   return (
     <button
       onClick={onClick}

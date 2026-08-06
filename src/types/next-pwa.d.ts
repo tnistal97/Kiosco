@@ -14,12 +14,7 @@ declare module 'next-pwa' {
 
   interface RuntimeCachingRule {
     urlPattern: RegExp | string | ((context: { url: URL; sameOrigin: boolean }) => boolean)
-    handler:
-      | 'CacheFirst'
-      | 'CacheOnly'
-      | 'NetworkFirst'
-      | 'NetworkOnly'
-      | 'StaleWhileRevalidate'
+    handler: 'CacheFirst' | 'CacheOnly' | 'NetworkFirst' | 'NetworkOnly' | 'StaleWhileRevalidate'
     method?: string
     options?: {
       cacheName?: string

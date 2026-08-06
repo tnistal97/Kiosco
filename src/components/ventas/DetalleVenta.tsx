@@ -39,18 +39,9 @@ export default function DetalleVenta({ saleItems }: Props) {
             </thead>
             <tbody>
               {saleItems.map((line, idx) => (
-                <tr
-                  key={line.id}
-                  className={clsx(
-                    idx % 2 === 0 ? 'bg-gray-800' : 'bg-gray-900'
-                  )}
-                >
-                  <td className="px-3 py-2 text-gray-100 whitespace-nowrap">
-                    {line.product.name}
-                  </td>
-                  <td className="px-3 py-2 text-gray-100 text-center">
-                    {line.quantity}
-                  </td>
+                <tr key={line.id} className={clsx(idx % 2 === 0 ? 'bg-gray-800' : 'bg-gray-900')}>
+                  <td className="px-3 py-2 text-gray-100 whitespace-nowrap">{line.product.name}</td>
+                  <td className="px-3 py-2 text-gray-100 text-center">{line.quantity}</td>
                   <td className="px-3 py-2 text-gray-100 text-right">
                     {formatCurrency(line.price)}
                   </td>

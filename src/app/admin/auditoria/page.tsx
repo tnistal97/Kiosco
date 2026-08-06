@@ -9,7 +9,7 @@ import StockSection from '@/components/auditoria/StockSection'
 import ProductSection from '@/components/auditoria/ProductSection'
 import DatePicker from '@/components/auditoria/DatePicker'
 import SelectFilter from '@/components/auditoria/SelectFilter'
-import type { AuditLog } from '@/types/audit'    // ← importar desde el nuevo archivo
+import type { AuditLog } from '@/types/audit' // ← importar desde el nuevo archivo
 
 interface Product {
   id: number
@@ -27,7 +27,7 @@ export default function AuditoriaPage() {
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [filterTables, setFilterTables] = useState<string[]>(['Sale', 'BranchStock', 'Product'])
-  const [filterActions, setFilterActions] = useState<string[]>(['create','update','delete'])
+  const [filterActions, setFilterActions] = useState<string[]>(['create', 'update', 'delete'])
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -86,11 +86,11 @@ export default function AuditoriaPage() {
 
       const logTime = new Date(log.timestamp).getTime()
       if (dateFrom) {
-        const fromTime = new Date(dateFrom).setHours(0,0,0,0)
+        const fromTime = new Date(dateFrom).setHours(0, 0, 0, 0)
         if (logTime < fromTime) return false
       }
       if (dateTo) {
-        const toTime = new Date(dateTo).setHours(23,59,59,999)
+        const toTime = new Date(dateTo).setHours(23, 59, 59, 999)
         if (logTime > toTime) return false
       }
       return true
@@ -124,24 +124,14 @@ export default function AuditoriaPage() {
     <div className="min-h-screen bg-gray-900 text-white p-4 md:p-6">
       <div className="max-w-4xl mx-auto space-y-6">
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <h1 className="text-2xl md:text-3xl font-bold text-blue-400">
-            🧃 KioscoApp — Historial
-          </h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-blue-400">🧃 KioscoApp — Historial</h1>
           <AuditTabs section={section} setSection={setSection} />
         </header>
 
         <div className="bg-gray-800 rounded-lg p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <DatePicker
-              label="Desde:"
-              value={dateFrom}
-              onChange={(v) => setDateFrom(v)}
-            />
-            <DatePicker
-              label="Hasta:"
-              value={dateTo}
-              onChange={(v) => setDateTo(v)}
-            />
+            <DatePicker label="Desde:" value={dateFrom} onChange={(v) => setDateFrom(v)} />
+            <DatePicker label="Hasta:" value={dateTo} onChange={(v) => setDateTo(v)} />
             <SelectFilter
               label="Tabla"
               options={[
@@ -172,8 +162,8 @@ export default function AuditoriaPage() {
               onClick={() => {
                 setDateFrom('')
                 setDateTo('')
-                setFilterTables(['Sale','BranchStock','Product'])
-                setFilterActions(['create','update','delete'])
+                setFilterTables(['Sale', 'BranchStock', 'Product'])
+                setFilterActions(['create', 'update', 'delete'])
               }}
               className="self-end px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-medium transition"
             >

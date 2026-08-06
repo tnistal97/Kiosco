@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import type { AuditLog } from '@/types/audit'   // ← importar del archivo de tipos
+import type { AuditLog } from '@/types/audit' // ← importar del archivo de tipos
 
 interface StockSectionProps {
   registrosStock: AuditLog[]
@@ -19,9 +19,7 @@ export default function StockSection({
   if (registrosStock.length === 0) {
     return (
       <div className="bg-gray-800/50 rounded-xl p-8 text-center">
-        <p className="text-gray-400">
-          No hay cargas manuales de stock en este rango.
-        </p>
+        <p className="text-gray-400">No hay cargas manuales de stock en este rango.</p>
       </div>
     )
   }

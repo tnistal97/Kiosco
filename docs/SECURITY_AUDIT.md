@@ -6,12 +6,12 @@
 
 ## Clasificación
 
-| Nivel | Criterio | Cantidad |
-|---|---|---|
-| **P0** | Permite alterar dinero o stock, escalar privilegios, o acceder a credenciales | **11** |
-| **P1** | Exposición de datos sensibles, ausencia de controles de rol, integridad financiera | **13** |
-| **P2** | Endurecimiento necesario; explotación condicionada | **9** |
-| **P3** | Higiene; riesgo bajo o teórico | **4** |
+| Nivel  | Criterio                                                                           | Cantidad |
+| ------ | ---------------------------------------------------------------------------------- | -------- |
+| **P0** | Permite alterar dinero o stock, escalar privilegios, o acceder a credenciales      | **11**   |
+| **P1** | Exposición de datos sensibles, ausencia de controles de rol, integridad financiera | **13**   |
+| **P2** | Endurecimiento necesario; explotación condicionada                                 | **9**    |
+| **P3** | Higiene; riesgo bajo o teórico                                                     | **4**    |
 
 ## Resumen ejecutivo
 
@@ -60,13 +60,13 @@ middleware: [ '/' ]
 
 Y en ejecución, sin ninguna cookie de sesión:
 
-| Ruta | Esperado | Real |
-|---|---|---|
-| `/caja` | 302 → `/login` | **200** |
-| `/productos` | 302 → `/login` | **200** |
-| `/ventas` | 302 → `/login` | **200** |
+| Ruta               | Esperado       | Real    |
+| ------------------ | -------------- | ------- |
+| `/caja`            | 302 → `/login` | **200** |
+| `/productos`       | 302 → `/login` | **200** |
+| `/ventas`          | 302 → `/login` | **200** |
 | `/admin/auditoria` | 302 → `/login` | **200** |
-| `/admin/sales` | 302 → `/login` | **200** |
+| `/admin/sales`     | 302 → `/login` | **200** |
 
 Ni siquiera con una cookie `token=basura` hay redirección.
 
@@ -79,7 +79,7 @@ Eso convierte los hallazgos P0-4, P0-5, P0-6 y P0-8 de "cualquier empleado" en *
 
 **Corrección:** mover el archivo a `src/middleware.ts`. Es un `git mv`.
 
-**Riesgo de la corrección: medio, y hay que anticiparlo.** Hoy nada se ejecuta; al activarlo, el middleware pasa a correr en el runtime Edge e importa `jsonwebtoken` y `@prisma/client` — ninguno de los dos es apto para Edge. En el build de prueba, Next arrastró el motor de consultas de Prisma en formato WASM al bundle del middleware (98,5 kB) y emitió advertencias. **Activarlo sin más puede romper la aplicación entera.** La corrección correcta es moverlo *y* reescribirlo: verificar la firma del token con `jose` (compatible con Edge) y sacar la consulta a la base, apoyándose en el claim `role` que ya viaja firmado dentro del propio token.
+**Riesgo de la corrección: medio, y hay que anticiparlo.** Hoy nada se ejecuta; al activarlo, el middleware pasa a correr en el runtime Edge e importa `jsonwebtoken` y `@prisma/client` — ninguno de los dos es apto para Edge. En el build de prueba, Next arrastró el motor de consultas de Prisma en formato WASM al bundle del middleware (98,5 kB) y emitió advertencias. **Activarlo sin más puede romper la aplicación entera.** La corrección correcta es moverlo _y_ reescribirlo: verificar la firma del token con `jose` (compatible con Edge) y sacar la consulta a la base, apoyándose en el claim `role` que ya viaja firmado dentro del propio token.
 
 **Prueba necesaria:** sin cookie, cada ruta privada debe responder 302 a `/login`; con un token de cajero, `/admin/*` debe redirigir; el build debe reportar la línea `ƒ Middleware`.
 
@@ -110,8 +110,13 @@ caja después:          $185.499,50    (subió $999, no $12.487.500)
 `POST /api/sales` recibe `items: { productId, quantity, price }[]`. El campo `price` viaja desde el cliente y se usa sin contrastarlo contra la base:
 
 ```ts
-items: { create: items.map((item) => ({ productId, quantity, price: item.price })) }
-const totalAmount = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+items: {
+  create: items.map((item) => ({ productId, quantity, price: item.price }))
+}
+const totalAmount = items.reduce(
+  (sum, item) => sum + item.price * item.quantity,
+  0,
+)
 ```
 
 Ese valor se escribe en `SaleItem.price` y determina el monto del `CashRegisterMovement` y el incremento de `Branch.currentCash`.
@@ -154,7 +159,11 @@ El handler ejecuta cinco operaciones independientes, sin `$transaction`:
 **Reproducción.** Venta de **999 unidades** de un producto con **23** en stock → **HTTP 201**, stock resultante **−976**.
 
 ```ts
-data: { quantity: { decrement: item.quantity } }
+data: {
+  quantity: {
+    decrement: item.quantity
+  }
+}
 ```
 
 Sin comprobación previa. El frontend limita el botón "+" con `disabled={qty >= stock}` (`components/caja/ProductRow.tsx:70`), pero eso es solo la interfaz.
@@ -180,7 +189,9 @@ password presente: true      (hashes bcrypt $2b$10$…)
 ```
 
 ```ts
-const users = await prisma.user.findMany({ include: { role: true, branch: true } })
+const users = await prisma.user.findMany({
+  include: { role: true, branch: true },
+})
 return NextResponse.json(users)
 ```
 
@@ -276,7 +287,10 @@ Ninguna verificación de sesión, rol ni sucursal. El `branchId` y el `productId
 ```ts
 const branchRecord = await prisma.branch.findUnique({ where: { id: branchId } })
 const newCash = branchRecord.currentCash + totalAmount
-await prisma.branch.update({ where: { id: branchId }, data: { currentCash: newCash } })
+await prisma.branch.update({
+  where: { id: branchId },
+  data: { currentCash: newCash },
+})
 ```
 
 Leer-modificar-escribir sin transacción ni bloqueo.
@@ -387,17 +401,17 @@ Ninguna verifica sesión ni rol. `POST /api/roles` pasa `data` crudo a `prisma.r
 
 # P2 — Medias
 
-| # | Hallazgo | Archivo | Corrección |
-|---|---|---|---|
-| P2-1 | **El middleware exime cualquier ruta con un punto.** `if (/\.(.*)$/.test(pathname))` pretende dejar pasar assets, pero es una exención por patrón de texto | `middleware.ts:15` | Excluir por prefijo (`/_next/`, `/icons/`) o usar el `matcher` |
-| P2-2 | **Cero validación de entrada en todo el proyecto.** `amount`, `quantity`, `price`, `totalStock` se aceptan como vengan: negativos, `NaN`, notación científica | 16 rutas | Esquemas Zod compartidos, validados antes de tocar Prisma |
-| P2-3 | **`POST /api/cash` acepta importes negativos** y no impacta el saldo | `api/cash/route.ts:97-137` | Validar signo según `movementType`; impactar el saldo en la misma transacción |
-| P2-4 | **Sin revocación de sesión.** El logout borra la cookie; el JWT sigue válido hasta 24 h. Cambiar rol o sucursal no invalida nada | `api/auth/logout/route.ts` | Versión de sesión en el usuario, verificada al validar el token |
-| P2-5 | **Los mensajes de error internos llegan al cliente.** `error.message` en el 500 de ventas; `reason: e?.message` en los 401 de productos y sucursales | `api/sales/route.ts:170`, `api/products/route.ts:44` | Mensaje genérico afuera, detalle en el log del servidor |
-| P2-6 | **`bcrypt.compareSync` bloquea el bucle de eventos** durante el login | `api/auth/login/route.ts:13` | Usar `bcrypt.compare` asíncrono |
-| P2-7 | **Depuración en producción.** Dos `console.log` que imprimen el usuario validado en cada petición | `api/auth/validate/route.ts:34-42` | Eliminar |
-| P2-8 | **Sin límite de tamaño de payload en la aplicación.** El único límite es `client_max_body_size 10m` de Nginx | — | Validar longitud de arrays y strings en los esquemas |
-| P2-9 | **`test.js` es un script destructivo en la raíz del repositorio.** Borra `stockCheck`, `saleItem`, `branchStock` y `product` sin guarda de entorno, usando el `DATABASE_URL` que encuentre | `test.js:15-19` | Eliminar del repositorio |
+| #    | Hallazgo                                                                                                                                                                                   | Archivo                                              | Corrección                                                                    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------- |
+| P2-1 | **El middleware exime cualquier ruta con un punto.** `if (/\.(.*)$/.test(pathname))` pretende dejar pasar assets, pero es una exención por patrón de texto                                 | `middleware.ts:15`                                   | Excluir por prefijo (`/_next/`, `/icons/`) o usar el `matcher`                |
+| P2-2 | **Cero validación de entrada en todo el proyecto.** `amount`, `quantity`, `price`, `totalStock` se aceptan como vengan: negativos, `NaN`, notación científica                              | 16 rutas                                             | Esquemas Zod compartidos, validados antes de tocar Prisma                     |
+| P2-3 | **`POST /api/cash` acepta importes negativos** y no impacta el saldo                                                                                                                       | `api/cash/route.ts:97-137`                           | Validar signo según `movementType`; impactar el saldo en la misma transacción |
+| P2-4 | **Sin revocación de sesión.** El logout borra la cookie; el JWT sigue válido hasta 24 h. Cambiar rol o sucursal no invalida nada                                                           | `api/auth/logout/route.ts`                           | Versión de sesión en el usuario, verificada al validar el token               |
+| P2-5 | **Los mensajes de error internos llegan al cliente.** `error.message` en el 500 de ventas; `reason: e?.message` en los 401 de productos y sucursales                                       | `api/sales/route.ts:170`, `api/products/route.ts:44` | Mensaje genérico afuera, detalle en el log del servidor                       |
+| P2-6 | **`bcrypt.compareSync` bloquea el bucle de eventos** durante el login                                                                                                                      | `api/auth/login/route.ts:13`                         | Usar `bcrypt.compare` asíncrono                                               |
+| P2-7 | **Depuración en producción.** Dos `console.log` que imprimen el usuario validado en cada petición                                                                                          | `api/auth/validate/route.ts:34-42`                   | Eliminar                                                                      |
+| P2-8 | **Sin límite de tamaño de payload en la aplicación.** El único límite es `client_max_body_size 10m` de Nginx                                                                               | —                                                    | Validar longitud de arrays y strings en los esquemas                          |
+| P2-9 | **`test.js` es un script destructivo en la raíz del repositorio.** Borra `stockCheck`, `saleItem`, `branchStock` y `product` sin guarda de entorno, usando el `DATABASE_URL` que encuentre | `test.js:15-19`                                      | Eliminar del repositorio                                                      |
 
 **Sobre CSRF:** la cookie usa `sameSite: 'lax'`, que impide su envío en peticiones POST de origen cruzado. El riesgo está razonablemente mitigado sin token CSRF. Conviene pasar a `strict` cuando se implemente el resto.
 
@@ -405,12 +419,12 @@ Ninguna verifica sesión ni rol. `POST /api/roles` pasa `data` crudo a `prisma.r
 
 # P3 — Bajas
 
-| # | Hallazgo | Nota |
-|---|---|---|
-| P3-1 | **Enumeración de usuarios por tiempo de respuesta.** Si el usuario no existe se responde sin ejecutar bcrypt; si existe, se ejecuta. La diferencia es medible | Comparar siempre contra un hash señuelo |
-| P3-2 | **`sharp` (alto, sin corrección disponible).** Vulnerabilidades heredadas de libvips. Llega como dependencia transitiva de Next para optimización de imágenes; el proyecto no procesa imágenes subidas por usuarios | **Riesgo bajo en este contexto.** Seguir el aviso |
-| P3-3 | **`webpack`, `serialize-javascript`, `rollup-plugin-terser`, `workbox-*` (vía `next-pwa`).** Solo intervienen al construir | **Solo desarrollo.** Se resuelven al reemplazar `next-pwa` |
-| P3-4 | **`@types/next-pwa` marcado como vulnerable.** Es un paquete de tipos; hereda la clasificación de `next-pwa` | **Falso positivo** a efectos de ejecución |
+| #    | Hallazgo                                                                                                                                                                                                            | Nota                                                       |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| P3-1 | **Enumeración de usuarios por tiempo de respuesta.** Si el usuario no existe se responde sin ejecutar bcrypt; si existe, se ejecuta. La diferencia es medible                                                       | Comparar siempre contra un hash señuelo                    |
+| P3-2 | **`sharp` (alto, sin corrección disponible).** Vulnerabilidades heredadas de libvips. Llega como dependencia transitiva de Next para optimización de imágenes; el proyecto no procesa imágenes subidas por usuarios | **Riesgo bajo en este contexto.** Seguir el aviso          |
+| P3-3 | **`webpack`, `serialize-javascript`, `rollup-plugin-terser`, `workbox-*` (vía `next-pwa`).** Solo intervienen al construir                                                                                          | **Solo desarrollo.** Se resuelven al reemplazar `next-pwa` |
+| P3-4 | **`@types/next-pwa` marcado como vulnerable.** Es un paquete de tipos; hereda la clasificación de `next-pwa`                                                                                                        | **Falso positivo** a efectos de ejecución                  |
 
 ---
 
@@ -420,15 +434,15 @@ Ninguna verifica sesión ni rol. `POST /api/roles` pasa `data` crudo a `prisma.r
 
 ## Clasificación por explotabilidad real
 
-| Clase | Paquetes | Acción |
-|---|---|---|
-| **Explotable, corrección trivial** | `next-auth` (crítica) | **Desinstalar.** No se usa |
-| **Explotable en producción** | `next` 15.3.8 | Actualizar a 15.5.x |
-| **Probablemente explotable** | `prisma`/`@prisma/config` | Actualizar a 6.19.3 (parche) |
+| Clase                              | Paquetes                                                                                                                                                                                                                       | Acción                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| **Explotable, corrección trivial** | `next-auth` (crítica)                                                                                                                                                                                                          | **Desinstalar.** No se usa                              |
+| **Explotable en producción**       | `next` 15.3.8                                                                                                                                                                                                                  | Actualizar a 15.5.x                                     |
+| **Probablemente explotable**       | `prisma`/`@prisma/config`                                                                                                                                                                                                      | Actualizar a 6.19.3 (parche)                            |
 | **Solo desarrollo / construcción** | `postcss`, `webpack`, `terser-webpack-plugin`, `serialize-javascript`, `rollup*`, `workbox*`, `@babel/*`, `ajv`, `minimatch`, `brace-expansion`, `lodash`, `picomatch`, `defu`, `effect`, `fast-uri`, `preact`, `diff`, `uuid` | Se arrastran vía `next-pwa` y las herramientas de build |
-| **Transitiva sin corrección** | `sharp` | Sin parche disponible; riesgo bajo acá |
-| **Falso positivo** | `@types/next-pwa` | Paquete de tipos |
-| **Sin usar — desinstalar** | `next-auth`, `@faker-js/faker`, `lucide-react`, `react-icons`, `ts-node` | Reducen superficie sin ningún costo |
+| **Transitiva sin corrección**      | `sharp`                                                                                                                                                                                                                        | Sin parche disponible; riesgo bajo acá                  |
+| **Falso positivo**                 | `@types/next-pwa`                                                                                                                                                                                                              | Paquete de tipos                                        |
+| **Sin usar — desinstalar**         | `next-auth`, `@faker-js/faker`, `lucide-react`, `react-icons`, `ts-node`                                                                                                                                                       | Reducen superficie sin ningún costo                     |
 
 ## Plan de actualización controlada
 
@@ -436,12 +450,12 @@ Ninguna verifica sesión ni rol. `POST /api/roles` pasa `data` crudo a `prisma.r
 
 Cuatro pasos, cada uno verificable de forma aislada:
 
-| Paso | Comando | Qué resuelve | Riesgo |
-|---|---|---|---|
-| 1 | `npm uninstall next-auth @faker-js/faker lucide-react react-icons ts-node` | La crítica y parte de las altas | Nulo — nada los importa |
-| 2 | `npm i next@15.5.22 postcss@8.5.26` | Omisión de middleware, SSRF, lectura de archivos | Bajo — misma versión mayor |
-| 3 | `npm i -D prisma@6.19.3 && npm i @prisma/client@6.19.3` | Alta transitiva de `@prisma/config` | Bajo — solo parche |
-| 4 | Reemplazar `next-pwa` por `@serwist/next` | ~12 altas de la cadena `workbox`/`rollup` | **Medio** — `next-pwa` está sin mantenimiento desde 2022. Es una migración, no una actualización. Merece su propia tarea |
+| Paso | Comando                                                                    | Qué resuelve                                     | Riesgo                                                                                                                   |
+| ---- | -------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| 1    | `npm uninstall next-auth @faker-js/faker lucide-react react-icons ts-node` | La crítica y parte de las altas                  | Nulo — nada los importa                                                                                                  |
+| 2    | `npm i next@15.5.22 postcss@8.5.26`                                        | Omisión de middleware, SSRF, lectura de archivos | Bajo — misma versión mayor                                                                                               |
+| 3    | `npm i -D prisma@6.19.3 && npm i @prisma/client@6.19.3`                    | Alta transitiva de `@prisma/config`              | Bajo — solo parche                                                                                                       |
+| 4    | Reemplazar `next-pwa` por `@serwist/next`                                  | ~12 altas de la cadena `workbox`/`rollup`        | **Medio** — `next-pwa` está sin mantenimiento desde 2022. Es una migración, no una actualización. Merece su propia tarea |
 
 Verificar después de cada paso: `npx tsc --noEmit` y `npm run build`.
 
@@ -449,14 +463,14 @@ Verificar después de cada paso: `npx tsc --noEmit` y `npm run build`.
 
 # Secretos
 
-| Hallazgo | Estado |
-|---|---|
-| `ecosystem.config.js` con la contraseña de PostgreSQL en texto plano y permisos `-rw-rw-rw-` en el servidor | **Documentado en la recuperación. Pendiente de rotación** |
-| La misma contraseña estuvo versionada en `scrap.py` en un repositorio **público** desde mayo de 2025 | **Sigue en el historial de git y en la rama de respaldo.** La rotación es obligatoria |
-| `JWT_SECRET` con valor `change-me` en producción | **Crítico si aún es así.** Cualquiera que conozca el valor por defecto puede firmar un token de administrador |
-| Contraseñas de ejemplo en `prisma/seed.ts:44-45` y `scripts/insertUsers.ts` | Solo datos de prueba, pero **`lautaro`/`Lkiosco123` es una cuenta administradora**. Verificar que no exista en producción |
-| `.env` | Correctamente excluido del repositorio |
-| Ningún secreto en el código de `src/` | Verificado |
+| Hallazgo                                                                                                    | Estado                                                                                                                    |
+| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `ecosystem.config.js` con la contraseña de PostgreSQL en texto plano y permisos `-rw-rw-rw-` en el servidor | **Documentado en la recuperación. Pendiente de rotación**                                                                 |
+| La misma contraseña estuvo versionada en `scrap.py` en un repositorio **público** desde mayo de 2025        | **Sigue en el historial de git y en la rama de respaldo.** La rotación es obligatoria                                     |
+| `JWT_SECRET` con valor `change-me` en producción                                                            | **Crítico si aún es así.** Cualquiera que conozca el valor por defecto puede firmar un token de administrador             |
+| Contraseñas de ejemplo en `prisma/seed.ts:44-45` y `scripts/insertUsers.ts`                                 | Solo datos de prueba, pero **`lautaro`/`Lkiosco123` es una cuenta administradora**. Verificar que no exista en producción |
+| `.env`                                                                                                      | Correctamente excluido del repositorio                                                                                    |
+| Ningún secreto en el código de `src/`                                                                       | Verificado                                                                                                                |
 
 > **`JWT_SECRET: "change-me"` es, potencialmente, el hallazgo más grave de todo este documento.** Con ese valor, firmar un token válido con `role: "admin"` no requiere ninguna vulnerabilidad: solo conocer el valor por defecto. No se pudo verificar si sigue vigente sin leer el `.env` del servidor, algo que quedó fuera del alcance autorizado. **Conviene confirmarlo antes que cualquier otra cosa de esta lista.**
 

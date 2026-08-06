@@ -1,0 +1,20 @@
+{
+  "semi": false,
+  "singleQuote": true,
+  "trailingComma": "all",
+  "printWidth": 100,
+  "tabWidth": 2,
+  "arrowParens": "always",
+  "endOfLine": "lf",
+  "plugins": ["prettier-plugin-prisma"],
+  "overrides": [
+    {
+      "files": "*.md",
+      "options": { "printWidth": 80, "proseWrap": "preserve" }
+    },
+    {
+      "files": "*.prisma",
+      "options": { "plugins": ["prettier-plugin-prisma"] }
+    }
+  ]
+}

@@ -13,7 +13,7 @@ interface Props {
 export default function CartFooter({ total, itemsCount, clearCart, confirmSale }: Props) {
   // Estado local del método de pago
   const [paymentMethod, setPaymentMethod] = useState<'efectivo' | 'tarjeta' | 'mercado_pago'>(
-    'efectivo'
+    'efectivo',
   )
 
   return (

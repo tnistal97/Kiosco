@@ -22,43 +22,42 @@ export default function NewProductModal({
   const [errorMessage, setErrorMessage] = useState('')
 
   const handleCreate = async () => {
-  if (!name.trim() || !stock.trim() || !price.trim()) {
-    setErrorMessage('Por favor complete todos los campos.')
-    return
-  }
-
-  try {
-    const res = await fetch('/api/products', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        barcode,
-        name: name.trim(),
-        totalStock: Number(stock),
-        price: Number(price),
-        categoryId: 1, // 👈 ensure the backend is happy!
-      }),
-    })
-
-    if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error || 'Error al crear el producto')
+    if (!name.trim() || !stock.trim() || !price.trim()) {
+      setErrorMessage('Por favor complete todos los campos.')
+      return
     }
 
-    // Success
-    setErrorMessage('')
-    alert('✅ Producto creado correctamente.')
-    setName('')
-    setStock('')
-    setPrice('')
-    onClose()
-    onCreated()
-  } catch (err) {
-    console.error(err)
-    setErrorMessage('Error al crear el producto. Intente nuevamente.')
-  }
-}
+    try {
+      const res = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          barcode,
+          name: name.trim(),
+          totalStock: Number(stock),
+          price: Number(price),
+          categoryId: 1, // 👈 ensure the backend is happy!
+        }),
+      })
 
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Error al crear el producto')
+      }
+
+      // Success
+      setErrorMessage('')
+      alert('✅ Producto creado correctamente.')
+      setName('')
+      setStock('')
+      setPrice('')
+      onClose()
+      onCreated()
+    } catch (err) {
+      console.error(err)
+      setErrorMessage('Error al crear el producto. Intente nuevamente.')
+    }
+  }
 
   if (!isOpen) return null
 
@@ -85,7 +84,8 @@ export default function NewProductModal({
         {/* BODY */}
         <div className="px-6 py-5 space-y-6">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            El producto con código <span className="font-mono">{barcode}</span> no existe. Complete los datos para crearlo:
+            El producto con código <span className="font-mono">{barcode}</span> no existe. Complete
+            los datos para crearlo:
           </p>
 
           {/* Inputs */}
@@ -143,11 +143,7 @@ export default function NewProductModal({
           </div>
 
           {/* Mensaje de error */}
-          {errorMessage && (
-            <p className="text-sm text-red-600 dark:text-red-400">
-              {errorMessage}
-            </p>
-          )}
+          {errorMessage && <p className="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>}
         </div>
 
         {/* FOOTER */}

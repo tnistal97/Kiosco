@@ -3,11 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 
 import toast from 'react-hot-toast'
-import {
-  useProducts,
-  Product,
-  Category,
-} from '@/hooks/useProducts'
+import { useProducts, Product, Category } from '@/hooks/useProducts'
 
 import ProductsHeader from '@/components/productos/ProductsHeader'
 import ProductsMetrics from '@/components/productos/ProductsMetrics'
@@ -20,13 +16,7 @@ type SortKey = 'id' | 'name' | 'category' | 'stock' | 'price'
 type SortDirection = 'asc' | 'desc'
 
 export default function ProductosPage() {
-  const {
-    products,
-    categories,
-    searchTerm,
-    setSearchTerm,
-    fetchProducts,
-  } = useProducts()
+  const { products, categories, searchTerm, setSearchTerm, fetchProducts } = useProducts()
 
   const [categoryFilter, setCategoryFilter] = useState<string>('Todas')
   const [lowStockFilter, setLowStockFilter] = useState<boolean>(false)
@@ -50,10 +40,8 @@ export default function ProductosPage() {
     let arr = products.filter((p) => {
       const term = searchTerm.trim().toLowerCase()
       const matchesSearch =
-        p.name.toLowerCase().includes(term) ||
-        (p.barcode ?? '').toLowerCase().includes(term)
-      const matchesCategory =
-        categoryFilter === 'Todas' || p.category?.name === categoryFilter
+        p.name.toLowerCase().includes(term) || (p.barcode ?? '').toLowerCase().includes(term)
+      const matchesCategory = categoryFilter === 'Todas' || p.category?.name === categoryFilter
       return matchesSearch && matchesCategory
     })
 

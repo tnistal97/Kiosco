@@ -37,7 +37,6 @@ export default function LoginPage() {
           style: { background: '#e53e3e', color: '#fff' },
         })
       }
-
     } catch (err) {
       console.error(err)
       toast.error('Error del servidor', {

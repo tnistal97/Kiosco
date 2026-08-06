@@ -6,30 +6,23 @@ import { XMarkIcon } from '@heroicons/react/24/solid'
 import { Product, Category } from '@/hooks/useProducts'
 import toast from 'react-hot-toast'
 
-
 interface Props {
   isOpen: boolean
   onClose: () => void
-  categories: Category[]           // Lista de categorías
-  product: Product | null          // null = crear nuevo; otherwise = editar
-  onSaved: () => void              // Callback cuando se guarda con éxito
+  categories: Category[] // Lista de categorías
+  product: Product | null // null = crear nuevo; otherwise = editar
+  onSaved: () => void // Callback cuando se guarda con éxito
 }
 
-export default function ProductoModal({
-  isOpen,
-  onClose,
-  categories,
-  product,
-  onSaved,
-}: Props) {
+export default function ProductoModal({ isOpen, onClose, categories, product, onSaved }: Props) {
   const [formData, setFormData] = useState<{
     name: string
     barcode: string
     description: string
     price: number
     categoryId: number
-    originalStock: number       // Stock actual (solo lectura)
-    addStockAmount: number      // Cantidad que queremos agregar
+    originalStock: number // Stock actual (solo lectura)
+    addStockAmount: number // Cantidad que queremos agregar
   }>({
     name: '',
     barcode: '',
@@ -124,7 +117,7 @@ export default function ProductoModal({
             primary: '#22c55e',
             secondary: '#1f2937',
           },
-        }
+        },
       )
 
       onSaved()
@@ -203,9 +196,7 @@ export default function ProductoModal({
                           type="text"
                           placeholder="Ej. Gaseosa Cola 2L"
                           value={formData.name}
-                          onChange={(e) =>
-                            setFormData({ ...formData, name: e.target.value })
-                          }
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                           className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
@@ -219,9 +210,7 @@ export default function ProductoModal({
                           type="text"
                           placeholder="Opcional"
                           value={formData.barcode}
-                          onChange={(e) =>
-                            setFormData({ ...formData, barcode: e.target.value })
-                          }
+                          onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
                           className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
@@ -314,10 +303,7 @@ export default function ProductoModal({
                               onChange={(e) =>
                                 setFormData({
                                   ...formData,
-                                  addStockAmount: Math.max(
-                                    0,
-                                    +e.target.value
-                                  ),
+                                  addStockAmount: Math.max(0, +e.target.value),
                                 })
                               }
                               className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -338,10 +324,7 @@ export default function ProductoModal({
                             onChange={(e) =>
                               setFormData({
                                 ...formData,
-                                originalStock: Math.max(
-                                  0,
-                                  +e.target.value
-                                ),
+                                originalStock: Math.max(0, +e.target.value),
                               })
                             }
                             className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"

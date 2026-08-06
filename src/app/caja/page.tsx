@@ -32,9 +32,8 @@ export default function CashRegisterPage() {
 
   const items = useCartStore((s) => s.items)
   const total = useMemo(
-    () =>
-      items.reduce((acc, i) => acc + i.product.price * i.quantity, 0),
-    [items]
+    () => items.reduce((acc, i) => acc + i.product.price * i.quantity, 0),
+    [items],
   )
 
   // Debounce para búsqueda
@@ -51,8 +50,7 @@ export default function CashRegisterPage() {
     if (term) {
       arr = arr.filter(
         (p: Product & { totalStock: number }) =>
-          p.name.toLowerCase().includes(term) ||
-          (p.barcode ?? '').toLowerCase().includes(term)
+          p.name.toLowerCase().includes(term) || (p.barcode ?? '').toLowerCase().includes(term),
       )
     }
     return arr
@@ -68,83 +66,83 @@ export default function CashRegisterPage() {
   }, [items])
 
   // Lógica de “confirmSale”: la llamaremos solo desde el modal de confirmación
-async function confirmSale() {
-  try {
-    // 1️⃣ Validar que los productos sigan existiendo
-    const allProductIds = new Set(products.map((p) => p.id))
-    for (const item of items) {
-      if (!allProductIds.has(item.product.id)) {
-        throw new Error(`El producto con ID ${item.product.id} ya no existe.`)
+  async function confirmSale() {
+    try {
+      // 1️⃣ Validar que los productos sigan existiendo
+      const allProductIds = new Set(products.map((p) => p.id))
+      for (const item of items) {
+        if (!allProductIds.has(item.product.id)) {
+          throw new Error(`El producto con ID ${item.product.id} ya no existe.`)
+        }
       }
+
+      // 2️⃣ Payload
+      //
+      // No se manda el precio. El servidor lo toma del catalogo y rechaza la
+      // peticion si el navegador intenta enviarlo. Antes se mandaba, y se
+      // guardaba tal cual: bastaba con editar la peticion para llevarse un
+      // producto de $12.500 por $1.
+      const body = {
+        items: items.map((item) => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+        })),
+        paymentMethod: selectedPaymentMethod,
+      }
+
+      // 3️⃣ Llamada a /api/sales
+      const response = await fetch('/api/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Error en la venta')
+      }
+
+      // 4️⃣ Notificación de éxito
+      toast.success(`✅ Venta registrada correctamente!`, {
+        duration: 5000,
+        style: {
+          background: '#1f2937', // bg-gray-800
+          color: '#f9fafb', // texto claro
+          fontSize: '1.2rem', // aún más grande
+          padding: '1rem 1.5rem',
+          border: '2px solid #374151', // border-gray-700
+          borderRadius: '0.75rem',
+        },
+        iconTheme: {
+          primary: '#22c55e', // green-500
+          secondary: '#1f2937',
+        },
+      })
+
+      // Limpiar carrito y búsqueda
+      useCartStore.getState().clearCart()
+      fetchProducts()
+      setSearch('')
+      setIsConfirmModalOpen(false)
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error.message || 'Error al procesar la venta', {
+        duration: 6000,
+        style: {
+          background: '#991b1b', // bg-red-800
+          color: '#f9fafb', // texto claro
+          fontSize: '1.2rem', // más grande
+          padding: '1rem 1.5rem',
+          border: '2px solid #7f1d1d', // border-red-900
+          borderRadius: '0.75rem',
+        },
+        iconTheme: {
+          primary: '#f87171', // red-400
+          secondary: '#991b1b',
+        },
+      })
     }
-
-    // 2️⃣ Payload
-    //
-    // No se manda el precio. El servidor lo toma del catalogo y rechaza la
-    // peticion si el navegador intenta enviarlo. Antes se mandaba, y se
-    // guardaba tal cual: bastaba con editar la peticion para llevarse un
-    // producto de $12.500 por $1.
-    const body = {
-      items: items.map((item) => ({
-        productId: item.product.id,
-        quantity: item.quantity,
-      })),
-      paymentMethod: selectedPaymentMethod,
-    }
-
-    // 3️⃣ Llamada a /api/sales
-    const response = await fetch('/api/sales', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-
-    if (!response.ok) {
-      const err = await response.json()
-      throw new Error(err.error || 'Error en la venta')
-    }
-
-    // 4️⃣ Notificación de éxito
-    toast.success(`✅ Venta registrada correctamente!`, {
-      duration: 5000,
-      style: {
-        background: '#1f2937', // bg-gray-800
-        color: '#f9fafb',      // texto claro
-        fontSize: '1.2rem',    // aún más grande
-        padding: '1rem 1.5rem',
-        border: '2px solid #374151', // border-gray-700
-        borderRadius: '0.75rem',
-      },
-      iconTheme: {
-        primary: '#22c55e', // green-500
-        secondary: '#1f2937',
-      },
-    })
-
-    // Limpiar carrito y búsqueda
-    useCartStore.getState().clearCart()
-    fetchProducts()
-    setSearch('')
-    setIsConfirmModalOpen(false)
-  } catch (error: any) {
-    console.error(error)
-    toast.error(error.message || 'Error al procesar la venta', {
-      duration: 6000,
-      style: {
-        background: '#991b1b',    // bg-red-800
-        color: '#f9fafb',         // texto claro
-        fontSize: '1.2rem',       // más grande
-        padding: '1rem 1.5rem',
-        border: '2px solid #7f1d1d', // border-red-900
-        borderRadius: '0.75rem',
-      },
-      iconTheme: {
-        primary: '#f87171', // red-400
-        secondary: '#991b1b',
-      },
-    })
   }
-}
 
   // Vaciar carrito
   const clearCart = () => {
@@ -162,9 +160,7 @@ async function confirmSale() {
         const code = barcodeBuffer.current
         if (code) {
           setSearch(code)
-          const found = products.find(
-            (p) => p.barcode?.toLowerCase() === code.toLowerCase()
-          )
+          const found = products.find((p) => p.barcode?.toLowerCase() === code.toLowerCase())
           if (found) {
             useCartStore.getState().addToCart(found)
           } else {
@@ -196,9 +192,7 @@ async function confirmSale() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg text-center w-full max-w-md">
-          <p className="text-xl font-medium text-gray-900 dark:text-gray-100 mb-4">
-            ⚠️ {error}
-          </p>
+          <p className="text-xl font-medium text-gray-900 dark:text-gray-100 mb-4">⚠️ {error}</p>
           <button
             onClick={fetchProducts}
             className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-base transition focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -222,9 +216,7 @@ async function confirmSale() {
               setSearchValue={setSearch}
               disabled={isLoading}
               onEnter={(value) => {
-                const found = products.find(
-                  (p) => p.barcode?.toLowerCase() === value.toLowerCase()
-                )
+                const found = products.find((p) => p.barcode?.toLowerCase() === value.toLowerCase())
                 if (found) {
                   useCartStore.getState().addToCart(found)
                 } else {
@@ -240,7 +232,7 @@ async function confirmSale() {
                 value={selectedPaymentMethod}
                 onChange={(e) =>
                   setSelectedPaymentMethod(
-                    e.target.value as 'efectivo' | 'tarjeta' | 'mercado_pago'
+                    e.target.value as 'efectivo' | 'tarjeta' | 'mercado_pago',
                   )
                 }
                 className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
@@ -269,10 +261,7 @@ async function confirmSale() {
       </main>
 
       {/* ─── SIDEBAR fijo en desktop ─────────────────────────────────────────── */}
-      <CartSidebar
-        onConfirm={() => setIsConfirmModalOpen(true)}
-        onClear={clearCart}
-      />
+      <CartSidebar onConfirm={() => setIsConfirmModalOpen(true)} onClear={clearCart} />
 
       {/* ─── MODAL carrito (móvil) ─────────────────────────────────────────── */}
       <MobileCartModal

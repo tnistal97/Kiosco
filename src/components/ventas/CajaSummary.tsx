@@ -1,10 +1,6 @@
 'use client'
 
-import {
-  CurrencyDollarIcon,
-  ArrowUpIcon,
-  CreditCardIcon,
-} from '@heroicons/react/24/outline'
+import { CurrencyDollarIcon, ArrowUpIcon, CreditCardIcon } from '@heroicons/react/24/outline'
 
 interface Props {
   totalCash: number
@@ -26,9 +22,7 @@ export default function CajaSummary({
         <CurrencyDollarIcon className="w-8 h-8 text-blue-400" />
         <div>
           <p className="text-sm text-gray-300">Saldo Actual</p>
-          <p className="text-2xl font-semibold text-green-400">
-            ${totalCash.toFixed(2)}
-          </p>
+          <p className="text-2xl font-semibold text-green-400">${totalCash.toFixed(2)}</p>
         </div>
       </div>
 
@@ -37,9 +31,7 @@ export default function CajaSummary({
         <ArrowUpIcon className="w-8 h-8 text-yellow-400" />
         <div>
           <p className="text-sm text-gray-300">Total Efectivo</p>
-          <p className="text-2xl font-semibold text-yellow-400">
-            ${totalEfectivo.toFixed(2)}
-          </p>
+          <p className="text-2xl font-semibold text-yellow-400">${totalEfectivo.toFixed(2)}</p>
         </div>
       </div>
 
@@ -48,9 +40,7 @@ export default function CajaSummary({
         <CreditCardIcon className="w-8 h-8 text-purple-400" />
         <div>
           <p className="text-sm text-gray-300">Total Tarjeta</p>
-          <p className="text-2xl font-semibold text-purple-400">
-            ${totalTarjeta.toFixed(2)}
-          </p>
+          <p className="text-2xl font-semibold text-purple-400">${totalTarjeta.toFixed(2)}</p>
         </div>
       </div>
 
@@ -59,9 +49,7 @@ export default function CajaSummary({
         <CurrencyDollarIcon className="w-8 h-8 text-pink-400" />
         <div>
           <p className="text-sm text-gray-300">Total MercadoPago</p>
-          <p className="text-2xl font-semibold text-pink-400">
-            ${totalMercadoPago.toFixed(2)}
-          </p>
+          <p className="text-2xl font-semibold text-pink-400">${totalMercadoPago.toFixed(2)}</p>
         </div>
       </div>
     </div>

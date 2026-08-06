@@ -10,11 +10,7 @@ export const metadata = {
   description: 'Gestión de ventas y stock',
 }
 
-export default async function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // Misma funcion de sesion que usan las APIs: una sola implementacion, que
   // ademas comprueba que el usuario siga activo y que la sesion no haya sido
   // revocada. Antes esto verificaba el JWT por su cuenta con jsonwebtoken y

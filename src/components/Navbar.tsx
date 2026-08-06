@@ -37,15 +37,15 @@ export default function Navbar({ userName, isAdmin }: NavbarProps) {
   }
 
   const baseLinks = [
-    { href: '/caja',      label: 'Caja',       icon: CurrencyDollarIcon },
-    { href: '/productos', label: 'Productos',  icon: ShoppingBagIcon    },
-    { href: '/ventas',    label: 'Ventas',     icon: ArchiveBoxIcon     },
+    { href: '/caja', label: 'Caja', icon: CurrencyDollarIcon },
+    { href: '/productos', label: 'Productos', icon: ShoppingBagIcon },
+    { href: '/ventas', label: 'Ventas', icon: ArchiveBoxIcon },
   ]
 
   const adminLinks = isAdmin
     ? [
         { href: '/admin/auditoria', label: 'Auditoría', icon: ChartBarIcon },
-        { href: '/admin/sales',     label: 'Reporte',   icon: ChartBarIcon },
+        { href: '/admin/sales', label: 'Reporte', icon: ChartBarIcon },
       ]
     : []
 
@@ -114,10 +114,7 @@ export default function Navbar({ userName, isAdmin }: NavbarProps) {
       </nav>
 
       {/* Modal de control de caja */}
-      <CashControlModal
-        isOpen={isCashModalOpen}
-        onClose={() => setCashModalOpen(false)}
-      />
+      <CashControlModal isOpen={isCashModalOpen} onClose={() => setCashModalOpen(false)} />
     </>
   )
 }

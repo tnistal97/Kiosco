@@ -35,7 +35,7 @@ export default function BarcodeScanner() {
       const video = videoRef.current
       if (video?.srcObject) {
         const stream = video.srcObject as MediaStream
-        stream.getTracks().forEach(track => track.stop())
+        stream.getTracks().forEach((track) => track.stop())
       }
     }
   }, [code])
@@ -48,7 +48,7 @@ export default function BarcodeScanner() {
         setProduct({
           name: data.product.product_name || 'Sin nombre',
           brand: data.product.brands || 'Marca desconocida',
-          image: data.product.image_front_url || ''
+          image: data.product.image_front_url || '',
         })
       } else {
         setProduct(null)
@@ -73,7 +73,11 @@ export default function BarcodeScanner() {
 
       {product && (
         <div className="mt-2 text-center bg-white dark:bg-gray-800 p-4 rounded shadow w-full max-w-xs">
-          <img src={product.image} alt={product.name} className="w-24 h-24 mx-auto object-contain mb-2" />
+          <img
+            src={product.image}
+            alt={product.name}
+            className="w-24 h-24 mx-auto object-contain mb-2"
+          />
           <h2 className="font-bold">{product.name}</h2>
           <p className="text-gray-500">{product.brand}</p>
         </div>

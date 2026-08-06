@@ -28,7 +28,13 @@ export interface CreatedSale {
   id: number
   total: number
   date: Date
-  items: Array<{ productId: number; name: string; quantity: number; price: number; subtotal: number }>
+  items: Array<{
+    productId: number
+    name: string
+    quantity: number
+    price: number
+    subtotal: number
+  }>
   paymentMethod: PaymentMethod
 }
 
@@ -52,11 +58,13 @@ function consolidar(items: SaleLineInput[]): SaleLineInput[] {
   for (const item of items) {
     porProducto.set(item.productId, (porProducto.get(item.productId) ?? 0) + item.quantity)
   }
-  return [...porProducto.entries()]
-    .map(([productId, quantity]) => ({ productId, quantity }))
-    // Orden estable por id: dos ventas simultaneas toman los bloqueos de fila
-    // en el mismo orden y no pueden quedar en interbloqueo.
-    .sort((a, b) => a.productId - b.productId)
+  return (
+    [...porProducto.entries()]
+      .map(([productId, quantity]) => ({ productId, quantity }))
+      // Orden estable por id: dos ventas simultaneas toman los bloqueos de fila
+      // en el mismo orden y no pueden quedar en interbloqueo.
+      .sort((a, b) => a.productId - b.productId)
+  )
 }
 
 export async function createSale(session: Session, input: CreateSaleInput): Promise<CreatedSale> {
@@ -169,7 +177,13 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         table: 'Sale',
         recordId: venta.id,
         action: 'create',
-        after: { id: venta.id, branchId, total, paymentMethod: input.paymentMethod, items: itemsConPrecio },
+        after: {
+          id: venta.id,
+          branchId,
+          total,
+          paymentMethod: input.paymentMethod,
+          items: itemsConPrecio,
+        },
         origin: 'POST /api/sales',
       })
 

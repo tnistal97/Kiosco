@@ -7,11 +7,11 @@ Este repositorio fue reemplazado con el código realmente desplegado en `kiosco.
 
 ## Qué cambió
 
-| | Antes | Ahora |
-|---|---|---|
-| Ubicación | `kiosco/` (anidado) | raíz del repositorio |
-| Next.js | 15.3.2 | 15.3.8 |
-| Código | mayo 2025 | septiembre–diciembre 2025 |
+|           | Antes               | Ahora                     |
+| --------- | ------------------- | ------------------------- |
+| Ubicación | `kiosco/` (anidado) | raíz del repositorio      |
+| Next.js   | 15.3.2              | 15.3.8                    |
+| Código    | mayo 2025           | septiembre–diciembre 2025 |
 
 Módulos que no existían en el repositorio y sí en producción: `admin` (con auditoría y reporte de ventas), `caja`, `control`, `store`, las rutas de API `cash`, `audit`, `admin/sales`, `auth/logout`, las rutas dinámicas `[id]` de productos, ventas y stock, los componentes de caja, auditoría, productos y UI, el directorio `hooks/` y `middleware.ts`.
 
@@ -31,11 +31,11 @@ Las seis migraciones históricas del repositorio se mantuvieron junto a la únic
 
 ### Archivos preservados del repositorio anterior
 
-| Archivo | Destino | Ajuste |
-|---|---|---|
-| `docker-compose.yml` | raíz | Montaba `./kiosco:/app`, ruta que ya no existe → ahora `.:/app`. Las credenciales embebidas pasaron a variables de entorno con defaults de desarrollo. Se quitó la clave `version`, obsoleta en Compose v2. |
-| `scrap.py` | `tools/scrap.py` | Movido desde la raíz por coherencia. Tenía la contraseña de PostgreSQL en el código → ahora se lee del entorno (`OPENFOOD_DB_*`). |
-| `kiosco/scripts/` | `scripts/` | Sin cambios de contenido. Contiene contraseñas de usuarios de ejemplo (`insertUsers`), aptas solo para datos de prueba. |
+| Archivo              | Destino          | Ajuste                                                                                                                                                                                                      |
+| -------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docker-compose.yml` | raíz             | Montaba `./kiosco:/app`, ruta que ya no existe → ahora `.:/app`. Las credenciales embebidas pasaron a variables de entorno con defaults de desarrollo. Se quitó la clave `version`, obsoleta en Compose v2. |
+| `scrap.py`           | `tools/scrap.py` | Movido desde la raíz por coherencia. Tenía la contraseña de PostgreSQL en el código → ahora se lee del entorno (`OPENFOOD_DB_*`).                                                                           |
+| `kiosco/scripts/`    | `scripts/`       | Sin cambios de contenido. Contiene contraseñas de usuarios de ejemplo (`insertUsers`), aptas solo para datos de prueba.                                                                                     |
 
 ### Archivos del repositorio anterior que no existen en producción
 
