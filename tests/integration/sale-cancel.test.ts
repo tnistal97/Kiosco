@@ -22,7 +22,7 @@ afterAll(async () => {
 /** Registra una venta real usando el endpoint, para partir de un estado valido. */
 async function venderDosUnidades(): Promise<number> {
   const { POST } = await import('@/app/api/sales/route')
-  const res = await call<{ id: number }>(POST as RouteHandler, '/api/sales', {
+  const res = await call<{ id: number }>(POST, '/api/sales', {
     method: 'POST',
     cookie: await sessionCookie(fx.cajero),
     body: {
@@ -37,7 +37,7 @@ async function venderDosUnidades(): Promise<number> {
 
 async function anular(saleId: number, body: unknown, user = () => fx.admin) {
   const { POST } = await import('@/app/api/sales/[id]/cancel/route')
-  return call(POST as RouteHandler, `/api/sales/${saleId}/cancel`, {
+  return call(POST, `/api/sales/${saleId}/cancel`, {
     method: 'POST',
     cookie: await sessionCookie(user()),
     params: { id: String(saleId) },
@@ -92,9 +92,10 @@ describe('Caso 12 — anulacion valida', () => {
     })
 
     expect(movimientos).toHaveLength(2)
-    expect(movimientos[0]!.amount).toBe(fx.productoA.price * 2)
-    expect(movimientos[1]!.amount).toBe(-fx.productoA.price * 2)
-    expect(movimientos[1]!.type).toBe('sale_cancel')
+    const [entrada, contramovimiento] = movimientos
+    expect(entrada?.amount).toBe(fx.productoA.price * 2)
+    expect(contramovimiento?.amount).toBe(-fx.productoA.price * 2)
+    expect(contramovimiento?.type).toBe('sale_cancel')
   })
 
   it('registra la anulacion en la bitacora con antes y despues', async () => {
@@ -171,7 +172,7 @@ describe('Una venta anulada sigue apareciendo en los reportes', () => {
     const hoy = new Date().toISOString().slice(0, 10)
     const { GET } = await import('@/app/api/admin/sales/route')
     const res = await call<{ sales: Array<{ id: number; status: string }> }>(
-      GET as RouteHandler,
+      GET,
       `/api/admin/sales?start=${hoy}&end=${hoy}`,
       { cookie: await sessionCookie(fx.admin) },
     )

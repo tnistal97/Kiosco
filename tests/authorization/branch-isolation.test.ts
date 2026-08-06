@@ -23,7 +23,7 @@ afterAll(async () => {
 describe('Lectura entre sucursales', () => {
   it('el catalogo solo muestra productos de la sucursal propia', async () => {
     const { GET } = await import('@/app/api/products/route')
-    const res = await call<Array<{ id: number }>>(GET as RouteHandler, '/api/products', {
+    const res = await call<Array<{ id: number }>>(GET, '/api/products', {
       cookie: await sessionCookie(fx.cajero),
     })
 
@@ -35,7 +35,7 @@ describe('Lectura entre sucursales', () => {
 
   it('no se puede leer un producto de otra sucursal por id', async () => {
     const { GET } = await import('@/app/api/products/[id]/route')
-    const res = await call(GET as RouteHandler, `/api/products/${fx.productoB.id}`, {
+    const res = await call(GET, `/api/products/${fx.productoB.id}`, {
       cookie: await sessionCookie(fx.cajero),
       params: { id: String(fx.productoB.id) },
     })
@@ -56,7 +56,7 @@ describe('Lectura entre sucursales', () => {
     })
 
     const { GET } = await import('@/app/api/cash/route')
-    const res = await call(GET as RouteHandler, '/api/cash', {
+    const res = await call(GET, '/api/cash', {
       cookie: await sessionCookie(fx.cajero),
     })
 
@@ -69,7 +69,7 @@ describe('Lectura entre sucursales', () => {
 describe('Escritura entre sucursales', () => {
   it('no se puede ajustar el stock de un producto de otra sucursal', async () => {
     const { PUT } = await import('@/app/api/stock/[id]/route')
-    const res = await call(PUT as RouteHandler, `/api/stock/${fx.productoB.id}`, {
+    const res = await call(PUT, `/api/stock/${fx.productoB.id}`, {
       method: 'PUT',
       cookie: await sessionCookie(fx.admin), // admin de la sucursal A
       params: { id: String(fx.productoB.id) },
@@ -97,7 +97,7 @@ describe('Escritura entre sucursales', () => {
 
   it('vender un producto de otra sucursal es rechazado', async () => {
     const { POST } = await import('@/app/api/sales/route')
-    const res = await call(POST as RouteHandler, '/api/sales', {
+    const res = await call(POST, '/api/sales', {
       method: 'POST',
       cookie: await sessionCookie(fx.cajero), // sucursal A
       body: {
@@ -121,7 +121,7 @@ describe('Escritura entre sucursales', () => {
     })
 
     const { POST } = await import('@/app/api/sales/[id]/cancel/route')
-    const res = await call(POST as RouteHandler, `/api/sales/${ventaB.id}/cancel`, {
+    const res = await call(POST, `/api/sales/${ventaB.id}/cancel`, {
       method: 'POST',
       cookie: await sessionCookie(fx.admin), // admin de la sucursal A
       params: { id: String(ventaB.id) },

@@ -167,7 +167,7 @@ describe('Un visitante sin sesion no accede a ninguna API privada', () => {
 
   it('no filtra informacion en el cuerpo del rechazo', async () => {
     const { GET } = await import('@/app/api/users/route')
-    const res = await call(GET as RouteHandler, '/api/users')
+    const res = await call(GET, '/api/users')
 
     expect(res.status).toBe(401)
     expect(res.text).not.toMatch(/\$2[aby]\$/) // hash bcrypt
@@ -181,7 +181,7 @@ describe('Tokens invalidos, vencidos o revocados', () => {
     const cookie = await rawCookie(
       'eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjEsImJyYW5jaElkIjoxLCJyb2xlIjoiYWRtaW4iLCJzdiI6MH0.firma-inventada',
     )
-    const res = await call(GET as RouteHandler, '/api/products', { cookie })
+    const res = await call(GET, '/api/products', { cookie })
     expect(res.status).toBe(401)
   })
 
@@ -200,7 +200,7 @@ describe('Tokens invalidos, vencidos o revocados', () => {
       .sign(secret)
 
     const { GET } = await import('@/app/api/products/route')
-    const res = await call(GET as RouteHandler, '/api/products', {
+    const res = await call(GET, '/api/products', {
       cookie: await rawCookie(vencido),
     })
     expect(res.status).toBe(401)
@@ -211,7 +211,7 @@ describe('Tokens invalidos, vencidos o revocados', () => {
     const cookie = await sessionCookie(fx.inactivo)
 
     const { GET } = await import('@/app/api/products/route')
-    const res = await call(GET as RouteHandler, '/api/products', { cookie })
+    const res = await call(GET, '/api/products', { cookie })
     expect(res.status).toBe(401)
   })
 
@@ -220,7 +220,7 @@ describe('Tokens invalidos, vencidos o revocados', () => {
     const cookie = await sessionCookie(fx.cajero)
 
     const { GET } = await import('@/app/api/products/route')
-    const antes = await call(GET as RouteHandler, '/api/products', { cookie })
+    const antes = await call(GET, '/api/products', { cookie })
     expect(antes.status).toBe(200)
 
     // Revocacion: se incrementa la version de sesion del usuario.
@@ -229,7 +229,7 @@ describe('Tokens invalidos, vencidos o revocados', () => {
       data: { sessionVersion: { increment: 1 } },
     })
 
-    const despues = await call(GET as RouteHandler, '/api/products', { cookie })
+    const despues = await call(GET, '/api/products', { cookie })
     expect(despues.status).toBe(401)
 
     // Se restaura para no afectar a los tests siguientes del archivo.

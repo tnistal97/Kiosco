@@ -70,11 +70,18 @@ export function registrarExito(username: string, ip: string): void {
   registros.delete(clave(username, ip))
 }
 
-/** Direccion de origen. Detras de nginx llega en X-Forwarded-For. */
+/**
+ * Direccion de origen. Detras de nginx llega en X-Forwarded-For.
+ *
+ * La cabecera puede venir vacia o como ", 10.0.0.1" si un proxy la
+ * concatena mal, y en ese caso el primer elemento es una cadena vacia. Se
+ * descarta: usar "" como parte de la clave de bloqueo juntaria en un mismo
+ * contador a todos los clientes cuyo proxy este mal configurado.
+ */
 export function origenDe(req: Request): string {
-  const fwd = req.headers.get('x-forwarded-for')
-  if (fwd) return fwd.split(',')[0]!.trim()
-  return req.headers.get('x-real-ip') ?? 'desconocido'
+  const primero = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  if (primero) return primero
+  return req.headers.get('x-real-ip')?.trim() ?? 'desconocido'
 }
 
 /** Solo para los tests: vacia el estado entre casos. */

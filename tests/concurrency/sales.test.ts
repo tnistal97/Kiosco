@@ -23,7 +23,7 @@ afterAll(async () => {
 
 async function venderUna(qty = 1, method: string = 'efectivo') {
   const { POST } = await import('@/app/api/sales/route')
-  return call(POST as RouteHandler, '/api/sales', {
+  return call(POST, '/api/sales', {
     method: 'POST',
     cookie: await sessionCookie(fx.cajero),
     body: {

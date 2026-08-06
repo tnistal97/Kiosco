@@ -4,7 +4,6 @@
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
-    "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
     "module": "esnext",
@@ -13,6 +12,36 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+
+    // --- Controles estrictos -------------------------------------------
+    // Se activaron de a uno midiendo el impacto. Ver la tabla en
+    // docs/QUALITY_STRATEGY.md.
+    //
+    // `strict` ya implica noImplicitAny, strictNullChecks,
+    // useUnknownInCatchVariables, strictFunctionTypes,
+    // strictBindCallApply, strictPropertyInitialization y
+    // alwaysStrict. Los tres primeros se dejan explicitos porque el
+    // pedido los nombra y porque asi se ve que estan activos sin tener
+    // que recordar que cubre `strict`.
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "useUnknownInCatchVariables": true,
+
+    // Indexar un array o un Record devuelve `T | undefined`. Es la unica
+    // de estas opciones que encontro codigo real que podia romper.
+    "noUncheckedIndexedAccess": true,
+
+    // Un `case` sin `break` deja de compilar.
+    "noFallthroughCasesInSwitch": true,
+
+    // Importar '@/lib/Prisma' cuando el archivo es 'prisma.ts' compila en
+    // Windows y falla en el servidor Linux. Esto lo detiene antes.
+    "forceConsistentCasingInFileNames": true,
+
+    // Un metodo que cree sobrescribir y no lo haga deja de compilar.
+    "noImplicitOverride": true,
+
     "plugins": [
       {
         "name": "next"

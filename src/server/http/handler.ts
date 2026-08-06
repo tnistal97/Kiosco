@@ -80,7 +80,7 @@ export function handler<A extends AuthMode, TBody = undefined, TQuery = undefine
           const needed = Array.isArray(config.permission) ? config.permission : [config.permission]
           // Con un solo permiso el mensaje de error es mas util.
           if (needed.length === 1) {
-            requirePermission(session, needed[0]!)
+            requirePermission(session, needed[0])
           } else {
             requireAny(session, needed)
           }
@@ -98,8 +98,8 @@ export function handler<A extends AuthMode, TBody = undefined, TQuery = undefine
         // Seguro: si auth === 'session', requireUser/requirePermission ya
         // garantizaron que no es null.
         session: session as SessionFor<A>,
-        body: body as TBody,
-        query: query as TQuery,
+        body: body,
+        query: query,
         params,
         origin: config.audit,
       })

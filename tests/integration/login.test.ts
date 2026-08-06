@@ -21,7 +21,7 @@ afterAll(async () => {
 
 async function login(username: string, password: string) {
   const { POST } = await import('@/app/api/auth/login/route')
-  return call<{ error?: string }>(POST as RouteHandler, '/api/auth/login', {
+  return call<{ error?: string }>(POST, '/api/auth/login', {
     method: 'POST',
     body: { username, password },
   })
@@ -100,7 +100,7 @@ describe('Limite de intentos', () => {
 describe('Cierre de sesion', () => {
   it('borra la cookie', async () => {
     const { POST } = await import('@/app/api/auth/logout/route')
-    const res = await call(POST as RouteHandler, '/api/auth/logout', {
+    const res = await call(POST, '/api/auth/logout', {
       method: 'POST',
       cookie: await sessionCookie(fx.cajero),
     })
@@ -115,11 +115,11 @@ describe('Cierre de sesion', () => {
     const cookie = await sessionCookie(fx.cajero)
 
     const { POST: logout } = await import('@/app/api/auth/logout/route')
-    await call(logout as RouteHandler, '/api/auth/logout', { method: 'POST', cookie })
+    await call(logout, '/api/auth/logout', { method: 'POST', cookie })
 
     // Reutilizar la misma cookie (copiada antes del logout) ya no debe servir.
     const { GET } = await import('@/app/api/products/route')
-    const res = await call(GET as RouteHandler, '/api/products', { cookie })
+    const res = await call(GET, '/api/products', { cookie })
 
     expect(
       res.status,
@@ -131,7 +131,7 @@ describe('Cierre de sesion', () => {
 describe('Validacion de sesion', () => {
   it('/api/auth/validate no expone datos sin sesion', async () => {
     const { POST } = await import('@/app/api/auth/validate/route')
-    const res = await call(POST as RouteHandler, '/api/auth/validate', { method: 'POST' })
+    const res = await call(POST, '/api/auth/validate', { method: 'POST' })
 
     expect(res.status).toBe(401)
     expect(res.text).not.toContain('"password"')
@@ -140,7 +140,7 @@ describe('Validacion de sesion', () => {
   it('/api/auth/validate devuelve el usuario y sus permisos con sesion valida', async () => {
     const { POST } = await import('@/app/api/auth/validate/route')
     const res = await call<{ valid: boolean; user: { role: string; permissions: string[] } }>(
-      POST as RouteHandler,
+      POST,
       '/api/auth/validate',
       { method: 'POST', cookie: await sessionCookie(fx.cajero) },
     )

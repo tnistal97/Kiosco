@@ -22,7 +22,7 @@ afterAll(async () => {
 
 async function vender(body: unknown, user = () => fx.cajero) {
   const { POST } = await import('@/app/api/sales/route')
-  return call(POST as RouteHandler, '/api/sales', {
+  return call(POST, '/api/sales', {
     method: 'POST',
     cookie: await sessionCookie(user()),
     body,
@@ -193,7 +193,7 @@ describe('Validacion de la entrada de la venta', () => {
 
   it('rechaza un cuerpo que no es JSON', async () => {
     const { POST } = await import('@/app/api/sales/route')
-    const res = await call(POST as RouteHandler, '/api/sales', {
+    const res = await call(POST, '/api/sales', {
       method: 'POST',
       cookie: await sessionCookie(fx.cajero),
       rawBody: 'esto no es json',
@@ -216,7 +216,7 @@ describe('Una venta correcta deja todo consistente', () => {
     expect(venta.userId).toBe(fx.cajero.id)
     expect(venta.status).toBe('completed')
     expect(venta.items).toHaveLength(1)
-    expect(venta.items[0]!.price).toBe(fx.productoA.price)
+    expect(venta.items[0]?.price).toBe(fx.productoA.price)
 
     expect(await stockOf(fx.branchA.id, fx.productoA.id)).toBe(8)
     expect(await cashOf(fx.branchA.id)).toBe(fx.productoA.price * 2)
@@ -228,7 +228,7 @@ describe('Una venta correcta deja todo consistente', () => {
 
     const logs = await prisma.auditLog.findMany({ where: { tableName: 'Sale' } })
     expect(logs.length).toBeGreaterThan(0)
-    expect(logs[0]!.userId).toBe(fx.cajero.id)
+    expect(logs[0]?.userId).toBe(fx.cajero.id)
   })
 
   it('un pago con tarjeta no suma al efectivo de la caja', async () => {

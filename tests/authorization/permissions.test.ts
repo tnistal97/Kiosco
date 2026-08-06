@@ -22,7 +22,7 @@ afterAll(async () => {
 describe('Caso 4 — un usuario comun no puede administrar usuarios', () => {
   it('el cajero no puede listar usuarios', async () => {
     const { GET } = await import('@/app/api/users/route')
-    const res = await call(GET as RouteHandler, '/api/users', {
+    const res = await call(GET, '/api/users', {
       cookie: await sessionCookie(fx.cajero),
     })
     expect(res.status).toBe(403)
@@ -32,7 +32,7 @@ describe('Caso 4 — un usuario comun no puede administrar usuarios', () => {
     const { POST } = await import('@/app/api/users/route')
     const antes = await prisma.user.count()
 
-    const res = await call(POST as RouteHandler, '/api/users', {
+    const res = await call(POST, '/api/users', {
       method: 'POST',
       cookie: await sessionCookie(fx.cajero),
       body: {
@@ -50,7 +50,7 @@ describe('Caso 4 — un usuario comun no puede administrar usuarios', () => {
 
   it('el administrador si puede listar usuarios', async () => {
     const { GET } = await import('@/app/api/users/route')
-    const res = await call(GET as RouteHandler, '/api/users', {
+    const res = await call(GET, '/api/users', {
       cookie: await sessionCookie(fx.admin),
     })
     expect(res.status).toBe(200)
@@ -62,7 +62,7 @@ describe('Caso 3 — ningun endpoint devuelve hashes de contrasena', () => {
 
   it('GET /api/users no incluye el campo password', async () => {
     const { GET } = await import('@/app/api/users/route')
-    const res = await call(GET as RouteHandler, '/api/users', {
+    const res = await call(GET, '/api/users', {
       cookie: await sessionCookie(fx.admin),
     })
 
@@ -75,7 +75,7 @@ describe('Caso 3 — ningun endpoint devuelve hashes de contrasena', () => {
     const role = await prisma.role.findFirstOrThrow({ where: { name: 'cajero' } })
     const { POST } = await import('@/app/api/users/route')
 
-    const res = await call(POST as RouteHandler, '/api/users', {
+    const res = await call(POST, '/api/users', {
       method: 'POST',
       cookie: await sessionCookie(fx.admin),
       body: {
@@ -96,7 +96,7 @@ describe('Caso 3 — ningun endpoint devuelve hashes de contrasena', () => {
     const { POST } = await import('@/app/api/users/route')
 
     // El administrador es de la sucursal A e intenta crear personal en la B.
-    const res = await call(POST as RouteHandler, '/api/users', {
+    const res = await call(POST, '/api/users', {
       method: 'POST',
       cookie: await sessionCookie(fx.admin),
       body: {
@@ -145,7 +145,7 @@ describe('Caso 10 — no puede eliminarse fisicamente todo el catalogo', () => {
 
   it('el cajero no puede borrar un producto individual', async () => {
     const { DELETE } = await import('@/app/api/products/[id]/route')
-    const res = await call(DELETE as RouteHandler, `/api/products/${fx.productoA.id}`, {
+    const res = await call(DELETE, `/api/products/${fx.productoA.id}`, {
       method: 'DELETE',
       cookie: await sessionCookie(fx.cajero),
       params: { id: String(fx.productoA.id) },
@@ -157,7 +157,7 @@ describe('Caso 10 — no puede eliminarse fisicamente todo el catalogo', () => {
 
   it('el cajero no puede cambiar el precio de un producto', async () => {
     const { PUT } = await import('@/app/api/products/[id]/route')
-    const res = await call(PUT as RouteHandler, `/api/products/${fx.productoA.id}`, {
+    const res = await call(PUT, `/api/products/${fx.productoA.id}`, {
       method: 'PUT',
       cookie: await sessionCookie(fx.cajero),
       params: { id: String(fx.productoA.id) },
@@ -181,7 +181,7 @@ describe('Caso 13 — una anulacion sin permiso es rechazada', () => {
     })
 
     const { POST } = await import('@/app/api/sales/[id]/cancel/route')
-    const res = await call(POST as RouteHandler, `/api/sales/${venta.id}/cancel`, {
+    const res = await call(POST, `/api/sales/${venta.id}/cancel`, {
       method: 'POST',
       cookie: await sessionCookie(fx.cajero),
       params: { id: String(venta.id) },
@@ -198,7 +198,7 @@ describe('Caso 13 — una anulacion sin permiso es rechazada', () => {
 describe('La bitacora de auditoria es informacion administrativa', () => {
   it('el cajero no puede consultarla', async () => {
     const { GET } = await import('@/app/api/audit/route')
-    const res = await call(GET as RouteHandler, '/api/audit', {
+    const res = await call(GET, '/api/audit', {
       cookie: await sessionCookie(fx.cajero),
     })
     expect(res.status).toBe(403)
@@ -206,7 +206,7 @@ describe('La bitacora de auditoria es informacion administrativa', () => {
 
   it('el administrador si puede', async () => {
     const { GET } = await import('@/app/api/audit/route')
-    const res = await call(GET as RouteHandler, '/api/audit', {
+    const res = await call(GET, '/api/audit', {
       cookie: await sessionCookie(fx.admin),
     })
     expect(res.status).toBe(200)

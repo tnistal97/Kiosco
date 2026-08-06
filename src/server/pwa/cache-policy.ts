@@ -21,9 +21,12 @@ export const PWA_EXCLUDE_PATTERNS: RegExp[] = [/^\/api\//, /^\/login\/?$/, /^\/a
 
 /** true si la ruta puede guardarse en el cache del navegador. */
 export function shouldCacheRequest(pathnameOrUrl: string): boolean {
+  // split siempre devuelve al menos un elemento, pero el tipo no lo sabe:
+  // ante la duda se conserva la cadena entera, que es la opcion segura
+  // (mas probable que coincida con un patron de exclusion, no menos).
   const pathname = pathnameOrUrl.startsWith('http')
     ? new URL(pathnameOrUrl).pathname
-    : pathnameOrUrl.split('?')[0]!
+    : (pathnameOrUrl.split('?')[0] ?? pathnameOrUrl)
 
   return !PWA_EXCLUDE_PATTERNS.some((patron) => patron.test(pathname))
 }
