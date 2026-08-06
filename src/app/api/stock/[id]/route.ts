@@ -1,11 +1,11 @@
 // src/app/api/stock/[id]/route.ts
-import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
-import { idSchema, parseWith, shortText } from '@/server/http/validate'
+import { idSchema, parseWith } from '@/server/http/validate'
 import { audit } from '@/server/audit/audit'
 import { conflict, notFound } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
+import { ajusteAbsolutoSchema, ajusteRelativoSchema } from '@/modules/stock/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -60,13 +60,6 @@ export const GET = handler(
   },
 )
 
-const ajusteAbsolutoSchema = z
-  .object({
-    quantity: z.number().int().min(0).max(1_000_000),
-    reason: shortText(200),
-  })
-  .strict()
-
 /** PUT: fija la cantidad exacta (recuento de inventario). */
 export const PUT = handler(
   {
@@ -111,17 +104,6 @@ export const PUT = handler(
     })
   },
 )
-
-const ajusteRelativoSchema = z
-  .object({
-    delta: z
-      .number()
-      .int('El ajuste debe ser un numero entero')
-      .refine((n) => n !== 0, 'El ajuste no puede ser cero')
-      .refine((n) => Math.abs(n) <= 1_000_000, 'Ajuste fuera de rango'),
-    reason: shortText(200),
-  })
-  .strict()
 
 /** PATCH: suma o resta unidades (entrada de mercaderia, rotura, faltante). */
 export const PATCH = handler(

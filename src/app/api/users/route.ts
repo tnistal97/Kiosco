@@ -1,13 +1,12 @@
 // src/app/api/users/route.ts
-import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcrypt'
 import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
-import { idSchema, shortText } from '@/server/http/validate'
 import { audit } from '@/server/audit/audit'
 import { conflict, invalid } from '@/server/http/errors'
 import { knownRoles } from '@/server/authz/permissions'
+import { crearUsuarioSchema } from '@/modules/users/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -54,19 +53,6 @@ export const GET = handler(
  * campo del cuerpo llegaba a la base. Bastaba con mandar `roleId` del rol
  * admin para crearse un administrador, sin sesion.
  */
-const crearUsuarioSchema = z
-  .object({
-    username: z
-      .string()
-      .trim()
-      .min(3, 'El usuario debe tener al menos 3 caracteres')
-      .max(50)
-      .regex(/^[a-zA-Z0-9._-]+$/, 'Solo letras, numeros, punto, guion y guion bajo'),
-    name: shortText(100),
-    password: z.string().min(10, 'La contrasena debe tener al menos 10 caracteres').max(200),
-    roleId: idSchema,
-  })
-  .strict()
 
 export const POST = handler(
   {

@@ -1,20 +1,12 @@
 // src/app/api/cash/count/route.ts
-import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
-import { amountSchema, optionalText } from '@/server/http/validate'
 import { audit } from '@/server/audit/audit'
+import { arqueoSchema } from '@/modules/cash/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-const arqueoSchema = z
-  .object({
-    amount: amountSchema,
-    notes: optionalText(500),
-  })
-  .strict()
 
 /**
  * Arqueo de caja: cuanto dinero hay fisicamente en el cajon.

@@ -1,9 +1,9 @@
 // src/app/api/sales/[id]/cancel/route.ts
-import { z } from 'zod'
 import { handler } from '@/server/http/handler'
-import { idSchema, shortText } from '@/server/http/validate'
+import { idSchema } from '@/server/http/validate'
 import { cancelSale } from '@/server/services/sales'
 import { parseWith } from '@/server/http/validate'
+import { anularVentaSchema } from '@/modules/sales/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,17 +16,12 @@ export const dynamic = 'force-dynamic'
  * caja. Es POST y no DELETE a proposito: no se borra nada, se registra un
  * hecho nuevo.
  */
-const anularSchema = z
-  .object({
-    reason: shortText(300),
-  })
-  .strict()
 
 export const POST = handler(
   {
     auth: 'session',
     permission: 'sales.cancel',
-    body: anularSchema,
+    body: anularVentaSchema,
     audit: 'POST /api/sales/:id/cancel',
   },
   async ({ session, body, params }) => {

@@ -1,11 +1,10 @@
 // src/app/api/products/route.ts
-import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
-import { amountSchema, idSchema, optionalText, shortText } from '@/server/http/validate'
 import { audit } from '@/server/audit/audit'
 import { conflict, invalid } from '@/server/http/errors'
+import { crearProductoSchema } from '@/modules/products/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -46,24 +45,6 @@ export const GET = handler(
     }))
   },
 )
-
-const crearProductoSchema = z
-  .object({
-    name: shortText(150),
-    barcode: z
-      .string()
-      .trim()
-      .max(64)
-      .regex(/^[0-9A-Za-z-]*$/, 'Codigo de barras invalido')
-      .transform((v) => (v === '' ? null : v))
-      .nullable()
-      .optional(),
-    description: optionalText(500),
-    price: amountSchema,
-    categoryId: idSchema,
-    totalStock: z.number().int().min(0).max(1_000_000).default(0),
-  })
-  .strict()
 
 export const POST = handler(
   {

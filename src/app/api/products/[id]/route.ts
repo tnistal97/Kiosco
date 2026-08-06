@@ -1,11 +1,11 @@
 // src/app/api/products/[id]/route.ts
-import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
-import { amountSchema, idSchema, optionalText, parseWith, shortText } from '@/server/http/validate'
+import { idSchema, parseWith } from '@/server/http/validate'
 import { audit } from '@/server/audit/audit'
 import { conflict, notFound } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
+import { editarProductoSchema } from '@/modules/products/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -56,23 +56,6 @@ export const GET = handler(
  * auditado como un ajuste de inventario aparte. En la fase siguiente el stock
  * deja de editarse desde aca y pasa a StockMovement.
  */
-const editarProductoSchema = z
-  .object({
-    name: shortText(150).optional(),
-    barcode: z
-      .string()
-      .trim()
-      .max(64)
-      .regex(/^[0-9A-Za-z-]*$/, 'Codigo de barras invalido')
-      .transform((v) => (v === '' ? null : v))
-      .nullable()
-      .optional(),
-    description: optionalText(500),
-    price: amountSchema.optional(),
-    categoryId: idSchema.optional(),
-    totalStock: z.number().int().min(0).max(1_000_000).optional(),
-  })
-  .strict()
 
 export const PUT = handler(
   {

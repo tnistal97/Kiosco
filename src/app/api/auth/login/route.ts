@@ -1,5 +1,4 @@
 // src/app/api/auth/login/route.ts
-import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcrypt'
 import { prisma } from '@/lib/prisma'
@@ -18,16 +17,10 @@ import {
   registrarExito,
   registrarFallo,
 } from '@/server/auth/loginAttempts'
+import { loginSchema } from '@/modules/auth/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-const loginSchema = z
-  .object({
-    username: z.string().trim().min(1).max(50),
-    password: z.string().min(1).max(200),
-  })
-  .strict()
 
 /**
  * Mensaje unico para todos los fallos de autenticacion.

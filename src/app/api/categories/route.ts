@@ -1,11 +1,10 @@
 // src/app/api/categories/route.ts
-import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
-import { shortText } from '@/server/http/validate'
 import { audit } from '@/server/audit/audit'
 import { conflict } from '@/server/http/errors'
+import { crearCategoriaSchema } from '@/modules/catalog/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,8 +21,6 @@ export const GET = handler(
       orderBy: { name: 'asc' },
     }),
 )
-
-const crearCategoriaSchema = z.object({ name: shortText(80) }).strict()
 
 export const POST = handler(
   {

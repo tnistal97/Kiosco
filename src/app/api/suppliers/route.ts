@@ -1,11 +1,10 @@
 // src/app/api/suppliers/route.ts
-import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
-import { optionalText, shortText } from '@/server/http/validate'
 import { audit } from '@/server/audit/audit'
 import { conflict } from '@/server/http/errors'
+import { crearProveedorSchema } from '@/modules/catalog/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,13 +33,6 @@ export const GET = handler(
       orderBy: { name: 'asc' },
     }),
 )
-
-const crearProveedorSchema = z
-  .object({
-    name: shortText(120),
-    contact: optionalText(200),
-  })
-  .strict()
 
 export const POST = handler(
   {

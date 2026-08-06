@@ -1,21 +1,11 @@
 // src/app/api/admin/sales/route.ts
-import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
 import { invalid } from '@/server/http/errors'
+import { reporteVentasQuerySchema, MAX_DIAS_REPORTE } from '@/modules/sales/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-const rangoSchema = z
-  .object({
-    start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato esperado: YYYY-MM-DD'),
-    end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato esperado: YYYY-MM-DD'),
-  })
-  .strict()
-
-/** Tope de rango: evita que una consulta traiga anos enteros de una vez. */
-const MAX_DIAS = 366
 
 /**
  * Ventas de un rango de fechas, para la pantalla administrativa.
@@ -31,7 +21,7 @@ export const GET = handler(
   {
     auth: 'session',
     permission: 'reports.view',
-    query: rangoSchema,
+    query: reporteVentasQuerySchema,
     audit: 'GET /api/admin/sales',
   },
   async ({ session, query }) => {
@@ -44,7 +34,7 @@ export const GET = handler(
     if (desde > hasta) throw invalid('La fecha inicial es posterior a la final')
 
     const dias = (hasta.getTime() - desde.getTime()) / (24 * 60 * 60 * 1000)
-    if (dias > MAX_DIAS) throw invalid(`El rango no puede superar ${MAX_DIAS} dias`)
+    if (dias > MAX_DIAS_REPORTE) throw invalid(`El rango no puede superar ${MAX_DIAS_REPORTE} dias`)
 
     const ventas = await prisma.sale.findMany({
       where: { branchId: session.branchId, date: { gte: desde, lte: hasta } },

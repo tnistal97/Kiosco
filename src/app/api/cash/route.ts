@@ -1,11 +1,10 @@
 // src/app/api/cash/route.ts
-import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
-import { amountSchema, optionalText, paymentMethodSchema } from '@/server/http/validate'
 import { audit } from '@/server/audit/audit'
 import { invalid } from '@/server/http/errors'
+import { movimientoManualSchema } from '@/modules/cash/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -81,20 +80,12 @@ export const GET = handler(
  * que el saldo que mostraba la pantalla nunca reflejaba los retiros. Ahora
  * el saldo se actualiza en la misma transaccion, con incremento atomico.
  */
-const movimientoSchema = z
-  .object({
-    amount: amountSchema.refine((n) => n > 0, 'El monto debe ser mayor que cero'),
-    paymentMethod: paymentMethodSchema,
-    description: optionalText(300),
-    movementType: z.enum(['ingreso', 'retiro', 'deposito']),
-  })
-  .strict()
 
 export const POST = handler(
   {
     auth: 'session',
     permission: 'cash.movement.create',
-    body: movimientoSchema,
+    body: movimientoManualSchema,
     audit: 'POST /api/cash',
   },
   async ({ session, body }) => {

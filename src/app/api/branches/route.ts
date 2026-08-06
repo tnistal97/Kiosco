@@ -1,11 +1,10 @@
 // src/app/api/branches/route.ts
-import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
-import { idSchema, optionalText, shortText } from '@/server/http/validate'
 import { audit } from '@/server/audit/audit'
 import { conflict, notFound } from '@/server/http/errors'
+import { crearSucursalSchema, editarSucursalSchema } from '@/modules/catalog/schemas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -44,15 +43,6 @@ export const GET = handler(
   },
 )
 
-const crearSucursalSchema = z
-  .object({
-    name: shortText(120),
-    address: optionalText(300),
-    email: z.string().trim().email('Correo invalido').max(200).nullable().optional(),
-    phone: optionalText(50),
-  })
-  .strict()
-
 export const POST = handler(
   {
     auth: 'session',
@@ -88,16 +78,6 @@ export const POST = handler(
     return NextResponse.json(sucursal, { status: 201 })
   },
 )
-
-const editarSucursalSchema = z
-  .object({
-    id: idSchema,
-    name: shortText(120).optional(),
-    address: optionalText(300),
-    email: z.string().trim().email('Correo invalido').max(200).nullable().optional(),
-    phone: optionalText(50),
-  })
-  .strict()
 
 export const PATCH = handler(
   {
