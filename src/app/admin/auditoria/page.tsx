@@ -36,17 +36,18 @@ export default function AuditoriaPage() {
 
       try {
         const [auditRes, productsRes] = await Promise.all([
-          fetch('/api/audit'),
+          fetch('/api/audit?pageSize=200'),
           fetch('/api/products'),
         ])
 
         if (!auditRes.ok) throw new Error('No se pudo cargar auditorías')
         if (!productsRes.ok) throw new Error('No se pudo cargar productos')
 
-        const auditData: AuditLog[] = await auditRes.json()
+        // /api/audit ahora pagina: devuelve { entradas, paginacion }.
+        const auditData: { entradas: AuditLog[] } = await auditRes.json()
         const productsData: Product[] = await productsRes.json()
 
-        setLogs(auditData)
+        setLogs(auditData.entradas ?? [])
 
         const mapa: Record<number, string> = {}
         productsData.forEach((p) => {

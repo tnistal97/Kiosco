@@ -1,19 +1,57 @@
-import { prisma } from '@/lib/prisma'
+// src/app/api/categories/route.ts
+import { z } from 'zod'
 import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { handler } from '@/server/http/handler'
+import { shortText } from '@/server/http/validate'
+import { audit } from '@/server/audit/audit'
+import { conflict } from '@/server/http/errors'
 
-export async function GET() {
-  const categories = await prisma.category.findMany()
-  return NextResponse.json(categories)
-}
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-export async function POST(req: Request) {
-  const data = await req.json()
+export const GET = handler(
+  {
+    auth: 'session',
+    permission: 'products.view',
+    audit: 'GET /api/categories',
+  },
+  async () =>
+    prisma.category.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    }),
+)
 
-  const category = await prisma.category.create({
-    data: {
-      name: data.name,
-    },
-  })
+const crearCategoriaSchema = z.object({ name: shortText(80) }).strict()
 
-  return NextResponse.json(category)
-}
+export const POST = handler(
+  {
+    auth: 'session',
+    permission: 'categories.manage',
+    body: crearCategoriaSchema,
+    audit: 'POST /api/categories',
+  },
+  async ({ session, body }) => {
+    const existente = await prisma.category.findUnique({ where: { name: body.name } })
+    if (existente) throw conflict('Ya existe una categoria con ese nombre')
+
+    const categoria = await prisma.$transaction(async (tx) => {
+      const creada = await tx.category.create({
+        data: { name: body.name },
+        select: { id: true, name: true },
+      })
+      await audit(tx, {
+        userId: session.userId,
+        table: 'Category',
+        recordId: creada.id,
+        action: 'create',
+        after: creada,
+        origin: 'POST /api/categories',
+      })
+      return creada
+    })
+
+    return NextResponse.json(categoria, { status: 201 })
+  },
+)
