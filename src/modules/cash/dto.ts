@@ -72,7 +72,14 @@ export function parseMovimiento(raw: unknown): MovimientoDTO {
   }
 }
 
+/**
+ * Acepta tanto `{ data, pagination }` como un array pelado.
+ *
+ * `/api/cash` pagina desde la Fase 1. Se conserva el segundo caso porque
+ * otros listados todavia no lo hacen y este parser se comparte.
+ */
 export function parseMovimientos(raw: unknown): MovimientoDTO[] {
+  if (esObjeto(raw) && 'data' in raw) return lista(raw.data, parseMovimiento)
   return lista(raw, parseMovimiento)
 }
 

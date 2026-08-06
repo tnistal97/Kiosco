@@ -15,8 +15,19 @@ import NewProductModal from '@/components/caja/NewProductModal'
 import ConfirmSaleModal from '@/components/caja/ConfirmSaleModal'
 
 export default function CashRegisterPage() {
-  const { products, fetchProducts, isLoading, error } = useProducts()
-  const [search, setSearch] = useState('')
+  // La busqueda la resuelve el servidor: la caja ya no descarga el catalogo
+  // entero cada vez que se abre la pantalla. El escaneo sigue funcionando
+  // igual, porque el termino buscado se compara tambien contra el codigo de
+  // barras del lado del servidor.
+  const {
+    products,
+    fetchProducts,
+    searchTerm: search,
+    setSearchTerm: setSearch,
+    buscarPorCodigo,
+    isLoading,
+    error,
+  } = useProducts({ buscarEnServidor: true })
   const [isCartOpenMobile, setIsCartOpenMobile] = useState(false)
 
   // Union type para método de pago
@@ -37,25 +48,17 @@ export default function CashRegisterPage() {
     [items],
   )
 
-  // Debounce para búsqueda
-  const [debouncedSearch, setDebouncedSearch] = useState(search)
-  useEffect(() => {
-    const handler = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => clearTimeout(handler)
-  }, [search])
-
-  // Filtrar productos
+  // El filtrado ya lo hizo el servidor. Se conserva un filtro local sobre lo
+  // recibido para que la lista responda de inmediato a cada tecla, sin
+  // esperar la ida y vuelta: son los mismos criterios, aplicados dos veces.
   const filteredProducts = useMemo(() => {
-    const term = debouncedSearch.trim().toLowerCase()
-    let arr = products
-    if (term) {
-      arr = arr.filter(
-        (p: Product & { totalStock: number }) =>
-          p.name.toLowerCase().includes(term) || (p.barcode ?? '').toLowerCase().includes(term),
-      )
-    }
-    return arr
-  }, [products, debouncedSearch])
+    const term = search.trim().toLowerCase()
+    if (!term) return products
+    return products.filter(
+      (p: Product) =>
+        p.name.toLowerCase().includes(term) || (p.barcode ?? '').toLowerCase().includes(term),
+    )
+  }, [products, search])
 
   // Mapa productId → cantidad en carrito
   const quantitiesMap = useMemo(() => {
@@ -152,13 +155,15 @@ export default function CashRegisterPage() {
         const code = barcodeBuffer.current
         if (code) {
           setSearch(code)
-          const found = products.find((p) => p.barcode?.toLowerCase() === code.toLowerCase())
-          if (found) {
-            useCartStore.getState().addToCart(found)
-          } else {
-            setNewBarcode(code)
-            setIsNewProductModalOpen(true)
-          }
+          // La busqueda va contra el servidor, no contra la lista cargada:
+          // el producto escaneado puede no estar en la pagina actual.
+          void buscarPorCodigo(code).then((encontrado) => {
+            if (encontrado) useCartStore.getState().addToCart(encontrado)
+            else {
+              setNewBarcode(code)
+              setIsNewProductModalOpen(true)
+            }
+          })
           barcodeBuffer.current = ''
         }
         e.preventDefault()
@@ -178,7 +183,7 @@ export default function CashRegisterPage() {
       clearTimeout(timeoutId)
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [products])
+  }, [buscarPorCodigo, setSearch])
 
   if (error) {
     return (

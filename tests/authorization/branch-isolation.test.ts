@@ -23,12 +23,12 @@ afterAll(async () => {
 describe('Lectura entre sucursales', () => {
   it('el catalogo solo muestra productos de la sucursal propia', async () => {
     const { GET } = await import('@/app/api/products/route')
-    const res = await call<Array<{ id: number }>>(GET, '/api/products', {
+    const res = await call<{ data: Array<{ id: number }> }>(GET, '/api/products', {
       cookie: await sessionCookie(fx.cajero),
     })
 
     expect(res.status).toBe(200)
-    const ids = res.body.map((p) => p.id)
+    const ids = res.body.data.map((p) => p.id)
     expect(ids).toContain(fx.productoA.id)
     expect(ids).not.toContain(fx.productoB.id)
   })

@@ -1,6 +1,6 @@
 // src/app/api/sales/route.ts
 import { handler } from '@/server/http/handler'
-import { createSale } from '@/server/services/sales'
+import { createSale } from '@/modules/sales/service'
 import { NextResponse } from 'next/server'
 import { crearVentaSchema } from '@/modules/sales/schemas'
 

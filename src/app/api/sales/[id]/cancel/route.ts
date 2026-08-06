@@ -1,7 +1,7 @@
 // src/app/api/sales/[id]/cancel/route.ts
 import { handler } from '@/server/http/handler'
 import { idSchema } from '@/server/http/validate'
-import { cancelSale } from '@/server/services/sales'
+import { cancelSale } from '@/modules/sales/service'
 import { parseWith } from '@/server/http/validate'
 import { anularVentaSchema } from '@/modules/sales/schemas'
 

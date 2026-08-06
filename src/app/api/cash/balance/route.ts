@@ -1,7 +1,6 @@
 // src/app/api/cash/balance/route.ts
-import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
-import { notFound } from '@/server/http/errors'
+import { saldoActual } from '@/modules/cash/service'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -21,28 +20,5 @@ export const GET = handler(
     permission: 'cash.view',
     audit: 'GET /api/cash/balance',
   },
-  async ({ session }) => {
-    const sucursal = await prisma.branch.findUnique({
-      where: { id: session.branchId },
-      select: { currentCash: true },
-    })
-    if (!sucursal) throw notFound('Sucursal no encontrada')
-
-    const ahora = new Date()
-    const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate())
-
-    const hoy = await prisma.cashRegisterMovement.aggregate({
-      where: {
-        branchId: session.branchId,
-        paymentMethod: 'efectivo',
-        date: { gte: inicioHoy },
-      },
-      _sum: { amount: true },
-    })
-
-    return {
-      balance: sucursal.currentCash,
-      efectivoHoy: hoy._sum.amount ?? 0,
-    }
-  },
+  ({ session }) => saldoActual(session),
 )

@@ -49,6 +49,30 @@ export function parseProducto(raw: unknown): ProductoDTO {
   }
 }
 
+/**
+ * Acepta tanto `{ data, pagination }` como un array pelado.
+ *
+ * `/api/products` pagina desde la Fase 1. La forma de array se conserva
+ * porque `/api/categories` y otros listados chicos siguen devolviendola.
+ */
 export function parseProductos(raw: unknown): ProductoDTO[] {
+  if (esObjeto(raw) && 'data' in raw) return lista(raw.data, parseProducto)
   return lista(raw, parseProducto)
+}
+
+/** Igual que `parseProductos`, pero conservando el total del servidor. */
+export function parsePaginaProductos(raw: unknown): {
+  data: ProductoDTO[]
+  total: number
+  totalPages: number
+} {
+  const data = parseProductos(raw)
+  if (esObjeto(raw) && esObjeto(raw.pagination)) {
+    return {
+      data,
+      total: numero(raw.pagination.total, data.length),
+      totalPages: numero(raw.pagination.totalPages, 1),
+    }
+  }
+  return { data, total: data.length, totalPages: 1 }
 }
