@@ -5,6 +5,7 @@ import { Dialog, Transition } from '@headlessui/react'
 import { XMarkIcon } from '@heroicons/react/24/solid'
 import { Product, Category } from '@/hooks/useProducts'
 import toast from 'react-hot-toast'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
 
 interface Props {
   isOpen: boolean
@@ -40,7 +41,7 @@ export default function ProductoModal({ isOpen, onClose, categories, product, on
         barcode: product.barcode || '',
         description: product.description || '',
         price: product.price,
-        categoryId: product.category?.id || 0,
+        categoryId: product.category.id,
         originalStock: product.totalStock || 0,
         addStockAmount: 0,
       })
@@ -91,15 +92,7 @@ export default function ProductoModal({ isOpen, onClose, categories, product, on
     const url = product ? `/api/products/${product.id}` : '/api/products'
 
     try {
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      if (!res.ok) {
-        throw new Error('Error al guardar el producto.')
-      }
+      await apiRequest(url, { method, body: payload, parse: () => null })
 
       toast.success(
         product ? '✅ Producto actualizado con éxito' : '✅ Producto creado con éxito',
@@ -121,9 +114,9 @@ export default function ProductoModal({ isOpen, onClose, categories, product, on
       )
 
       onSaved()
-    } catch (err: any) {
+    } catch (err) {
       console.error(err)
-      toast.error(err.message || 'Error al guardar el producto.', {
+      toast.error(mensajeDeError(err, 'Error al guardar el producto.'), {
         duration: 5000,
         style: {
           background: '#991b1b',
@@ -343,7 +336,7 @@ export default function ProductoModal({ isOpen, onClose, categories, product, on
                       Cancelar
                     </button>
                     <button
-                      onClick={handleSubmit}
+                      onClick={() => void handleSubmit()}
                       className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition"
                     >
                       {product ? 'Guardar cambios' : 'Crear producto'}

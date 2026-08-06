@@ -18,6 +18,9 @@ export const POST = handler(
     auth: 'session',
     audit: 'POST /api/auth/validate',
   },
+  // Sin await: toda la informacion ya viene de la sesion, que `handler` valido
+  // contra la base antes de llegar aca.
+  // eslint-disable-next-line @typescript-eslint/require-await -- la firma de handler() exige una promesa
   async ({ session }) => ({
     valid: true,
     user: {

@@ -47,6 +47,7 @@ const nextConfig: NextConfig = {
    * service worker: sin ella, el cache HTTP del propio navegador guarda las
    * respuestas privadas aunque el service worker no lo haga.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await -- Next exige que headers() sea async
   async headers() {
     return [
       {

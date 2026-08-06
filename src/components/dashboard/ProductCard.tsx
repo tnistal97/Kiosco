@@ -20,7 +20,7 @@ export default function ProductCard({
   onIncrease,
   onDecrease,
 }: ProductCardProps) {
-  const inStock = (product.totalStock ?? 0) > 0
+  const inStock = product.totalStock > 0
 
   return (
     <div

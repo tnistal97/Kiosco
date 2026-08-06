@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useProducts, Product } from '@/hooks/useProducts'
 import { useCartStore } from '@/store/cart'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
 
 import SearchBar from '@/components/caja/SearchBar'
 import ProductTable from '@/components/caja/ProductTable'
@@ -91,16 +92,7 @@ export default function CashRegisterPage() {
       }
 
       // 3️⃣ Llamada a /api/sales
-      const response = await fetch('/api/sales', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-
-      if (!response.ok) {
-        const err = await response.json()
-        throw new Error(err.error || 'Error en la venta')
-      }
+      await apiRequest('/api/sales', { method: 'POST', body, parse: () => null })
 
       // 4️⃣ Notificación de éxito
       toast.success(`✅ Venta registrada correctamente!`, {
@@ -121,12 +113,12 @@ export default function CashRegisterPage() {
 
       // Limpiar carrito y búsqueda
       useCartStore.getState().clearCart()
-      fetchProducts()
+      void fetchProducts()
       setSearch('')
       setIsConfirmModalOpen(false)
-    } catch (error: any) {
+    } catch (error) {
       console.error(error)
-      toast.error(error.message || 'Error al procesar la venta', {
+      toast.error(mensajeDeError(error, 'Error al procesar la venta'), {
         duration: 6000,
         style: {
           background: '#991b1b', // bg-red-800
@@ -194,7 +186,7 @@ export default function CashRegisterPage() {
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg text-center w-full max-w-md">
           <p className="text-xl font-medium text-gray-900 dark:text-gray-100 mb-4">⚠️ {error}</p>
           <button
-            onClick={fetchProducts}
+            onClick={() => void fetchProducts()}
             className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-base transition focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
             Reintentar
@@ -278,7 +270,7 @@ export default function CashRegisterPage() {
       <ConfirmSaleModal
         isOpen={isConfirmModalOpen}
         onClose={() => setIsConfirmModalOpen(false)}
-        onConfirm={() => confirmSale()}
+        onConfirm={() => void confirmSale()}
         paymentMethod={selectedPaymentMethod}
       />
 
@@ -288,7 +280,7 @@ export default function CashRegisterPage() {
         barcode={newBarcode}
         onClose={() => setIsNewProductModalOpen(false)}
         onCreated={() => {
-          fetchProducts()
+          void fetchProducts()
           setIsNewProductModalOpen(false)
         }}
       />

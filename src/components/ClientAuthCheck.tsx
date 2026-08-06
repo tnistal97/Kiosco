@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { apiRequest } from '@/lib/api-client'
+import { parseSesion } from '@/modules/auth/dto'
 
 export default function ClientAuthCheck({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -17,23 +19,18 @@ export default function ClientAuthCheck({ children }: { children: React.ReactNod
 
     const validate = async () => {
       try {
-        const res = await fetch('/api/auth/validate', {
+        const sesion = await apiRequest('/api/auth/validate', {
           method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          parse: parseSesion,
         })
-
-        if (!res.ok) {
-          router.push('/login')
-        } else {
-          setChecking(false)
-        }
+        if (sesion.valid) setChecking(false)
+        else router.push('/login')
       } catch {
         router.push('/login')
       }
     }
 
-    validate()
+    void validate()
   }, [pathname, router])
 
   // Mientras se valida, no renderizamos children (evita parpadeo)

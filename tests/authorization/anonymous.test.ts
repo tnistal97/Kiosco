@@ -178,7 +178,7 @@ describe('Un visitante sin sesion no accede a ninguna API privada', () => {
 describe('Tokens invalidos, vencidos o revocados', () => {
   it('un token con firma invalida es rechazado', async () => {
     const { GET } = await import('@/app/api/products/route')
-    const cookie = await rawCookie(
+    const cookie = rawCookie(
       'eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjEsImJyYW5jaElkIjoxLCJyb2xlIjoiYWRtaW4iLCJzdiI6MH0.firma-inventada',
     )
     const res = await call(GET, '/api/products', { cookie })
@@ -201,7 +201,7 @@ describe('Tokens invalidos, vencidos o revocados', () => {
 
     const { GET } = await import('@/app/api/products/route')
     const res = await call(GET, '/api/products', {
-      cookie: await rawCookie(vencido),
+      cookie: rawCookie(vencido),
     })
     expect(res.status).toBe(401)
   })

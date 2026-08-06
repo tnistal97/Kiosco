@@ -127,26 +127,42 @@ describe('Asignacion masiva', () => {
   })
 })
 
+/**
+ * Ejecuta `fn` y devuelve lo que haya lanzado.
+ *
+ * Evita poner `expect` dentro de un `catch`: si la funcion no llegara a
+ * lanzar, ese bloque no se ejecuta y la prueba pasa sin haber comprobado
+ * nada. Aca la ausencia de excepcion es un fallo explicito.
+ */
+function loQueLanza(fn: () => unknown): unknown {
+  try {
+    fn()
+  } catch (e) {
+    return e
+  }
+  throw new Error('Se esperaba una excepcion y la funcion termino sin lanzar')
+}
+
 describe('parseWith', () => {
   it('lanza AppError de validacion con el detalle del campo', () => {
-    try {
-      parseWith(z.object({ cantidad: quantitySchema }), { cantidad: -1 })
-      throw new Error('deberia haber lanzado')
-    } catch (e) {
-      expect(e).toBeInstanceOf(AppError)
-      const err = e as AppError
-      expect(err.code).toBe('VALIDATION')
-      expect(err.status).toBe(400)
-      expect(JSON.stringify(err.details)).toContain('cantidad')
-    }
+    const err = loQueLanza(() =>
+      parseWith(z.object({ cantidad: quantitySchema }), { cantidad: -1 }),
+    )
+
+    expect(err).toBeInstanceOf(AppError)
+    expect((err as AppError).code).toBe('VALIDATION')
+    expect((err as AppError).status).toBe(400)
+    expect(JSON.stringify((err as AppError).details)).toContain('cantidad')
   })
 
   it('no incluye el valor recibido en el mensaje de error', () => {
-    try {
-      parseWith(z.object({ password: shortText(5) }), { password: 'secreto-real-del-usuario' })
-    } catch (e) {
-      const texto = JSON.stringify((e as AppError).details)
-      expect(texto).not.toContain('secreto-real-del-usuario')
-    }
+    const err = loQueLanza(() =>
+      parseWith(z.object({ password: shortText(5) }), { password: 'secreto-real-del-usuario' }),
+    )
+
+    // Un detalle de validacion se registra y a veces se muestra: si copiara
+    // el valor recibido, una contrasena terminaria en el log del servidor.
+    const texto = JSON.stringify(err instanceof AppError ? err.details : err)
+    expect(texto).not.toContain('secreto-real-del-usuario')
   })
 })

@@ -1,12 +1,31 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { BrowserMultiFormatReader } from '@zxing/browser'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser'
+import { esObjeto, texto } from '@/lib/api-client'
 
 interface Producto {
   name: string
   brand: string
   image: string
+}
+
+/**
+ * Lectura de la respuesta de OpenFoodFacts.
+ *
+ * Es un servicio externo y publico: su respuesta no la controla este
+ * proyecto y puede cambiar de forma sin aviso. Por eso se lee campo por
+ * campo en vez de confiar en `res.json()`, que devuelve `any` y deja pasar
+ * cualquier cosa hasta que reviente al pintar.
+ */
+function leerProductoExterno(data: unknown): Producto | null {
+  if (!esObjeto(data) || data.status !== 1 || !esObjeto(data.product)) return null
+  const p = data.product
+  return {
+    name: texto(p.product_name, 'Sin nombre'),
+    brand: texto(p.brands, 'Marca desconocida'),
+    image: texto(p.image_front_url),
+  }
 }
 
 export default function BarcodeScanner() {
@@ -15,49 +34,76 @@ export default function BarcodeScanner() {
   const [product, setProduct] = useState<Producto | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const reader = new BrowserMultiFormatReader()
+  /** Ultimo codigo consultado. En una ref, no en estado: cambiarlo no debe
+   *  volver a montar el lector ni reiniciar la camara. */
+  const ultimoCodigo = useRef<string | null>(null)
 
-    reader.decodeFromVideoDevice(undefined, videoRef.current!, (result, err) => {
-      if (result) {
-        const barcode = result.getText()
-        if (barcode !== code) {
-          setCode(barcode)
-          fetchProduct(barcode)
-        }
-      } else if (err && err.name !== 'NotFoundException') {
-        setError('Error al escanear')
-        console.error(err)
-      }
-    })
-
-    return () => {
-      const video = videoRef.current
-      if (video?.srcObject) {
-        const stream = video.srcObject as MediaStream
-        stream.getTracks().forEach((track) => track.stop())
-      }
-    }
-  }, [code])
-
-  const fetchProduct = async (barcode: string) => {
+  const fetchProduct = useCallback(async (barcode: string) => {
     try {
       const res = await fetch(`https://world.openfoodfacts.org/api/v9/product/${barcode}.json`)
-      const data = await res.json()
-      if (data.status === 1) {
-        setProduct({
-          name: data.product.product_name || 'Sin nombre',
-          brand: data.product.brands || 'Marca desconocida',
-          image: data.product.image_front_url || '',
-        })
-      } else {
+      if (!res.ok) {
         setProduct(null)
+        return
       }
+      setProduct(leerProductoExterno(await res.json()))
     } catch (e) {
       console.error(e)
       setError('No se pudo obtener información del producto')
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    const reader = new BrowserMultiFormatReader()
+    let controls: IScannerControls | null = null
+    let cancelado = false
+
+    /**
+     * El efecto no depende de `code`.
+     *
+     * Antes si: cada lectura cambiaba el estado, el efecto se volvia a
+     * ejecutar y se creaba un lector nuevo, apagando y encendiendo la camara
+     * en cada escaneo. Ahora el lector se monta una vez y la comparacion con
+     * el codigo anterior se hace contra una ref.
+     */
+    void reader
+      .decodeFromVideoDevice(undefined, video, (result, err) => {
+        if (result) {
+          const barcode = result.getText()
+          if (barcode !== ultimoCodigo.current) {
+            ultimoCodigo.current = barcode
+            setCode(barcode)
+            void fetchProduct(barcode)
+          }
+        } else if (err && err.name !== 'NotFoundException') {
+          setError('Error al escanear')
+          console.error(err)
+        }
+      })
+      .then((c) => {
+        // Si el componente se desmonto mientras se pedia la camara, se apaga
+        // en cuanto llega: si no, el permiso queda tomado y el led encendido.
+        if (cancelado) c.stop()
+        else controls = c
+      })
+      .catch((e: unknown) => {
+        console.error(e)
+        setError('No se pudo acceder a la camara')
+      })
+
+    return () => {
+      cancelado = true
+      controls?.stop()
+      // `video` se captura al inicio del efecto a proposito: leer
+      // videoRef.current dentro de la limpieza puede devolver otro elemento.
+      const stream = video.srcObject
+      if (stream instanceof MediaStream) {
+        stream.getTracks().forEach((track) => track.stop())
+      }
+    }
+  }, [fetchProduct])
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -73,11 +119,14 @@ export default function BarcodeScanner() {
 
       {product && (
         <div className="mt-2 text-center bg-white dark:bg-gray-800 p-4 rounded shadow w-full max-w-xs">
-          <img
-            src={product.image}
-            alt={product.name}
-            className="w-24 h-24 mx-auto object-contain mb-2"
-          />
+          {product.image && (
+            // eslint-disable-next-line @next/next/no-img-element -- imagen de un dominio externo arbitrario; next/image exigiria declararlo en remotePatterns
+            <img
+              src={product.image}
+              alt={product.name}
+              className="w-24 h-24 mx-auto object-contain mb-2"
+            />
+          )}
           <h2 className="font-bold">{product.name}</h2>
           <p className="text-gray-500">{product.brand}</p>
         </div>

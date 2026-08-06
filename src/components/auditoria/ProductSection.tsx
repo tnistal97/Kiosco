@@ -2,6 +2,7 @@
 
 import React from 'react'
 import type { AuditLog } from '@/types/audit' // ← importar del archivo de tipos
+import { numeroOpcional, texto } from '@/lib/api-client'
 
 interface ProductSectionProps {
   registrosProductos: AuditLog[]
@@ -28,10 +29,14 @@ export default function ProductSection({
 
       <div className="grid gap-5">
         {registrosProductos.map((log) => {
+          // `changes` es JSON de la bitacora: sin forma garantizada.
           const data = log.actionType === 'create' ? log.changes.after : log.changes.before
           const fecha = formatearFecha(log.timestamp)
           const hora = formatearHora(log.timestamp)
           const esCreacion = log.actionType === 'create'
+          const nombre = texto(data?.name, 'Producto')
+          const precio = numeroOpcional(data?.price)
+          const codigo = texto(data?.barcode, 'Sin código')
 
           return (
             <article
@@ -42,9 +47,7 @@ export default function ProductSection({
             >
               <div className="bg-gray-700/80 px-4 py-3 border-b border-gray-600 flex justify-between items-start">
                 <div>
-                  <h3 className="text-white font-medium text-lg">
-                    {log.user?.name || 'Usuario desconocido'}
-                  </h3>
+                  <h3 className="text-white font-medium text-lg">{log.user.name}</h3>
                   <p className="text-gray-300 text-sm">
                     {fecha} · {hora}
                   </p>
@@ -59,9 +62,11 @@ export default function ProductSection({
               </div>
 
               <div className="px-4 py-3 space-y-1">
-                <p className="text-white font-semibold">{data?.name ?? 'Producto'}</p>
-                <p className="text-gray-400 text-sm">Precio: ${data?.price?.toFixed(2) ?? 'N/A'}</p>
-                <p className="text-gray-400 text-sm">Código: {data?.barcode || 'Sin código'}</p>
+                <p className="text-white font-semibold">{nombre}</p>
+                <p className="text-gray-400 text-sm">
+                  Precio: ${precio === null ? 'N/A' : precio.toFixed(2)}
+                </p>
+                <p className="text-gray-400 text-sm">Código: {codigo || 'Sin código'}</p>
               </div>
             </article>
           )

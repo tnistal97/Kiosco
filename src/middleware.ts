@@ -1,6 +1,8 @@
 // src/middleware.ts
 import { NextResponse, type NextRequest } from 'next/server'
 import { verifySessionToken, SESSION_COOKIE } from '@/server/auth/token'
+import type { ApiErrorBody } from '@/server/http/errors'
+import { REQUEST_ID_HEADER, requestIdDe } from '@/server/http/requestId'
 
 /**
  * Middleware de navegacion.
@@ -63,7 +65,20 @@ export async function middleware(req: NextRequest) {
   // Las APIs responden 401; no tiene sentido redirigir una peticion fetch al
   // HTML del login. Ademas asi el cliente puede distinguir "sesion vencida".
   if (pathname.startsWith('/api/')) {
-    return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    // Mismo contrato de error que el resto de la aplicacion, para que el
+    // cliente no tenga que distinguir si respondio el middleware o la ruta.
+    const requestId = requestIdDe(req)
+    const cuerpo: ApiErrorBody = {
+      error: {
+        code: token ? 'SESSION_EXPIRED' : 'UNAUTHENTICATED',
+        message: token ? 'La sesion expiro. Vuelva a iniciar sesion.' : 'No autenticado',
+        requestId,
+      },
+    }
+    const res = NextResponse.json(cuerpo, { status: 401 })
+    res.headers.set(REQUEST_ID_HEADER, requestId)
+    if (token) res.cookies.set(SESSION_COOKIE, '', { path: '/', maxAge: 0 })
+    return res
   }
 
   const destino = new URL('/login', req.url)

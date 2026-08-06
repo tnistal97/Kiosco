@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { XMarkIcon } from '@heroicons/react/24/solid'
+import toast from 'react-hot-toast'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
 
 interface NewProductModalProps {
   isOpen: boolean
@@ -28,26 +30,23 @@ export default function NewProductModal({
     }
 
     try {
-      const res = await fetch('/api/products', {
+      await apiRequest('/api/products', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           barcode,
           name: name.trim(),
           totalStock: Number(stock),
           price: Number(price),
-          categoryId: 1, // 👈 ensure the backend is happy!
-        }),
+          // TODO(fase 2): esta pantalla no deja elegir categoria y fija la 1.
+          // Si esa categoria no existe el servidor responde con el motivo, que
+          // ahora si se muestra en vez de un mensaje generico.
+          categoryId: 1,
+        },
+        parse: () => null,
       })
 
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Error al crear el producto')
-      }
-
-      // Success
       setErrorMessage('')
-      alert('✅ Producto creado correctamente.')
+      toast.success('Producto creado correctamente.')
       setName('')
       setStock('')
       setPrice('')
@@ -55,7 +54,10 @@ export default function NewProductModal({
       onCreated()
     } catch (err) {
       console.error(err)
-      setErrorMessage('Error al crear el producto. Intente nuevamente.')
+      // El mensaje del servidor explica que fallo (codigo repetido, categoria
+      // inexistente, precio invalido). Antes se descartaba y siempre se
+      // mostraba el mismo texto, asi que no habia forma de saber por que.
+      setErrorMessage(mensajeDeError(err, 'Error al crear el producto. Intente nuevamente.'))
     }
   }
 
@@ -158,7 +160,7 @@ export default function NewProductModal({
             Cancelar
           </button>
           <button
-            onClick={handleCreate}
+            onClick={() => void handleCreate()}
             className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             Crear Producto

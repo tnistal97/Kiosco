@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import React, { useState } from 'react'
 import { TrashIcon } from '@heroicons/react/24/outline'
 import DeleteConfirmationModal from './DeleteConfirmationModal'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
 
 interface Props {
   /** Id de la VENTA, no el del movimiento de caja. */
@@ -36,16 +37,11 @@ export default function DeleteButton({ saleId, onDeleted }: Props) {
 
     setIsLoading(true)
     try {
-      const res = await fetch(`/api/sales/${saleId}/cancel`, {
+      await apiRequest(`/api/sales/${saleId}/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: motivo }),
+        body: { reason: motivo },
+        parse: () => null,
       })
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}))
-        throw new Error(errorData.error || 'No se pudo anular la venta')
-      }
 
       onDeleted(saleId)
 
@@ -62,8 +58,7 @@ export default function DeleteButton({ saleId, onDeleted }: Props) {
         iconTheme: { primary: '#22c55e', secondary: '#1f2937' },
       })
     } catch (err) {
-      const mensaje = err instanceof Error ? err.message : 'Error al anular la venta.'
-      toast.error(mensaje, {
+      toast.error(mensajeDeError(err, 'Error al anular la venta.'), {
         duration: 5000,
         style: {
           background: '#991b1b',
@@ -97,7 +92,7 @@ export default function DeleteButton({ saleId, onDeleted }: Props) {
 
       <DeleteConfirmationModal
         isOpen={isModalOpen}
-        onConfirm={handleConfirmDelete}
+        onConfirm={(reason) => void handleConfirmDelete(reason)}
         onCancel={closeModal}
         loading={isLoading}
       />

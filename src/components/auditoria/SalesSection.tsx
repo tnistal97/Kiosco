@@ -2,6 +2,7 @@
 
 import React from 'react'
 import type { AuditLog } from '@/types/audit' // ← importar del archivo de tipos
+import { parseItemsDeSnapshot } from '@/modules/audit/dto'
 
 interface SalesSectionProps {
   registrosVentas: AuditLog[]
@@ -27,8 +28,9 @@ export default function SalesSection({
   return (
     <div className="grid gap-5">
       {registrosVentas.map((log) => {
-        const after = log.changes.after || {}
-        const items: any[] = Array.isArray(after.items) ? after.items : []
+        // `changes.after` es JSON historico: lo escribio la version del codigo
+        // que corria ese dia, asi que se lee comprobando cada campo.
+        const items = parseItemsDeSnapshot(log.changes.after?.items)
         const totalMonto = items.reduce((sum, it) => sum + it.price * it.quantity, 0)
         const fecha = formatearFecha(log.timestamp)
         const hora = formatearHora(log.timestamp)
@@ -40,9 +42,7 @@ export default function SalesSection({
           >
             <div className="bg-gray-700/80 px-4 py-3 border-b border-gray-600 flex justify-between items-start">
               <div>
-                <h3 className="text-white font-medium text-lg">
-                  {log.user?.name || 'Usuario desconocido'}
-                </h3>
+                <h3 className="text-white font-medium text-lg">{log.user.name}</h3>
                 <p className="text-gray-300 text-sm">
                   {fecha} · {hora}
                 </p>
@@ -65,7 +65,9 @@ export default function SalesSection({
                     className="flex justify-between items-center py-2 border-b border-gray-700/50 last:border-0"
                   >
                     <div>
-                      <p className="text-white">{productsMap[it.productId] || 'Producto'}</p>
+                      {/* El nombre actual del catalogo; si el producto ya no
+                          existe, el que quedo guardado en el snapshot. */}
+                      <p className="text-white">{productsMap[it.productId] ?? it.name}</p>
                       <p className="text-gray-400 text-sm">
                         {it.quantity} × ${it.price.toFixed(2)}
                       </p>

@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { seedFixture, prisma, stockOf, cashOf, type Fixture } from '../helpers/db'
-import { call, sessionCookie, type RouteHandler } from '../helpers/http'
+import { call, sessionCookie } from '../helpers/http'
 
 let fx: Fixture
 
@@ -30,35 +30,34 @@ async function vender(body: unknown, user = () => fx.cajero) {
 }
 
 describe('Caso 6 — el precio lo decide el servidor', () => {
-  it('un precio enviado por el cliente se ignora', async () => {
+  // Estas dos pruebas se escribieron antes de la correccion, cuando todavia
+  // no estaba decidido si mandar `price` se ignoraba o se rechazaba. Ahora
+  // que el esquema es estricto, la respuesta correcta es una sola: 400.
+  it('mandar un precio hace fallar la peticion entera', async () => {
     const res = await vender({
       items: [{ productId: fx.productoA.id, quantity: 1, price: 1 }],
       paymentMethod: 'efectivo',
     })
 
-    expect([200, 201, 400]).toContain(res.status)
+    expect(
+      res.status,
+      'El esquema debe rechazar `price`: aceptarlo abre la puerta a fijar el precio desde el navegador',
+    ).toBe(400)
 
-    // Si la venta se acepto, debe haberse guardado al precio de la base.
-    if (res.status < 300) {
-      const item = await prisma.saleItem.findFirstOrThrow()
-      expect(
-        item.price,
-        'Se registro el precio que mando el navegador en lugar del precio del catalogo',
-      ).toBe(fx.productoA.price)
-
-      expect(await cashOf(fx.branchA.id)).toBe(fx.productoA.price)
-    }
+    expect(await prisma.saleItem.count()).toBe(0)
+    expect(await prisma.sale.count()).toBe(0)
+    expect(await cashOf(fx.branchA.id)).toBe(0)
+    expect(await stockOf(fx.branchA.id, fx.productoA.id)).toBe(10)
   })
 
   it('el total en caja corresponde al precio del catalogo', async () => {
     const res = await vender({
-      items: [{ productId: fx.productoA.id, quantity: 3, price: 0.01 }],
+      items: [{ productId: fx.productoA.id, quantity: 3 }],
       paymentMethod: 'efectivo',
     })
 
-    if (res.status < 300) {
-      expect(await cashOf(fx.branchA.id)).toBe(fx.productoA.price * 3)
-    }
+    expect(res.status).toBeLessThan(300)
+    expect(await cashOf(fx.branchA.id)).toBe(fx.productoA.price * 3)
   })
 
   it('un descuento arbitrario del cliente no se aplica', async () => {
@@ -168,10 +167,7 @@ describe('Validacion de la entrada de la venta', () => {
       'cantidad no numerica',
       { items: [{ productId: 1, quantity: 'dos' }], paymentMethod: 'efectivo' },
     ],
-    [
-      'cantidad infinita',
-      { items: [{ productId: 1, quantity: 1e400 }], paymentMethod: 'efectivo' },
-    ],
+    ['cantidad nula', { items: [{ productId: 1, quantity: null }], paymentMethod: 'efectivo' }],
     [
       'id de producto negativo',
       { items: [{ productId: -1, quantity: 1 }], paymentMethod: 'efectivo' },
@@ -190,6 +186,23 @@ describe('Validacion de la entrada de la venta', () => {
       expect(await prisma.sale.count()).toBe(0)
     })
   }
+
+  it('rechaza una cantidad infinita', async () => {
+    // Se manda como texto crudo a proposito: escrito como literal de
+    // JavaScript, `1e400` vale Infinity y JSON.stringify lo convierte en
+    // `null`, de modo que la peticion nunca llegaba a llevar un infinito.
+    // Con el texto tal cual, JSON.parse si produce Infinity.
+    const { POST } = await import('@/app/api/sales/route')
+    const res = await call(POST, '/api/sales', {
+      method: 'POST',
+      cookie: await sessionCookie(fx.cajero),
+      rawBody: `{"items":[{"productId":${fx.productoA.id},"quantity":1e400}],"paymentMethod":"efectivo"}`,
+    })
+
+    expect(res.status).toBe(400)
+    expect(await prisma.sale.count()).toBe(0)
+    expect(await stockOf(fx.branchA.id, fx.productoA.id)).toBe(10)
+  })
 
   it('rechaza un cuerpo que no es JSON', async () => {
     const { POST } = await import('@/app/api/sales/route')

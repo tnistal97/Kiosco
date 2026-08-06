@@ -19,6 +19,13 @@ export interface SaleLineInput {
   quantity: number
 }
 
+/** Producto tal como se lee del catalogo para armar la venta. */
+interface Catalogado {
+  id: number
+  name: string
+  price: number
+}
+
 export interface CreateSaleInput {
   items: SaleLineInput[]
   paymentMethod: PaymentMethod
@@ -80,12 +87,23 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         select: { id: true, name: true, price: true },
       })
 
+      // Cada linea se empareja con su producto una sola vez. A partir de aca
+      // el flujo trabaja con pares ya resueltos, sin volver a consultar el
+      // mapa y sin tener que afirmar que el resultado no es nulo.
       const porId = new Map(productos.map((p) => [p.id, p]))
-      const faltantes = lineas.filter((l) => !porId.has(l.productId))
+      const pedido: Array<{ productId: number; quantity: number; producto: Catalogado }> = []
+      const faltantes: number[] = []
+
+      for (const linea of lineas) {
+        const producto = porId.get(linea.productId)
+        if (producto) pedido.push({ ...linea, producto })
+        else faltantes.push(linea.productId)
+      }
+
       if (faltantes.length > 0) {
-        throw invalid(
-          `Producto no disponible en esta sucursal: ${faltantes.map((f) => f.productId).join(', ')}`,
-        )
+        throw invalid(`Producto no disponible en esta sucursal: ${faltantes.join(', ')}`, {
+          code: 'PRODUCT_NOT_IN_BRANCH',
+        })
       }
 
       // 2) Descuento de stock condicional y atomico.
@@ -95,7 +113,7 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
       //    Este UPDATE comprueba y descuenta en la misma sentencia, y PostgreSQL
       //    reevalua la condicion despues de esperar el bloqueo de la fila.
       //    Si devuelve 0 filas, no habia stock suficiente.
-      for (const linea of lineas) {
+      for (const linea of pedido) {
         const filas = await tx.$executeRaw`
           UPDATE "BranchStock"
           SET "quantity" = "quantity" - ${linea.quantity}
@@ -105,28 +123,25 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         `
 
         if (filas !== 1) {
-          const producto = porId.get(linea.productId)!
           const actual = await tx.branchStock.findUnique({
             where: { branchId_productId: { branchId, productId: linea.productId } },
             select: { quantity: true },
           })
           throw conflict(
-            `Stock insuficiente de "${producto.name}": se pidieron ${linea.quantity} y hay ${actual?.quantity ?? 0}`,
+            `Stock insuficiente de "${linea.producto.name}": se pidieron ${linea.quantity} y hay ${actual?.quantity ?? 0}`,
+            { code: 'INSUFFICIENT_STOCK' },
           )
         }
       }
 
       // 3) Precios y total, siempre desde la base.
-      const itemsConPrecio = lineas.map((linea) => {
-        const producto = porId.get(linea.productId)!
-        return {
-          productId: producto.id,
-          name: producto.name,
-          quantity: linea.quantity,
-          price: producto.price,
-          subtotal: redondear(producto.price * linea.quantity),
-        }
-      })
+      const itemsConPrecio = pedido.map(({ producto, quantity }) => ({
+        productId: producto.id,
+        name: producto.name,
+        quantity,
+        price: producto.price,
+        subtotal: redondear(producto.price * quantity),
+      }))
 
       const total = redondear(itemsConPrecio.reduce((suma, i) => suma + i.subtotal, 0))
 

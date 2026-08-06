@@ -16,7 +16,9 @@ import type { z } from 'zod'
 import { getSession, type Session } from '@/server/auth/session'
 import { requirePermission, requireUser } from '@/server/authz/require'
 import type { Permission } from '@/server/authz/permissions'
-import { AppError } from '@/server/http/errors'
+import { forbidden, type ApiErrorBody } from '@/server/http/errors'
+import { traducirError } from '@/server/http/prismaErrors'
+import { REQUEST_ID_HEADER, requestIdDe } from '@/server/http/requestId'
 import { parseJsonBody, parseQuery } from '@/server/http/validate'
 
 type AuthMode = 'public' | 'session'
@@ -42,6 +44,8 @@ export interface RouteContext<A extends AuthMode, TBody, TQuery> {
   query: TQuery
   /** Parametros de ruta ya resueltos, p. ej. { id: "12" }. */
   params: Record<string, string | undefined>
+  /** Identificador de esta peticion. Va al log, a la auditoria y al error. */
+  requestId: string
   /** Igual que config.audit. Se pasa a `audit()` como origen. */
   origin: string
 }
@@ -68,9 +72,13 @@ function normalizarParams(
 
 export function handler<A extends AuthMode, TBody = undefined, TQuery = undefined>(
   config: RouteConfig<A, TBody, TQuery>,
-  fn: (ctx: RouteContext<A, TBody, TQuery>) => Promise<Response | unknown>,
+  // Devuelve una `Response` cuando la ruta necesita fijar el estado o una
+  // cookie; cualquier otro valor se serializa como JSON con estado 200.
+  fn: (ctx: RouteContext<A, TBody, TQuery>) => Promise<unknown>,
 ): NextRouteHandler {
   return async function route(req: NextRequest, args: NextRouteArgs): Promise<Response> {
+    const requestId = requestIdDe(req)
+
     try {
       const session =
         config.auth === 'public' ? await getSessionQuietly(req) : await getSession(req)
@@ -78,12 +86,7 @@ export function handler<A extends AuthMode, TBody = undefined, TQuery = undefine
       if (config.auth === 'session') {
         if (config.permission) {
           const needed = Array.isArray(config.permission) ? config.permission : [config.permission]
-          // Con un solo permiso el mensaje de error es mas util.
-          if (needed.length === 1) {
-            requirePermission(session, needed[0])
-          } else {
-            requireAny(session, needed)
-          }
+          requireAny(session, needed)
         } else {
           requireUser(session)
         }
@@ -91,31 +94,53 @@ export function handler<A extends AuthMode, TBody = undefined, TQuery = undefine
 
       const body = config.body ? await parseJsonBody(req, config.body) : (undefined as TBody)
       const query = config.query ? parseQuery(req, config.query) : (undefined as TQuery)
-      const params = args?.params ? normalizarParams(await args.params) : {}
+      const params = normalizarParams(await args.params)
 
       const result = await fn({
         req,
-        // Seguro: si auth === 'session', requireUser/requirePermission ya
+        // Seguro: si auth === 'session', requireUser/requireAny ya
         // garantizaron que no es null.
         session: session as SessionFor<A>,
-        body: body,
-        query: query,
+        body,
+        query,
         params,
+        requestId,
         origin: config.audit,
       })
 
-      if (result instanceof Response) return result
-      return NextResponse.json(result ?? { ok: true })
+      const res = result instanceof Response ? result : NextResponse.json(result ?? { ok: true })
+      res.headers.set(REQUEST_ID_HEADER, requestId)
+      return res
     } catch (error) {
-      return toErrorResponse(error, config.audit)
+      return toErrorResponse(error, config.audit, requestId)
     }
   }
 }
 
+/**
+ * Exige al menos uno de los permisos.
+ *
+ * Con uno solo el mensaje nombra ese permiso; con varios los enumera. Se
+ * resuelve mirando la longitud de la lista dentro de la funcion en vez de
+ * elegir la funcion desde afuera, para no tener que indexar `needed[0]`.
+ */
 function requireAny(session: Session | null, permissions: readonly Permission[]): void {
+  const [unico, ...resto] = permissions
+
+  if (unico === undefined) {
+    // Lista de permisos vacia: se exige sesion y nada mas.
+    requireUser(session)
+    return
+  }
+
+  if (resto.length === 0) {
+    requirePermission(session, unico)
+    return
+  }
+
   const user = requireUser(session)
   if (!permissions.some((p) => user.permissions.has(p))) {
-    throw new AppError('FORBIDDEN', `Falta alguno de los permisos: ${permissions.join(', ')}`)
+    throw forbidden(`Falta alguno de los permisos: ${permissions.join(', ')}`)
   }
 }
 
@@ -129,21 +154,36 @@ async function getSessionQuietly(req: NextRequest): Promise<Session | null> {
 }
 
 /**
- * Traduce cualquier error a una respuesta HTTP.
+ * Traduce cualquier error a la unica forma de respuesta de error que existe.
  *
- * Los errores no previstos devuelven 500 con un mensaje generico: el detalle
- * va al log del servidor, nunca al cliente. Antes varias rutas devolvian
- * `error.message` crudo, que en el caso de Prisma incluye nombres de tabla,
- * de columna y fragmentos de la consulta.
+ * Todo lo que no sea un AppError previsto pasa antes por `traducirError`,
+ * que convierte los fallos de Prisma en mensajes escritos para el usuario.
+ * El detalle tecnico --stack, SQL, nombres de tabla, ruta del servidor-- se
+ * escribe en el log junto al requestId y no viaja nunca en la respuesta.
  */
-function toErrorResponse(error: unknown, origin: string): Response {
-  if (error instanceof AppError) {
-    return NextResponse.json(
-      { error: error.message, ...(error.details ? { detalles: error.details } : {}) },
-      { status: error.status },
-    )
+function toErrorResponse(error: unknown, origin: string, requestId: string): Response {
+  const appError = traducirError(error)
+
+  // 5xx significa fallo nuestro: se registra entero, con la causa original.
+  // 4xx es el uso normal del sistema (falta un permiso, falta stock) y no
+  // merece ruido en el log; solo se deja rastro de los intentos rechazados
+  // por autorizacion, que si interesan.
+  if (appError.status >= 500) {
+    console.error(`[${origin}] [${requestId}] ${appError.code}:`, error)
+  } else if (appError.status === 401 || appError.status === 403) {
+    console.warn(`[${origin}] [${requestId}] ${appError.code}: ${appError.message}`)
   }
 
-  console.error(`[${origin}] Error no controlado:`, error)
-  return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+  const cuerpo: ApiErrorBody = {
+    error: {
+      code: appError.code,
+      message: appError.message,
+      requestId,
+      ...(appError.details === undefined ? {} : { details: appError.details }),
+    },
+  }
+
+  const res = NextResponse.json(cuerpo, { status: appError.status })
+  res.headers.set(REQUEST_ID_HEADER, requestId)
+  return res
 }

@@ -1,12 +1,6 @@
 // src/types/audit.ts
-export interface AuditLog {
-  id: number
-  user: { id: number; name: string }
-  tableName: 'BranchStock' | 'Sale' | 'Product'
-  actionType: 'create' | 'update' | 'delete'
-  changes: {
-    before: Record<string, any> | null
-    after: Record<string, any> | null
-  }
-  timestamp: string
-}
+//
+// La forma real de una entrada de auditoria vive en `@/modules/audit/dto`,
+// junto a la funcion que la valida al recibirla del servidor.
+
+export type { EntradaAuditoriaDTO as AuditLog } from '@/modules/audit/dto'

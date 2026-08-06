@@ -1,9 +1,15 @@
 // src/hooks/useProducts.ts
-import { useState, useEffect } from 'react'
-import { Product as ProductType, Category as CategoryType } from '@/types'
+import { useState, useEffect, useCallback } from 'react'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import {
+  parseCategorias,
+  parseProductos,
+  type CategoriaDTO,
+  type ProductoDTO,
+} from '@/modules/products/dto'
 
-export type Product = ProductType
-export type Category = CategoryType
+export type Product = ProductoDTO
+export type Category = CategoriaDTO
 
 export function useProducts() {
   const [products, setProducts] = useState<Product[]>([])
@@ -12,39 +18,34 @@ export function useProducts() {
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Recarga lista de productos
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     setIsLoading(true)
     try {
-      const res = await fetch('/api/products')
-      if (!res.ok) throw new Error('Error al cargar productos')
-      const data = await res.json()
-      setProducts(data)
-    } catch (err: any) {
+      setProducts(await apiRequest('/api/products', { parse: parseProductos }))
+      setError(null)
+    } catch (err) {
       console.error(err)
-      setError(err.message || 'Error desconocido')
+      setError(mensajeDeError(err, 'Error al cargar productos'))
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
 
-  // Carga categorías
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     try {
-      const res = await fetch('/api/categories')
-      if (!res.ok) throw new Error('Error al cargar categorías')
-      const data = await res.json()
-      setCategories(data)
-    } catch (err: any) {
+      setCategories(await apiRequest('/api/categories', { parse: parseCategorias }))
+    } catch (err) {
+      // Sin categorias la pantalla sigue siendo utilizable: no se corta la
+      // carga de productos por esto.
       console.error(err)
       setCategories([])
     }
-  }
+  }, [])
 
   useEffect(() => {
-    fetchProducts()
-    fetchCategories()
-  }, [])
+    void fetchProducts()
+    void fetchCategories()
+  }, [fetchProducts, fetchCategories])
 
   return {
     products,

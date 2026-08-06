@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
-import { ChevronDownIcon, CurrencyDollarIcon, CreditCardIcon } from '@heroicons/react/24/outline'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
 
 interface Props {
   isOpen: boolean
@@ -31,23 +31,18 @@ export default function NewMovementModal({ isOpen, onClose, onSaved }: Props) {
 
     setError('')
     try {
-      const payload = { amount, paymentMethod, description, movementType }
-      const res = await fetch('/api/cash', {
+      await apiRequest('/api/cash', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: { amount, paymentMethod, description, movementType },
+        parse: () => null,
       })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Error al registrar movimiento')
-      }
       onSaved()
       setAmount(0)
       setPaymentMethod('efectivo')
       setMovementType('ingreso')
       setDescription('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ocurrio un error al registrar.')
+      setError(mensajeDeError(err, 'Ocurrio un error al registrar.'))
     }
   }
 
@@ -129,7 +124,7 @@ export default function NewMovementModal({ isOpen, onClose, onSaved }: Props) {
                 Cancelar
               </button>
               <button
-                onClick={handleRegister}
+                onClick={() => void handleRegister()}
                 className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg"
               >
                 Registrar

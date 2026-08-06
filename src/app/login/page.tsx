@@ -1,12 +1,40 @@
 // src/app/login/page.tsx
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
 
+/**
+ * Destino despues de iniciar sesion.
+ *
+ * El middleware agrega `?next=` con la pantalla que el usuario intentaba
+ * abrir. Solo se aceptan rutas internas: una que empiece con `//` o que
+ * traiga esquema es una URL a otro sitio, y respetarla convertiria el login
+ * en una redireccion abierta que sirve para pescar credenciales.
+ */
+function destinoSeguro(next: string | null): string {
+  if (!next) return '/caja'
+  if (!next.startsWith('/') || next.startsWith('//')) return '/caja'
+  if (next.startsWith('/login')) return '/caja'
+  return next
+}
+
+/**
+ * `useSearchParams` obliga a un limite de Suspense: sin el, el build de Next
+ * falla al intentar prerenderizar la pagina.
+ */
 export default function LoginPage() {
-  const router = useRouter()
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
+  const searchParams = useSearchParams()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -16,33 +44,26 @@ export default function LoginPage() {
     setIsSubmitting(true)
 
     try {
-      const res = await fetch('/api/auth/login', {
+      await apiRequest('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ username, password }),
+        body: { username, password },
+        parse: () => null,
       })
-      const data = await res.json()
 
-      if (res.ok) {
-        toast.success('¡Sesión iniciada!', {
-          style: { background: '#38a169', color: '#fff' },
-        })
-        // full page reload
-        setTimeout(() => {
-          window.location.href = '/caja'
-        }, 800)
-      } else {
-        toast.error(data.error || 'Credenciales inválidas', {
-          style: { background: '#e53e3e', color: '#fff' },
-        })
-      }
+      toast.success('¡Sesión iniciada!', {
+        style: { background: '#38a169', color: '#fff' },
+      })
+
+      // Recarga completa a proposito: el layout del servidor tiene que
+      // volver a leer la sesion para pintar la navegacion.
+      const destino = destinoSeguro(searchParams.get('next'))
+      setTimeout(() => {
+        window.location.href = destino
+      }, 800)
     } catch (err) {
-      console.error(err)
-      toast.error('Error del servidor', {
+      toast.error(mensajeDeError(err, 'Credenciales inválidas'), {
         style: { background: '#e53e3e', color: '#fff' },
       })
-    } finally {
       setIsSubmitting(false)
     }
   }
@@ -50,7 +71,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 to-blue-300 dark:from-zinc-900 dark:to-zinc-800 px-4">
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(e) => void handleSubmit(e)}
         className="bg-white dark:bg-zinc-900 p-8 sm:p-10 rounded-2xl shadow-xl max-w-md w-full space-y-6 transition"
       >
         <h1 className="text-3xl font-bold text-center text-blue-600 dark:text-blue-400">

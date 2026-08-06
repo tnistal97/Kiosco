@@ -93,7 +93,7 @@ export default function ProductsTable({ data, sortConfig, onSort, onEdit, onDele
               >
                 <td className="px-4 py-3 text-white">{item.id}</td>
                 <td className="px-4 py-3 text-white font-medium">{item.name}</td>
-                <td className="px-4 py-3 text-gray-300">{item.category?.name ?? '—'}</td>
+                <td className="px-4 py-3 text-gray-300">{item.category.name}</td>
                 <td
                   className={clsx(
                     'px-4 py-3 text-right font-semibold',

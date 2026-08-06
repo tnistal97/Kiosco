@@ -88,6 +88,43 @@ export async function sessionCookie(user: TestUser): Promise<string> {
 }
 
 /** Cookie con claims arbitrarios, para probar tokens manipulados o vencidos. */
-export async function rawCookie(token: string): Promise<string> {
+export function rawCookie(token: string): string {
   return `${SESSION_COOKIE}=${token}`
+}
+
+export interface ErrorLeido {
+  code: string
+  message: string
+  requestId: string
+  details?: unknown
+}
+
+/**
+ * Lee el contrato de error del servidor.
+ *
+ * Todas las respuestas de error tienen la misma forma:
+ *   { error: { code, message, requestId, details? } }
+ *
+ * Si una respuesta no la respeta, esto lanza en vez de devolver undefined:
+ * un error con otra forma es exactamente lo que hay que detectar.
+ */
+export function errorDe(res: CallResult<unknown>): ErrorLeido {
+  const cuerpo: unknown = res.body
+  if (typeof cuerpo !== 'object' || cuerpo === null || !('error' in cuerpo)) {
+    throw new Error(`La respuesta no sigue el contrato de error: ${res.text.slice(0, 200)}`)
+  }
+
+  const error: unknown = cuerpo.error
+  if (typeof error !== 'object' || error === null) {
+    throw new Error(
+      `El campo "error" deberia ser un objeto { code, message, requestId } y llego: ${JSON.stringify(error)}`,
+    )
+  }
+
+  const { code, message, requestId, details } = error as Record<string, unknown>
+  if (typeof code !== 'string' || typeof message !== 'string' || typeof requestId !== 'string') {
+    throw new Error(`Faltan campos del contrato de error: ${JSON.stringify(error)}`)
+  }
+
+  return { code, message, requestId, details }
 }

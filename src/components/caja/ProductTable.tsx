@@ -1,6 +1,5 @@
 'use client'
 
-import { Fragment } from 'react'
 import ProductRow from './ProductRow'
 import type { Product } from '@/hooks/useProducts'
 
@@ -20,8 +19,8 @@ export default function ProductTable({
       <div className="animate-pulse">
         <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-4" />
         <div className="space-y-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-12 bg-gray-200 dark:bg-gray-700 rounded" />
+          {['a', 'b', 'c', 'd', 'e', 'f'].map((k) => (
+            <div key={k} className="h-12 bg-gray-200 dark:bg-gray-700 rounded" />
           ))}
         </div>
       </div>

@@ -42,11 +42,5 @@ export interface CartItem {
   quantity: number
 }
 
-export interface CashMovement {
-  id: number
-  amount: number
-  paymentMethod: 'efectivo' | 'tarjeta' | 'mercado_pago' | string
-  description?: string
-  date: string
-  user: { id: number; name: string }
-}
+// La forma real de un movimiento de caja vive en `@/modules/cash/dto`.
+export type { MovimientoDTO as CashMovement } from '@/modules/cash/dto'

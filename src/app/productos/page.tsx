@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 
 import toast from 'react-hot-toast'
-import { useProducts, Product, Category } from '@/hooks/useProducts'
+import { useProducts, Product } from '@/hooks/useProducts'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
 
 import ProductsHeader from '@/components/productos/ProductsHeader'
 import ProductsMetrics from '@/components/productos/ProductsMetrics'
@@ -41,7 +42,7 @@ export default function ProductosPage() {
       const term = searchTerm.trim().toLowerCase()
       const matchesSearch =
         p.name.toLowerCase().includes(term) || (p.barcode ?? '').toLowerCase().includes(term)
-      const matchesCategory = categoryFilter === 'Todas' || p.category?.name === categoryFilter
+      const matchesCategory = categoryFilter === 'Todas' || p.category.name === categoryFilter
       return matchesSearch && matchesCategory
     })
 
@@ -66,7 +67,7 @@ export default function ProductosPage() {
           cmp = a.name.localeCompare(b.name)
           break
         case 'category':
-          cmp = (a.category?.name ?? '').localeCompare(b.category?.name ?? '')
+          cmp = a.category.name.localeCompare(b.category.name)
           break
         case 'stock':
           cmp = a.totalStock - b.totalStock
@@ -110,14 +111,13 @@ export default function ProductosPage() {
     setCurrentPage(1)
   }
 
-  const exportCSV = () => {
-    alert('Función de exportar CSV no implementada.')
-  }
-
   const handleDelete = async (id: number) => {
     if (!confirm('¿Confirma que desea eliminar este producto?')) return
     try {
-      await fetch(`/api/products/${id}`, { method: 'DELETE' })
+      // Antes esto era `await fetch(...)` sin mirar la respuesta: un 403 por
+      // falta de permiso, o un 409 porque el producto figura en ventas,
+      // terminaba igual mostrando "eliminado correctamente".
+      await apiRequest(`/api/products/${id}`, { method: 'DELETE', parse: () => null })
       await fetchProducts()
       toast.success('✅ Producto eliminado correctamente.', {
         duration: 4000,
@@ -136,7 +136,7 @@ export default function ProductosPage() {
       })
     } catch (err) {
       console.error('Error eliminando producto:', err)
-      toast.error('No se pudo eliminar el producto.', {
+      toast.error(mensajeDeError(err, 'No se pudo eliminar el producto.'), {
         duration: 5000,
         style: {
           background: '#991b1b',
@@ -192,7 +192,7 @@ export default function ProductosPage() {
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           clearFilters={clearFilters}
-          exportCSV={exportCSV}
+
           setLowStockFilter={setLowStockFilter}
         />
 
@@ -201,7 +201,7 @@ export default function ProductosPage() {
           sortConfig={sortConfig}
           onSort={handleSort}
           onEdit={handleEdit}
-          onDelete={handleDelete}
+          onDelete={(id) => void handleDelete(id)}
         />
 
         <ProductsPagination
@@ -216,7 +216,7 @@ export default function ProductosPage() {
         onClose={() => setIsModalOpen(false)}
         categories={categories}
         product={editingProduct}
-        onSaved={onSaved}
+        onSaved={() => void onSaved()}
       />
     </div>
   )

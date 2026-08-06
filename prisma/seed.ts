@@ -20,7 +20,7 @@ async function main() {
   await prisma.branch.deleteMany()
 
   // Roles
-  const [adminRole, sellerRole] = await Promise.all([
+  const [adminRole] = await Promise.all([
     prisma.role.create({ data: { name: 'admin' } }),
     prisma.role.create({ data: { name: 'vendedor' } }),
   ])

@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import toast from 'react-hot-toast'
 import Spinner from '@/components/ui/Spinner'
 import Modal from '@/components/ui/Modal'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
 
 export default function CashControlModal({
   isOpen,
@@ -41,23 +42,20 @@ export default function CashControlModal({
   const handleSubmit = async () => {
     setIsSubmitting(true)
     try {
-      const res = await fetch('/api/cash/count', {
+      await apiRequest('/api/cash/count', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ amount: parsed, notes }),
+        body: { amount: parsed, notes },
+        parse: () => null,
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Error al registrar')
       successToast('✅ Cierre registrado.')
       // reset everything
       setAmount('')
       setNotes('')
       setIsConfirming(false)
       onClose()
-    } catch (err: any) {
+    } catch (err) {
       console.error(err)
-      errorToast(err.message || 'Error en el servidor.')
+      errorToast(mensajeDeError(err, 'Error en el servidor.'))
     } finally {
       setIsSubmitting(false)
     }
@@ -149,7 +147,7 @@ export default function CashControlModal({
               Volver
             </button>
             <button
-              onClick={handleSubmit}
+              onClick={() => void handleSubmit()}
               disabled={isSubmitting}
               className="flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-70"
             >

@@ -1,11 +1,12 @@
 // src/app/caja/page.tsx
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { CashMovement } from '@/types/caja'
+import React, { useState, useEffect, useCallback } from 'react'
 import CajaTable from '@/components/ventas/CajaTable'
 import NewMovementModal from '@/components/ventas/NewMovementModal'
 import Spinner from '@/components/ui/Spinner' // Asegúrate de tener un Spinner sencillo
+import { apiRequest } from '@/lib/api-client'
+import { parseMovimientos, parseSaldo, type MovimientoDTO } from '@/modules/cash/dto'
 
 // Formatea un número a “$X.YY”
 const formatCurrency = (value: number) =>
@@ -13,18 +14,7 @@ const formatCurrency = (value: number) =>
 
 export default function CajaPage() {
   // ─── Estados locales ───────────────────────────────────────────────────
-  const [movements, setMovements] = useState<
-    Array<
-      CashMovement & {
-        saleItems: Array<{
-          id: number
-          product: { id: number; name: string }
-          quantity: number
-          price: number
-        }> | null
-      }
-    >
-  >([])
+  const [movements, setMovements] = useState<MovimientoDTO[]>([])
   const [balance, setBalance] = useState<number>(0)
   const [isModalOpen, setIsModalOpen] = useState(false)
 
@@ -32,59 +22,41 @@ export default function CajaPage() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false)
 
   // ─── Funciones de fetch ─────────────────────────────────────────────────
-  const fetchMovements = async () => {
+  const fetchMovements = useCallback(async () => {
     try {
-      const res = await fetch('/api/cash', {
-        method: 'GET',
-        credentials: 'include',
-      })
-      if (!res.ok) {
-        throw new Error('No autorizado o error al cargar movimientos')
-      }
-      const data = await res.json()
-      setMovements(data)
+      setMovements(await apiRequest('/api/cash', { parse: parseMovimientos }))
     } catch (err) {
       console.error('Error al cargar movimientos:', err)
       setMovements([])
     }
-  }
+  }, [])
 
-  const fetchBalance = async () => {
+  const fetchBalance = useCallback(async () => {
     try {
-      const res = await fetch('/api/cash/balance', {
-        method: 'GET',
-        credentials: 'include',
-      })
-      if (!res.ok) {
-        throw new Error('No autorizado o error al cargar balance')
-      }
-      const { balance: b } = await res.json()
-      setBalance(b)
+      const saldo = await apiRequest('/api/cash/balance', { parse: parseSaldo })
+      setBalance(saldo.balance)
     } catch (err) {
       console.error('Error al cargar balance:', err)
       setBalance(0)
     }
-  }
-
-  // ─── useEffect inicial: cargar datos ────────────────────────────────────
-  useEffect(() => {
-    reloadAll()
   }, [])
 
   // ─── Helper para recargar movimientos + balance con spinner ─────────────
-  const reloadAll = async () => {
+  const reloadAll = useCallback(async () => {
     setIsRefreshing(true)
     await Promise.all([fetchMovements(), fetchBalance()])
     setIsRefreshing(false)
-  }
+  }, [fetchMovements, fetchBalance])
 
-  // ─── Callback para cuando se elimine una venta exitosamente ─────────────
-  const handleSaleDeleted = async (deletedSaleId: number) => {
-    // Re-cargar movimientos y balance
-    setIsRefreshing(true)
-    await Promise.all([fetchMovements(), fetchBalance()])
-    setIsRefreshing(false)
-  }
+  // ─── useEffect inicial: cargar datos ────────────────────────────────────
+  useEffect(() => {
+    void reloadAll()
+  }, [reloadAll])
+
+  // ─── Callback para cuando se anule una venta ────────────────────────────
+  const handleSaleDeleted = useCallback(async () => {
+    await reloadAll()
+  }, [reloadAll])
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 p-8 space-y-8">
@@ -105,17 +77,17 @@ export default function CajaPage() {
       )}
 
       {/* ══ Tabla de movimientos (ayer + hoy, ya ordenado) ════════════════ */}
-      <CajaTable movements={movements} onSaleDeleted={handleSaleDeleted} />
+      <CajaTable movements={movements} onSaleDeleted={() => void handleSaleDeleted()} />
 
       {/* ══ Modal para agregar movimiento manual (si se requiere) ═══════════ */}
       <NewMovementModal
         isOpen={isModalOpen}
         onClose={() => {
           setIsModalOpen(false)
-          reloadAll()
+          void reloadAll()
         }}
         onSaved={() => {
-          reloadAll()
+          void reloadAll()
         }}
       />
     </div>

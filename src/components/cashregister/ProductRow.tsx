@@ -2,7 +2,6 @@
 
 import React from 'react'
 import { Product } from '@/types'
-import { CartItem } from '@/types'
 import { formatCurrency } from '@/lib/formatCurrency'
 
 interface Props {

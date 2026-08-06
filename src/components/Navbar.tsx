@@ -13,7 +13,9 @@ import {
   ArchiveBoxIcon,
   BanknotesIcon,
 } from '@heroicons/react/24/solid'
+import toast from 'react-hot-toast'
 import CashControlModal from '@/components/CashControlModal'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
 
 interface NavbarProps {
   userName: string
@@ -28,12 +30,27 @@ export default function Navbar({ userName, isAdmin }: NavbarProps) {
   // Don't show when on login page
   if (pathname === '/login') return null
 
+  /**
+   * Cierre de sesion.
+   *
+   * Antes esto era un `await fetch(...)` sin try: si la peticion fallaba por
+   * red, la promesa quedaba rechazada sin manejar, no se ejecutaba el
+   * `router.replace` y el usuario se quedaba en la pantalla sin ningun aviso,
+   * creyendo que habia cerrado sesion.
+   *
+   * Ahora se avisa del fallo, pero se vuelve al login igual: la cookie es
+   * HttpOnly y solo el servidor puede borrarla, asi que si el logout no
+   * llego lo correcto es sacar al usuario de la pantalla y que el proximo
+   * pedido, que si valida contra la base, decida.
+   */
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', {
-      method: 'POST',
-      credentials: 'include',
-    })
-    router.replace('/login')
+    try {
+      await apiRequest('/api/auth/logout', { method: 'POST', parse: () => null })
+    } catch (error) {
+      toast.error(mensajeDeError(error, 'No se pudo cerrar la sesion en el servidor.'))
+    } finally {
+      router.replace('/login')
+    }
   }
 
   const baseLinks = [
@@ -104,7 +121,7 @@ export default function Navbar({ userName, isAdmin }: NavbarProps) {
 
           {/* Logout */}
           <button
-            onClick={handleLogout}
+            onClick={() => void handleLogout()}
             className="flex items-center gap-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-md transition"
           >
             <ArrowRightOnRectangleIcon className="w-5 h-5" />

@@ -1,13 +1,12 @@
-export interface CashMovement {
-  id: number
-  amount: number
-  paymentMethod: 'efectivo' | 'tarjeta' | 'mercado_pago' | string
-  description?: string
-  date: string
-  type: string
-  user: { id: number; name: string }
-  /** Venta asociada, por clave foranea. null en movimientos manuales. */
-  saleId: number | null
-  /** "completed" | "canceled" | null si el movimiento no es de una venta. */
-  saleStatus: string | null
-}
+/**
+ * Compatibilidad.
+ *
+ * La forma real de un movimiento de caja vive en `@/modules/cash/dto`, junto
+ * a la funcion que la valida al recibirla del servidor. Aca solo quedan los
+ * alias para no tocar todos los imports de golpe.
+ */
+
+export type {
+  MovimientoDTO as CashMovement,
+  ItemMovimientoDTO as CashSaleItem,
+} from '@/modules/cash/dto'

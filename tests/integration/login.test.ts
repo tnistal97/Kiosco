@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { seedFixture, prisma, type Fixture } from '../helpers/db'
-import { call, sessionCookie, type RouteHandler } from '../helpers/http'
+import { call, errorDe, sessionCookie } from '../helpers/http'
 
 let fx: Fixture
 
@@ -21,7 +21,7 @@ afterAll(async () => {
 
 async function login(username: string, password: string) {
   const { POST } = await import('@/app/api/auth/login/route')
-  return call<{ error?: string }>(POST, '/api/auth/login', {
+  return call(POST, '/api/auth/login', {
     method: 'POST',
     body: { username, password },
   })
@@ -57,12 +57,16 @@ describe('No permite enumerar usuarios', () => {
 
     expect(inexistente.status).toBe(401)
     expect(incorrecta.status).toBe(401)
-    expect(inexistente.body.error).toBe(incorrecta.body.error)
+
+    // Ni el texto ni el codigo pueden distinguir los dos casos: si lo
+    // hicieran, se podria averiguar que usuarios existen probando de a uno.
+    expect(errorDe(inexistente).message).toBe(errorDe(incorrecta).message)
+    expect(errorDe(inexistente).code).toBe(errorDe(incorrecta).code)
   })
 
   it('el mensaje no dice cual de los dos campos fallo', async () => {
     const res = await login(fx.cajero.username, 'mal')
-    const mensaje = (res.body.error ?? '').toLowerCase()
+    const mensaje = errorDe(res).message.toLowerCase()
 
     expect(mensaje).not.toContain('usuario no encontrado')
     expect(mensaje).not.toContain('no existe')

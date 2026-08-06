@@ -4,7 +4,6 @@ import React from 'react'
 import { useCartStore } from '@/store/cart'
 import CartItem from './CartItem'
 import CartFooter from './CartFooter'
-import { formatCurrency } from '@/lib/formatCurrency'
 
 interface Props {
   confirmSale: (paymentMethod: 'efectivo' | 'tarjeta' | 'mercado_pago') => void

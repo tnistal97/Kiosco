@@ -1,6 +1,6 @@
 // src/components/ui/Modal.tsx
 'use client'
-import React, { ReactNode, useEffect, useRef, KeyboardEvent, FocusEvent } from 'react'
+import React, { ReactNode, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { XMarkIcon } from '@heroicons/react/24/solid'
 
@@ -23,11 +23,14 @@ export default function Modal({ isOpen, onClose, children }: ModalProps) {
 
   // close on Escape
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
+    // KeyboardEvent del DOM, no el sintetico de React: el listener se
+    // registra en `window`. Antes se importaba el de React y los dos `as any`
+    // tapaban justamente esa diferencia.
+    function onKey(e: globalThis.KeyboardEvent) {
       if (e.key === 'Escape') onClose()
     }
-    if (isOpen) window.addEventListener('keydown', onKey as any)
-    return () => window.removeEventListener('keydown', onKey as any)
+    if (isOpen) window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [isOpen, onClose])
 
   // focus first focusable

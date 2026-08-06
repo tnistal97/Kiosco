@@ -33,7 +33,9 @@ export default function MovimientoRow({
 }: Props) {
   const isSale = Array.isArray(m.saleItems) && m.saleItems.length > 0
   // Una venta ya anulada no se puede volver a anular.
-  const sePuedeAnular = isSale && m.saleId !== null && m.saleStatus === 'completed'
+  // Se guarda el id, no un booleano: asi TypeScript sabe que no es null en la
+  // rama que lo usa, sin tener que afirmarlo con `!`.
+  const idAnulable = isSale && m.saleStatus === 'completed' ? m.saleId : null
 
   return (
     <>
@@ -102,8 +104,8 @@ export default function MovimientoRow({
 
         {/* Anular venta */}
         <td className="px-4 py-2 text-center">
-          {sePuedeAnular ? (
-            <DeleteButton saleId={m.saleId!} onDeleted={onDeleted} />
+          {idAnulable !== null ? (
+            <DeleteButton saleId={idAnulable} onDeleted={onDeleted} />
           ) : m.saleStatus === 'canceled' ? (
             <span className="text-amber-400 text-xs font-medium">Anulada</span>
           ) : (

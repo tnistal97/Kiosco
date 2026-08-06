@@ -52,8 +52,8 @@ async function main() {
 }
 
 main()
-  .then(() => prisma.$disconnect())
-  .catch((e) => {
+  .catch((e: unknown) => {
     console.error(e)
-    prisma.$disconnect()
+    process.exitCode = 1
   })
+  .finally(() => prisma.$disconnect())

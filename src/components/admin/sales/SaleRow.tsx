@@ -29,12 +29,15 @@ export default function SaleRow({ sale, isExpanded, onToggle }: Props) {
     minute: '2-digit',
   })
 
-  // Icono según método
-  const MethodIcon = {
+  // Icono según método. Una venta puede no tener movimiento de caja asociado,
+  // en cuyo caso el metodo llega null.
+  const ICONOS: Record<string, typeof BanknotesIcon> = {
     efectivo: BanknotesIcon,
     tarjeta: CreditCardIcon,
     mercado_pago: CurrencyDollarIcon,
-  }[sale.paymentMethod]
+  }
+  const MethodIcon = (sale.paymentMethod ? ICONOS[sale.paymentMethod] : null) ?? BanknotesIcon
+  const metodoTexto = sale.paymentMethod?.replace('_', ' ') ?? 'sin registrar'
 
   return (
     <tr
@@ -48,7 +51,7 @@ export default function SaleRow({ sale, isExpanded, onToggle }: Props) {
       <td className="px-4 py-3 text-gray-100">{sale.user.name}</td>
       <td className="px-4 py-3 text-gray-100 flex items-center gap-1">
         <MethodIcon className="w-5 h-5 text-gray-200" />
-        <span className="capitalize">{sale.paymentMethod.replace('_', ' ')}</span>
+        <span className="capitalize">{metodoTexto}</span>
       </td>
       <td className="px-4 py-3 text-gray-100 text-right font-semibold">${total.toFixed(2)}</td>
       <td className="px-4 py-3 text-gray-100 text-center">

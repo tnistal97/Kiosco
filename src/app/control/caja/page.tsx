@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import toast from 'react-hot-toast'
 import Spinner from '@/components/ui/Spinner'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
 
 export default function CashControl() {
   const [amount, setAmount] = useState('')
@@ -18,24 +19,20 @@ export default function CashControl() {
 
     setIsSubmitting(true)
     try {
-      const res = await fetch('/api/cash/count', {
+      await apiRequest('/api/cash/count', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ amount: parsed, notes }),
+        body: { amount: parsed, notes },
+        parse: () => null,
       })
-      const data = await res.json()
-
-      if (!res.ok) throw new Error(data.error || 'Error al registrar cierre')
 
       toast.success('✅ Cierre de caja registrado correctamente.', {
         duration: 4000,
       })
       setAmount('')
       setNotes('')
-    } catch (err: any) {
+    } catch (err) {
       console.error(err)
-      toast.error(err.message, { duration: 4000 })
+      toast.error(mensajeDeError(err, 'Error al registrar cierre'), { duration: 4000 })
     } finally {
       setIsSubmitting(false)
     }
@@ -91,7 +88,7 @@ export default function CashControl() {
         <div>
           <button
             type="button"
-            onClick={handleSubmit}
+            onClick={() => void handleSubmit()}
             disabled={isSubmitting}
             className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg transition disabled:opacity-70"
           >

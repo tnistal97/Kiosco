@@ -165,6 +165,10 @@ export default tseslint.config(
       ...vitest.configs.recommended.rules,
       // Un `expect` dentro de un helper compartido sigue siendo una asercion.
       'vitest/expect-expect': 'off',
+      // `expect(valor, 'por que importa')` es API de vitest, no un error. Ese
+      // segundo argumento es lo que aparece cuando la prueba falla, y en esta
+      // suite explica que agujero de seguridad cubre cada caso.
+      'vitest/valid-expect': ['error', { maxArgs: 2 }],
     },
   },
 

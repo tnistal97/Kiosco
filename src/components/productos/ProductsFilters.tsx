@@ -1,6 +1,6 @@
 'use client'
 
-import { MagnifyingGlassIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline'
+import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import React from 'react'
 import { Category } from '@/hooks/useProducts'
 
@@ -11,7 +11,6 @@ interface Props {
   searchTerm: string
   setSearchTerm: (v: string) => void
   clearFilters: () => void
-  exportCSV: () => void
   setLowStockFilter: (v: boolean) => void
 }
 
@@ -22,7 +21,6 @@ export default function ProductsFilters({
   searchTerm,
   setSearchTerm,
   clearFilters,
-  exportCSV,
   setLowStockFilter,
 }: Props) {
   return (

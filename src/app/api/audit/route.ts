@@ -1,7 +1,7 @@
 // src/app/api/audit/route.ts
 import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
-import { paginationSchema } from '@/server/http/validate'
+import { paginado, paginationQuerySchema, toSkipTake } from '@/server/http/pagination'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,7 +23,7 @@ export const GET = handler(
   {
     auth: 'session',
     permission: 'audit.view',
-    query: paginationSchema,
+    query: paginationQuerySchema,
     audit: 'GET /api/audit',
   },
   async ({ session, query }) => {
@@ -34,8 +34,7 @@ export const GET = handler(
       prisma.auditLog.findMany({
         where,
         orderBy: { timestamp: 'desc' },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
+        ...toSkipTake(query),
         select: {
           id: true,
           tableName: true,
@@ -49,14 +48,6 @@ export const GET = handler(
       }),
     ])
 
-    return {
-      entradas,
-      paginacion: {
-        page: query.page,
-        pageSize: query.pageSize,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
-      },
-    }
+    return paginado(entradas, total, query)
   },
 )

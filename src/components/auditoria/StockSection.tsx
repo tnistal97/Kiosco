@@ -2,6 +2,7 @@
 
 import React from 'react'
 import type { AuditLog } from '@/types/audit' // ← importar del archivo de tipos
+import { numero, numeroOpcional } from '@/lib/api-client'
 
 interface StockSectionProps {
   registrosStock: AuditLog[]
@@ -27,13 +28,15 @@ export default function StockSection({
   return (
     <div className="grid gap-5">
       {registrosStock.map((log) => {
-        const beforeQty = log.changes.before?.quantity ?? 0
-        const afterQty = log.changes.after?.quantity ?? 0
+        // `changes` es JSON guardado en la bitacora: su forma no la garantiza
+        // ningun tipo, asi que se lee comprobando en vez de suponiendo.
+        const beforeQty = numero(log.changes.before?.quantity)
+        const afterQty = numero(log.changes.after?.quantity)
         const agregado = afterQty - beforeQty
         const fecha = formatearFecha(log.timestamp)
         const hora = formatearHora(log.timestamp)
-        const prodId = log.changes.after?.productId
-        const prodName = prodId ? productsMap[prodId] || 'Producto' : 'Producto'
+        const prodId = numeroOpcional(log.changes.after?.productId)
+        const prodName = (prodId === null ? null : productsMap[prodId]) ?? 'Producto'
 
         return (
           <article
@@ -42,9 +45,7 @@ export default function StockSection({
           >
             <div className="bg-gray-700/80 px-4 py-3 border-b border-gray-600 flex justify-between items-start">
               <div>
-                <h3 className="text-white font-medium text-lg">
-                  {log.user?.name || 'Usuario desconocido'}
-                </h3>
+                <h3 className="text-white font-medium text-lg">{log.user.name}</h3>
                 <p className="text-gray-300 text-sm">
                   {fecha} · {hora}
                 </p>

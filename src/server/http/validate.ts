@@ -57,11 +57,8 @@ export const optionalText = (max = 500) =>
 
 export const paymentMethodSchema = z.enum(['efectivo', 'tarjeta', 'mercado_pago'])
 
-/** Paginacion uniforme para los listados. */
-export const paginationSchema = z.object({
-  page: z.coerce.number().int().min(1).max(10_000).default(1),
-  pageSize: z.coerce.number().int().min(1).max(200).default(50),
-})
+// La paginacion vive en '@/server/http/pagination', junto al contrato de
+// respuesta { data, pagination } y a los limites de tamano de pagina.
 
 /**
  * Parsea y valida el cuerpo JSON. Un cuerpo ausente o mal formado da 400,

@@ -5,25 +5,14 @@ import DateRangePicker from '@/components/admin/sales/DateRangePicker'
 import LoadingSpinner from '@/components/admin/sales/LoadingSpinner'
 import SalesMetrics from '@/components/admin/sales/SalesMetrics'
 import SalesTable from '@/components/admin/sales/SalesTable'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import { parseVentas, type VentaDTO } from '@/modules/sales/dto'
 
-export interface SaleItem {
-  id: number
-  product: { id: number; name: string }
-  quantity: number
-  price: number
-}
-
-export interface Sale {
-  id: number
-  date: string
-  user: { id: number; name: string }
-  paymentMethod: 'efectivo' | 'tarjeta' | 'mercado_pago'
-  items: SaleItem[]
-}
+export type { ItemVentaDTO as SaleItem, VentaDTO as Sale } from '@/modules/sales/dto'
 
 export default function AdminSalesPage() {
   const [range, setRange] = useState({ start: '', end: '' })
-  const [sales, setSales] = useState<Sale[]>([])
+  const [sales, setSales] = useState<VentaDTO[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -40,35 +29,27 @@ export default function AdminSalesPage() {
     setIsLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/admin/sales?start=${start}&end=${end}`, {
-        credentials: 'include',
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Error al obtener ventas')
-      }
-      const { sales } = await res.json()
-      setSales(sales)
-    } catch (err: any) {
+      const query = new URLSearchParams({ start, end })
+      setSales(await apiRequest(`/api/admin/sales?${query.toString()}`, { parse: parseVentas }))
+    } catch (err) {
       console.error(err)
-      setError(err.message)
+      setError(mensajeDeError(err, 'Error al obtener ventas'))
       setSales([])
     } finally {
       setIsLoading(false)
     }
   }, [])
 
-  // Al montar: rango mes actual + fetch
+  // Al montar: rango del mes actual. El fetch lo dispara el efecto de abajo
+  // en cuanto `range` queda seteado, para no pedir las mismas ventas dos veces.
   useEffect(() => {
-    const initial = initCurrentMonth()
-    setRange(initial)
-    fetchSales(initial.start, initial.end)
-  }, [initCurrentMonth, fetchSales])
+    setRange(initCurrentMonth())
+  }, [initCurrentMonth])
 
   // Al cambiar rango
   useEffect(() => {
     if (range.start && range.end) {
-      fetchSales(range.start, range.end)
+      void fetchSales(range.start, range.end)
     }
   }, [range, fetchSales])
 

@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { seedFixture, prisma, stockOf, cashOf, type Fixture } from '../helpers/db'
-import { call, sessionCookie, type RouteHandler } from '../helpers/http'
+import { call, sessionCookie } from '../helpers/http'
 
 let fx: Fixture
 
@@ -75,11 +75,11 @@ describe('Caso 12 — anulacion valida', () => {
     })
 
     expect(venta, 'La venta fue borrada fisicamente').not.toBeNull()
-    expect(venta!.status).toBe('canceled')
-    expect(venta!.canceledAt).not.toBeNull()
-    expect(venta!.canceledById).toBe(fx.admin.id)
-    expect(venta!.cancelReason).toBe('Producto en mal estado')
-    expect(venta!.items, 'Los items de la venta fueron borrados').toHaveLength(1)
+    expect(venta?.status).toBe('canceled')
+    expect(venta?.canceledAt).not.toBeNull()
+    expect(venta?.canceledById).toBe(fx.admin.id)
+    expect(venta?.cancelReason).toBe('Producto en mal estado')
+    expect(venta?.items, 'Los items de la venta fueron borrados').toHaveLength(1)
   })
 
   it('no borra el movimiento de caja: agrega un contramovimiento', async () => {
@@ -107,9 +107,9 @@ describe('Caso 12 — anulacion valida', () => {
     })
 
     expect(log, 'La anulacion no quedo registrada en la bitacora').not.toBeNull()
-    expect(log!.userId).toBe(fx.admin.id)
+    expect(log?.userId).toBe(fx.admin.id)
 
-    const cambios = log!.changes as { before?: { status?: string }; after?: { status?: string } }
+    const cambios = log?.changes as { before?: { status?: string }; after?: { status?: string } }
     expect(cambios.before?.status).toBe('completed')
     expect(cambios.after?.status).toBe('canceled')
   })
@@ -180,6 +180,6 @@ describe('Una venta anulada sigue apareciendo en los reportes', () => {
     expect(res.status).toBe(200)
     const venta = res.body.sales.find((s) => s.id === saleId)
     expect(venta, 'La venta anulada desaparecio del reporte').toBeDefined()
-    expect(venta!.status).toBe('canceled')
+    expect(venta?.status).toBe('canceled')
   })
 })

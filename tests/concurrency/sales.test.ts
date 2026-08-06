@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { seedFixture, prisma, stockOf, cashOf, type Fixture } from '../helpers/db'
-import { call, sessionCookie, type RouteHandler } from '../helpers/http'
+import { call, sessionCookie } from '../helpers/http'
 
 let fx: Fixture
 

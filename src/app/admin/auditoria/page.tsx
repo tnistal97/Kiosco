@@ -10,11 +10,9 @@ import ProductSection from '@/components/auditoria/ProductSection'
 import DatePicker from '@/components/auditoria/DatePicker'
 import SelectFilter from '@/components/auditoria/SelectFilter'
 import type { AuditLog } from '@/types/audit' // ← importar desde el nuevo archivo
-
-interface Product {
-  id: number
-  name: string
-}
+import { apiRequest, mensajeDeError, numero } from '@/lib/api-client'
+import { parsePaginaAuditoria } from '@/modules/audit/dto'
+import { parseProductos } from '@/modules/products/dto'
 
 export default function AuditoriaPage() {
   const [logs, setLogs] = useState<AuditLog[]>([])
@@ -35,34 +33,29 @@ export default function AuditoriaPage() {
       setError(null)
 
       try {
-        const [auditRes, productsRes] = await Promise.all([
-          fetch('/api/audit?pageSize=200'),
-          fetch('/api/products'),
+        // /api/audit pagina: devuelve { data, pagination }. El tope duro por
+        // pagina es 100, asi que esta pantalla muestra la primera pagina.
+        const [auditoria, productos] = await Promise.all([
+          apiRequest('/api/audit?pageSize=100', { parse: parsePaginaAuditoria }),
+          apiRequest('/api/products', { parse: parseProductos }),
         ])
 
-        if (!auditRes.ok) throw new Error('No se pudo cargar auditorías')
-        if (!productsRes.ok) throw new Error('No se pudo cargar productos')
-
-        // /api/audit ahora pagina: devuelve { entradas, paginacion }.
-        const auditData: { entradas: AuditLog[] } = await auditRes.json()
-        const productsData: Product[] = await productsRes.json()
-
-        setLogs(auditData.entradas ?? [])
+        setLogs(auditoria.data)
 
         const mapa: Record<number, string> = {}
-        productsData.forEach((p) => {
+        productos.forEach((p) => {
           mapa[p.id] = p.name
         })
         setProductsMap(mapa)
-      } catch (e: any) {
+      } catch (e) {
         console.error(e)
-        setError(e.message || 'Error al cargar datos')
+        setError(mensajeDeError(e, 'Error al cargar datos'))
       } finally {
         setIsLoading(false)
       }
     }
 
-    fetchAll()
+    void fetchAll()
   }, [])
 
   const formatearFecha = (ts: string) =>
@@ -107,9 +100,7 @@ export default function AuditoriaPage() {
     return filteredLogs
       .filter((log) => {
         if (log.tableName !== 'BranchStock' || log.actionType !== 'update') return false
-        const beforeQty = log.changes.before?.quantity ?? 0
-        const afterQty = log.changes.after?.quantity ?? 0
-        return afterQty > beforeQty
+        return numero(log.changes.after?.quantity) > numero(log.changes.before?.quantity)
       })
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
   }, [filteredLogs])

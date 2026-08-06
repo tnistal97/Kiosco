@@ -8,12 +8,24 @@ interface Props {
   sales: Sale[]
 }
 
+/** Los unicos metodos que tienen su propia tarjeta de total. */
+const METODOS = ['efectivo', 'tarjeta', 'mercado_pago'] as const
+type Metodo = (typeof METODOS)[number]
+
+function esMetodoConocido(v: string | null): v is Metodo {
+  return v !== null && (METODOS as readonly string[]).includes(v)
+}
+
 export default function SalesMetrics({ sales }: Props) {
   const totals = useMemo(() => {
     return sales.reduce(
       (acc, sale) => {
+        // Una venta anulada no recaudo nada. Antes se sumaba igual, asi que
+        // la recaudacion del mes crecia con cada anulacion en vez de bajar.
+        if (sale.status === 'canceled') return acc
+
         const amount = sale.items.reduce((s, it) => s + it.quantity * it.price, 0)
-        acc[sale.paymentMethod] += amount
+        if (esMetodoConocido(sale.paymentMethod)) acc[sale.paymentMethod] += amount
         acc.total += amount
         acc.count += 1
         return acc
