@@ -81,7 +81,11 @@ describe('Escritura entre sucursales', () => {
   })
 
   it('no existe un endpoint que acepte branchId desde el cuerpo', async () => {
-    const mod = await import('@/app/api/stock/route').catch(() => null)
+    // Especificador en variable a proposito: si fuera literal, TypeScript
+    // fallaria al compilar el test porque el modulo ya no existe, que es
+    // justamente lo que se quiere comprobar en tiempo de ejecucion.
+    const ruta = '@/app/api/stock/route'
+    const mod: unknown = await import(/* @vite-ignore */ ruta).catch(() => null)
 
     if (mod && typeof mod === 'object' && 'POST' in mod) {
       throw new Error(

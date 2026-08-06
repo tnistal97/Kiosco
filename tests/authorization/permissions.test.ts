@@ -83,13 +83,35 @@ describe('Caso 3 — ningun endpoint devuelve hashes de contrasena', () => {
         password: 'Nueva-Clave-1234',
         name: 'Cajero Nuevo',
         roleId: role.id,
-        branchId: fx.branchA.id,
       },
     })
 
     expect(res.status).toBe(201)
     expect(res.text).not.toMatch(HASH_BCRYPT)
     expect(res.text).not.toContain('"password"')
+  })
+
+  it('la sucursal del usuario nuevo la fija el servidor, no el cuerpo', async () => {
+    const role = await prisma.role.findFirstOrThrow({ where: { name: 'cajero' } })
+    const { POST } = await import('@/app/api/users/route')
+
+    // El administrador es de la sucursal A e intenta crear personal en la B.
+    const res = await call(POST as RouteHandler, '/api/users', {
+      method: 'POST',
+      cookie: await sessionCookie(fx.admin),
+      body: {
+        username: 'infiltrado',
+        password: 'Nueva-Clave-1234',
+        name: 'Infiltrado',
+        roleId: role.id,
+        branchId: fx.branchB.id,
+      },
+    })
+
+    // Campo no declarado: la peticion se rechaza entera en vez de ignorarlo
+    // en silencio.
+    expect(res.status).toBe(400)
+    expect(await prisma.user.count({ where: { username: 'infiltrado' } })).toBe(0)
   })
 
   it('ninguna respuesta de las rutas de lectura contiene un hash', async () => {
@@ -114,11 +136,11 @@ describe('Caso 3 — ningun endpoint devuelve hashes de contrasena', () => {
 
 describe('Caso 10 — no puede eliminarse fisicamente todo el catalogo', () => {
   it('no existe una operacion de borrado masivo de productos', async () => {
-    const mod = await import('@/app/api/products/route')
+    const mod: Record<string, unknown> = await import('@/app/api/products/route')
     expect(
-      mod.DELETE,
+      'DELETE' in mod,
       'DELETE /api/products sigue existiendo: borra el catalogo completo de una sucursal',
-    ).toBeUndefined()
+    ).toBe(false)
   })
 
   it('el cajero no puede borrar un producto individual', async () => {

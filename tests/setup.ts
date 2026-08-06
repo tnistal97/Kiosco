@@ -6,7 +6,7 @@
  * que no se llama *_test, el proceso aborta antes de tocar nada.
  */
 
-process.env.NODE_ENV = 'test'
+// NODE_ENV lo fija vitest en 'test'; no hace falta (ni se puede) reasignarlo.
 
 process.env.DATABASE_URL ??=
   'postgresql://kiosco_dev:kiosco_dev@127.0.0.1:5433/kiosco_test?schema=public'

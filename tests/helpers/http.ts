@@ -16,7 +16,7 @@ const BASE = 'http://localhost:3000'
 
 export type RouteHandler = (
   req: NextRequest,
-  args?: { params?: Promise<Record<string, string>> },
+  args: { params: Promise<Record<string, string | string[] | undefined>> },
 ) => Promise<Response>
 
 export interface CallOptions {
@@ -59,7 +59,7 @@ export async function call<T = unknown>(
   options: CallOptions = {},
 ): Promise<CallResult<T>> {
   const req = buildRequest(path, options)
-  const args = options.params ? { params: Promise.resolve(options.params) } : undefined
+  const args = { params: Promise.resolve(options.params ?? {}) }
 
   const res = await route(req, args)
   const text = await res.text()
