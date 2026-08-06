@@ -156,6 +156,37 @@ export default tseslint.config(
     },
   },
 
+  // ------------------------------------- el navegador no habla con la base
+  //
+  // Importar Prisma desde un componente de cliente no da error de compilacion:
+  // da un paquete gigante y, en el peor caso, filtra la cadena de conexion al
+  // navegador. Es un error facil de cometer --alcanza con importar una
+  // constante desde un servicio-- y muy dificil de notar.
+  {
+    files: ['src/components/**', 'src/hooks/**', 'src/store/**', 'src/lib/api-client.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@prisma/client', '**/lib/prisma', '@/lib/prisma'],
+              message:
+                'Prisma es del servidor. Si hace falta un tipo o una constante, ' +
+                'ponerlo en el modulo de esquemas o en el dto, que no importan Prisma.',
+            },
+            {
+              group: ['@/modules/*/service', '@/modules/*/service.*', '@/server/services/*'],
+              message:
+                'Los servicios corren en el servidor y arrastran Prisma. ' +
+                'Las constantes compartidas van en schemas.ts.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // ------------------------------------------------------------------- tests
   {
     files: ['tests/**/*.ts'],

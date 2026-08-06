@@ -50,19 +50,58 @@ JWT_SECRET=dev-only-not-a-real-secret-0000000000
 
 ## Esquema
 
-El historial de migraciones **no es una cadena aplicable de principio a fin** — ver [`../prisma/migrations/README.md`](../prisma/migrations/README.md). Para una base nueva, aplicar directamente la baseline:
+Desde la Fase 1 la cadena se aplica de principio a fin:
 
 ```bash
-psql -h 127.0.0.1 -p 5433 -U kiosco_dev -d kiosco_dev -v ON_ERROR_STOP=1 \
-  -f prisma/migrations/20250605201717_add_value_to_product/migration.sql
-```
-
-Después:
-
-```bash
+npx prisma migrate deploy
 npx prisma generate
 npm run dev
 ```
+
+Antes no se podía: las seis migraciones de mayo de 2025 chocaban con la
+baseline de junio y `migrate deploy` fallaba con
+`relation "Branch" already exists`. Ahora están archivadas en
+`prisma/migrations-legacy/`. El detalle está en
+[DATABASE_MIGRATION_STRATEGY.md](DATABASE_MIGRATION_STRATEGY.md).
+
+## Base de pruebas
+
+La suite corre contra una base propia, **distinta de la de desarrollo**:
+
+```bash
+"$PGBIN/psql" -h 127.0.0.1 -p 5433 -U postgres \
+  -c "CREATE DATABASE kiosco_test OWNER kiosco_dev;"
+
+DATABASE_URL='postgresql://kiosco_dev:kiosco_dev@127.0.0.1:5433/kiosco_test?schema=public' \
+  npx prisma migrate deploy
+```
+
+Las pruebas **abortan** si `DATABASE_URL` no termina en `_test`. Es la guarda
+que impide vaciar por accidente la base de desarrollo: la suite hace
+`TRUNCATE` de todas las tablas entre casos.
+
+Las pruebas de migraciones además crean y destruyen bases `*_migtest`, así que
+el usuario necesita permiso para crear bases:
+
+```bash
+"$PGBIN/psql" -h 127.0.0.1 -p 5433 -U postgres -c "ALTER ROLE kiosco_dev CREATEDB;"
+```
+
+## Calidad
+
+```bash
+npm run format:check   # Prettier
+npm run lint           # ESLint, sin asistentes
+npm run typecheck      # tsc --noEmit
+npm test               # 354 pruebas
+npm run test:coverage  # con informe en coverage/
+npm run build          # construcción
+npm audit              # tiene que decir 0
+```
+
+Es exactamente lo que corre el paso de CI
+([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)). Si pasa en local,
+pasa en CI.
 
 ## Datos de prueba
 
@@ -74,6 +113,17 @@ Conviene incorporar un seed así al repositorio (`prisma/seed.dev.ts`) para que 
 
 ## Advertencias
 
-- **No correr `prisma migrate reset`, `migrate deploy`, `db push` ni `db seed`** sin verificar antes a qué base apunta `DATABASE_URL`. Con el `.env` equivocado, cualquiera de los cuatro puede destruir producción.
-- **`test.js` en la raíz del repositorio borra productos, stock e ítems de venta sin ninguna guarda de entorno.** Está marcado para eliminación en la tarea 0.7 del [plan maestro](MASTER_ROADMAP.md).
-- El servidor de desarrollo emite `⚠ Webpack is configured while Turbopack is not`: `next-pwa` configura Webpack pero `npm run dev` usa `--turbopack`. Es inofensivo en desarrollo, pero significa que **la PWA no se prueba nunca en local** — solo se genera al hacer `next build`.
+- **No correr `prisma migrate reset`, `migrate deploy`, `db push` ni `db seed`**
+  sin verificar antes a qué base apunta `DATABASE_URL`. Con el `.env`
+  equivocado, cualquiera de los cuatro puede destruir producción. El CLI de
+  Prisma lee `.env`, **no** `.env.local`: es la fuente habitual de confusión
+  —la aplicación funciona y `npx prisma …` falla con _"Environment variable not
+  found: DATABASE_URL"_, o peor, apunta a otra base.
+- El servidor de desarrollo emite `⚠ Webpack is configured while Turbopack is not`:
+  `next-pwa` configura Webpack pero `npm run dev` usa `--turbopack`. Es
+  inofensivo en desarrollo, pero significa que **la PWA no se prueba nunca en
+  local** — solo se genera al hacer `next build`. El paso de CI comprueba que
+  el `sw.js` generado declare `NetworkOnly` para las rutas privadas.
+- `test.js`, que borraba productos y stock sin ninguna guarda de entorno, se
+  eliminó en la Fase 0. Si reaparece algo parecido, tiene que llevar la misma
+  comprobación que `tests/setup.ts`.

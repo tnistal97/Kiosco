@@ -3,6 +3,39 @@
 > Cubre las etapas 5 y 6 del brief: qué funcionalidades faltan para que esto sea un sistema de almacén, y cómo organizar el código para sostenerlas.
 > Parte del inventario de [CURRENT_SYSTEM_AUDIT.md](CURRENT_SYSTEM_AUDIT.md).
 
+> **Estado a la Fase 1.** La Parte II (organización del código) está
+> **implementada**. La Parte I (funcionalidades) sigue siendo un plan: la
+> Fase 1 fue de consolidación, sin funcionalidad nueva.
+>
+> Lo que quedó del lado de la organización:
+>
+> ```
+> src/modules/<dominio>/
+>   schemas.ts   validación de entrada (Zod)
+>   service.ts   reglas de negocio
+>   dto.ts       forma de los datos en la API y su lectura en el cliente
+> ```
+>
+> Dominios con servicio: `sales`, `stock`, `cash`, `products`, `users`. Los
+> catálogos auxiliares —sucursales, categorías, proveedores, roles— comparten
+> `modules/catalog/schemas.ts` y no tienen servicio: son CRUD sin reglas
+> propias, y tres módulos de un archivo cada uno serían ceremonia sin
+> utilidad.
+>
+> Medido sobre los 19 archivos de ruta, antes y después:
+>
+> |                                       | Antes | Después |
+> | ------------------------------------- | ----: | ------: |
+> | Líneas de código en rutas             |  1309 |     681 |
+> | Líneas con consulta Prisma            |    55 |      18 |
+> | Líneas con transacción o SQL crudo    |    13 |       4 |
+> | Esquemas definidos dentro de una ruta |    16 |       0 |
+>
+> **No se crearon repositorios.** Los servicios usan Prisma directamente. Una
+> capa de repositorio sobre un ORM que ya abstrae el SQL sería una indirección
+> sin nada del otro lado; se agregará si algún día hace falta cambiar de
+> motor o de ORM, no antes.
+
 ---
 
 # Parte I · Funcionalidades

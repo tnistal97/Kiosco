@@ -1,20 +1,59 @@
 # Estrategia de calidad
 
-> El proyecto hoy tiene **cero tests**, **ninguna configuración de ESLint**, ningún formateador y ninguna integración continua.
-> Esto es el plan, no la implementación. Nada de esto se instaló todavía.
+> **Estado: implementado en la Fase 1.** Lo que sigue era el plan; las tablas
+> de esta sección muestran lo que quedó hecho. Las secciones 4 a 10 conservan
+> el diseño original, que se siguió sin cambios salvo donde se indica.
 
-## Punto de partida
+## Dónde se estaba y dónde se está
 
-|                       | Estado                                                                                                         |
-| --------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Tests                 | 0 archivos                                                                                                     |
-| Framework de testing  | Ninguno instalado                                                                                              |
-| ESLint                | El script `lint` existe; **la configuración no**. `next lint` abre un asistente interactivo → inservible en CI |
-| Prettier              | No instalado. El formato es inconsistente entre archivos                                                       |
-| TypeScript            | `strict: true` ✅ — pero 35 usos de `: any` lo evaden                                                          |
-| Hooks de git          | Ninguno                                                                                                        |
-| CI                    | Ninguna                                                                                                        |
-| Verificación real hoy | `npx tsc --noEmit` y `npm run build` a mano                                                                    |
+|             | Antes de la Fase 0                         | Ahora                                                                    |
+| ----------- | ------------------------------------------ | ------------------------------------------------------------------------ |
+| Tests       | 0 archivos                                 | **354**, en seis categorías                                              |
+| Framework   | Ninguno                                    | Vitest 4, con cobertura y umbrales                                       |
+| ESLint      | El script existía; la configuración **no** | Configuración plana, con información de tipos. **0 errores**             |
+| Prettier    | No instalado                               | Configurado para ts, tsx, js, json, md, css y prisma                     |
+| TypeScript  | `strict: true`, evadido por 35 `: any`     | `strict` + 4 opciones más. **0 `any` en `src/`**                         |
+| CI          | Ninguna                                    | GitHub Actions: formato, lint, tipos, migraciones, pruebas, build, audit |
+| `npm audit` | 25 avisos, **1 crítico**                   | **0**                                                                    |
+| Cobertura   | —                                          | 80,9 % líneas · 78,6 % sentencias · 82,3 % funciones · 56,0 % ramas      |
+
+### Opciones de TypeScript, una por una
+
+Se activaron midiendo el impacto de cada una por separado, no en bloque.
+
+| Opción                             | Antes     | Ahora        | Errores que produjo     | Correcciones                                                                     |
+| ---------------------------------- | --------- | ------------ | ----------------------- | -------------------------------------------------------------------------------- |
+| `strict`                           | ✅ activa | ✅           | —                       | —                                                                                |
+| `noImplicitAny`                    | implícita | ✅ explícita | 0                       | —                                                                                |
+| `strictNullChecks`                 | implícita | ✅ explícita | 0                       | —                                                                                |
+| `useUnknownInCatchVariables`       | implícita | ✅ explícita | 0                       | —                                                                                |
+| `noFallthroughCasesInSwitch`       | ❌        | ✅           | 0                       | —                                                                                |
+| `forceConsistentCasingInFileNames` | ❌        | ✅           | 0                       | —                                                                                |
+| `noImplicitOverride`               | ❌        | ✅           | 0                       | —                                                                                |
+| `noUncheckedIndexedAccess`         | ❌        | ✅           | **7** (2 en producción) | Dos errores reales, ver abajo. Los otros 5 eran indexaciones en asserts de tests |
+
+Las tres primeras ya estaban cubiertas por `strict`; se escriben explícitas
+para que se vea que están activas sin tener que recordar qué implica `strict`.
+
+`forceConsistentCasingInFileNames` importa más de lo que parece acá: el
+desarrollo es Windows y el servidor Linux, así que un import con la caja
+equivocada compila en una máquina y falla en la otra.
+
+**Los dos errores reales que encontró `noUncheckedIndexedAccess`:**
+
+1. `origenDe()` leía `X-Forwarded-For` y hacía `split(',')[0].trim()`. Con la
+   cabecera vacía —o con `", 10.0.0.1"` si un proxy la concatena mal— el
+   primer elemento es cadena vacía. Esa cadena se usaba como parte de la clave
+   del límite de intentos, de modo que **todos los clientes detrás de un proxy
+   mal configurado compartían un mismo contador de bloqueo**.
+2. `shouldCacheRequest()` dependía de que `split('?')` devolviera siempre un
+   elemento. Ahora, si no lo hace, conserva la ruta entera: la opción segura es
+   la que tiene más probabilidad de coincidir con un patrón de exclusión.
+
+| Opción pospuesta                     | Errores | Motivo                                                                                                                                 |
+| ------------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `noPropertyAccessFromIndexSignature` | 24      | Obliga a `obj['clave']` en vez de `obj.clave` sobre firmas de índice. Es estilo, no atrapa errores                                     |
+| `exactOptionalPropertyTypes`         | 2       | Útil, pero genera fricción constante con props opcionales de React y con `RequestInit`. Evaluarla junto con el rediseño de la interfaz |
 
 ## Principio
 
@@ -103,6 +142,31 @@ Este es el único que exige infraestructura real: transacciones concurrentes con
 
 ## 3. Alcance por capa
 
+> **Estado.** Cubierto: servicios de dominio, rutas de API, transacciones,
+> esquemas, permisos, migraciones y rendimiento de consultas. **Pendientes:
+> componentes y extremo a extremo**, que dependen del rediseño de la interfaz
+> y por eso van con la Fase 2.
+>
+> Las 354 pruebas, por categoría:
+>
+> | Categoría             | Cuántas | Qué cubre                                                                                                     |
+> | --------------------- | ------: | ------------------------------------------------------------------------------------------------------------- |
+> | `tests/authorization` |     189 | Anónimo, permisos por rol, aislamiento por sucursal, endpoints retirados, matriz documentada contra el código |
+> | `tests/integration`   |      82 | Ventas, anulación, login, auditoría, contrato de error                                                        |
+> | `tests/unit`          |      55 | Permisos, validación, política de caché                                                                       |
+> | `tests/migrations`    |      16 | Cadena desde cero y sobre copia con datos                                                                     |
+> | `tests/performance`   |       8 | Paginación, N+1, escrituras por venta                                                                         |
+> | `tests/concurrency`   |       4 | Ventas simultáneas, sobreventa, coherencia de caja                                                            |
+>
+> **Cobertura sobre el código de servidor:** 80,9 % líneas · 78,6 % sentencias
+> · 82,3 % funciones · 56,0 % ramas. Los umbrales están unos puntos por debajo
+> (75 / 73 / 75 / 50). No son una meta: son una alarma, para que una caída se
+> note sin que el número oscile por un par de líneas.
+>
+> Las pantallas quedan fuera de la medición a propósito: sin pruebas de
+> interfaz, incluirlas daría un porcentaje que no dice nada y que escondería
+> una caída real en el código que sí está probado.
+
 | Capa                     | Qué se prueba                                                                                               | Cómo                       | Prioridad  |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------- | ---------- |
 | **Servicios de dominio** | Reglas de negocio: cálculo de totales, descuentos con tope, saldo esperado, resultado de un ajuste de stock | Unitario, sin base         | Alta       |
@@ -147,7 +211,31 @@ Agregar una ruta sin agregar su fila hace fallar la suite. La autorización deja
 
 ## 4. Configuración de ESLint
 
-La que hoy no existe. Reglas elegidas para atacar los problemas concretos de este código, no un preset genérico:
+> **Implementada.** La configuración real está en
+> [`eslint.config.mjs`](../eslint.config.mjs) y sigue este diseño con dos
+> diferencias, ambas anotadas más abajo. `eslint .` da **0 errores** y 4
+> avisos, todos por claves de índice en listas de esqueleto de carga, que son
+> estáticas.
+>
+> Lo que se descartó del plan original:
+>
+> - **`no-console: error`.** El código de servidor usa `console.error` y
+>   `console.warn` a propósito para el log del servidor, que es donde va el
+>   detalle técnico que no se le muestra al usuario. Prohibirlo obligaría a
+>   una excepción en cada uno de esos puntos.
+> - **`no-alert: error`.** Quedan tres usos (`src/app/page.tsx`,
+>   `src/components/dashboard/CartModal.tsx` y un `confirm()` de borrado en
+>   productos). Los dos primeros son de pantallas que la Fase 2 rehace; el
+>   `confirm()` es una confirmación de borrado que hoy no tiene reemplazo.
+>   Activar la regla ahora obligaría a tres `eslint-disable`, que es
+>   exactamente lo que este documento prohíbe. **Queda pendiente para la
+>   Fase 2**, junto con el rediseño.
+>
+> Lo que se agregó y no estaba en el plan: reglas contra condiciones siempre
+> ciertas (`no-unnecessary-condition`), aserciones no nulas
+> (`no-non-null-assertion`), y el plugin de Vitest para las pruebas.
+
+Reglas elegidas para atacar los problemas concretos de este código, no un preset genérico:
 
 ```js
 // eslint.config.mjs
@@ -193,7 +281,34 @@ export default [
 
 **Sobre el volumen inicial:** activar esto de golpe va a producir cientos de errores sobre código existente. La forma de introducirlo sin frenar todo: empezar con las reglas en `warn`, arreglar por módulo a medida que se refactoriza, y subirlas a `error` cuando el módulo esté limpio. **Nunca con `eslint-disable`.**
 
+> **Lo que pasó de verdad:** activarlo todo en `error` de una vez dio **252
+> errores** sobre 58 archivos. No hizo falta la introducción gradual porque
+> 81 de ellos tenían una sola causa —`res.json()` devuelve `any` y ese `any`
+> se propagaba desde 19 puntos de `fetch`— y se cerraron todos escribiendo un
+> cliente HTTP tipado. Los demás se corrigieron uno por uno.
+>
+> Quedan **tres** `eslint-disable` en todo el proyecto, cada uno con su motivo
+> escrito en la misma línea: dos por firmas que Next obliga a declarar `async`
+> sin que haya nada que esperar, y uno por una imagen de un dominio externo
+> arbitrario que `next/image` exigiría declarar en `remotePatterns`.
+>
+> Errores reales que ESLint encontró, y que no eran cuestión de estilo:
+>
+> | Hallazgo                 | Qué pasaba                                                                                                                                                                                      |
+> | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | `Navbar.handleLogout`    | `await fetch(...)` sin `try`. Si fallaba la red, la promesa quedaba rechazada sin manejar, no se ejecutaba el redirect y el usuario se quedaba en la pantalla creyendo que había cerrado sesión |
+> | `productos.handleDelete` | No miraba la respuesta. Un 403 por falta de permiso mostraba "Producto eliminado correctamente"                                                                                                 |
+> | `SalesMetrics`           | Sumaba las ventas anuladas a la recaudación: anular una venta hacía **subir** el total                                                                                                          |
+> | `BarcodeScanner`         | El efecto dependía de `code`, que el propio efecto cambiaba: cada lectura apagaba y encendía la cámara. Y nunca detenía los controles del lector al desmontarse                                 |
+> | `Modal`                  | Registraba un listener nativo tipado con el `KeyboardEvent` sintético de React; dos `as any` tapaban la diferencia                                                                              |
+> | `login`                  | Ignoraba el `?next=` que pone el middleware y siempre iba a `/caja`                                                                                                                             |
+
 ## 5. TypeScript
+
+> **Implementado.** La tabla opción por opción, con los errores que produjo
+> cada una y las dos que se pospusieron, está al principio de este documento.
+> El plan de abajo se cumplió salvo `exactOptionalPropertyTypes`, que se
+> pospuso con motivo.
 
 `strict: true` ya está. Faltan cuatro opciones que este código necesita:
 
@@ -211,6 +326,27 @@ export default [
 **Y prohibir `any` de verdad.** Los 35 usos actuales están casi todos en `catch (e: any)`; con `useUnknownInCatchVariables` (incluido en `strict`) el reemplazo correcto es `catch (e)` más un `isAppError(e)`.
 
 ## 6. Integración continua
+
+> **Implementada** en [`.github/workflows/ci.yml`](../.github/workflows/ci.yml),
+> con cuatro trabajos en paralelo en vez de uno solo: calidad (sin base de
+> datos, responde en menos de un minuto), pruebas, construcción y auditoría de
+> dependencias.
+>
+> Dos comprobaciones que no estaban en el plan y que valen más que el resto:
+>
+> 1. **Que el manifiesto declare el middleware.** Es el fallo que la Fase 0
+>    corrigió y el que más fácil se vuelve a colar: con un directorio `src/`,
+>    mover el archivo a la raíz compila igual y deja la autenticación de
+>    navegación sin ejecutarse. El manifiesto decía `middleware: []` y nadie se
+>    dio cuenta durante meses.
+> 2. **Que el service worker declare `NetworkOnly`.** Si un cambio en la cadena
+>    de `next-pwa` rompiera la generación, la PWA volvería a cachear respuestas
+>    privadas en el disco de la máquina, sin dar ningún error.
+>
+> `npm audit` falla ante críticas y altas, e informa las moderadas y bajas sin
+> cortar. Cortar por una vulnerabilidad baja en una herramienta de compilación
+> entrena a todo el mundo a ignorar el paso, y entonces tampoco se mira cuando
+> aparece una crítica.
 
 ```yaml
 # .github/workflows/ci.yml
