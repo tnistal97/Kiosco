@@ -48,46 +48,93 @@ async function reposar(page: Page, ms = 900): Promise<void> {
   await page.waitForTimeout(ms)
 }
 
+/** Codigos del seed de demostracion. */
+const CODIGOS = ['7790001000011', '7790002000014', '7790003000017']
+
 /**
- * Agrega productos al carrito de la pantalla de venta.
+ * Carga el ticket de la pantalla de venta.
  *
- * Busca por nombre y hace clic en el primer resultado. Se escribe contra el
- * texto visible y no contra clases CSS, para que siga funcionando despues del
- * rediseno y las capturas "antes" y "despues" sean comparables.
+ * Dos caminos, porque las dos versiones de la pantalla se cargan distinto y
+ * las capturas tienen que ser comparables:
+ *
+ *  - la nueva tiene un campo de codigo de barras: se escribe y se manda Enter,
+ *    que es como opera el lector;
+ *  - la anterior exigia buscar y hacer clic en un boton "Agregar" por fila.
  */
 async function cargarCarrito(page: Page): Promise<void> {
+  const campoCodigo = page.locator('[data-barcode-input]')
+
+  if (await campoCodigo.isVisible().catch(() => false)) {
+    for (const codigo of CODIGOS) {
+      await campoCodigo.fill(codigo)
+      await campoCodigo.press('Enter')
+      await page.waitForTimeout(900)
+    }
+    return
+  }
+
+  // Pantalla anterior.
   for (const termino of ['Yerba', 'Gaseosa cola', 'Leche entera']) {
-    const buscador = page
-      .locator('input[type="text"], input[type="search"], input:not([type])')
-      .first()
+    const buscador = page.locator('input[type="text"], input:not([type])').first()
     await buscador.fill(termino)
-    await page.waitForTimeout(700)
-    const fila = page.getByText(termino, { exact: false }).first()
-    if (await fila.isVisible().catch(() => false)) {
-      await fila.click({ timeout: 3000 }).catch(() => undefined)
+    await page.waitForTimeout(800)
+    const agregar = page.getByRole('button', { name: /agregar/i }).first()
+    if (await agregar.isVisible().catch(() => false)) {
+      await agregar.click({ timeout: 3000 }).catch(() => undefined)
       await page.waitForTimeout(400)
     }
   }
-  await page.keyboard.press('Escape').catch(() => undefined)
+}
+
+/**
+ * Rutas de cada version.
+ *
+ * La Fase 2 renombro las pantallas para que se llamen como lo que son: la
+ * caja registradora era `/caja` y el libro de caja era `/ventas`, justo al
+ * reves de lo que dicen esos nombres.
+ */
+const ANTES = process.argv[2] === 'before'
+const R = ANTES
+  ? {
+      venta: '/caja',
+      caja: '/ventas',
+      arqueo: '/control/caja',
+      ventas: '/admin/sales',
+      auditoria: '/admin/auditoria',
+      usuarios: '/admin/usuarios',
+      stock: '/admin/stock',
+      configuracion: '/admin/configuracion',
+    }
+  : {
+      venta: '/venta',
+      caja: '/caja',
+      arqueo: '/caja',
+      ventas: '/ventas',
+      auditoria: '/auditoria',
+      usuarios: '/usuarios',
+      stock: '/stock',
+      configuracion: '/configuracion',
+    }
+
+async function abrirPorTexto(page: Page, patron: RegExp): Promise<void> {
+  const boton = page.getByRole('button', { name: patron }).first()
+  if (await boton.isVisible().catch(() => false)) {
+    await boton.click({ timeout: 3000 }).catch(() => undefined)
+    await page.waitForTimeout(700)
+  }
 }
 
 const PANTALLAS: Pantalla[] = [
   { clave: 'login', ruta: '/login', publica: true },
   { clave: 'inicio', ruta: '/' },
-  { clave: 'venta-vacia', ruta: '/caja' },
-  { clave: 'venta-con-productos', ruta: '/caja', preparar: cargarCarrito },
+  { clave: 'venta-vacia', ruta: R.venta },
+  { clave: 'venta-con-productos', ruta: R.venta, preparar: cargarCarrito },
   {
     clave: 'cobro',
-    ruta: '/caja',
+    ruta: R.venta,
     preparar: async (page) => {
       await cargarCarrito(page)
-      const cobrar = page
-        .getByRole('button', { name: /cobrar|confirmar venta|finalizar|vender/i })
-        .first()
-      if (await cobrar.isVisible().catch(() => false)) {
-        await cobrar.click().catch(() => undefined)
-        await page.waitForTimeout(600)
-      }
+      await abrirPorTexto(page, /^cobrar|confirmar venta|finalizar|vender/i)
     },
   },
   { clave: 'productos', ruta: '/productos' },
@@ -96,19 +143,24 @@ const PANTALLAS: Pantalla[] = [
     ruta: '/productos',
     preparar: async (page) => {
       await page.waitForTimeout(1200)
-      const editar = page.getByRole('button', { name: /editar/i }).first()
-      if (await editar.isVisible().catch(() => false)) {
-        await editar.click().catch(() => undefined)
-        await page.waitForTimeout(600)
-      }
+      // La version nueva esconde "Editar" dentro del menu de la fila.
+      await abrirPorTexto(page, /^acciones de/i)
+      await abrirPorTexto(page, /^editar$/i)
     },
   },
-  { clave: 'caja', ruta: '/ventas' },
-  { clave: 'arqueo', ruta: '/control/caja' },
-  { clave: 'ventas', ruta: '/admin/sales' },
-  { clave: 'auditoria', ruta: '/admin/auditoria' },
-  { clave: 'usuarios', ruta: '/admin/usuarios', opcional: true },
-  { clave: 'administracion', ruta: '/admin', opcional: true },
+  { clave: 'caja', ruta: R.caja },
+  {
+    clave: 'arqueo',
+    ruta: R.arqueo,
+    preparar: async (page) => {
+      await abrirPorTexto(page, /hacer arqueo/i)
+    },
+  },
+  { clave: 'ventas', ruta: R.ventas },
+  { clave: 'auditoria', ruta: R.auditoria },
+  { clave: 'usuarios', ruta: R.usuarios, opcional: true },
+  { clave: 'stock', ruta: R.stock, opcional: true },
+  { clave: 'configuracion', ruta: R.configuracion, opcional: true },
 ]
 
 async function iniciarSesion(page: Page): Promise<void> {

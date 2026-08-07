@@ -39,6 +39,8 @@ type SemillaProducto = {
   costo: number
   stock: number
   descripcion?: string
+  /** Dado de baja: no aparece en la caja, si en el catalogo y en el historial. */
+  inactivo?: boolean
 }
 
 const CATEGORIAS = [
@@ -117,6 +119,10 @@ const PRODUCTOS: SemillaProducto[] = [
   { nombre: 'Hamburguesas x 4', barcode: '7790008000012', categoria: 'Congelados', proveedor: 'Mayorista Central', precio: 5400, costo: 3900, stock: 18 }, // prettier-ignore
   { nombre: 'Papas bastón 1 kg', barcode: '7790008000029', categoria: 'Congelados', proveedor: 'Mayorista Central', precio: 4300, costo: 3050, stock: 12 }, // prettier-ignore
   { nombre: 'Helado 1 L', barcode: '7790008000036', categoria: 'Congelados', proveedor: 'Mayorista Central', precio: 6800, costo: 4900, stock: 0, descripcion: 'Agotado: freezer en reparacion' }, // prettier-ignore
+
+  // Dado de baja: el proveedor lo discontinuo. Sirve para ver que no aparece
+  // en la caja pero si en el catalogo, con su estado.
+  { nombre: 'Gaseosa naranja 2 L (discontinuada)', barcode: '7790002000083', categoria: 'Bebidas', proveedor: 'Bebidas Andinas', precio: 2990, costo: 2100, stock: 2, descripcion: 'El proveedor dejo de traerla', inactivo: true }, // prettier-ignore
 ]
 
 const USUARIOS = [
@@ -131,20 +137,28 @@ const USUARIOS = [
   { username: 'exempleado', name: 'Rocio Vega', rol: 'cajero', activo: false },
 ]
 
-/** Ventas ficticias: [horasAtras, [ [indiceProducto, cantidad], ... ], medio] */
+/**
+ * Ventas ficticias.
+ *
+ * Los medios de pago son los tres que acepta `paymentMethodSchema`. Poner
+ * otro no fallaria al sembrar --el seed escribe directo en la base-- pero
+ * dejaria datos que la aplicacion no sabe leer.
+ */
+type MedioDePago = 'efectivo' | 'tarjeta' | 'mercado_pago'
+
 const VENTAS: Array<{
   horas: number
   lineas: Array<[number, number]>
-  medio: string
+  medio: MedioDePago
   cajero: string
   anulada?: { motivo: string; horas: number; por: string }
 }> = [
   { horas: 1, lineas: [[0, 1], [12, 2], [19, 1]], medio: 'efectivo', cajero: 'cajero' }, // prettier-ignore
-  { horas: 2, lineas: [[15, 6], [9, 2]], medio: 'debito', cajero: 'cajero' }, // prettier-ignore
+  { horas: 2, lineas: [[15, 6], [9, 2]], medio: 'tarjeta', cajero: 'cajero' }, // prettier-ignore
   { horas: 3, lineas: [[24, 1], [19, 2], [3, 3]], medio: 'efectivo', cajero: 'cajero' }, // prettier-ignore
-  { horas: 4, lineas: [[36, 1], [21, 1]], medio: 'credito', cajero: 'supervisor' }, // prettier-ignore
+  { horas: 4, lineas: [[36, 1], [21, 1]], medio: 'tarjeta', cajero: 'supervisor' }, // prettier-ignore
   { horas: 5, lineas: [[13, 2], [29, 1], [31, 2]], medio: 'efectivo', cajero: 'cajero' }, // prettier-ignore
-  { horas: 6, lineas: [[17, 1], [22, 1]], medio: 'transferencia', cajero: 'encargado' }, // prettier-ignore
+  { horas: 6, lineas: [[17, 1], [22, 1]], medio: 'mercado_pago', cajero: 'encargado' }, // prettier-ignore
   {
     horas: 7,
     lineas: [
@@ -156,10 +170,10 @@ const VENTAS: Array<{
     anulada: { motivo: 'El cliente se arrepintio antes de retirar', horas: 6, por: 'supervisor' },
   },
   { horas: 26, lineas: [[6, 2], [10, 1], [28, 1]], medio: 'efectivo', cajero: 'cajero' }, // prettier-ignore
-  { horas: 28, lineas: [[14, 3], [33, 1]], medio: 'debito', cajero: 'supervisor' }, // prettier-ignore
+  { horas: 28, lineas: [[14, 3], [33, 1]], medio: 'tarjeta', cajero: 'supervisor' }, // prettier-ignore
   { horas: 30, lineas: [[38, 1], [23, 1], [2, 2]], medio: 'efectivo', cajero: 'cajero' }, // prettier-ignore
   { horas: 50, lineas: [[7, 4]], medio: 'efectivo', cajero: 'encargado' }, // prettier-ignore
-  { horas: 52, lineas: [[25, 2], [20, 1]], medio: 'credito', cajero: 'cajero' }, // prettier-ignore
+  { horas: 52, lineas: [[25, 2], [20, 1]], medio: 'mercado_pago', cajero: 'cajero' }, // prettier-ignore
 ]
 
 async function main() {
@@ -272,6 +286,7 @@ async function main() {
         categoryId: categorias.get(p.categoria) ?? 0,
         supplierId: proveedores.get(p.proveedor) ?? null,
         branchId: sucursal.id,
+        isActive: p.inactivo !== true,
       },
     })
     await prisma.branchStock.create({
@@ -331,6 +346,9 @@ async function main() {
       }
     }
 
+    // `type: 'sale'` no es decorativo: es por donde el reporte de ventas
+    // encuentra el medio de pago. Con otro tipo, la venta figura como
+    // "sin registrar".
     await prisma.cashRegisterMovement.create({
       data: {
         branchId: sucursal.id,
@@ -338,27 +356,30 @@ async function main() {
         amount: total,
         paymentMethod: v.medio,
         description: `Venta #${venta.id}`,
-        type: 'ingreso',
+        type: 'sale',
         date: fecha,
         saleId: venta.id,
       },
     })
-    caja += total
+    // Solo el efectivo mueve el dinero del cajon, igual que en el servicio.
+    if (v.medio === 'efectivo') caja += total
 
     if (v.anulada) {
       await prisma.cashRegisterMovement.create({
         data: {
           branchId: sucursal.id,
           userId: usuarios.get(v.anulada.por) ?? adminId,
-          amount: total,
+          // Contramovimiento con importe negativo, como lo escribe la
+          // anulacion real. El original no se toca.
+          amount: -total,
           paymentMethod: v.medio,
-          description: `Anulacion de venta #${venta.id}`,
-          type: 'egreso',
+          description: `Anulacion de venta #${venta.id}: ${v.anulada.motivo}`,
+          type: 'sale_cancel',
           date: haceHoras(v.anulada.horas),
           saleId: venta.id,
         },
       })
-      caja -= total
+      if (v.medio === 'efectivo') caja -= total
 
       await prisma.auditLog.create({
         data: {
@@ -378,26 +399,37 @@ async function main() {
     }
   }
 
-  // Movimientos manuales de caja.
-  const manuales = [
-    { monto: 8_500, tipo: 'egreso', desc: 'Pago a proveedor de panificados', horas: 27 },
-    { monto: 3_200, tipo: 'egreso', desc: 'Compra de bolsas', horas: 25 },
-    { monto: 15_000, tipo: 'egreso', desc: 'Retiro de efectivo', horas: 5 },
+  /*
+   * Movimientos manuales.
+   *
+   * Los tipos son los de `TIPOS_MOVIMIENTO` y el importe va con el signo que
+   * les pone el servidor: negativo en los retiros.
+   */
+  const manuales: Array<{
+    monto: number
+    tipo: 'ingreso' | 'retiro' | 'deposito'
+    desc: string
+    horas: number
+  }> = [
+    { monto: 8_500, tipo: 'retiro', desc: 'Pago a proveedor de panificados', horas: 27 },
+    { monto: 3_200, tipo: 'retiro', desc: 'Compra de bolsas', horas: 25 },
+    { monto: 15_000, tipo: 'retiro', desc: 'Retiro de efectivo del turno', horas: 5 },
     { monto: 4_000, tipo: 'ingreso', desc: 'Devolucion de proveedor', horas: 29 },
   ]
   for (const m of manuales) {
+    const importe = m.tipo === 'retiro' ? -m.monto : m.monto
     await prisma.cashRegisterMovement.create({
       data: {
         branchId: sucursal.id,
         userId: usuarios.get('encargado') ?? adminId,
-        amount: m.monto,
+        amount: importe,
         paymentMethod: 'efectivo',
         description: m.desc,
         type: m.tipo,
         date: haceHoras(m.horas),
       },
     })
-    caja += m.tipo === 'ingreso' ? m.monto : -m.monto
+    caja += importe
   }
 
   await prisma.branch.update({ where: { id: sucursal.id }, data: { currentCash: caja } })
