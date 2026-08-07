@@ -36,6 +36,7 @@ import {
   type Dinero,
 } from '@/server/money'
 import type { AbrirTurnoInput, CerrarTurnoInput, ListarTurnosQuery } from './schemas'
+import { MEDIO_EFECTIVO } from '@/modules/sales/payment-methods'
 
 /** Cliente de Prisma o de una transaccion. Todo lo de aca acepta los dos. */
 type Cliente = Prisma.TransactionClient | typeof prisma
@@ -110,7 +111,7 @@ export async function saldoEsperadoDe(
   turno: { id: number; openingAmount: Dinero },
 ): Promise<Dinero> {
   const efectivo = await cliente.cashRegisterMovement.aggregate({
-    where: { shiftId: turno.id, paymentMethod: 'efectivo' },
+    where: { shiftId: turno.id, paymentMethod: MEDIO_EFECTIVO },
     _sum: { amount: true },
   })
   return sumar(turno.openingAmount, sumaODefecto(efectivo._sum.amount))
@@ -174,7 +175,7 @@ async function totalesDe(
 
   const filas = await cliente.cashRegisterMovement.groupBy({
     by: ['shiftId', 'type'],
-    where: { shiftId: { in: shiftIds }, paymentMethod: 'efectivo' },
+    where: { shiftId: { in: shiftIds }, paymentMethod: MEDIO_EFECTIVO },
     _sum: { amount: true },
     _count: { _all: true },
   })

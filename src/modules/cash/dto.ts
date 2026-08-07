@@ -5,7 +5,8 @@
 import { esObjeto, lista, numero, texto, textoOpcional, numeroOpcional } from '@/lib/api-client'
 import { montoODefecto, montoOpcional, type Monto } from '@/lib/money'
 
-export type MetodoPago = 'efectivo' | 'tarjeta' | 'mercado_pago' | 'transferencia'
+// El vocabulario de medios vive en un solo lugar: @/modules/sales/payment-methods.
+export type { MedioDePago as MetodoPago } from '@/modules/sales/payment-methods'
 
 export interface ItemMovimientoDTO {
   id: number
@@ -76,7 +77,7 @@ export function parseMovimiento(raw: unknown): MovimientoDTO {
   return {
     id: numero(raw.id),
     amount: montoODefecto(raw.amount),
-    paymentMethod: texto(raw.paymentMethod, 'efectivo'),
+    paymentMethod: texto(raw.paymentMethod, 'CASH'),
     type: texto(raw.type, 'manual'),
     description: textoOpcional(raw.description),
     date: texto(raw.date),

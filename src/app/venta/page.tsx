@@ -16,7 +16,7 @@ import {
 } from '@/components/ui'
 import { ResultadoBusqueda } from '@/components/venta/ResultadoBusqueda'
 import { Ticket } from '@/components/venta/Ticket'
-import { DialogoCobro, type MedioDePago } from '@/components/venta/DialogoCobro'
+import { DialogoCobro, type PagoParaEnviar } from '@/components/venta/DialogoCobro'
 import { AyudaAtajos } from '@/components/venta/AyudaAtajos'
 import { AvisoCajaCerrada } from '@/components/venta/AvisoCajaCerrada'
 import { EscanerCamara } from '@/components/venta/EscanerCamara'
@@ -317,14 +317,15 @@ export default function VentaPage() {
 
   // ---------------------------------------------------------------- cobro
 
-  async function cobrar(medio: MedioDePago): Promise<number> {
+  async function cobrar(pagos: PagoParaEnviar[]): Promise<number> {
     const venta = await apiRequest('/api/sales', {
       method: 'POST',
-      // Solo producto y cantidad: el precio, el total y la sucursal los pone
-      // el servidor. El esquema ni siquiera declara esos campos.
+      // Solo producto, cantidad y como se paga. El precio, el total y la
+      // sucursal los pone el servidor, y el esquema ni siquiera declara esos
+      // campos: mandarlos hace fallar la peticion.
       body: {
         items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-        paymentMethod: medio,
+        payments: pagos,
       },
       parse: parseVenta,
     })

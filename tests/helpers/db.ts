@@ -10,6 +10,7 @@ import bcrypt from 'bcrypt'
 import { knownRoles } from '@/server/authz/permissions'
 import type { Monto } from '@/lib/money'
 import { aMonto, sumar, sumaODefecto } from '@/server/money'
+import { MEDIO_EFECTIVO } from '@/modules/sales/payment-methods'
 
 export { prisma }
 
@@ -203,7 +204,7 @@ export async function expectedOfShift(branchId: number): Promise<Monto> {
   const turno = await prisma.cashShift.findFirst({ where: { branchId, status: 'open' } })
   if (!turno) return '0.00'
   const efectivo = await prisma.cashRegisterMovement.aggregate({
-    where: { shiftId: turno.id, paymentMethod: 'efectivo' },
+    where: { shiftId: turno.id, paymentMethod: MEDIO_EFECTIVO },
     _sum: { amount: true },
   })
   return aMonto(sumar(turno.openingAmount, sumaODefecto(efectivo._sum.amount)))

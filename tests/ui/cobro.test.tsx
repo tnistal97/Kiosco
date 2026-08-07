@@ -17,7 +17,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { DialogoCobro } from '@/components/venta/DialogoCobro'
+import { DialogoCobro, type PagoParaEnviar } from '@/components/venta/DialogoCobro'
 import type { CartLine } from '@/store/cart'
 import { multiplicarMonto, sumarMontos } from '@/lib/money'
 
@@ -44,14 +44,14 @@ const LINEAS: CartLine[] = [
 // del navegador cambiara, esta prueba se entera.
 const TOTAL = sumarMontos(multiplicarMonto('4850.00', 2), '1690.00')
 
-function abrirCobro(onCobrar: (medio: string) => Promise<number>) {
+function abrirCobro(onCobrar: (pagos: PagoParaEnviar[]) => Promise<number>) {
   return render(
     <DialogoCobro
       abierto
       lineas={LINEAS}
       total={TOTAL}
       onCerrar={() => undefined}
-      onCobrar={onCobrar as (m: 'efectivo' | 'tarjeta' | 'mercado_pago') => Promise<number>}
+      onCobrar={onCobrar}
       onNuevaVenta={() => undefined}
     />,
   )
@@ -88,7 +88,7 @@ describe('Resumen y vuelto', () => {
     await usuario.type(screen.getByLabelText(/con cuánto paga/i), '5000')
 
     await waitFor(() => {
-      expect(screen.getByText(/faltan/i)).toBeInTheDocument()
+      expect(screen.getByText(/se recibió menos/i)).toBeInTheDocument()
     })
   })
 
@@ -99,7 +99,7 @@ describe('Resumen y vuelto', () => {
 
     expect(screen.getByLabelText(/con cuánto paga/i)).toBeInTheDocument()
 
-    await usuario.click(screen.getByRole('radio', { name: /tarjeta/i }))
+    await usuario.selectOptions(screen.getByLabelText('Medio'), 'DEBIT_CARD')
     expect(screen.queryByLabelText(/con cuánto paga/i)).toBeNull()
   })
 })

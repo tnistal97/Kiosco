@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { seedFixture, prisma, stockOf, cashOf, type Fixture } from '../helpers/db'
 import { multiplicarMonto } from '@/lib/money'
+import { MEDIO_EFECTIVO } from '@/modules/sales/payment-methods'
 import { aMonto, sumaODefecto } from '@/server/money'
 import { call, sessionCookie } from '../helpers/http'
 
@@ -106,7 +107,7 @@ describe('Caso 9 — ventas simultaneas', () => {
     ])
 
     const efectivo = await prisma.cashRegisterMovement.aggregate({
-      where: { branchId: fx.branchA.id, paymentMethod: 'efectivo' },
+      where: { branchId: fx.branchA.id, paymentMethod: MEDIO_EFECTIVO },
       _sum: { amount: true },
     })
 

@@ -150,7 +150,14 @@ const USUARIOS = [
  * otro no fallaria al sembrar --el seed escribe directo en la base-- pero
  * dejaria datos que la aplicacion no sabe leer.
  */
-type MedioDePago = 'efectivo' | 'tarjeta' | 'mercado_pago'
+/**
+ * Los medios del vocabulario de la Fase 3.
+ *
+ * Antes eran 'efectivo' | 'tarjeta' | 'mercado_pago'. La base tiene ahora un
+ * CHECK con estos codigos, asi que el seed escribe los mismos que escribe la
+ * aplicacion. Ver src/modules/sales/payment-methods.ts.
+ */
+type MedioDePago = 'CASH' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'TRANSFER'
 
 const VENTAS: Array<{
   horas: number
@@ -159,27 +166,27 @@ const VENTAS: Array<{
   cajero: string
   anulada?: { motivo: string; horas: number; por: string }
 }> = [
-  { horas: 1, lineas: [[0, 1], [12, 2], [19, 1]], medio: 'efectivo', cajero: 'cajero' }, // prettier-ignore
-  { horas: 2, lineas: [[15, 6], [9, 2]], medio: 'tarjeta', cajero: 'cajero' }, // prettier-ignore
-  { horas: 3, lineas: [[24, 1], [19, 2], [3, 3]], medio: 'efectivo', cajero: 'cajero' }, // prettier-ignore
-  { horas: 4, lineas: [[36, 1], [21, 1]], medio: 'tarjeta', cajero: 'supervisor' }, // prettier-ignore
-  { horas: 5, lineas: [[13, 2], [29, 1], [31, 2]], medio: 'efectivo', cajero: 'cajero' }, // prettier-ignore
-  { horas: 6, lineas: [[17, 1], [22, 1]], medio: 'mercado_pago', cajero: 'encargado' }, // prettier-ignore
+  { horas: 1, lineas: [[0, 1], [12, 2], [19, 1]], medio: 'CASH', cajero: 'cajero' }, // prettier-ignore
+  { horas: 2, lineas: [[15, 6], [9, 2]], medio: 'DEBIT_CARD', cajero: 'cajero' }, // prettier-ignore
+  { horas: 3, lineas: [[24, 1], [19, 2], [3, 3]], medio: 'CASH', cajero: 'cajero' }, // prettier-ignore
+  { horas: 4, lineas: [[36, 1], [21, 1]], medio: 'DEBIT_CARD', cajero: 'supervisor' }, // prettier-ignore
+  { horas: 5, lineas: [[13, 2], [29, 1], [31, 2]], medio: 'CASH', cajero: 'cajero' }, // prettier-ignore
+  { horas: 6, lineas: [[17, 1], [22, 1]], medio: 'TRANSFER', cajero: 'encargado' }, // prettier-ignore
   {
     horas: 7,
     lineas: [
       [1, 2],
       [4, 1],
     ],
-    medio: 'efectivo',
+    medio: 'CASH',
     cajero: 'cajero',
     anulada: { motivo: 'El cliente se arrepintio antes de retirar', horas: 6, por: 'supervisor' },
   },
-  { horas: 26, lineas: [[6, 2], [10, 1], [28, 1]], medio: 'efectivo', cajero: 'cajero' }, // prettier-ignore
-  { horas: 28, lineas: [[14, 3], [33, 1]], medio: 'tarjeta', cajero: 'supervisor' }, // prettier-ignore
-  { horas: 30, lineas: [[38, 1], [23, 1], [2, 2]], medio: 'efectivo', cajero: 'cajero' }, // prettier-ignore
-  { horas: 50, lineas: [[7, 4]], medio: 'efectivo', cajero: 'encargado' }, // prettier-ignore
-  { horas: 52, lineas: [[25, 2], [20, 1]], medio: 'mercado_pago', cajero: 'cajero' }, // prettier-ignore
+  { horas: 26, lineas: [[6, 2], [10, 1], [28, 1]], medio: 'CASH', cajero: 'cajero' }, // prettier-ignore
+  { horas: 28, lineas: [[14, 3], [33, 1]], medio: 'DEBIT_CARD', cajero: 'supervisor' }, // prettier-ignore
+  { horas: 30, lineas: [[38, 1], [23, 1], [2, 2]], medio: 'CASH', cajero: 'cajero' }, // prettier-ignore
+  { horas: 50, lineas: [[7, 4]], medio: 'CASH', cajero: 'encargado' }, // prettier-ignore
+  { horas: 52, lineas: [[25, 2], [20, 1]], medio: 'TRANSFER', cajero: 'cajero' }, // prettier-ignore
 ]
 
 async function main() {
@@ -194,6 +201,7 @@ async function main() {
   console.log('Vaciando la base de desarrollo...')
   await prisma.stockCheck.deleteMany()
   await prisma.saleItem.deleteMany()
+  await prisma.salePayment.deleteMany()
   await prisma.cashRegisterMovement.deleteMany()
   await prisma.sale.deleteMany()
   await prisma.cashCount.deleteMany()
@@ -353,7 +361,11 @@ async function main() {
         canceledAt: v.anulada ? haceHoras(v.anulada.horas) : null,
         canceledById: v.anulada ? (usuarios.get(v.anulada.por) ?? adminId) : null,
         cancelReason: v.anulada?.motivo ?? null,
+        total,
         items: { create: lineas },
+        // Un pago por venta: el seed no genera pagos combinados, pero la
+        // entidad existe y la suma tiene que dar el total igual.
+        payments: { create: [{ method: v.medio, amount: total, createdAt: fecha }] },
       },
     })
 
@@ -383,7 +395,7 @@ async function main() {
       },
     })
     // Solo el efectivo mueve el dinero del cajon, igual que en el servicio.
-    if (v.medio === 'efectivo') caja += total
+    if (v.medio === 'CASH') caja += total
 
     if (v.anulada) {
       await prisma.cashRegisterMovement.create({
@@ -400,7 +412,7 @@ async function main() {
           saleId: venta.id,
         },
       })
-      if (v.medio === 'efectivo') caja -= total
+      if (v.medio === 'CASH') caja -= total
 
       await prisma.auditLog.create({
         data: {
@@ -444,7 +456,7 @@ async function main() {
         branchId: sucursal.id,
         userId: usuarios.get('encargado') ?? adminId,
         amount: importe,
-        paymentMethod: 'efectivo',
+        paymentMethod: 'CASH',
         description: m.desc,
         type: m.tipo,
         date: haceHoras(m.horas),

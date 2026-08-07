@@ -49,7 +49,7 @@ describe('Lectura entre sucursales', () => {
         branchId: fx.branchB.id,
         userId: fx.cajeroB.id,
         amount: 99999,
-        paymentMethod: 'efectivo',
+        paymentMethod: 'CASH',
         type: 'manual',
         description: 'Movimiento de la sucursal B',
       },

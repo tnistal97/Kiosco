@@ -227,7 +227,17 @@ model Sale {
   canceledById Int?
   cancelReason String?
 
+  /// Total cobrado.
+  ///
+  /// Se guarda y no se deriva de los items porque es contra ESTE numero que se
+  /// comprueba la suma de los pagos. Derivarlo en cada lectura significaria
+  /// que la comprobacion "suma de pagos == total" depende de recalcular el
+  /// total igual que cuando se cobro --mismo redondeo, mismo orden-- y eso es
+  /// exactamente lo que no se puede garantizar dos anios despues.
+  total Decimal @default(0) @db.Decimal(14, 2)
+
   items         SaleItem[]
+  payments      SalePayment[]
   cashMovements CashRegisterMovement[]
   user          User                   @relation("SaleCreatedBy", fields: [userId], references: [id])
   canceledBy    User?                  @relation("SaleCanceledBy", fields: [canceledById], references: [id])
@@ -249,6 +259,40 @@ model SaleItem {
 
   sale    Sale    @relation(fields: [saleId], references: [id])
   product Product @relation(fields: [productId], references: [id])
+}
+
+/// Un pago de una venta. Una venta puede tener varios.
+///
+/// Reemplaza al `paymentMethod` unico que vivia dentro del movimiento de caja.
+/// La regla que hace util la entidad: LA SUMA DE LOS PAGOS ES EXACTAMENTE EL
+/// TOTAL DE LA VENTA. Con `Float` esa igualdad fallaba sola; por eso el dinero
+/// se migro a Decimal antes que esto.
+model SalePayment {
+  id     Int @id @default(autoincrement())
+  saleId Int
+
+  /// 'CASH' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'TRANSFER' | 'OTHER' | 'CARD'.
+  /// Ver src/modules/sales/payment-methods.ts. `CARD` es solo historico.
+  method String
+
+  amount Decimal @db.Decimal(14, 2)
+
+  /// Con cuanto pago y cuanto se le dio de vuelto. Solo tienen sentido en
+  /// efectivo: no se puede recibir de mas en una transferencia.
+  cashReceived Decimal? @db.Decimal(14, 2)
+  changeGiven  Decimal? @db.Decimal(14, 2)
+
+  /// Numero de operacion, ultimos digitos del cupon, lo que quede a mano.
+  /// NUNCA el numero completo de la tarjeta ni el codigo de seguridad: en esta
+  /// fase el sistema no procesa tarjetas, solo anota como se cobro.
+  reference String?
+
+  createdAt DateTime @default(now())
+
+  sale Sale @relation(fields: [saleId], references: [id])
+
+  @@index([saleId])
+  @@index([method])
 }
 
 model AuditLog {

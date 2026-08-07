@@ -9,6 +9,7 @@
 import { z } from 'zod'
 import { invalid } from '@/server/http/errors'
 import { monto, type Monto } from '@/lib/money'
+import { MEDIOS_DE_PAGO, normalizarMedio } from '@/modules/sales/payment-methods'
 
 /** Entero positivo, tambien desde string (parametros de ruta y query). */
 export const idSchema = z.coerce.number().int().positive().max(2_147_483_647)
@@ -81,7 +82,19 @@ export const optionalText = (max = 500) =>
     .nullable()
     .optional()
 
-export const paymentMethodSchema = z.enum(['efectivo', 'tarjeta', 'mercado_pago'])
+/**
+ * Medio de pago, en cualquiera de los dos vocabularios.
+ *
+ * Acepta los codigos nuevos --`CASH`, `DEBIT_CARD`…-- y los tres nombres
+ * anteriores a la Fase 3, y SIEMPRE devuelve el codigo nuevo. Asi el servicio
+ * trabaja con un solo vocabulario sin obligar a actualizar a la vez a todos
+ * los clientes.
+ *
+ * Ver src/modules/sales/payment-methods.ts.
+ */
+export const paymentMethodSchema = z
+  .enum([...MEDIOS_DE_PAGO, 'efectivo', 'tarjeta', 'mercado_pago'])
+  .transform(normalizarMedio)
 
 // La paginacion vive en '@/server/http/pagination', junto al contrato de
 // respuesta { data, pagination } y a los limites de tamano de pagina.

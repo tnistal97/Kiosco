@@ -17,6 +17,7 @@ import { seedFixture, prisma, cashOf, expectedOfShift, type Fixture } from '../h
 import { call, errorDe, sessionCookie } from '../helpers/http'
 import { multiplicarMonto, sumarMontos, restarMontos } from '@/lib/money'
 import { aMonto } from '@/server/money'
+import { MEDIO_EFECTIVO } from '@/modules/sales/payment-methods'
 
 import { POST as CREAR_VENTA } from '@/app/api/sales/route'
 import { POST as ANULAR } from '@/app/api/sales/[id]/cancel/route'
@@ -415,7 +416,7 @@ describe('Cierre', () => {
         branchId: fx.branchA.id,
         userId: fx.admin.id,
         amount: 99_999,
-        paymentMethod: 'efectivo',
+        paymentMethod: MEDIO_EFECTIVO,
         type: 'ingreso',
         shiftId: fx.turnoA,
       },
@@ -733,7 +734,7 @@ describe('Consistencia exacta', () => {
     expect(await expectedOfShift(fx.branchA.id)).toBe('60.05')
 
     const movimientos = await prisma.cashRegisterMovement.findMany({
-      where: { shiftId: fx.turnoA, paymentMethod: 'efectivo' },
+      where: { shiftId: fx.turnoA, paymentMethod: MEDIO_EFECTIVO },
     })
     const suma = sumarMontos('0.07', ...movimientos.map((m) => aMonto(m.amount)))
     expect(suma).toBe('60.05')

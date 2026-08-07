@@ -15,20 +15,89 @@ import type { Monto } from '@/lib/money'
 import {
   CERO_D,
   aMonto,
+  absoluto,
+  comparar,
+  dinero,
   esCero,
+  esNegativo,
   multiplicar,
   negar,
   redondearPesos,
+  restar,
   sumar,
   type Dinero,
 } from '@/server/money'
+import { esEfectivo, etiquetaDeMedio, normalizarMedio, type MedioDePago } from './payment-methods'
+import type { PagoInput } from './schemas'
 import { turnoAbiertoDe, turnoParaOperar } from '@/modules/cash/service.turnos'
-
-export type PaymentMethod = 'efectivo' | 'tarjeta' | 'mercado_pago'
 
 export interface SaleLineInput {
   productId: number
   quantity: number
+}
+
+/** Un pago ya resuelto: con su importe y su vuelto calculados por el servidor. */
+interface PagoResuelto {
+  method: MedioDePago
+  amount: Dinero
+  cashReceived: Dinero | null
+  changeGiven: Dinero | null
+  reference: string | null
+}
+
+/**
+ * Convierte lo que llego en la peticion en pagos comprobados.
+ *
+ * Dos formas de entrada, una sola salida:
+ *
+ *   `payments`       la forma nueva. Uno o varios, y su suma tiene que ser
+ *                    EXACTAMENTE el total.
+ *   `paymentMethod`  la forma anterior a la Fase 3, un solo medio. Se
+ *                    convierte en un unico pago por el total.
+ *
+ * El vuelto lo calcula esta funcion, no el cliente: mandarlo permitiria
+ * declarar un vuelto que no coincide con la cuenta.
+ */
+function resolverPagos(input: CreateSaleInput, total: Dinero): PagoResuelto[] {
+  if (!input.payments || input.payments.length === 0) {
+    const method = normalizarMedio(input.paymentMethod ?? 'CASH')
+    return [{ method, amount: total, cashReceived: null, changeGiven: null, reference: null }]
+  }
+
+  const pagos = input.payments.map((p) => {
+    const amount = dinero(p.amount)
+    const recibido = p.cashReceived === undefined ? null : dinero(p.cashReceived)
+
+    if (recibido !== null && comparar(recibido, amount) < 0) {
+      throw invalid(
+        `Se recibieron ${aMonto(recibido)} para un pago de ${aMonto(amount)}: falta plata`,
+        undefined,
+        { code: 'PAYMENTS_DO_NOT_MATCH_TOTAL' },
+      )
+    }
+
+    return {
+      method: p.method,
+      amount,
+      cashReceived: recibido,
+      changeGiven: recibido === null ? null : restar(recibido, amount),
+      reference: p.reference ?? null,
+    }
+  })
+
+  const sumaDePagos = sumar(...pagos.map((p) => p.amount))
+  if (comparar(sumaDePagos, total) !== 0) {
+    const falta = restar(total, sumaDePagos)
+    throw invalid(
+      esNegativo(falta)
+        ? `Los pagos suman ${aMonto(sumaDePagos)} y el total es ${aMonto(total)}: sobran ${aMonto(absoluto(falta))}`
+        : `Los pagos suman ${aMonto(sumaDePagos)} y el total es ${aMonto(total)}: faltan ${aMonto(falta)}`,
+      undefined,
+      { code: 'PAYMENTS_DO_NOT_MATCH_TOTAL' },
+    )
+  }
+
+  return pagos
 }
 
 /** Producto tal como se lee del catalogo para armar la venta. */
@@ -40,7 +109,10 @@ interface Catalogado {
 
 export interface CreateSaleInput {
   items: SaleLineInput[]
-  paymentMethod: PaymentMethod
+  /** Forma nueva: uno o varios pagos que suman el total. */
+  payments?: PagoInput[]
+  /** Forma anterior a la Fase 3: un solo medio para toda la venta. */
+  paymentMethod?: string
 }
 
 /**
@@ -61,7 +133,19 @@ export interface CreatedSale {
     price: Monto
     subtotal: Monto
   }>
-  paymentMethod: PaymentMethod
+  payments: Array<{
+    method: MedioDePago
+    /** Nombre para mostrar: "Efectivo", "Débito"… El codigo no se muestra. */
+    label: string
+    amount: Monto
+    cashReceived: Monto | null
+    changeGiven: Monto | null
+    reference: string | null
+  }>
+  /** Lo que de verdad entro al cajon. Cero si no hubo efectivo. */
+  cashCollected: Monto
+  /** Vuelto total. Cero cuando se pago justo o no hubo efectivo. */
+  changeGiven: Monto
 }
 
 /**
@@ -169,11 +253,19 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
 
       const total = sumar(...itemsConPrecio.map((i) => i.subtotal))
 
-      // 4) Venta e items.
+      // 4) Los pagos, comprobados contra el total.
+      //
+      //    Es LA regla de la entidad: la suma de los pagos es EXACTAMENTE el
+      //    total. No "aproximadamente": exactamente. Por eso el dinero se
+      //    migro a Decimal antes que esto.
+      const pagos = resolverPagos(input, total)
+
+      // 5) Venta, items y pagos, en una sola escritura.
       const venta = await tx.sale.create({
         data: {
           userId: session.userId,
           branchId,
+          total,
           items: {
             create: itemsConPrecio.map((i) => ({
               productId: i.productId,
@@ -181,35 +273,53 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
               price: i.price,
             })),
           },
+          payments: {
+            create: pagos.map((p) => ({
+              method: p.method,
+              amount: p.amount,
+              cashReceived: p.cashReceived,
+              changeGiven: p.changeGiven,
+              reference: p.reference,
+            })),
+          },
         },
         select: { id: true, date: true },
       })
 
-      // 5) Movimiento de caja vinculado por clave foranea, no por texto, y
-      //    colgado del turno abierto.
-      await tx.cashRegisterMovement.create({
-        data: {
-          branchId,
-          userId: session.userId,
-          amount: total,
-          paymentMethod: input.paymentMethod,
-          description: `Venta #${venta.id}`,
-          type: 'sale',
-          saleId: venta.id,
-          shiftId: turno?.id ?? null,
-        },
-      })
-
-      // 6) Solo el efectivo mueve el saldo en caja.
+      // 6) La caja recibe SOLO el efectivo.
       //
+      //    Una venta de $30.000 cobrada $20.000 por transferencia y $10.000 en
+      //    efectivo aumenta el cajon en $10.000. Es el caso que da sentido a
+      //    todo el objetivo, y tiene su prueba.
+      //
+      //    Se crea UN movimiento por medio, no uno por venta: asi el listado
+      //    de caja muestra como se cobro de verdad, y el esperado del turno
+      //    suma exactamente lo que entro.
+      for (const pago of pagos) {
+        await tx.cashRegisterMovement.create({
+          data: {
+            branchId,
+            userId: session.userId,
+            amount: pago.amount,
+            paymentMethod: pago.method,
+            description: `Venta #${venta.id}`,
+            type: 'sale',
+            saleId: venta.id,
+            shiftId: turno?.id ?? null,
+          },
+        })
+      }
+
+      const enEfectivo = sumar(...pagos.filter((p) => esEfectivo(p.method)).map((p) => p.amount))
+
       //    `increment` se traduce a `SET currentCash = currentCash + $1`, que
       //    es atomico. La version anterior leia el saldo, sumaba en JavaScript
       //    y escribia el resultado: dos ventas simultaneas leian el mismo
       //    valor y una de las dos se perdia.
-      if (input.paymentMethod === 'efectivo') {
+      if (!esCero(enEfectivo)) {
         await tx.branch.update({
           where: { id: branchId },
-          data: { currentCash: { increment: total } },
+          data: { currentCash: { increment: enEfectivo } },
         })
       }
 
@@ -224,6 +334,17 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         subtotal: aMonto(i.subtotal),
       }))
 
+      const pagosParaMostrar = pagos.map((p) => ({
+        method: p.method,
+        label: etiquetaDeMedio(p.method),
+        amount: aMonto(p.amount),
+        cashReceived: p.cashReceived === null ? null : aMonto(p.cashReceived),
+        changeGiven: p.changeGiven === null ? null : aMonto(p.changeGiven),
+        reference: p.reference,
+      }))
+
+      const vuelto = sumar(...pagos.map((p) => p.changeGiven ?? CERO_D))
+
       await audit(tx, {
         userId: session.userId,
         branchId: session.branchId,
@@ -235,7 +356,8 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
           branchId,
           turno: turno?.id ?? null,
           total: aMonto(total),
-          paymentMethod: input.paymentMethod,
+          pagos: pagosParaMostrar,
+          enEfectivo: aMonto(enEfectivo),
           items: itemsParaMostrar,
         },
         origin: 'POST /api/sales',
@@ -246,7 +368,9 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         total: aMonto(total),
         date: venta.date,
         items: itemsParaMostrar,
-        paymentMethod: input.paymentMethod,
+        payments: pagosParaMostrar,
+        cashCollected: aMonto(enEfectivo),
+        changeGiven: aMonto(vuelto),
       }
     },
     { timeout: 15_000, maxWait: 15_000 },
@@ -346,7 +470,7 @@ export async function cancelSale(
           },
         })
 
-        if (mov.paymentMethod === 'efectivo') {
+        if (esEfectivo(mov.paymentMethod)) {
           efectivoRevertido = sumar(efectivoRevertido, mov.amount)
         }
       }

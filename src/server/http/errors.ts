@@ -53,6 +53,8 @@ export type ErrorCode =
   | 'SHIFT_ALREADY_CLOSED'
   | 'LEGACY_SHIFT'
   | 'DIFFERENCE_NEEDS_AUTHORIZATION'
+  // Pagos de una venta.
+  | 'PAYMENTS_DO_NOT_MATCH_TOTAL'
 
 /** Forma exacta del cuerpo de error. Compartida con el cliente. */
 export interface ApiErrorBody {

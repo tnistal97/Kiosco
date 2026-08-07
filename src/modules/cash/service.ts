@@ -30,6 +30,7 @@ import {
   type Dinero,
 } from '@/server/money'
 import { saldoEsperadoDe, turnoAbiertoDe, turnoParaOperar } from './service.turnos'
+import { esEfectivo, MEDIO_EFECTIVO } from '@/modules/sales/payment-methods'
 
 const CAMPOS_MOVIMIENTO = {
   id: true,
@@ -146,7 +147,7 @@ export async function saldoActual(session: Session): Promise<Saldo> {
   const hoy = await prisma.cashRegisterMovement.aggregate({
     where: {
       branchId: session.branchId,
-      paymentMethod: 'efectivo',
+      paymentMethod: MEDIO_EFECTIVO,
       date: { gte: inicioHoy },
     },
     _sum: { amount: true },
@@ -183,7 +184,7 @@ export async function registrarMovimientoManual(
 ): Promise<MovimientoCreado> {
   // Un retiro o un deposito solo tienen sentido en efectivo: mueven el dinero
   // fisico del cajon.
-  if (input.movementType !== 'ingreso' && input.paymentMethod !== 'efectivo') {
+  if (input.movementType !== 'ingreso' && !esEfectivo(input.paymentMethod)) {
     throw invalid('Los retiros y depositos solo aplican a movimientos en efectivo')
   }
 
@@ -194,7 +195,7 @@ export async function registrarMovimientoManual(
   return prisma.$transaction(async (tx) => {
     const turno = await turnoParaOperar(tx, session.branchId)
 
-    if (input.paymentMethod === 'efectivo') {
+    if (esEfectivo(input.paymentMethod)) {
       // El retiro se comprueba contra el TURNO, no contra el acumulado
       // historico: lo que se puede sacar del cajon es lo que hay en el cajon.
       // Antes se comparaba con `currentCash` y se podia retirar dinero de
