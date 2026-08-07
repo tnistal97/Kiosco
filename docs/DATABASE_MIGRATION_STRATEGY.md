@@ -41,11 +41,22 @@ esquema y esa información no se recupera después.
 
 ### Cadena oficial
 
-| Orden | Migración                                 | Qué hace                                                                                                                             |
-| ----- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | `20250605201717_add_value_to_product`     | **Baseline.** Crea las trece tablas. Es lo que hay hoy en el servidor.                                                               |
-| 2     | `20260806120000_phase0_security_baseline` | Fase 0. `User.isActive`, `sessionVersion`, estado de anulación de ventas, `CashRegisterMovement.saleId`, dos CHECK y cuatro índices. |
-| 3     | `20260806160000_phase1_audit_context`     | Fase 1. `AuditLog.branchId`, `requestId`, `ip`, `reason`, `result`, un CHECK y tres índices.                                         |
+| Orden | Migración                                     | Qué hace                                                                                                                             |
+| ----- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | `20250605201717_add_value_to_product`         | **Baseline.** Crea las trece tablas. Es lo que hay hoy en el servidor.                                                               |
+| 2     | `20260806120000_phase0_security_baseline`     | Fase 0. `User.isActive`, `sessionVersion`, estado de anulación de ventas, `CashRegisterMovement.saleId`, dos CHECK y cuatro índices. |
+| 3     | `20260806160000_phase1_audit_context`         | Fase 1. `AuditLog.branchId`, `requestId`, `ip`, `reason`, `result`, un CHECK y tres índices.                                         |
+| 4     | `20260806190000_phase2_product_active`        | Fase 2. `Product.isActive` y su índice.                                                                                              |
+| 5     | `20260806193000_phase2_cash_count_difference` | Fase 2. `CashCount.expected` y `CashCount.difference`, calculados por el servidor.                                                   |
+| 6     | `20260807100000_phase3_decimal_money`         | Fase 3. **La única no aditiva.** Siete columnas de `double precision` a `numeric(14,2)`. Ver PHASE3_MONEY_MIGRATION.md.              |
+| 7     | `20260807110000_phase3_cash_shifts`           | Fase 3. `CashShift`, dos índices únicos parciales, `shiftId` en movimientos y arqueos, turno `legacy` para lo anterior.              |
+| 8     | `20260807120000_phase3_sale_payments`         | Fase 3. `Sale.total`, `SalePayment`, un pago por venta histórica, vocabulario único de medios de pago.                               |
+| 9     | `20260807130000_phase3_stock_ledger`          | Fase 3A. `StockMovement` con disparador de inmutabilidad, `Product.minimumStock`, un `INITIAL` por saldo existente.                  |
+
+**Solo la sexta es no aditiva.** Todas las demás agregan y no tocan lo que ya
+había, así que el código anterior sigue funcionando sobre el esquema nuevo. La
+del dinero exige desplegar el código PRIMERO y la migración después; está
+explicado en `PHASE3_MONEY_MIGRATION.md` y no se repite acá.
 
 ### Archivadas
 
@@ -213,23 +224,30 @@ restaurar deja la base en un estado que nadie puede describir.
 
 ## Qué comprueba la prueba automatizada
 
-| Caso               | Qué verifica                                                             |
-| ------------------ | ------------------------------------------------------------------------ |
-| Cadena oficial     | Contiene exactamente las tres migraciones y ninguna archivada            |
-| Cadena oficial     | Ninguna sentencia destructiva fuera de comentario                        |
-| Instalación nueva  | `migrate deploy` sobre base vacía termina bien                           |
-| Instalación nueva  | `migrate diff` no detecta deriva contra `schema.prisma`                  |
-| Instalación nueva  | Existen las doce tablas del dominio                                      |
-| Instalación nueva  | Existen los tres CHECK y los seis índices                                |
-| Instalación nueva  | Se puede insertar sucursal, rol, usuario y venta                         |
-| Instalación nueva  | Un estado de venta inventado se rechaza                                  |
-| Instalación nueva  | Una anulación sin motivo ni responsable se rechaza                       |
-| Instalación nueva  | Una anulación completa se acepta                                         |
-| Servidor existente | Parte del esquema de junio con las siete registradas                     |
-| Servidor existente | Se aplican solo las dos nuevas                                           |
-| Servidor existente | Los datos previos siguen ahí                                             |
-| Servidor existente | Sin deriva contra `schema.prisma`                                        |
-| Servidor existente | Las cinco columnas nuevas de `AuditLog` están, y `result` no admite null |
+| Caso                   | Qué verifica                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| Cadena oficial         | Contiene exactamente las nueve migraciones y ninguna archivada                               |
+| Cadena oficial         | Ninguna sentencia destructiva fuera de comentario                                            |
+| Instalación nueva      | `migrate deploy` sobre base vacía termina bien                                               |
+| Instalación nueva      | `migrate diff` no detecta deriva contra `schema.prisma`                                      |
+| Instalación nueva      | Existen las tablas del dominio                                                               |
+| Instalación nueva      | Existen los CHECK y los índices                                                              |
+| Instalación nueva      | Se puede insertar sucursal, rol, usuario y venta                                             |
+| Instalación nueva      | Un estado de venta inventado se rechaza                                                      |
+| Instalación nueva      | Una anulación sin motivo ni responsable se rechaza                                           |
+| Instalación nueva      | Una anulación completa se acepta                                                             |
+| Instalación nueva      | El dinero quedó en `numeric(14,2)` y nada en `double precision`                              |
+| Servidor existente     | Parte del esquema de junio con las siete registradas                                         |
+| Servidor existente     | Se aplican solo las nuevas                                                                   |
+| Servidor existente     | Los datos previos siguen ahí                                                                 |
+| Servidor existente     | El residuo de punto flotante se limpia sin perder el valor                                   |
+| Servidor existente     | Sin deriva contra `schema.prisma`                                                            |
+| Servidor existente     | Las cinco columnas nuevas de `AuditLog` están, y `result` no admite null                     |
+| Servidor existente     | El stock existente se convierte en `INITIAL`, con fecha de migración y sin inventar historia |
+| Servidor existente     | El libro cuadra con el stock desde el primer día                                             |
+| Servidor existente     | Volver a correr el relleno de `INITIAL` no duplica nada                                      |
+| Servidor existente     | `UPDATE` y `DELETE` sobre `StockMovement` fallan, incluso con SQL directo                    |
+| Servidor con negativos | La migración del libro **aborta** y explica qué filas revisar, sin dejar nada creado         |
 
 Las bases de prueba se llaman `*_migtest` y se destruyen al terminar. El
 nombre no es decorativo: la función que las borra se niega a tocar cualquier

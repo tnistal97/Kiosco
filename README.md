@@ -16,9 +16,16 @@ códigos de barras por cámara y por lector USB.
   precio tomado del catálogo.
 - **Anulación** — lógica, con motivo obligatorio, restitución de stock y
   contramovimiento de caja. Nunca se borra una venta.
-- **Caja** — movimientos, arqueos, saldo por sucursal.
-- **Productos y stock** — catálogo con categorías y proveedores, ajustes de
-  inventario con motivo y auditoría.
+- **Caja** — turnos con apertura y cierre, movimientos, arqueos y diferencia
+  calculada por el servidor.
+- **Pagos** — uno o varios por venta, con vuelto. Solo el efectivo mueve el
+  cajón: $20.000 por transferencia más $10.000 en efectivo suben la caja
+  $10.000.
+- **Productos y stock** — catálogo con categorías y proveedores, mínimo de
+  reposición por producto y alertas de agotado y bajo mínimo.
+- **Libro de inventario** — cada venta, anulación y ajuste deja un movimiento
+  con el saldo anterior y el resultante. No se edita ni se borra: los errores
+  se corrigen con otro movimiento.
 - **Administración** — usuarios y roles, reporte de ventas.
 - **Auditoría** — bitácora de cada operación, con usuario, sucursal, motivo,
   identificador de petición y resultado.
@@ -165,6 +172,9 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 | [ARCHITECTURE_PROPOSAL.md](docs/ARCHITECTURE_PROPOSAL.md)             | Hacia dónde va el esquema y por qué             |
 | [QUALITY_STRATEGY.md](docs/QUALITY_STRATEGY.md)                       | Herramientas, umbrales y decisiones de calidad  |
 | [PERMISSIONS_MATRIX.md](docs/PERMISSIONS_MATRIX.md)                   | Qué puede hacer cada rol y qué prueba lo cubre  |
+| [INVENTORY_LEDGER.md](docs/INVENTORY_LEDGER.md)                       | Cómo se mueve el stock y por qué no se edita    |
+| [CASH_SHIFT_MODEL.md](docs/CASH_SHIFT_MODEL.md)                       | Turnos de caja: qué se deriva y qué se guarda   |
+| [PHASE3_MONEY_MIGRATION.md](docs/PHASE3_MONEY_MIGRATION.md)           | Por qué el dinero es Decimal y cómo se migró    |
 | [DATABASE_MIGRATION_STRATEGY.md](docs/DATABASE_MIGRATION_STRATEGY.md) | Cómo aplicar migraciones sin romper el servidor |
 | [DEPENDENCY_SECURITY.md](docs/DEPENDENCY_SECURITY.md)                 | Qué avisos hubo y cómo se cerraron              |
 | [PHASE0_DECISIONS.md](docs/PHASE0_DECISIONS.md)                       | Qué quedó a medio camino a propósito, y por qué |
