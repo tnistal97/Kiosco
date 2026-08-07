@@ -123,7 +123,19 @@ describe('Navegacion filtrada por permiso', () => {
   it('el administrador ve todas las secciones', () => {
     const grupos = navegacionPara(new Set(SESION_ADMIN.permissions))
     const titulos = grupos.map((g) => g.title)
-    expect(titulos).toEqual([undefined, 'Operación', 'Catálogo', 'Administración'])
+    // "Catálogo" pasó a llamarse "Inventario" en la Fase 3A: el grupo dejó de
+    // ser una lista de productos y pasó a incluir el libro de movimientos.
+    expect(titulos).toEqual([undefined, 'Operación', 'Inventario', 'Administración'])
+  })
+
+  it('el cajero no ve el libro de movimientos', () => {
+    // Ve el stock --lo necesita para vender-- pero no quién ajustó qué: eso es
+    // información de control, no de mostrador.
+    const grupos = navegacionPara(new Set(SESION_CAJERO.permissions))
+    const rutas = grupos.flatMap((g) => g.items.map((i) => i.href))
+
+    expect(rutas).toContain('/stock')
+    expect(rutas).not.toContain('/stock/movimientos')
   })
 
   it('el cajero no ve Auditoria ni Usuarios', () => {

@@ -42,10 +42,15 @@ export const NAVEGACION: GrupoNav[] = [
     ],
   },
   {
-    title: 'Catálogo',
+    title: 'Inventario',
     items: [
       { href: '/productos', label: 'Productos', permission: 'products.view', matchPrefix: true },
       { href: '/stock', label: 'Stock', permission: 'stock.view' },
+      {
+        href: '/stock/movimientos',
+        label: 'Movimientos',
+        permission: 'inventory.movements.view',
+      },
     ],
   },
   {
