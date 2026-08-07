@@ -10,13 +10,12 @@ import { paginationQuerySchema, sortSchema } from '@/server/http/pagination'
 export const STOCK_MAX = 1_000_000
 
 /**
- * Umbral por debajo del cual un producto se considera con stock critico.
+ * Unidades por debajo de las cuales hay que reponer.
  *
- * Vive aca y no en el servicio a proposito: la pantalla de productos lo
- * necesita, y este modulo solo importa zod. Importarlo del servicio
- * arrastraria Prisma al paquete del navegador.
+ * Cero significa sin minimo configurado. Ver
+ * `@/modules/inventory/minimum`, que es donde vive la regla de estados.
  */
-export const STOCK_CRITICO = 10
+export const minimoSchema = z.number().int().min(0).max(STOCK_MAX)
 
 /**
  * Codigo de barras.
@@ -49,6 +48,7 @@ export const crearProductoSchema = z
     categoryId: idSchema,
     supplierId: idSchema.nullable().optional(),
     totalStock: stockInicialSchema.default(0),
+    minimumStock: minimoSchema.default(0),
   })
   .strict()
 
@@ -68,6 +68,7 @@ export const editarProductoSchema = z
     categoryId: idSchema.optional(),
     supplierId: idSchema.nullable().optional(),
     isActive: z.boolean().optional(),
+    minimumStock: minimoSchema.optional(),
     totalStock: stockInicialSchema.optional(),
     /**
      * Motivo del ajuste de inventario. Obligatorio si viene `totalStock`.
@@ -112,7 +113,10 @@ export const listarProductosQuerySchema = paginationQuerySchema
     categoryId: idSchema.optional(),
     ids: idsSchema,
     estado: z.enum(ESTADOS_PRODUCTO).default('todos'),
-    /** Solo productos por debajo del umbral de stock critico. */
+    /**
+     * Solo productos que llegaron a su minimo configurado y todavia tienen
+     * unidades. Un producto sin minimo (cero) nunca aparece aca.
+     */
     lowStock: z
       .enum(['true', 'false'])
       .default('false')

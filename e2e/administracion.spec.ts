@@ -101,9 +101,14 @@ test.describe('Ajustar stock', () => {
     await salir(page)
 
     // El administrador lo encuentra en la bitacora, con su motivo.
+    //
+    // La entidad es `StockMovement` desde la Fase 3A: lo que ocurrio fue un
+    // movimiento, y el `recordId` de la bitacora apunta a la fila del libro
+    // --que es inmutable-- en vez de a la fila de saldo, que cambia todo el
+    // tiempo. Ver docs/INVENTORY_LEDGER.md, seccion 6.
     await entrar(page, 'admin')
     await page.goto('/auditoria')
-    await page.getByLabel('Entidad').selectOption('BranchStock')
+    await page.getByLabel('Entidad').selectOption('StockMovement')
     await page.waitForTimeout(1200)
 
     // La primera entrada de la lista es la mas reciente: la que se acaba de

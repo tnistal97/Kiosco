@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { cn } from './cn'
+import { estadoDeStock } from '@/modules/inventory/minimum'
 
 /**
  * Etiquetas de estado.
@@ -87,19 +88,29 @@ export function SaleStatusBadge({ status }: { status: string }) {
   )
 }
 
-/** Estados de stock, con el mismo criterio en catalogo y en caja. */
-export function StockBadge({ quantity, critical = 10 }: { quantity: number; critical?: number }) {
-  if (quantity <= 0) {
+/**
+ * Estados de stock, con el mismo criterio en catalogo, caja e inventario.
+ *
+ * El umbral es el MINIMO DEL PRODUCTO, no una constante global. Hasta la Fase
+ * 2 eran diez unidades para todo --el agua mineral y el fernet-- y por eso el
+ * aviso no significaba nada. Con `minimum = 0` el producto solo puede estar
+ * agotado o en stock: nadie configuro cuanto tiene que haber, y el sistema no
+ * lo inventa. Ver docs/INVENTORY_LEDGER.md, seccion 8.
+ */
+export function StockBadge({ quantity, minimum = 0 }: { quantity: number; minimum?: number }) {
+  const estado = estadoDeStock(quantity, minimum)
+
+  if (estado === 'OUT') {
     return (
       <StatusBadge tone="danger" glyph="✕">
         Agotado
       </StatusBadge>
     )
   }
-  if (quantity <= critical) {
+  if (estado === 'LOW') {
     return (
       <StatusBadge tone="warning" glyph="▲">
-        Quedan {quantity}
+        Quedan {quantity} · mín. {minimum}
       </StatusBadge>
     )
   }

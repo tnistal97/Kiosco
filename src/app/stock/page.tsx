@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
+  Alert,
   Button,
+  ButtonLink,
   Card,
   CardList,
   CardListItem,
@@ -27,7 +29,8 @@ import {
 import { DialogoAjusteStock } from '@/components/stock/DialogoAjusteStock'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { useProducts, type Product } from '@/hooks/useProducts'
-import { STOCK_CRITICO } from '@/modules/products/schemas'
+import { apiRequest } from '@/lib/api-client'
+import { parseReposicion, type ReposicionDTO } from '@/modules/inventory/dto'
 
 const POR_PAGINA = 25
 
@@ -43,6 +46,7 @@ const POR_PAGINA = 25
  */
 export default function StockPage() {
   const puedeAjustar = usePermiso('stock.adjust')
+  const puedeVerMovimientos = usePermiso('inventory.movements.view')
 
   const {
     products,
@@ -62,26 +66,61 @@ export default function StockPage() {
 
   const [ajustando, setAjustando] = useState<Product | null>(null)
 
-  const bajos = products.filter((p) => p.totalStock > 0 && p.totalStock < STOCK_CRITICO).length
-  const agotados = products.filter((p) => p.totalStock <= 0).length
+  // Los tres números son de TODA la sucursal, no de la página que se está
+  // viendo. Contar sobre `products` daba "2 agotados" cuando había 40, y esa
+  // clase de número es peor que no mostrar ninguno.
+  const [reposicion, setReposicion] = useState<ReposicionDTO | null>(null)
+
+  const recargarReposicion = useCallback(() => {
+    apiRequest('/api/inventory/replenishment', { parse: parseReposicion })
+      .then(setReposicion)
+      .catch(() => {
+        setReposicion(null)
+      })
+  }, [])
+
+  useEffect(() => {
+    recargarReposicion()
+  }, [recargarReposicion])
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-5">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <MetricCard label="Productos en esta página" value={products.length} />
         <MetricCard
-          label="Con stock bajo"
-          value={bajos}
-          tone={bajos > 0 ? 'warning' : 'neutral'}
-          detail={`Menos de ${STOCK_CRITICO} unidades`}
+          label="Bajo mínimo"
+          value={reposicion?.bajoMinimo ?? 0}
+          tone={(reposicion?.bajoMinimo ?? 0) > 0 ? 'warning' : 'neutral'}
+          detail="Llegaron al mínimo configurado"
         />
         <MetricCard
           label="Agotados"
-          value={agotados}
-          tone={agotados > 0 ? 'danger' : 'neutral'}
+          value={reposicion?.agotados ?? 0}
+          tone={(reposicion?.agotados ?? 0) > 0 ? 'danger' : 'neutral'}
           detail="No se pueden vender"
         />
       </div>
+
+      {/* El aviso de que nadie configuró mínimos. Sin esto, "0 bajo mínimo" se
+          lee como "está todo bien", cuando lo que pasa es que el sistema no
+          sabe cuánto tiene que haber de nada. */}
+      {reposicion !== null && reposicion.sinMinimo > 0 && (
+        <Alert tone="info" title="Todavía no hay mínimos configurados">
+          {reposicion.sinMinimo === 1
+            ? 'Un producto activo no tiene mínimo de reposición.'
+            : `${reposicion.sinMinimo} productos activos no tienen mínimo de reposición.`}{' '}
+          Hasta que se los cargues, el aviso de stock bajo no puede sonar para ellos: solo vas a ver
+          los que ya están agotados. Se carga desde la ficha de cada producto.
+        </Alert>
+      )}
+
+      {puedeVerMovimientos && (
+        <div className="flex justify-end">
+          <ButtonLink href="/stock/movimientos" variant="secondary" size="sm">
+            Ver movimientos
+          </ButtonLink>
+        </div>
+      )}
 
       <Card padded={false}>
         <div className="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-end">
@@ -130,7 +169,7 @@ export default function StockPage() {
               className="w-auto"
             >
               <option value="">Todo el inventario</option>
-              <option value="bajos">Solo stock bajo</option>
+              <option value="bajos">Solo bajo mínimo</option>
               <option value="agotados">Solo agotados</option>
             </Select>
           </div>
@@ -173,7 +212,7 @@ export default function StockPage() {
                           </TD>
                           <TD className="text-ink-muted">{p.category.name}</TD>
                           <TD>
-                            <StockBadge quantity={p.totalStock} critical={STOCK_CRITICO} />
+                            <StockBadge quantity={p.totalStock} minimum={p.minimumStock} />
                           </TD>
                           <TD align="right">
                             <Money amount={p.price} size="sm" tone="muted" />
@@ -206,7 +245,7 @@ export default function StockPage() {
                         <p className="truncate text-sm font-medium text-ink">{p.name}</p>
                         <p className="mt-0.5 text-xs text-ink-faint">{p.category.name}</p>
                         <div className="mt-2">
-                          <StockBadge quantity={p.totalStock} critical={STOCK_CRITICO} />
+                          <StockBadge quantity={p.totalStock} minimum={p.minimumStock} />
                         </div>
                       </div>
                       {puedeAjustar && (
@@ -246,8 +285,9 @@ export default function StockPage() {
         }}
         onAjustado={() => {
           setAjustando(null)
-          aviso.ok('Stock ajustado. Quedó registrado en la bitácora.')
+          aviso.ok('Stock ajustado. Quedó registrado en el libro de inventario.')
           void fetchProducts()
+          recargarReposicion()
         }}
       />
     </div>

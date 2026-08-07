@@ -40,7 +40,28 @@ export const PERMISSIONS = [
   'categories.manage',
   // Inventario
   'stock.view',
+  /**
+   * Emitir movimientos de stock: ajustes, perdidas, roturas, consumo interno.
+   *
+   * Es el `inventory.adjust` del libro de inventario. Existe desde la Fase 0
+   * con este nombre, lo usan las dos rutas de ajuste y figura en la matriz;
+   * renombrarlo hubiera tocado siete archivos para dejar el sistema igual.
+   *
+   * NO se separo en `inventory.loss` e `inventory.breakage`: quien puede
+   * emitir un ajuste ya puede sacar unidades del sistema sin venderlas, asi
+   * que obligarlo a declarar "perdida" en vez de "ajuste" no le impide nada.
+   * Lo que importa es que el tipo quede registrado y auditado, y eso si esta.
+   * Ver docs/INVENTORY_LEDGER.md, seccion 10.
+   */
   'stock.adjust',
+  /**
+   * Ver el libro de movimientos.
+   *
+   * Separado de `stock.view` a proposito: el cajero necesita saber cuanto hay
+   * para vender, pero el historial de quien ajusto que es informacion de
+   * control, no de mostrador.
+   */
+  'inventory.movements.view',
   // Caja
   'cash.view',
   'cash.movement.create',
@@ -117,6 +138,7 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'categories.manage',
     'stock.view',
     'stock.adjust',
+    'inventory.movements.view',
     'cash.view',
     'cash.movement.create',
     'cash.count.create',
@@ -141,6 +163,7 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'cash.movement.create',
     'reports.view',
     'stock.adjust',
+    'inventory.movements.view',
   ],
 
   cajero: PERFIL_CAJA,
@@ -151,7 +174,7 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
    */
   vendedor: PERFIL_CAJA,
 
-  repositor: ['products.view', 'stock.view', 'stock.adjust'],
+  repositor: ['products.view', 'stock.view', 'stock.adjust', 'inventory.movements.view'],
 
   /**
    * Compras. Ve el catalogo y los proveedores y da entrada a la mercaderia.
@@ -170,6 +193,7 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'categories.manage',
     'stock.view',
     'stock.adjust',
+    'inventory.movements.view',
     'suppliers.view',
     'suppliers.manage',
     'reports.view',
@@ -185,6 +209,7 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'sales.view',
     'products.view',
     'stock.view',
+    'inventory.movements.view',
     'cash.view',
     'reports.view',
     'audit.view',

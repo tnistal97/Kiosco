@@ -30,6 +30,7 @@ import {
 import { esEfectivo, etiquetaDeMedio, normalizarMedio, type MedioDePago } from './payment-methods'
 import type { PagoInput } from './schemas'
 import { turnoAbiertoDe, turnoParaOperar } from '@/modules/cash/service.turnos'
+import { applyStockMovement } from '@/modules/inventory/service'
 
 export interface SaleLineInput {
   productId: number
@@ -208,35 +209,7 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         })
       }
 
-      // 2) Descuento de stock condicional y atomico.
-      //
-      //    Una comprobacion previa seguida de un decremento NO alcanza: entre
-      //    la lectura y la escritura otra venta puede llevarse las unidades.
-      //    Este UPDATE comprueba y descuenta en la misma sentencia, y PostgreSQL
-      //    reevalua la condicion despues de esperar el bloqueo de la fila.
-      //    Si devuelve 0 filas, no habia stock suficiente.
-      for (const linea of pedido) {
-        const filas = await tx.$executeRaw`
-          UPDATE "BranchStock"
-          SET "quantity" = "quantity" - ${linea.quantity}
-          WHERE "branchId" = ${branchId}
-            AND "productId" = ${linea.productId}
-            AND "quantity" >= ${linea.quantity}
-        `
-
-        if (filas !== 1) {
-          const actual = await tx.branchStock.findUnique({
-            where: { branchId_productId: { branchId, productId: linea.productId } },
-            select: { quantity: true },
-          })
-          throw conflict(
-            `Stock insuficiente de "${linea.producto.name}": se pidieron ${linea.quantity} y hay ${actual?.quantity ?? 0}`,
-            { code: 'INSUFFICIENT_STOCK' },
-          )
-        }
-      }
-
-      // 3) Precios y total, siempre desde la base y siempre en Decimal.
+      // 2) Precios y total, siempre desde la base y siempre en Decimal.
       //
       //    El subtotal se redondea a dos decimales porque es una linea del
       //    ticket --se puede leer y se puede cobrar--. El total es la suma de
@@ -253,14 +226,14 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
 
       const total = sumar(...itemsConPrecio.map((i) => i.subtotal))
 
-      // 4) Los pagos, comprobados contra el total.
+      // 3) Los pagos, comprobados contra el total.
       //
       //    Es LA regla de la entidad: la suma de los pagos es EXACTAMENTE el
       //    total. No "aproximadamente": exactamente. Por eso el dinero se
       //    migro a Decimal antes que esto.
       const pagos = resolverPagos(input, total)
 
-      // 5) Venta, items y pagos, en una sola escritura.
+      // 4) Venta, items y pagos, en una sola escritura.
       const venta = await tx.sale.create({
         data: {
           userId: session.userId,
@@ -285,6 +258,36 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         },
         select: { id: true, date: true },
       })
+
+      // 5) El stock, por el libro de inventario.
+      //
+      //    Ya no hay un UPDATE aca: lo aplica `applyStockMovement`, que es el
+      //    unico lugar de todo `src/` autorizado a escribir sobre BranchStock.
+      //    Sigue siendo condicional y atomico --comprueba, descuenta y dice
+      //    cuanto habia, en una sola sentencia-- y ademas deja la fila del
+      //    libro con el saldo anterior y el resultante.
+      //
+      //    Va DESPUES de crear la venta porque el movimiento la referencia:
+      //    sin el id, el historial diria "-2" sin decir por que. Si el stock
+      //    no alcanza, la transaccion entera se deshace y la venta no queda.
+      //
+      //    El orden por id de producto viene de `consolidar` y no es
+      //    cosmetico: dos ventas simultaneas toman los bloqueos de fila en el
+      //    mismo orden y por lo tanto no pueden quedar en interbloqueo.
+      //
+      //    Sin auditoria propia: la venta ya se audita entera unas lineas mas
+      //    abajo. Ver docs/INVENTORY_LEDGER.md, seccion 6.
+      for (const linea of pedido) {
+        await applyStockMovement(tx, {
+          branchId,
+          productId: linea.productId,
+          type: 'SALE',
+          quantity: -linea.quantity,
+          userId: session.userId,
+          referenceType: 'Sale',
+          referenceId: venta.id,
+        })
+      }
 
       // 6) La caja recibe SOLO el efectivo.
       //
@@ -425,18 +428,30 @@ export async function cancelSale(
 
       if (canceladas !== 1) throw conflict('La venta ya estaba anulada')
 
-      // Restauracion de stock, item por item.
+      // Restauracion de stock, item por item, por el libro de inventario.
+      //
+      // El movimiento inverso NO edita ni borra el SALE original: lo deja
+      // donde esta y agrega su opuesto. En el historial del producto se lee
+      // exactamente lo que paso:
+      //
+      //   Venta #123          -2   38 → 36
+      //   Anulacion venta #123 +2   36 → 38
       const items = await tx.saleItem.findMany({
         where: { saleId },
         select: { productId: true, quantity: true, price: true },
       })
 
       for (const item of [...items].sort((a, b) => a.productId - b.productId)) {
-        await tx.$executeRaw`
-          UPDATE "BranchStock"
-          SET "quantity" = "quantity" + ${item.quantity}
-          WHERE "branchId" = ${venta.branchId} AND "productId" = ${item.productId}
-        `
+        await applyStockMovement(tx, {
+          branchId: venta.branchId,
+          productId: item.productId,
+          type: 'SALE_CANCEL',
+          quantity: item.quantity,
+          userId: session.userId,
+          reason: motivo,
+          referenceType: 'Sale',
+          referenceId: saleId,
+        })
       }
 
       // Reversion de caja: contramovimiento, no borrado del original.

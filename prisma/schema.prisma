@@ -8,20 +8,21 @@ datasource db {
 }
 
 model Branch {
-  id            Int                    @id @default(autoincrement())
-  name          String                 @unique
-  address       String?
-  createdAt     DateTime               @default(now())
-  email         String?
-  phone         String?
-  products      BranchStock[]
-  sales         Sale[]
-  users         User[]
-  cashMovements CashRegisterMovement[]
-  cashCounts    CashCount[]
-  productsList  Product[]
-  auditLogs     AuditLog[]
-  cashShifts    CashShift[]
+  id             Int                    @id @default(autoincrement())
+  name           String                 @unique
+  address        String?
+  createdAt      DateTime               @default(now())
+  email          String?
+  phone          String?
+  products       BranchStock[]
+  sales          Sale[]
+  users          User[]
+  cashMovements  CashRegisterMovement[]
+  cashCounts     CashCount[]
+  productsList   Product[]
+  auditLogs      AuditLog[]
+  cashShifts     CashShift[]
+  stockMovements StockMovement[]
 
   /// Efectivo acumulado desde que se instalo el sistema.
   ///
@@ -134,6 +135,7 @@ model User {
   sales            Sale[]                 @relation("SaleCreatedBy")
   canceledSales    Sale[]                 @relation("SaleCanceledBy")
   stockChecks      StockCheck[]
+  stockMovements   StockMovement[]
   cashMovements    CashRegisterMovement[] // ← relación inversa agregada
   shiftsOpened     CashShift[]            @relation("ShiftOpenedBy")
   shiftsClosed     CashShift[]            @relation("ShiftClosedBy")
@@ -171,14 +173,95 @@ model Product {
   /// falsearia los reportes de meses anteriores.
   isActive Boolean @default(true)
 
+  /// Unidades por debajo de las cuales hay que reponer.
+  ///
+  /// Cero significa SIN MINIMO CONFIGURADO, y con cero el estado `LOW` no se
+  /// cumple nunca: `quantity > 0 && quantity <= 0` es imposible. Es el valor
+  /// que la migracion le pone a todo el catalogo existente, a proposito: el
+  /// sistema no sabe cuantos fideos quiere tener este almacen y no lo inventa.
+  ///
+  /// El estado (OK / LOW / OUT) NO se guarda: se calcula al leer. Ver
+  /// docs/INVENTORY_LEDGER.md.
+  minimumStock Int @default(0)
+
   stocks    BranchStock[]
   saleItems SaleItem[]
-  category  Category      @relation(fields: [categoryId], references: [id])
-  supplier  Supplier?     @relation(fields: [supplierId], references: [id])
-  branch    Branch        @relation(fields: [branchId], references: [id])
+  movements StockMovement[]
+  category  Category        @relation(fields: [categoryId], references: [id])
+  supplier  Supplier?       @relation(fields: [supplierId], references: [id])
+  branch    Branch          @relation(fields: [branchId], references: [id])
 
   /// La caja busca por sucursal y por estado en cada tecla.
   @@index([branchId, isActive])
+}
+
+/// Libro de movimientos de stock. Inmutable.
+///
+/// El stock deja de ser un numero y pasa a ser el saldo de un libro:
+///
+///   para todo producto:  suma(StockMovement.quantity) == BranchStock.quantity
+///
+/// `BranchStock.quantity` sigue existiendo --leer un saldo tiene que costar una
+/// fila, no una suma de dos anios-- pero ya no es la fuente de la verdad: es el
+/// saldo materializado de esta tabla.
+///
+/// Ninguna fila se edita ni se borra. Hay un disparador en la base que lo
+/// impide, no solo una convencion. Los errores se corrigen con otro movimiento.
+/// Ver docs/INVENTORY_LEDGER.md.
+model StockMovement {
+  id        Int @id @default(autoincrement())
+  branchId  Int
+  productId Int
+
+  /// INITIAL | SALE | SALE_CANCEL | MANUAL_ADJUSTMENT | LOSS | BREAKAGE |
+  /// INTERNAL_USE | PURCHASE_RECEIPT (reservado, Fase 3C).
+  ///
+  /// La base comprueba el tipo Y el signo que le corresponde: una venta que
+  /// aumente el stock no es un error que haya que buscar, es una fila que
+  /// PostgreSQL rechaza.
+  type String
+
+  /// Delta CON SIGNO. Una venta de 2 escribe -2; su anulacion, +2.
+  ///
+  /// Firmado y no absoluto para que `SUM(quantity)` sea la reconstruccion del
+  /// stock sin que la consulta tenga que conocer la tabla de signos.
+  quantity Int
+
+  /// Saldo antes y despues. Redundantes --el tercero se deduce de los otros
+  /// dos-- y guardados igual: asi una fila del historial se lee sin recorrer
+  /// las anteriores. La base obliga a que los tres numeros concuerden.
+  previousQuantity  Int
+  resultingQuantity Int
+
+  /// De donde vino: 'Sale' + id de la venta, 'BranchStock' + id del ajuste.
+  /// No es clave foranea --apunta a tablas distintas segun el tipo-- y por eso
+  /// solo la escribe el servidor.
+  referenceType String?
+  referenceId   Int?
+
+  /// Quien lo provoco. Siempre de la sesion verificada.
+  userId Int
+
+  /// Motivo declarado. Obligatorio en los ajustes; nulo en ventas y
+  /// anulaciones, donde el motivo vive en la venta.
+  reason String?
+
+  createdAt DateTime @default(now())
+
+  branch  Branch  @relation(fields: [branchId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  /// El historial de la sucursal, que es lo que abre la pantalla.
+  @@index([branchId, createdAt])
+  /// La ficha de un producto.
+  @@index([productId, createdAt])
+  /// Filtrar por tipo dentro de una sucursal.
+  @@index([branchId, type, createdAt])
+  /// "Que movio la venta #4832".
+  @@index([referenceType, referenceId])
+  /// Filtrar por quien.
+  @@index([userId])
 }
 
 model BranchStock {

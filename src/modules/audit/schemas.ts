@@ -11,9 +11,11 @@ export const TABLAS_AUDITADAS = [
   'User',
   'Product',
   'BranchStock',
+  'StockMovement',
   'Sale',
   'CashRegisterMovement',
   'CashCount',
+  'CashShift',
   'Branch',
   'Category',
   'Supplier',
@@ -29,6 +31,11 @@ export const ACCIONES_AUDITADAS = [
   'login_failed',
   'logout',
   'deny',
+  // Abrir y cerrar un turno no son "crear" y "actualizar": un cierre con
+  // diferencia es el evento que despues se busca, y buscarlo como "update de
+  // CashShift" no lo distingue de nada.
+  'open',
+  'close',
 ] as const
 
 export const consultarAuditoriaQuerySchema = paginationQuerySchema.extend({

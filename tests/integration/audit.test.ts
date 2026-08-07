@@ -141,8 +141,11 @@ describe('Eventos que deben quedar registrados', () => {
       },
     )
 
+    // Desde la Fase 3A el ajuste se audita como `StockMovement`, no como
+    // `BranchStock`: lo que ocurrio fue un movimiento, y la fila del libro es
+    // el registro al que hay que poder volver desde la bitacora.
     const log = await prisma.auditLog.findFirst({
-      where: { tableName: 'BranchStock' },
+      where: { tableName: 'StockMovement' },
       orderBy: { id: 'desc' },
     })
     expect(log).not.toBeNull()
@@ -151,10 +154,19 @@ describe('Eventos que deben quedar registrados', () => {
 
     const cambios = log?.changes as {
       before?: { quantity?: number }
-      after?: { quantity?: number }
+      after?: { quantity?: number; delta?: number; tipo?: string }
     }
     expect(cambios.before?.quantity).toBe(10)
     expect(cambios.after?.quantity).toBe(15)
+    expect(cambios.after?.delta, 'el snapshot dice cuanto se movio, no solo el resultado').toBe(5)
+    expect(cambios.after?.tipo).toBe('MANUAL_ADJUSTMENT')
+
+    // El `recordId` apunta al movimiento, que es inmutable: desde la bitacora
+    // se llega a la fila del libro y no al reves.
+    const movimiento = await prisma.stockMovement.findUnique({ where: { id: log?.recordId ?? 0 } })
+    expect(movimiento?.quantity).toBe(5)
+    expect(movimiento?.previousQuantity).toBe(10)
+    expect(movimiento?.resultingQuantity).toBe(15)
   })
 
   it('venta', async () => {

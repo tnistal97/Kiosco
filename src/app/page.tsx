@@ -22,7 +22,7 @@ import { CERO, esCero, esPositivo, type Monto } from '@/lib/money'
 import { parsePaginaProductos } from '@/modules/products/dto'
 import { parsePaginaVentas, type VentaDTO } from '@/modules/sales/dto'
 import { parseArqueos, parseSaldo, type ArqueoDTO } from '@/modules/cash/dto'
-import { STOCK_CRITICO } from '@/modules/products/schemas'
+import { parseReposicion, type ReposicionDTO } from '@/modules/inventory/dto'
 import type { Product } from '@/hooks/useProducts'
 
 /** YYYY-MM-DD de hoy, en hora local. */
@@ -39,7 +39,7 @@ interface Panel {
   recaudadoHoy: Monto
   ultimasVentas: VentaDTO[]
   bajos: Product[]
-  agotados: number
+  reposicion: ReposicionDTO
   ultimoArqueo: ArqueoDTO | null
 }
 
@@ -51,7 +51,7 @@ const VACIO: Panel = {
   recaudadoHoy: CERO,
   ultimasVentas: [],
   bajos: [],
-  agotados: 0,
+  reposicion: { agotados: 0, bajoMinimo: 0, sinMinimo: 0 },
   ultimoArqueo: null,
 }
 
@@ -120,6 +120,8 @@ export default function InicioPage() {
 
     if (verStock) {
       tareas.push(
+        // Los que hay que reponer, para la lista. Solo cinco: es un panel, no
+        // un informe.
         apiRequest('/api/products?lowStock=true&estado=activos&pageSize=5&sortBy=name', {
           parse: parsePaginaProductos,
         })
@@ -127,11 +129,12 @@ export default function InicioPage() {
             salida.bajos = p.data
           })
           .catch(() => undefined),
-        apiRequest('/api/products?sinStock=true&estado=activos&pageSize=1', {
-          parse: parsePaginaProductos,
-        })
-          .then((p) => {
-            salida.agotados = p.total
+        // Los tres numeros, contados por el servidor en una sola peticion.
+        // Antes eran dos consultas al catalogo que traian productos enteros
+        // para contarlos.
+        apiRequest('/api/inventory/replenishment', { parse: parseReposicion })
+          .then((r) => {
+            salida.reposicion = r
           })
           .catch(() => undefined),
       )
@@ -150,7 +153,7 @@ export default function InicioPage() {
     !cargando &&
     datos.ventasHoy === 0 &&
     datos.bajos.length === 0 &&
-    datos.agotados === 0 &&
+    datos.reposicion.agotados === 0 &&
     datos.ultimasVentas.length === 0
 
   return (
@@ -221,9 +224,15 @@ export default function InicioPage() {
             <MetricCard
               href="/stock"
               label="Faltantes"
-              value={datos.agotados + datos.bajos.length}
-              detail={`${datos.agotados} agotados · ${datos.bajos.length} por debajo de ${STOCK_CRITICO}`}
-              tone={datos.agotados > 0 ? 'danger' : datos.bajos.length > 0 ? 'warning' : 'success'}
+              value={datos.reposicion.agotados + datos.reposicion.bajoMinimo}
+              detail={`${datos.reposicion.agotados} agotados · ${datos.reposicion.bajoMinimo} bajo mínimo`}
+              tone={
+                datos.reposicion.agotados > 0
+                  ? 'danger'
+                  : datos.reposicion.bajoMinimo > 0
+                    ? 'warning'
+                    : 'success'
+              }
             />
           )}
         </div>
@@ -312,14 +321,18 @@ export default function InicioPage() {
               ) : datos.bajos.length === 0 ? (
                 <EmptyState
                   title="Nada por debajo del mínimo"
-                  description={`Ningún producto activo tiene menos de ${STOCK_CRITICO} unidades.`}
+                  description={
+                    datos.reposicion.sinMinimo > 0
+                      ? `Todavía no hay mínimos configurados: ${datos.reposicion.sinMinimo} producto(s) activos no tienen uno, así que este aviso no puede sonar para ellos.`
+                      : 'Ningún producto activo llegó a su mínimo.'
+                  }
                 />
               ) : (
                 <ul className="flex flex-col divide-y divide-line">
                   {datos.bajos.map((p) => (
                     <li key={p.id} className="flex items-center gap-3 py-2.5">
                       <span className="min-w-0 flex-1 truncate text-sm text-ink">{p.name}</span>
-                      <StockBadge quantity={p.totalStock} critical={STOCK_CRITICO} />
+                      <StockBadge quantity={p.totalStock} minimum={p.minimumStock} />
                     </li>
                   ))}
                 </ul>

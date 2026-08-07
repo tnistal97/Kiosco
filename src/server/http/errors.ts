@@ -43,6 +43,8 @@ export type ErrorCode =
   | 'SALE_ALREADY_CANCELED'
   | 'SALE_NOT_CANCELABLE'
   | 'PRODUCT_HAS_SALES'
+  /** Tiene historial en el libro de inventario: se da de baja, no se borra. */
+  | 'PRODUCT_HAS_MOVEMENTS'
   | 'DUPLICATE_BARCODE'
   | 'DUPLICATE_USERNAME'
   | 'INSUFFICIENT_CASH'

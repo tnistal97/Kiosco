@@ -1,0 +1,457 @@
+/**
+ * Servicio central de inventario.
+ *
+ * ES LA UNICA PUERTA. Ninguna otra parte de `src/` escribe sobre
+ * `BranchStock`: hay una regla de ESLint que lo impide, y este archivo es su
+ * unica excepcion declarada.
+ *
+ * La regla que gobierna el modulo: el stock no se modifica, se MUEVE. Cada
+ * cambio deja una fila en el libro con el saldo anterior, el delta y el saldo
+ * resultante, y la suma del libro tiene que dar siempre el saldo:
+ *
+ *   para todo producto:  suma(StockMovement.quantity) == BranchStock.quantity
+ *
+ * Ver docs/INVENTORY_LEDGER.md.
+ */
+
+import { prisma } from '@/lib/prisma'
+import type { Prisma } from '@prisma/client'
+import { audit as escribirAuditoria } from '@/server/audit/audit'
+import { conflict, invalid, notFound } from '@/server/http/errors'
+import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
+import type { Session } from '@/server/auth/session'
+import { STOCK_MAX } from '@/modules/products/schemas'
+import { SIGNO_DE_TIPO, esTipoValido, etiquetaDeTipo, type TipoMovimiento } from './movement-types'
+import type { Referencia } from './referencias'
+import type { ConsultarMovimientosQuery } from './schemas'
+
+/** Cliente de una transaccion. El servicio NO acepta el cliente global. */
+export type TxClient = Prisma.TransactionClient
+
+export interface EntradaMovimiento {
+  branchId: number
+  productId: number
+  type: TipoMovimiento
+  /** Delta CON SIGNO. Una venta de 2 unidades manda -2. */
+  quantity: number
+  userId: number
+  reason?: string | null
+  referenceType?: Referencia | null
+  referenceId?: number | null
+  /**
+   * Si ademas hay que dejar entrada en la bitacora de seguridad.
+   *
+   * Solo lo piden los ajustes, porque un ajuste ES el evento. Una venta ya se
+   * audita entera: emitir una entrada por linea convertiria una venta de
+   * quince productos en dieciseis filas que dicen lo mismo.
+   */
+  audit?: { origin: string } | null
+}
+
+export interface ResultadoMovimiento {
+  movementId: number
+  previousQuantity: number
+  resultingQuantity: number
+}
+
+/** Nombre para el mensaje de error. Se lee solo cuando algo falla. */
+async function nombreDe(tx: TxClient, productId: number): Promise<string> {
+  const p = await tx.product.findUnique({ where: { id: productId }, select: { name: true } })
+  return p?.name ?? `#${productId}`
+}
+
+/**
+ * Comprueba el tipo y el signo antes de tocar la base.
+ *
+ * La base es la garantia --tiene la misma tabla en una restriccion CHECK--;
+ * esto es el mensaje legible. Sin esto el usuario recibiria el texto crudo de
+ * PostgreSQL, que menciona el nombre de la restriccion y de la tabla.
+ */
+function validarTipoYSigno(type: TipoMovimiento, quantity: number): void {
+  if (!esTipoValido(type)) {
+    throw invalid(`Tipo de movimiento desconocido: ${String(type)}`)
+  }
+
+  if (!Number.isInteger(quantity)) {
+    throw invalid('La cantidad de un movimiento tiene que ser un numero entero')
+  }
+
+  if (quantity === 0) {
+    throw invalid('Un movimiento de cero unidades no registra nada')
+  }
+
+  if (Math.abs(quantity) > STOCK_MAX) {
+    throw invalid(`La cantidad excede el maximo permitido (${STOCK_MAX})`)
+  }
+
+  const signo = SIGNO_DE_TIPO[type]
+  if (signo === 'entra' && quantity < 0) {
+    throw invalid(`Un movimiento de tipo "${etiquetaDeTipo(type)}" no puede restar unidades`)
+  }
+  if (signo === 'sale' && quantity > 0) {
+    throw invalid(`Un movimiento de tipo "${etiquetaDeTipo(type)}" no puede sumar unidades`)
+  }
+}
+
+/**
+ * Aplica un movimiento de stock. LA funcion del modulo.
+ *
+ * Exige `tx` --el cliente de una transaccion, no el global-- porque el cambio
+ * de saldo y la fila del libro tienen que confirmarse juntos o no confirmarse.
+ * No hay forma de llamarla fuera de una transaccion.
+ *
+ * El corazon son DOS sentencias, y las dos importan:
+ *
+ *   1. asegurar que exista la fila de stock, en cero;
+ *   2. aplicar el delta comprobando que no quede negativo, devolviendo el
+ *      saldo anterior y el resultante EN LA MISMA SENTENCIA.
+ *
+ * La segunda es la que cierra la ventana. La version ingenua --leer, decidir
+ * en JavaScript, escribir-- deja un hueco entre la lectura y la escritura: con
+ * dos cajas vendiendo la ultima unidad, las dos leen "hay 1", las dos deciden
+ * "alcanza" y el stock queda en -1. Ese hueco no se cierra con mas
+ * comprobaciones: se cierra no teniendolo.
+ */
+export async function applyStockMovement(
+  tx: TxClient,
+  entrada: EntradaMovimiento,
+): Promise<ResultadoMovimiento> {
+  const { branchId, productId, type, quantity, userId } = entrada
+
+  validarTipoYSigno(type, quantity)
+
+  // 1) La fila de stock tiene que existir para poder actualizarla.
+  //
+  //    Un producto sin fila en `BranchStock` no es un error: es un producto al
+  //    que nunca le entro mercaderia. Se crea en cero, y el paso 2 decide si
+  //    el movimiento cabe.
+  //
+  //    El SELECT sobre `Product` no es decorativo: si el producto no es de
+  //    esta sucursal, no se crea nada, y el paso 2 tampoco encuentra fila. Un
+  //    id de otra sucursal no puede fabricar stock aca.
+  //
+  //    `DO NOTHING` en vez de comprobar antes: dos transacciones simultaneas
+  //    que dan de alta el mismo par no pueden chocar.
+  await tx.$executeRaw`
+    INSERT INTO "BranchStock" ("branchId", "productId", "quantity")
+    SELECT ${branchId}, ${productId}, 0
+      FROM "Product" p
+     WHERE p."id" = ${productId}
+       AND p."branchId" = ${branchId}
+    ON CONFLICT ("branchId", "productId") DO NOTHING
+  `
+
+  // 2) El delta, la comprobacion de no-negativo y los dos saldos, juntos.
+  //
+  //    PostgreSQL toma el bloqueo de la fila y REEVALUA la condicion despues
+  //    de esperarlo, asi que dos ventas simultaneas de la ultima unidad no
+  //    pueden pasar las dos: la segunda ve el saldo ya descontado.
+  //
+  //    `RETURNING` sobre un UPDATE devuelve la fila NUEVA, de modo que
+  //    `"quantity" - delta` es exactamente el saldo anterior.
+  //
+  //    El `::integer` no es adorno: Prisma manda el parametro como `int8`, y
+  //    PostgreSQL promueve `int4 - int8` a `bigint`. Sin el cast, `previo`
+  //    vuelve como BigInt y `resultante` como number --dos tipos distintos
+  //    para dos columnas que significan lo mismo--. El rango ya esta acotado
+  //    por la validacion de arriba, asi que el cast no puede desbordar.
+  //
+  //    La union con `Product` repite la comprobacion de sucursal: la fila de
+  //    stock podria existir de antes, y sin esto un id de otra sucursal la
+  //    moveria.
+  const filas = await tx.$queryRaw<Array<{ previo: number; resultante: number }>>`
+    UPDATE "BranchStock" bs
+       SET "quantity" = bs."quantity" + ${quantity}
+      FROM "Product" p
+     WHERE p."id" = bs."productId"
+       AND p."branchId" = ${branchId}
+       AND bs."branchId" = ${branchId}
+       AND bs."productId" = ${productId}
+       AND bs."quantity" + ${quantity} >= 0
+    RETURNING (bs."quantity" - ${quantity})::integer AS previo,
+              bs."quantity"::integer               AS resultante
+  `
+
+  const saldos = filas[0]
+  if (!saldos) {
+    // Camino de error, no camino caliente: recien aca se paga por averiguar
+    // por que no se aplico.
+    const actual = await tx.branchStock.findUnique({
+      where: { branchId_productId: { branchId, productId } },
+      select: { quantity: true },
+    })
+
+    if (!actual) {
+      const delaSucursal = await tx.product.findFirst({
+        where: { id: productId, branchId },
+        select: { id: true },
+      })
+      // Mismo trato que "no existe": no se confirma que el producto exista en
+      // otra sucursal.
+      if (!delaSucursal) throw notFound('Producto no encontrado')
+
+      throw conflict(
+        `No hay stock de "${await nombreDe(tx, productId)}": se pidieron ${Math.abs(quantity)} y hay 0`,
+        { code: 'INSUFFICIENT_STOCK' },
+      )
+    }
+
+    throw conflict(
+      `Stock insuficiente de "${await nombreDe(tx, productId)}": ` +
+        `se pidieron ${Math.abs(quantity)} y hay ${actual.quantity}`,
+      { code: 'INSUFFICIENT_STOCK' },
+    )
+  }
+
+  // Los saldos salen del RETURNING, no de una lectura posterior. Entre la
+  // escritura y una segunda lectura otra transaccion puede mover el stock, y
+  // la fila del libro diria un numero que nunca existio.
+  const movimiento = await tx.stockMovement.create({
+    data: {
+      branchId,
+      productId,
+      type,
+      quantity,
+      previousQuantity: saldos.previo,
+      resultingQuantity: saldos.resultante,
+      referenceType: entrada.referenceType ?? null,
+      referenceId: entrada.referenceId ?? null,
+      userId,
+      reason: entrada.reason ?? null,
+    },
+    select: { id: true },
+  })
+
+  if (entrada.audit) {
+    await escribirAuditoria(tx, {
+      userId,
+      branchId,
+      table: 'StockMovement',
+      recordId: movimiento.id,
+      action: 'create',
+      reason: entrada.reason ?? null,
+      before: { quantity: saldos.previo },
+      after: {
+        tipo: type,
+        productId,
+        delta: quantity,
+        quantity: saldos.resultante,
+        motivo: entrada.reason ?? null,
+        branchId,
+      },
+      origin: entrada.audit.origin,
+    })
+  }
+
+  return {
+    movementId: movimiento.id,
+    previousQuantity: saldos.previo,
+    resultingQuantity: saldos.resultante,
+  }
+}
+
+/**
+ * Borra la fila de stock de un producto que no tiene historial.
+ *
+ * Existe solo para que el borrado fisico de un producto no tenga que escribir
+ * sobre `BranchStock` desde fuera de este modulo. Comprueba lo que promete: si
+ * el producto tiene algun movimiento, no borra nada.
+ *
+ * En la practica solo se cumple para un producto cargado por error con cero
+ * unidades y sin ninguna operacion, que es justo el caso para el que sirve el
+ * boton de borrar. Un producto con historial se da de baja.
+ */
+export async function olvidarStockDeProductoSinHistorial(
+  tx: TxClient,
+  productId: number,
+): Promise<void> {
+  const movimientos = await tx.stockMovement.count({ where: { productId } })
+  if (movimientos > 0) {
+    throw conflict(
+      `No se puede eliminar: el producto tiene ${movimientos} movimiento(s) de stock. ` +
+        'Borrarlo destruiria su historial de inventario. Dalo de baja en su lugar.',
+      { code: 'PRODUCT_HAS_MOVEMENTS' },
+    )
+  }
+  await tx.branchStock.deleteMany({ where: { productId } })
+}
+
+// ---------------------------------------------------------------------------
+// Reposicion
+// ---------------------------------------------------------------------------
+
+/**
+ * Productos que llegaron a su minimo y todavia tienen unidades.
+ *
+ * Hace falta SQL porque la condicion compara dos columnas de tablas distintas
+ * --`BranchStock.quantity` contra `Product.minimumStock`-- y Prisma solo sabe
+ * comparar una columna contra un valor. La alternativa seria traer el catalogo
+ * entero y filtrar en memoria, que rompe la paginacion.
+ *
+ * Devuelve identificadores, no productos: el listado sigue armandose con la
+ * consulta de siempre, con sus filtros, su orden y su paginacion. Sin tope: en
+ * un almacen los productos bajo minimo son decenas, no miles, y un tope
+ * silencioso haria que la pantalla dijera "no hay mas" cuando si hay.
+ *
+ * Solo cuenta el catalogo ACTIVO: un producto dado de baja no se repone.
+ */
+export async function idsBajoMinimo(branchId: number): Promise<number[]> {
+  const filas = await prisma.$queryRaw<Array<{ id: number }>>`
+    SELECT p."id"
+      FROM "Product" p
+      JOIN "BranchStock" bs
+        ON bs."productId" = p."id" AND bs."branchId" = ${branchId}
+     WHERE p."branchId" = ${branchId}
+       AND p."isActive" = true
+       AND bs."quantity" > 0
+       AND bs."quantity" <= p."minimumStock"
+  `
+  return filas.map((f) => f.id)
+}
+
+export interface ResumenReposicion {
+  /** Sin unidades. No se pueden vender. */
+  agotados: number
+  /** Con unidades, pero llegaron al minimo configurado. */
+  bajoMinimo: number
+  /** Cuantos productos activos todavia no tienen minimo configurado. */
+  sinMinimo: number
+}
+
+/**
+ * Cuantos productos hay que reponer. Para el panel de inicio.
+ *
+ * `sinMinimo` no es decorativo: con el catalogo recien migrado, `bajoMinimo`
+ * vale cero porque nadie configuro minimos todavia, y una tarjeta en cero sin
+ * explicacion se lee como "esta todo bien". Este numero es el que permite
+ * decir la verdad: no es que no falte nada, es que nadie dijo cuanto tiene que
+ * haber.
+ */
+export async function resumenDeReposicion(branchId: number): Promise<ResumenReposicion> {
+  const [agotados, bajoMinimo, sinMinimo] = await Promise.all([
+    prisma.product.count({
+      where: {
+        branchId,
+        isActive: true,
+        OR: [
+          { stocks: { none: { branchId } } },
+          { stocks: { some: { branchId, quantity: { lte: 0 } } } },
+        ],
+      },
+    }),
+    idsBajoMinimo(branchId).then((ids) => ids.length),
+    prisma.product.count({ where: { branchId, isActive: true, minimumStock: 0 } }),
+  ])
+
+  return { agotados, bajoMinimo, sinMinimo }
+}
+
+// ---------------------------------------------------------------------------
+// Consulta del libro
+// ---------------------------------------------------------------------------
+
+export interface MovimientoListado {
+  id: number
+  createdAt: Date
+  type: string
+  /** Nombre para mostrar. El codigo crudo no llega a la pantalla. */
+  typeLabel: string
+  quantity: number
+  previousQuantity: number
+  resultingQuantity: number
+  referenceType: string | null
+  referenceId: number | null
+  reason: string | null
+  product: { id: number; name: string; barcode: string | null }
+  user: { id: number; name: string }
+  branch: { id: number; name: string }
+}
+
+const CAMPOS_MOVIMIENTO = {
+  id: true,
+  createdAt: true,
+  type: true,
+  quantity: true,
+  previousQuantity: true,
+  resultingQuantity: true,
+  referenceType: true,
+  referenceId: true,
+  reason: true,
+  product: { select: { id: true, name: true, barcode: true } },
+  user: { select: { id: true, name: true } },
+  branch: { select: { id: true, name: true } },
+} as const
+
+/**
+ * Historial de movimientos de la sucursal, paginado.
+ *
+ * Siempre paginado y siempre acotado a la sucursal de la sesion. No existe
+ * endpoint que devuelva el libro entero: con dos anios de operacion son
+ * cientos de miles de filas.
+ *
+ * Producto, usuario y sucursal vienen con un `include` en la misma consulta.
+ * Resolverlos despues, de a uno, seria una consulta por fila.
+ */
+export async function consultarMovimientos(
+  session: Session,
+  query: ConsultarMovimientosQuery,
+): Promise<Paginated<MovimientoListado>> {
+  const where: Prisma.StockMovementWhereInput = {
+    branchId: session.branchId,
+    ...(query.productId === undefined ? {} : { productId: query.productId }),
+    ...(query.tipo === undefined ? {} : { type: query.tipo }),
+    ...(query.usuarioId === undefined ? {} : { userId: query.usuarioId }),
+    ...(query.referenceType === undefined ? {} : { referenceType: query.referenceType }),
+    ...(query.referenceId === undefined ? {} : { referenceId: query.referenceId }),
+    ...(query.desde || query.hasta
+      ? {
+          createdAt: {
+            ...(query.desde ? { gte: query.desde } : {}),
+            ...(query.hasta ? { lte: query.hasta } : {}),
+          },
+        }
+      : {}),
+    ...(query.q
+      ? {
+          product: {
+            OR: [
+              { name: { contains: query.q, mode: 'insensitive' as const } },
+              { barcode: { contains: query.q, mode: 'insensitive' as const } },
+            ],
+          },
+        }
+      : {}),
+  }
+
+  const [total, movimientos] = await Promise.all([
+    prisma.stockMovement.count({ where }),
+    prisma.stockMovement.findMany({
+      where,
+      select: CAMPOS_MOVIMIENTO,
+      // Por fecha descendente y, a igualdad de fecha, por id: dos movimientos
+      // de la misma venta comparten el milisegundo, y sin el segundo criterio
+      // el orden entre ellos cambiaria de una consulta a otra.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      ...toSkipTake(query),
+    }),
+  ])
+
+  const data = movimientos.map((m) => ({ ...m, typeLabel: etiquetaDeTipo(m.type) }))
+
+  return paginado(data, total, query)
+}
+
+/**
+ * Reconstruye el stock de un producto sumando su libro.
+ *
+ * Es la comprobacion de integridad hecha consulta: lo que devuelve tiene que
+ * ser identico a `BranchStock.quantity`. La usan las pruebas y esta disponible
+ * para cuando haga falta explicarle a alguien de donde salio un numero.
+ */
+export async function reconstruirStock(branchId: number, productId: number): Promise<number> {
+  const suma = await prisma.stockMovement.aggregate({
+    where: { branchId, productId },
+    _sum: { quantity: true },
+  })
+  return suma._sum.quantity ?? 0
+}

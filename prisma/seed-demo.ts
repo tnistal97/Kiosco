@@ -36,6 +36,67 @@ function haceDias(d: number): Date {
   return haceHoras(d * 24)
 }
 
+/**
+ * Mueve stock y deja la fila en el libro, con fecha propia.
+ *
+ * El seed no puede usar `applyStockMovement` --ese servicio fecha todo AHORA,
+ * y aca las ventas son de hace horas o dias-- pero si tiene que respetar la
+ * misma invariante:
+ *
+ *   para todo producto:  suma(StockMovement.quantity) == BranchStock.quantity
+ *
+ * Y la misma regla dura: si el movimiento dejaria el saldo negativo, corta.
+ * La version anterior descontaba sin comprobar y dejaba productos en -1, que
+ * es como se descubrio el problema al migrar. Fallar ruidosamente en un seed
+ * es barato; descubrirlo dos anios despues, no.
+ */
+async function moverStock(m: {
+  branchId: number
+  productId: number
+  type: 'SALE' | 'SALE_CANCEL'
+  delta: number
+  userId: number
+  referenceId: number
+  reason?: string
+  fecha: Date
+}): Promise<void> {
+  const actual = await prisma.branchStock.findUnique({
+    where: { branchId_productId: { branchId: m.branchId, productId: m.productId } },
+    select: { quantity: true },
+  })
+  const antes = actual?.quantity ?? 0
+  const despues = antes + m.delta
+
+  if (despues < 0) {
+    throw new Error(
+      `El seed dejaria el producto ${String(m.productId)} en ${String(despues)}: ` +
+        `hay ${String(antes)} y el movimiento pide ${String(m.delta)}. ` +
+        'Revisá el stock declarado en PRODUCTOS o las líneas de VENTAS.',
+    )
+  }
+
+  await prisma.branchStock.update({
+    where: { branchId_productId: { branchId: m.branchId, productId: m.productId } },
+    data: { quantity: despues },
+  })
+
+  await prisma.stockMovement.create({
+    data: {
+      branchId: m.branchId,
+      productId: m.productId,
+      type: m.type,
+      quantity: m.delta,
+      previousQuantity: antes,
+      resultingQuantity: despues,
+      referenceType: 'Sale',
+      referenceId: m.referenceId,
+      userId: m.userId,
+      reason: m.reason ?? null,
+      createdAt: m.fecha,
+    },
+  })
+}
+
 type SemillaProducto = {
   nombre: string
   barcode: string
@@ -199,6 +260,13 @@ async function main() {
   }
 
   console.log('Vaciando la base de desarrollo...')
+
+  // El libro se vacia con TRUNCATE y no con deleteMany: un DELETE sobre
+  // StockMovement lo rechaza el disparador de inmutabilidad, y esta bien que
+  // lo rechace. TRUNCATE no dispara disparadores de fila y es la unica puerta,
+  // reservada para vaciar una base descartable.
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "StockMovement" CASCADE')
+
   await prisma.stockCheck.deleteMany()
   await prisma.saleItem.deleteMany()
   await prisma.salePayment.deleteMany()
@@ -290,6 +358,24 @@ async function main() {
     proveedores.set(p.name, s.id)
   }
 
+  // Cuantas unidades de cada producto se venden de verdad --sin contar la
+  // venta anulada, que devuelve lo que se llevo--.
+  //
+  // Hace falta ANTES de crear los productos: el campo `stock` de PRODUCTOS es
+  // el stock que se quiere ver AL FINAL, asi que el saldo de partida tiene que
+  // ser ese numero MAS lo que se vendio. La version anterior cargaba `stock`
+  // como saldo inicial y despues descontaba las ventas, y por eso la mermelada
+  // --declarada en 0 y con una venta de 1-- terminaba en -1.
+  const vendidasPorProducto = new Map<number, number>()
+  for (const v of VENTAS) {
+    if (v.anulada) continue
+    for (const [indice, cantidad] of v.lineas) {
+      vendidasPorProducto.set(indice, (vendidasPorProducto.get(indice) ?? 0) + cantidad)
+    }
+  }
+
+  const adminId = usuarios.get('admin') ?? 0
+
   const productos: Array<{ id: number; precio: number }> = []
   for (const p of PRODUCTOS) {
     const creado = await prisma.product.create({
@@ -303,15 +389,42 @@ async function main() {
         supplierId: proveedores.get(p.proveedor) ?? null,
         branchId: sucursal.id,
         isActive: p.inactivo !== true,
+        // Minimo de reposicion, inventado como todo lo demas de este archivo.
+        // Un quinto del stock, nunca menos de cuatro: con esta regla los dos
+        // productos que la descripcion marca como "reponer" y "stock bajo"
+        // salen efectivamente bajo minimo, y la pantalla de stock muestra la
+        // alerta funcionando en vez de una columna de ceros.
+        minimumStock: Math.max(4, Math.ceil(p.stock / 5)),
       },
     })
+    const inicial = p.stock + (vendidasPorProducto.get(PRODUCTOS.indexOf(p)) ?? 0)
+
     await prisma.branchStock.create({
-      data: { branchId: sucursal.id, productId: creado.id, quantity: p.stock },
+      data: { branchId: sucursal.id, productId: creado.id, quantity: inicial },
     })
+
+    // El saldo de partida, en el libro. Sin esto la base de demostracion
+    // arranca con el stock y el libro diciendo cosas distintas, que es
+    // exactamente lo que el libro existe para impedir.
+    if (inicial > 0) {
+      await prisma.stockMovement.create({
+        data: {
+          branchId: sucursal.id,
+          productId: creado.id,
+          type: 'INITIAL',
+          quantity: inicial,
+          previousQuantity: 0,
+          resultingQuantity: inicial,
+          userId: adminId,
+          reason: 'Carga inicial del catalogo de demostracion',
+          createdAt: haceDias(30),
+        },
+      })
+    }
+
     productos.push({ id: creado.id, precio: p.precio })
   }
 
-  const adminId = usuarios.get('admin') ?? 0
   let caja = 0
 
   // La caja abierta. Antes esto era un movimiento de tipo "ingreso"
@@ -369,12 +482,36 @@ async function main() {
       },
     })
 
-    // Descontar stock solo de las ventas vigentes.
-    if (!v.anulada) {
+    // El stock, por el libro.
+    //
+    // TODA venta descuenta, incluida la anulada: eso fue lo que paso. La
+    // anulacion agrega despues su movimiento inverso, y la suma de los dos da
+    // cero. La version anterior salteaba la venta anulada y ademas descontaba
+    // sin comprobar nada, y por eso dejaba stock negativo.
+    for (const l of lineas) {
+      await moverStock({
+        branchId: sucursal.id,
+        productId: l.productId,
+        type: 'SALE',
+        delta: -l.quantity,
+        userId,
+        referenceId: venta.id,
+        fecha,
+      })
+    }
+
+    if (v.anulada) {
+      const anuladaPor = usuarios.get(v.anulada.por) ?? adminId
       for (const l of lineas) {
-        await prisma.branchStock.updateMany({
-          where: { branchId: sucursal.id, productId: l.productId },
-          data: { quantity: { decrement: l.quantity } },
+        await moverStock({
+          branchId: sucursal.id,
+          productId: l.productId,
+          type: 'SALE_CANCEL',
+          delta: l.quantity,
+          userId: anuladaPor,
+          referenceId: venta.id,
+          reason: v.anulada.motivo,
+          fecha: haceHoras(v.anulada.horas),
         })
       }
     }

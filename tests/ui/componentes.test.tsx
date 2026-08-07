@@ -72,11 +72,24 @@ describe('Estados: nunca solo color', () => {
     const { rerender } = render(<StockBadge quantity={0} />)
     expect(screen.getByText('Agotado')).toBeInTheDocument()
 
-    rerender(<StockBadge quantity={4} />)
+    // El umbral es el MINIMO DEL PRODUCTO, no una constante global. Con
+    // minimo 6 y cuatro unidades, esta bajo minimo y lo dice con los dos
+    // numeros: cuantas quedan y cuantas tendria que haber.
+    rerender(<StockBadge quantity={4} minimum={6} />)
     expect(screen.getByText(/quedan 4/i)).toBeInTheDocument()
+    expect(screen.getByText(/mín\. 6/i)).toBeInTheDocument()
 
-    rerender(<StockBadge quantity={40} />)
+    rerender(<StockBadge quantity={40} minimum={6} />)
     expect(screen.getByText(/40 en stock/i)).toBeInTheDocument()
+  })
+
+  it('sin minimo configurado, cuatro unidades no son una alarma', () => {
+    // Es la diferencia entre "faltan" y "nadie dijo cuantas tiene que haber".
+    // Hasta la Fase 2 el umbral eran diez unidades para todo, y por eso el
+    // aviso no significaba nada. Ver docs/INVENTORY_LEDGER.md, seccion 8.
+    render(<StockBadge quantity={4} />)
+    expect(screen.getByText(/4 en stock/i)).toBeInTheDocument()
+    expect(screen.queryByText(/quedan/i)).toBeNull()
   })
 
   it('un badge de estado siempre lleva glifo', () => {

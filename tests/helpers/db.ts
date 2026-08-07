@@ -23,6 +23,9 @@ const TABLES = [
   'CashRegisterMovement',
   'CashCount',
   'CashShift',
+  // TRUNCATE no dispara disparadores de fila, asi que el de inmutabilidad de
+  // StockMovement no impide vaciar la base entre pruebas. Es la unica puerta.
+  'StockMovement',
   'BranchStock',
   'Product',
   'User',
@@ -168,6 +171,38 @@ export async function seedFixture(): Promise<Fixture> {
     ],
   })
 
+  // El saldo de partida, en el libro.
+  //
+  // La fixture escribe `BranchStock` directamente --es preparacion, no una
+  // operacion del sistema-- pero tiene que dejar el libro cuadrado igual: la
+  // invariante suma(movimientos) == cantidad se comprueba sobre TODOS los
+  // productos, y un producto que aparece con diez unidades y sin movimientos
+  // haria fallar esa prueba por culpa de la preparacion, no del codigo.
+  await prisma.stockMovement.createMany({
+    data: [
+      {
+        branchId: branchA.id,
+        productId: productoA.id,
+        type: 'INITIAL',
+        quantity: 10,
+        previousQuantity: 0,
+        resultingQuantity: 10,
+        userId: admin.id,
+        reason: 'Saldo de partida de la fixture',
+      },
+      {
+        branchId: branchB.id,
+        productId: productoB.id,
+        type: 'INITIAL',
+        quantity: 10,
+        previousQuantity: 0,
+        resultingQuantity: 10,
+        userId: cajeroB.id,
+        reason: 'Saldo de partida de la fixture',
+      },
+    ],
+  })
+
   return {
     branchA: { id: branchA.id, name: branchA.name },
     branchB: { id: branchB.id, name: branchB.name },
@@ -210,6 +245,51 @@ export async function expectedOfShift(branchId: number): Promise<Monto> {
   return aMonto(sumar(turno.openingAmount, sumaODefecto(efectivo._sum.amount)))
 }
 
+/**
+ * Deja un producto con la cantidad indicada, SIN romper el libro.
+ *
+ * Las pruebas necesitan preparar escenarios --"que haya tres unidades"-- y
+ * hacerlo con un `update` sobre `BranchStock` deja el saldo en tres y el libro
+ * en diez. Despues la prueba de integridad falla por culpa de la preparacion y
+ * no del codigo, que es la peor clase de falso positivo: parece un hallazgo.
+ *
+ * Escribe el ajuste como `MANUAL_ADJUSTMENT`, igual que lo haria un recuento.
+ */
+export async function ponerStock(
+  branchId: number,
+  productId: number,
+  cantidad: number,
+  userId: number,
+): Promise<void> {
+  const actual = await prisma.branchStock.findUnique({
+    where: { branchId_productId: { branchId, productId } },
+    select: { quantity: true },
+  })
+  const antes = actual?.quantity ?? 0
+  const delta = cantidad - antes
+
+  await prisma.branchStock.upsert({
+    where: { branchId_productId: { branchId, productId } },
+    update: { quantity: cantidad },
+    create: { branchId, productId, quantity: cantidad },
+  })
+
+  if (delta === 0) return
+
+  await prisma.stockMovement.create({
+    data: {
+      branchId,
+      productId,
+      type: 'MANUAL_ADJUSTMENT',
+      quantity: delta,
+      previousQuantity: antes,
+      resultingQuantity: cantidad,
+      userId,
+      reason: 'Preparacion del escenario de prueba',
+    },
+  })
+}
+
 /** Stock actual de un producto en una sucursal. */
 export async function stockOf(branchId: number, productId: number): Promise<number> {
   const row = await prisma.branchStock.findUnique({
@@ -222,4 +302,66 @@ export async function stockOf(branchId: number, productId: number): Promise<numb
 export async function cashOf(branchId: number): Promise<Monto> {
   const b = await prisma.branch.findUnique({ where: { id: branchId } })
   return b === null ? '0.00' : aMonto(b.currentCash)
+}
+
+/**
+ * Comprueba LA invariante del libro de inventario, para todos los productos.
+ *
+ *   para todo producto:  suma(StockMovement.quantity) == BranchStock.quantity
+ *
+ * Se llama al final de los escenarios que mueven stock. Si esa igualdad se
+ * rompe, el sistema esta mintiendo en algun lado: o el saldo se movio sin
+ * dejar movimiento, o el movimiento dice una cosa y el saldo otra.
+ *
+ * Devuelve los descuadres en vez de lanzar, para que la prueba pueda mostrar
+ * cuales son.
+ */
+export interface Descuadre {
+  branchId: number
+  productId: number
+  saldo: number
+  libro: number
+}
+
+export async function descuadresDelLibro(): Promise<Descuadre[]> {
+  const [stocks, movimientos] = await Promise.all([
+    prisma.branchStock.findMany({ select: { branchId: true, productId: true, quantity: true } }),
+    prisma.stockMovement.groupBy({
+      by: ['branchId', 'productId'],
+      _sum: { quantity: true },
+    }),
+  ])
+
+  const libroPorClave = new Map<string, number>()
+  for (const m of movimientos) {
+    libroPorClave.set(`${m.branchId}:${m.productId}`, m._sum.quantity ?? 0)
+  }
+
+  const descuadres: Descuadre[] = []
+
+  for (const s of stocks) {
+    const libro = libroPorClave.get(`${s.branchId}:${s.productId}`) ?? 0
+    if (libro !== s.quantity) {
+      descuadres.push({ branchId: s.branchId, productId: s.productId, saldo: s.quantity, libro })
+    }
+    libroPorClave.delete(`${s.branchId}:${s.productId}`)
+  }
+
+  // Lo que quedo en el mapa son movimientos de productos SIN fila de stock.
+  // Solo cuadran si suman cero; si no, hay un movimiento huerfano.
+  for (const [clave, libro] of libroPorClave) {
+    if (libro === 0) continue
+    const [branchId, productId] = clave.split(':').map(Number)
+    descuadres.push({ branchId: branchId ?? 0, productId: productId ?? 0, saldo: 0, libro })
+  }
+
+  return descuadres
+}
+
+/** Movimientos de un producto, del mas viejo al mas nuevo. */
+export async function movimientosDe(branchId: number, productId: number) {
+  return prisma.stockMovement.findMany({
+    where: { branchId, productId },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  })
 }

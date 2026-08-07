@@ -50,6 +50,8 @@ const PRODUCTO: ProductoDTO = {
   category: { id: 1, name: 'Almacen' },
   supplier: null,
   totalStock: 24,
+  minimumStock: 6,
+  estado: 'OK',
 }
 
 const CATEGORIAS = [{ id: 1, name: 'Almacen' }]

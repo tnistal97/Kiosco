@@ -1,23 +1,23 @@
 /**
- * Reglas de negocio del stock.
+ * Ajustes de inventario.
  *
- * Regla que gobierna todo el modulo: el stock nunca puede quedar negativo, y
- * la comprobacion tiene que ocurrir DENTRO de la sentencia que escribe. Leer
- * la cantidad, decidir en JavaScript y despues escribir deja una ventana en
- * la que otra operacion se lleva las unidades.
+ * Desde la Fase 3A este modulo NO escribe stock: se lo pide al servicio
+ * central de inventario, que es el unico que toca `BranchStock` y el que deja
+ * la fila en el libro. Aca queda lo que es propio del ajuste: comprobar que el
+ * producto sea de la sucursal, exigir el motivo y convertir un recuento
+ * ("quedan 30") en el delta que de verdad ocurrio ("+10").
  *
- * Cada ajuste exige motivo y queda auditado con cantidad anterior, posterior,
- * diferencia, usuario y sucursal. Esa informacion es exactamente la que va a
- * necesitar `StockMovement` cuando exista: hoy vive en `AuditLog`.
+ * Ver docs/INVENTORY_LEDGER.md.
  */
 
 import { prisma } from '@/lib/prisma'
-import { audit } from '@/server/audit/audit'
-import { conflict, notFound } from '@/server/http/errors'
+import { invalid, notFound } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
 import type { AjusteAbsolutoInput, AjusteRelativoInput } from './schemas'
 import type { Monto } from '@/lib/money'
 import { aMonto } from '@/server/money'
+import { applyStockMovement } from '@/modules/inventory/service'
+import { estadoDeStock, type EstadoStock } from '@/modules/inventory/minimum'
 
 export interface StockDeProducto {
   id: number
@@ -27,11 +27,17 @@ export interface StockDeProducto {
   price: Monto
   category: { id: number; name: string }
   quantity: number
+  minimumStock: number
+  /** OK | LOW | OUT. Calculado, nunca guardado. */
+  estado: EstadoStock
 }
 
 export interface StockAjustado {
   productId: number
   quantity: number
+  /** Lo que habia antes. La pantalla muestra "40 → 50", no solo "50". */
+  previousQuantity: number
+  movementId: number
 }
 
 /**
@@ -56,6 +62,7 @@ export async function stockDe(session: Session, productId: number): Promise<Stoc
       name: true,
       barcode: true,
       price: true,
+      minimumStock: true,
       category: { select: { id: true, name: true } },
     },
   })
@@ -66,15 +73,29 @@ export async function stockDe(session: Session, productId: number): Promise<Stoc
     select: { quantity: true },
   })
 
+  const quantity = stock?.quantity ?? 0
+
   return {
     ...producto,
     price: aMonto(producto.price),
     productId: producto.id,
-    quantity: stock?.quantity ?? 0,
+    quantity,
+    estado: estadoDeStock(quantity, producto.minimumStock),
   }
 }
 
-/** Fija la cantidad exacta. Es el recuento de inventario. */
+/**
+ * Recuento de inventario: "quedan 30".
+ *
+ * Se convierte en el delta que de verdad ocurrio. Nunca se escribe "el stock
+ * nuevo es 30" sin registrar como se llego: el libro guarda +10 o -4, con el
+ * saldo anterior y el resultante.
+ *
+ * El delta se calcula DENTRO de la transaccion, contra el saldo real. Un
+ * recuento sobre un producto que otra caja acaba de vender queda registrado
+ * con los numeros que de verdad habia, no con los que la pantalla mostraba
+ * hace treinta segundos.
+ */
 export async function fijarStock(
   session: Session,
   productId: number,
@@ -88,36 +109,45 @@ export async function fijarStock(
       select: { quantity: true },
     })
 
-    const despues = await tx.branchStock.upsert({
-      where: { branchId_productId: { branchId: session.branchId, productId } },
-      update: { quantity: input.quantity },
-      create: { branchId: session.branchId, productId, quantity: input.quantity },
-      select: { id: true, quantity: true },
-    })
+    const actual = antes?.quantity ?? 0
+    const delta = input.quantity - actual
 
-    await audit(tx, {
-      userId: session.userId,
+    if (delta === 0) {
+      throw invalid(
+        `El recuento coincide con el stock actual (${actual}): no hay nada que registrar`,
+      )
+    }
+
+    const resultado = await applyStockMovement(tx, {
       branchId: session.branchId,
-      table: 'BranchStock',
-      recordId: despues.id,
-      action: 'update',
+      productId,
+      // Un recuento es un ajuste, siempre. Las perdidas y roturas se declaran
+      // por el otro camino, donde el usuario dice cuantas unidades y por que.
+      type: 'MANUAL_ADJUSTMENT',
+      quantity: delta,
+      userId: session.userId,
       reason: input.reason,
-      before: { quantity: antes?.quantity ?? 0 },
-      after: {
-        quantity: despues.quantity,
-        diferencia: despues.quantity - (antes?.quantity ?? 0),
-        motivo: input.reason,
-        branchId: session.branchId,
-        productId,
-      },
-      origin: 'PUT /api/stock/:productId',
+      referenceType: 'BranchStock',
+      referenceId: productId,
+      audit: { origin: 'PUT /api/stock/:productId' },
     })
 
-    return { productId, quantity: despues.quantity }
+    return {
+      productId,
+      quantity: resultado.resultingQuantity,
+      previousQuantity: resultado.previousQuantity,
+      movementId: resultado.movementId,
+    }
   })
 }
 
-/** Suma o resta unidades. Entrada de mercaderia, rotura, faltante. */
+/**
+ * Ajuste relativo: "entraron 12", "se rompieron 3".
+ *
+ * El tipo lo declara quien ajusta, y es el unico dato que despues permite
+ * preguntar cuanto se rompio en el mes. Por omision es un ajuste generico:
+ * obligar a clasificar cada correccion de carga como perdida seria mentir.
+ */
 export async function ajustarStock(
   session: Session,
   productId: number,
@@ -126,76 +156,23 @@ export async function ajustarStock(
   await exigirProductoDeLaSucursal(session, productId)
 
   return prisma.$transaction(async (tx) => {
-    // La condicion `quantity + delta >= 0` va dentro del UPDATE para que sea
-    // atomica: si el resultado quedaria negativo, no se aplica.
-    const filas = await tx.$executeRaw`
-      UPDATE "BranchStock"
-      SET "quantity" = "quantity" + ${input.delta}
-      WHERE "branchId" = ${session.branchId}
-        AND "productId" = ${productId}
-        AND "quantity" + ${input.delta} >= 0
-    `
-
-    if (filas !== 1) {
-      // O no hay fila de stock todavia, o el ajuste dejaria negativo.
-      const actual = await tx.branchStock.findUnique({
-        where: { branchId_productId: { branchId: session.branchId, productId } },
-        select: { quantity: true },
-      })
-
-      if (!actual && input.delta > 0) {
-        const creado = await tx.branchStock.create({
-          data: { branchId: session.branchId, productId, quantity: input.delta },
-          select: { id: true, quantity: true },
-        })
-        await audit(tx, {
-          userId: session.userId,
-          branchId: session.branchId,
-          table: 'BranchStock',
-          recordId: creado.id,
-          action: 'create',
-          reason: input.reason,
-          after: {
-            quantity: creado.quantity,
-            diferencia: input.delta,
-            motivo: input.reason,
-            branchId: session.branchId,
-            productId,
-          },
-          origin: 'PATCH /api/stock/:productId',
-        })
-        return { productId, quantity: creado.quantity }
-      }
-
-      throw conflict(
-        `El ajuste dejaria el stock en negativo: hay ${actual?.quantity ?? 0} y se pidio ${input.delta}`,
-        { code: 'INSUFFICIENT_STOCK' },
-      )
-    }
-
-    const despues = await tx.branchStock.findUniqueOrThrow({
-      where: { branchId_productId: { branchId: session.branchId, productId } },
-      select: { id: true, quantity: true },
-    })
-
-    await audit(tx, {
-      userId: session.userId,
+    const resultado = await applyStockMovement(tx, {
       branchId: session.branchId,
-      table: 'BranchStock',
-      recordId: despues.id,
-      action: 'update',
+      productId,
+      type: input.type,
+      quantity: input.delta,
+      userId: session.userId,
       reason: input.reason,
-      before: { quantity: despues.quantity - input.delta },
-      after: {
-        quantity: despues.quantity,
-        diferencia: input.delta,
-        motivo: input.reason,
-        branchId: session.branchId,
-        productId,
-      },
-      origin: 'PATCH /api/stock/:productId',
+      referenceType: 'BranchStock',
+      referenceId: productId,
+      audit: { origin: 'PATCH /api/stock/:productId' },
     })
 
-    return { productId, quantity: despues.quantity }
+    return {
+      productId,
+      quantity: resultado.resultingQuantity,
+      previousQuantity: resultado.previousQuantity,
+      movementId: resultado.movementId,
+    }
   })
 }

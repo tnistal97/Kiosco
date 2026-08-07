@@ -15,6 +15,7 @@ import {
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import type { CategoriaDTO, ProductoDTO, ProveedorDTO } from '@/modules/products/dto'
+import { MINIMO_SUGERIDO } from '@/modules/inventory/minimum'
 
 /**
  * Alta y edicion de un producto.
@@ -63,6 +64,7 @@ export function DialogoProducto({
   const [activo, setActivo] = useState(true)
   const [stock, setStock] = useState('')
   const [motivoStock, setMotivoStock] = useState('')
+  const [minimo, setMinimo] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -77,12 +79,15 @@ export function DialogoProducto({
     setActivo(producto?.isActive ?? true)
     setStock(producto ? String(producto.totalStock) : '0')
     setMotivoStock('')
+    setMinimo(producto ? String(producto.minimumStock) : String(MINIMO_SUGERIDO))
     setError(null)
     setEnviando(false)
   }, [abierto, producto, categorias])
 
   const precioNum = Number(precio.replace(',', '.'))
   const stockNum = Number(stock)
+  const minimoNum = Number(minimo)
+  const minimoValido = minimo.trim() !== '' && Number.isFinite(minimoNum) && minimoNum >= 0
   const stockCambio = producto !== null && stockNum !== producto.totalStock
   const precioValido = Number.isFinite(precioNum) && precioNum > 0
 
@@ -107,6 +112,7 @@ export function DialogoProducto({
             categoryId: Number(categoria),
             supplierId: proveedor === '' ? null : Number(proveedor),
             totalStock: Number.isFinite(stockNum) ? Math.max(0, Math.trunc(stockNum)) : 0,
+            minimumStock: minimoValido ? Math.trunc(minimoNum) : 0,
           },
           parse: () => null,
         })
@@ -121,6 +127,7 @@ export function DialogoProducto({
           categoryId: Number(categoria),
           supplierId: proveedor === '' ? null : Number(proveedor),
         }
+        if (minimoValido) cuerpo.minimumStock = Math.trunc(minimoNum)
         if (puedeEditarPrecio && precioValido) cuerpo.price = precioNum
         if (puedeEditarPrecio) cuerpo.isActive = activo
         if (puedeAjustarStock && stockCambio) {
@@ -299,6 +306,13 @@ export function DialogoProducto({
                       }}
                     />
                   </Field>
+
+                  <CampoMinimo
+                    valor={minimo}
+                    onCambio={setMinimo}
+                    deshabilitado={enviando}
+                    stock={producto.totalStock}
+                  />
                 </div>
 
                 {stockCambio && (
@@ -320,11 +334,19 @@ export function DialogoProducto({
                 )}
               </div>
             ) : (
-              <div className="flex items-baseline justify-between rounded-lg border border-line bg-sunken px-4 py-3">
-                <span className="text-sm text-ink-muted">Unidades</span>
-                <span className="text-lg font-semibold text-ink" data-numeric="">
-                  {producto.totalStock}
-                </span>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-baseline justify-between rounded-lg border border-line bg-sunken px-4 py-3">
+                  <span className="text-sm text-ink-muted">Unidades</span>
+                  <span className="text-lg font-semibold text-ink" data-numeric="">
+                    {producto.totalStock}
+                  </span>
+                </div>
+                <CampoMinimo
+                  valor={minimo}
+                  onCambio={setMinimo}
+                  deshabilitado={enviando}
+                  stock={producto.totalStock}
+                />
               </div>
             )}
           </Seccion>
@@ -332,20 +354,74 @@ export function DialogoProducto({
 
         {esAlta && (
           <Seccion titulo="Inventario">
-            <Field label="Stock inicial" hint="Cuántas unidades entran hoy.">
-              <Input
-                inputMode="numeric"
-                value={stock}
-                disabled={enviando}
-                onChange={(e) => {
-                  setStock(e.target.value.replace(/[^0-9]/g, ''))
-                }}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Stock inicial" hint="Cuántas unidades entran hoy.">
+                <Input
+                  inputMode="numeric"
+                  value={stock}
+                  disabled={enviando}
+                  onChange={(e) => {
+                    setStock(e.target.value.replace(/[^0-9]/g, ''))
+                  }}
+                />
+              </Field>
+
+              <CampoMinimo
+                valor={minimo}
+                onCambio={setMinimo}
+                deshabilitado={enviando}
+                stock={Number.isFinite(stockNum) ? stockNum : 0}
               />
-            </Field>
+            </div>
           </Seccion>
         )}
       </div>
     </Dialog>
+  )
+}
+
+/**
+ * Mínimo de reposición.
+ *
+ * Cero significa SIN MÍNIMO, y el campo lo dice con todas las letras en vez de
+ * dejar que se lea como "el mínimo es cero unidades". Es la diferencia entre
+ * "no hace falta reponer nunca" y "nadie configuró esto todavía", y de esa
+ * diferencia depende que el aviso de stock bajo signifique algo.
+ */
+function CampoMinimo({
+  valor,
+  onCambio,
+  deshabilitado,
+  stock,
+}: {
+  valor: string
+  onCambio: (v: string) => void
+  deshabilitado: boolean
+  stock: number
+}) {
+  const n = Number(valor)
+  const configurado = valor.trim() !== '' && Number.isFinite(n) && n > 0
+
+  return (
+    <Field
+      label="Mínimo de reposición"
+      hint={
+        !configurado
+          ? 'Cero: sin mínimo. No va a avisar cuando queden pocas.'
+          : stock > 0 && stock <= n
+            ? `Con ${stock} unidades ya está bajo mínimo.`
+            : 'Avisa cuando queden estas unidades o menos.'
+      }
+    >
+      <Input
+        inputMode="numeric"
+        value={valor}
+        disabled={deshabilitado}
+        onChange={(e) => {
+          onCambio(e.target.value.replace(/[^0-9]/g, ''))
+        }}
+      />
+    </Field>
   )
 }
 

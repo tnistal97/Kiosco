@@ -20,6 +20,70 @@ import vitest from '@vitest/eslint-plugin'
 import prettier from 'eslint-config-prettier/flat'
 import globals from 'globals'
 
+/**
+ * El dinero no se vuelve numero.
+ *
+ * Un importe sale de la base como `Decimal` y se opera como `Decimal`. En el
+ * momento en que alguien escribe `precio.toNumber()` para "hacer una cuenta
+ * rapida", el importe vuelve a ser un `double` de IEEE 754 y con el vuelven
+ * los centavos fantasma que toda la Fase 3 existe para eliminar.
+ *
+ * Ver docs/PHASE3_MONEY_MIGRATION.md. Unico lugar autorizado a cruzar la
+ * frontera: `src/server/money.ts`, en una sola funcion documentada.
+ */
+const PROHIBIDO_DINERO_NUMERO = [
+  {
+    selector: "CallExpression > MemberExpression[property.name='toNumber']",
+    message:
+      'No conviertas un importe a number: la aritmetica financiera se hace con Decimal. ' +
+      'Usa los helpers de @/server/money (sumar, restar, multiplicar, comparar).',
+  },
+  {
+    selector: "CallExpression[callee.name='Number'] > MemberExpression[property.name='price']",
+    message: 'Un precio no se convierte a number. Ver @/server/money.',
+  },
+]
+
+/**
+ * El stock no se escribe: se mueve.
+ *
+ * Desde la Fase 3A el stock es el saldo de un libro, no un numero suelto:
+ *
+ *   para todo producto:  suma(StockMovement.quantity) == BranchStock.quantity
+ *
+ * Alcanza con UN `update` suelto sobre BranchStock en cualquier parte de la
+ * aplicacion para que esa igualdad deje de ser cierta, y lo peor es que no se
+ * nota: el stock queda "bien" y el libro queda mal, que es exactamente el caso
+ * que hace imposible confiar en el historial.
+ *
+ * Las LECTURAS (findUnique, findMany, count, aggregate) siguen permitidas en
+ * todos lados: leer un saldo no lo corrompe.
+ *
+ * Ver docs/INVENTORY_LEDGER.md, seccion 5. Unico lugar autorizado a escribir:
+ * `src/modules/inventory/service.ts`.
+ */
+const PROHIBIDO_ESCRIBIR_STOCK = [
+  {
+    selector:
+      "CallExpression > MemberExpression[object.property.name='branchStock']" +
+      '[property.name=/^(create|createMany|createManyAndReturn|update|updateMany|upsert|delete|deleteMany)$/]',
+    message:
+      'El stock no se escribe directamente. Usa applyStockMovement() de ' +
+      '@/modules/inventory/service, que ademas deja la fila en el libro. ' +
+      'Ver docs/INVENTORY_LEDGER.md.',
+  },
+  {
+    // Solo ESCRITURAS, igual que el selector de arriba. Un SELECT sobre
+    // BranchStock es legitimo desde cualquier lado; lo que no puede salir del
+    // servicio de inventario es la sentencia que cambia el saldo.
+    selector:
+      'TemplateElement[value.raw=/(UPDATE|INSERT\\s+INTO|DELETE\\s+FROM)\\s+"BranchStock"/]',
+    message:
+      'SQL crudo que escribe sobre BranchStock, fuera del servicio de inventario. ' +
+      'Toda modificacion de stock pasa por applyStockMovement().',
+  },
+]
+
 export default tseslint.config(
   // ---------------------------------------------------------------- ignorados
   {
@@ -191,37 +255,38 @@ export default tseslint.config(
     },
   },
 
-  // -------------------------------------------- el dinero no se vuelve numero
+  // ------------------------------------- las dos fronteras que no se cruzan
   //
-  // Un importe sale de la base como `Decimal` y se opera como `Decimal`. En el
-  // momento en que alguien escribe `precio.toNumber()` para "hacer una cuenta
-  // rapida", el importe vuelve a ser un `double` de IEEE 754 y con el vuelven
-  // los centavos fantasma que toda la Fase 3 existe para eliminar.
+  // `no-restricted-syntax` es UNA regla: cuando dos bloques la configuran para
+  // el mismo archivo, el segundo REEMPLAZA al primero en vez de sumarse. Por
+  // eso los selectores se declaran arriba (PROHIBIDO_*) y cada bloque de aca
+  // abajo lista el conjunto COMPLETO que le corresponde. Cuatro bloques,
+  // porque las dos fronteras tienen excepciones distintas:
   //
-  // La regla vive aca y no solo en un comentario porque un comentario se
-  // rompe el dia que alguien tiene apuro. Ver docs/PHASE3_MONEY_MIGRATION.md.
+  //   1. todo src/                        → stock
+  //   2. modules, server y api            → stock + dinero
+  //   3. src/server/money.ts              → stock          (cruza el dinero)
+  //   4. modules/inventory/service.ts     → dinero         (cruza el stock)
   //
-  // `src/server/money.ts` esta excluido: es el unico lugar autorizado a cruzar
-  // la frontera, y lo hace en una sola funcion documentada.
+  // Sin este cuidado, agregar la segunda frontera habria apagado la primera en
+  // silencio: los tests seguirian pasando y la regla no protegeria nada.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    rules: { 'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK] },
+  },
   {
     files: ['src/modules/**/*.ts', 'src/server/**/*.ts', 'src/app/api/**/*.ts'],
-    ignores: ['src/server/money.ts'],
     rules: {
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: "CallExpression > MemberExpression[property.name='toNumber']",
-          message:
-            'No conviertas un importe a number: la aritmetica financiera se hace con Decimal. ' +
-            'Usa los helpers de @/server/money (sumar, restar, multiplicar, comparar).',
-        },
-        {
-          selector:
-            "CallExpression[callee.name='Number'] > MemberExpression[property.name='price']",
-          message: 'Un precio no se convierte a number. Ver @/server/money.',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK, ...PROHIBIDO_DINERO_NUMERO],
     },
+  },
+  {
+    files: ['src/server/money.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK] },
+  },
+  {
+    files: ['src/modules/inventory/service.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...PROHIBIDO_DINERO_NUMERO] },
   },
 
   // ------------------------------------------------------------------- tests
