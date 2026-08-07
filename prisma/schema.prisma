@@ -21,11 +21,89 @@ model Branch {
   cashCounts    CashCount[]
   productsList  Product[]
   auditLogs     AuditLog[]
+  cashShifts    CashShift[]
 
-  /// Saldo en efectivo. `Decimal(14,2)` desde la Fase 3: en `Float` la suma
-  /// de ventas y la reversion de una anulacion no volvian al mismo numero.
-  /// Ver docs/PHASE3_MONEY_MIGRATION.md.
+  /// Efectivo acumulado desde que se instalo el sistema.
+  ///
+  /// YA NO DECIDE NADA. Desde la Fase 3 el arqueo compara contra el turno, la
+  /// cabecera muestra el turno y el cierre calcula sobre el turno. Esto queda
+  /// como dato historico de la sucursal --hay dos anios apoyados en el-- y se
+  /// sigue actualizando, pero ningun camino lo consulta para decidir.
+  /// Ver docs/CASH_SHIFT_MODEL.md.
+  ///
+  /// `Decimal(14,2)` desde la Fase 3: en `Float` la suma de ventas y la
+  /// reversion de una anulacion no volvian al mismo numero.
   currentCash Decimal @default(0) @db.Decimal(14, 2)
+
+  /// Si hace falta un turno abierto para poder vender.
+  ///
+  /// Verdadero por omision: es el punto de tener turnos. Se puede apagar por
+  /// sucursal para dar salida a un local que todavia no adopto el flujo, sin
+  /// que el sistema le mienta diciendo que la caja "cuadra".
+  requireOpenShift Boolean @default(true)
+
+  /// Diferencia de arqueo a partir de la cual el cierre necesita autorizacion.
+  ///
+  /// Cero significa sin umbral. Es un numero y una comprobacion, no un sistema
+  /// de reglas: cuando haga falta algo mas se disenia entonces.
+  cashDifferenceThreshold Decimal @default(0) @db.Decimal(14, 2)
+}
+
+/// Turno de caja: se abre contando el cajon y se cierra volviendolo a contar.
+///
+/// Reemplaza al acumulado historico como respuesta a la unica pregunta que se
+/// hace en el mostrador: "empece con esto, paso esto, tengo que tener esto,
+/// ¿lo tengo?". Ver docs/CASH_SHIFT_MODEL.md.
+model CashShift {
+  id       Int @id @default(autoincrement())
+  branchId Int
+
+  openedById Int
+  closedById Int?
+
+  openedAt DateTime  @default(now())
+  closedAt DateTime?
+
+  /// Lo que habia en el cajon al abrir. NO se puede editar despues: un saldo
+  /// inicial editable convierte cualquier faltante en un problema de tipeo.
+  openingAmount Decimal @db.Decimal(14, 2)
+
+  /// Lo que el sistema esperaba AL CERRAR. Null mientras el turno esta
+  /// abierto, y a proposito: durante el turno el esperado se DERIVA de los
+  /// movimientos. Guardarlo antes obligaria a mantenerlo sincronizado en cada
+  /// venta, y el dia que un camino se olvide deja de significar nada --que es
+  /// exactamente lo que pasaba con `Branch.currentCash`--.
+  expectedAmount Decimal? @db.Decimal(14, 2)
+
+  /// Lo que se conto fisicamente al cerrar.
+  countedAmount Decimal? @db.Decimal(14, 2)
+
+  /// contado - esperado. Positivo sobra, negativo falta.
+  difference Decimal? @db.Decimal(14, 2)
+
+  /// 'open' | 'closed' | 'legacy'.
+  ///
+  /// `legacy` es el turno que crea la migracion para colgarle todo lo anterior
+  /// a que existieran los turnos. No se cierra, no se reabre y no cuenta como
+  /// turno abierto.
+  status String @default("open")
+
+  openingNotes String?
+  closingNotes String?
+
+  /// Quien autorizo una diferencia por encima del umbral de la sucursal.
+  authorizedById Int?
+
+  branch       Branch @relation(fields: [branchId], references: [id])
+  openedBy     User   @relation("ShiftOpenedBy", fields: [openedById], references: [id])
+  closedBy     User?  @relation("ShiftClosedBy", fields: [closedById], references: [id])
+  authorizedBy User?  @relation("ShiftAuthorizedBy", fields: [authorizedById], references: [id])
+
+  movements CashRegisterMovement[]
+  counts    CashCount[]
+
+  @@index([branchId, openedAt])
+  @@index([branchId, status])
 }
 
 model Role {
@@ -52,14 +130,17 @@ model User {
   /// con el que fue emitido; si no coincide con el actual, la sesion se rechaza.
   sessionVersion Int @default(0)
 
-  logs          AuditLog[]
-  sales         Sale[]                 @relation("SaleCreatedBy")
-  canceledSales Sale[]                 @relation("SaleCanceledBy")
-  stockChecks   StockCheck[]
-  cashMovements CashRegisterMovement[] // ← relación inversa agregada
-  branch        Branch                 @relation(fields: [branchId], references: [id])
-  role          Role                   @relation(fields: [roleId], references: [id])
-  cashCounts    CashCount[]
+  logs             AuditLog[]
+  sales            Sale[]                 @relation("SaleCreatedBy")
+  canceledSales    Sale[]                 @relation("SaleCanceledBy")
+  stockChecks      StockCheck[]
+  cashMovements    CashRegisterMovement[] // ← relación inversa agregada
+  shiftsOpened     CashShift[]            @relation("ShiftOpenedBy")
+  shiftsClosed     CashShift[]            @relation("ShiftClosedBy")
+  shiftsAuthorized CashShift[]            @relation("ShiftAuthorizedBy")
+  branch           Branch                 @relation(fields: [branchId], references: [id])
+  role             Role                   @relation(fields: [roleId], references: [id])
+  cashCounts       CashCount[]
 }
 
 model Category {
@@ -224,12 +305,20 @@ model CashRegisterMovement {
   /// sobre el campo description, que era la unica forma de relacionarlos.
   saleId Int?
 
-  branch Branch @relation(fields: [branchId], references: [id])
-  user   User   @relation(fields: [userId], references: [id])
-  sale   Sale?  @relation(fields: [saleId], references: [id])
+  /// Turno en el que ocurrio. Null solo en los movimientos anteriores a que
+  /// existieran los turnos, que la migracion cuelga del turno `legacy`.
+  shiftId Int?
+
+  branch Branch     @relation(fields: [branchId], references: [id])
+  user   User       @relation(fields: [userId], references: [id])
+  sale   Sale?      @relation(fields: [saleId], references: [id])
+  shift  CashShift? @relation(fields: [shiftId], references: [id])
 
   @@index([branchId, date])
   @@index([saleId])
+  /// El saldo esperado de un turno suma los movimientos en efectivo de ESE
+  /// turno. Es la consulta que se hace en cada venta y en cada cierre.
+  @@index([shiftId, paymentMethod])
 }
 
 model CashCount {
@@ -251,8 +340,17 @@ model CashCount {
   /// vivian dentro de `notes` como una frase.
   difference Decimal @default(0) @db.Decimal(14, 2)
 
-  branch Branch @relation(fields: [branchId], references: [id])
-  user   User   @relation(fields: [userId], references: [id])
+  /// Turno contra el que se hizo el arqueo. Null en los arqueos anteriores a
+  /// que existieran los turnos, que la migracion cuelga del turno `legacy`.
+  ///
+  /// Un arqueo NO cierra el turno: es un recuento intermedio. El cierre es
+  /// otra operacion, con su propia confirmacion.
+  shiftId Int?
+
+  branch Branch     @relation(fields: [branchId], references: [id])
+  user   User       @relation(fields: [userId], references: [id])
+  shift  CashShift? @relation(fields: [shiftId], references: [id])
 
   @@index([branchId, date])
+  @@index([shiftId])
 }

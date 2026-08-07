@@ -197,6 +197,7 @@ async function main() {
   await prisma.cashRegisterMovement.deleteMany()
   await prisma.sale.deleteMany()
   await prisma.cashCount.deleteMany()
+  await prisma.cashShift.deleteMany()
   await prisma.branchStock.deleteMany()
   await prisma.auditLog.deleteMany()
   await prisma.user.deleteMany()
@@ -258,7 +259,7 @@ async function main() {
     usuarios.set(u.username, creado.id)
   }
   // Un usuario en la otra sucursal, para poder comprobar el aislamiento a mano.
-  await prisma.user.create({
+  const norte = await prisma.user.create({
     data: {
       username: 'norte',
       name: 'Carla Ibanez',
@@ -267,6 +268,7 @@ async function main() {
       branchId: sucursalNorte.id,
     },
   })
+  usuarios.set('norte', norte.id)
 
   const categorias = new Map<string, number>()
   for (const nombre of CATEGORIAS) {
@@ -304,19 +306,32 @@ async function main() {
   const adminId = usuarios.get('admin') ?? 0
   let caja = 0
 
-  // Apertura de caja del dia anterior.
-  await prisma.cashRegisterMovement.create({
+  // La caja abierta. Antes esto era un movimiento de tipo "ingreso"
+  // llamado "Fondo de caja inicial"; ahora es lo que de verdad es: el monto
+  // con el que se abrio el turno. Ver docs/CASH_SHIFT_MODEL.md.
+  const turno = await prisma.cashShift.create({
     data: {
       branchId: sucursal.id,
-      userId: usuarios.get('encargado') ?? adminId,
-      amount: 25_000,
-      paymentMethod: 'efectivo',
-      description: 'Fondo de caja inicial',
-      type: 'ingreso',
-      date: haceDias(3),
+      openedById: usuarios.get('encargado') ?? adminId,
+      openedAt: haceDias(3),
+      openingAmount: 25_000,
+      status: 'open',
+      openingNotes: 'Fondo de caja inicial.',
     },
   })
   caja += 25_000
+
+  // La otra sucursal tambien abre: sin turno no se puede vender, y el seed
+  // tiene que dejar las dos listas para trabajar.
+  await prisma.cashShift.create({
+    data: {
+      branchId: sucursalNorte.id,
+      openedById: usuarios.get('norte') ?? adminId,
+      openedAt: haceDias(1),
+      openingAmount: 42_500,
+      status: 'open',
+    },
+  })
 
   for (const v of VENTAS) {
     const fecha = haceHoras(v.horas)
@@ -440,10 +455,19 @@ async function main() {
 
   await prisma.branch.update({ where: { id: sucursal.id }, data: { currentCash: caja } })
 
+  // Los movimientos se crearon sueltos por comodidad; aca se enganchan todos
+  // al turno de una sola vez. En la aplicacion real el `shiftId` lo pone el
+  // servicio en el momento de crear cada uno.
+  await prisma.cashRegisterMovement.updateMany({
+    where: { branchId: sucursal.id },
+    data: { shiftId: turno.id },
+  })
+
   // Arqueos: uno cuadrado y uno con diferencia.
   await prisma.cashCount.create({
     data: {
       branchId: sucursal.id,
+      shiftId: turno.id,
       userId: usuarios.get('encargado') ?? adminId,
       amount: 118_400,
       notes: 'Cierre del turno tarde. Cuadra.',
@@ -453,6 +477,7 @@ async function main() {
   await prisma.cashCount.create({
     data: {
       branchId: sucursal.id,
+      shiftId: turno.id,
       userId: usuarios.get('supervisor') ?? adminId,
       amount: 96_000,
       notes: 'Faltan 1.200. Se revisa el ticket de la tarde.',

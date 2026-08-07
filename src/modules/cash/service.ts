@@ -29,6 +29,7 @@ import {
   sumaODefecto,
   type Dinero,
 } from '@/server/money'
+import { saldoEsperadoDe, turnoAbiertoDe, turnoParaOperar } from './service.turnos'
 
 const CAMPOS_MOVIMIENTO = {
   id: true,
@@ -118,8 +119,18 @@ export async function listarMovimientos(
 }
 
 export interface Saldo {
-  balance: Monto
+  /**
+   * Lo que TIENE que haber en el cajon ahora mismo.
+   *
+   * Desde la Fase 3 es el esperado del turno abierto --monto inicial mas los
+   * movimientos en efectivo de ESE turno--, no el acumulado historico de la
+   * sucursal. Sin turno abierto es null: no hay caja de la que hablar.
+   */
+  balance: Monto | null
   efectivoHoy: Monto
+  /** Acumulado historico. Se muestra aparte y con su nombre, no como "saldo". */
+  acumuladoHistorico: Monto
+  turnoAbierto: boolean
 }
 
 export async function saldoActual(session: Session): Promise<Saldo> {
@@ -141,9 +152,13 @@ export async function saldoActual(session: Session): Promise<Saldo> {
     _sum: { amount: true },
   })
 
+  const turno = await turnoAbiertoDe(prisma, session.branchId)
+
   return {
-    balance: aMonto(sucursal.currentCash),
+    balance: turno === null ? null : aMonto(await saldoEsperadoDe(prisma, turno)),
     efectivoHoy: aMonto(sumaODefecto(hoy._sum.amount)),
+    acumuladoHistorico: aMonto(sucursal.currentCash),
+    turnoAbierto: turno !== null,
   }
 }
 
@@ -177,18 +192,22 @@ export async function registrarMovimientoManual(
   const importe: Dinero = multiplicar(dinero(input.amount), signo)
 
   return prisma.$transaction(async (tx) => {
-    if (input.paymentMethod === 'efectivo') {
-      const sucursal = await tx.branch.findUniqueOrThrow({
-        where: { id: session.branchId },
-        select: { currentCash: true },
-      })
+    const turno = await turnoParaOperar(tx, session.branchId)
 
-      if (signo < 0 && esNegativo(sumar(sucursal.currentCash, importe))) {
-        throw conflict(
-          `No se puede retirar ${aMonto(dinero(input.amount))}: ` +
-            `el saldo en caja es ${aMonto(sucursal.currentCash)}`,
-          { code: 'INSUFFICIENT_CASH' },
-        )
+    if (input.paymentMethod === 'efectivo') {
+      // El retiro se comprueba contra el TURNO, no contra el acumulado
+      // historico: lo que se puede sacar del cajon es lo que hay en el cajon.
+      // Antes se comparaba con `currentCash` y se podia retirar dinero de
+      // ventas de hace dos anios que ya no estaba fisicamente.
+      if (signo < 0 && turno !== null) {
+        const disponible = await saldoEsperadoDe(tx, turno)
+        if (esNegativo(sumar(disponible, importe))) {
+          throw conflict(
+            `No se puede retirar ${aMonto(dinero(input.amount))}: ` +
+              `en la caja hay ${aMonto(disponible)}`,
+            { code: 'INSUFFICIENT_CASH' },
+          )
+        }
       }
 
       await tx.branch.update({
@@ -205,6 +224,7 @@ export async function registrarMovimientoManual(
         paymentMethod: input.paymentMethod,
         description: input.description ?? '',
         type: input.movementType,
+        shiftId: turno?.id ?? null,
       },
       select: {
         id: true,
@@ -259,12 +279,17 @@ export async function registrarArqueo(
   input: ArqueoInput,
 ): Promise<ArqueoRegistrado> {
   return prisma.$transaction(async (tx) => {
-    const sucursal = await tx.branch.findUniqueOrThrow({
-      where: { id: session.branchId },
-      select: { currentCash: true },
-    })
+    // Contra el TURNO, no contra el acumulado historico. Es el cambio que
+    // hace que un arqueo signifique algo: comparar lo contado con lo que paso
+    // por la caja en dos anios no detecta ningun faltante.
+    const turno = await turnoAbiertoDe(tx, session.branchId)
+    if (!turno) {
+      throw conflict('No hay una caja abierta. El arqueo compara contra el turno en curso.', {
+        code: 'NO_OPEN_SHIFT',
+      })
+    }
 
-    const esperado = sucursal.currentCash
+    const esperado = await saldoEsperadoDe(tx, turno)
     const contado = dinero(input.amount)
     const diferencia = restar(contado, esperado)
 
@@ -275,6 +300,7 @@ export async function registrarArqueo(
         amount: contado,
         expected: esperado,
         difference: diferencia,
+        shiftId: turno.id,
         // `notes` vuelve a ser lo que el usuario escribio, nada mas.
         notes: input.notes ?? null,
       },
@@ -292,6 +318,7 @@ export async function registrarArqueo(
         contado: aMonto(contado),
         esperado: aMonto(esperado),
         diferencia: aMonto(diferencia),
+        turno: turno.id,
         motivo: input.notes ?? null,
         branchId: session.branchId,
       },

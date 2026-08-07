@@ -56,7 +56,48 @@ export const listarMovimientosQuerySchema = paginationQuerySchema.extend({
   tipo: z.enum(['todos', 'sale', 'sale_cancel', 'manual', 'retiro', 'deposito']).default('todos'),
 })
 
+/**
+ * Apertura de caja.
+ *
+ * `openingAmount` es lo que se cuenta en el cajon al empezar. Puede ser cero
+ * --una caja que arranca vacia-- pero tiene que venir: abrir sin declarar
+ * cuanto habia deja el turno sin punto de partida y el cierre no significa
+ * nada.
+ */
+export const abrirTurnoSchema = z
+  .object({
+    openingAmount: amountSchema,
+    notes: optionalText(500),
+  })
+  .strict()
+
+/**
+ * Cierre de caja.
+ *
+ * `countedAmount` es lo que se conto. El esperado y la diferencia los calcula
+ * el servidor: si los mandara el cliente se podria declarar un cierre cuadrado
+ * sobre una caja que no lo esta.
+ *
+ * `autorizar` es la confirmacion explicita de una diferencia por encima del
+ * umbral de la sucursal. Sin ella, el cierre se rechaza con un 409 que dice
+ * cuanto falta y cuanto es el limite.
+ */
+export const cerrarTurnoSchema = z
+  .object({
+    countedAmount: amountSchema,
+    notes: optionalText(500),
+    autorizar: z.boolean().default(false),
+  })
+  .strict()
+
+export const listarTurnosQuerySchema = paginationQuerySchema.extend({
+  estado: z.enum(['todos', 'open', 'closed', 'legacy']).default('todos'),
+})
+
 export type MovimientoManualInput = z.infer<typeof movimientoManualSchema>
 export type ArqueoInput = z.infer<typeof arqueoSchema>
 export type ListarMovimientosQuery = z.infer<typeof listarMovimientosQuerySchema>
 export type ListarArqueosQuery = z.infer<typeof listarArqueosQuerySchema>
+export type AbrirTurnoInput = z.infer<typeof abrirTurnoSchema>
+export type CerrarTurnoInput = z.infer<typeof cerrarTurnoSchema>
+export type ListarTurnosQuery = z.infer<typeof listarTurnosQuerySchema>

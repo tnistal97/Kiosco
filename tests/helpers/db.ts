@@ -9,7 +9,7 @@ import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcrypt'
 import { knownRoles } from '@/server/authz/permissions'
 import type { Monto } from '@/lib/money'
-import { aMonto } from '@/server/money'
+import { aMonto, sumar, sumaODefecto } from '@/server/money'
 
 export { prisma }
 
@@ -21,6 +21,7 @@ const TABLES = [
   'Sale',
   'CashRegisterMovement',
   'CashCount',
+  'CashShift',
   'BranchStock',
   'Product',
   'User',
@@ -57,6 +58,9 @@ export interface Fixture {
   categoryId: number
   /** Un usuario por cada rol del catalogo, todos en la sucursal A. */
   porRol: Record<string, TestUser>
+  /** Turno abierto de cada sucursal. Sin turno no se puede vender. */
+  turnoA: number
+  turnoB: number
 }
 
 export interface TestUser {
@@ -122,6 +126,19 @@ export async function seedFixture(): Promise<Fixture> {
     porRol[nombre] = await mkUser(`u_${nombre}`, rol.id, nombre, branchA.id)
   }
 
+  // Las dos sucursales arrancan con la caja ABIERTA y en cero.
+  //
+  // Desde la Fase 3 no se puede vender sin turno abierto, asi que la fixture
+  // lo abre: si no, cada prueba de venta empezaria con seis lineas de
+  // preparacion que no tienen nada que ver con lo que prueba. Las pruebas del
+  // turno en si lo cierran o lo borran cuando necesitan el otro caso.
+  const turnoA = await prisma.cashShift.create({
+    data: { branchId: branchA.id, openedById: admin.id, openingAmount: 0, status: 'open' },
+  })
+  const turnoB = await prisma.cashShift.create({
+    data: { branchId: branchB.id, openedById: cajeroB.id, openingAmount: 0, status: 'open' },
+  })
+
   const category = await prisma.category.create({ data: { name: 'Almacen' } })
 
   const productoA = await prisma.product.create({
@@ -171,7 +188,25 @@ export async function seedFixture(): Promise<Fixture> {
     },
     categoryId: category.id,
     porRol,
+    turnoA: turnoA.id,
+    turnoB: turnoB.id,
   }
+}
+
+/**
+ * Saldo esperado del turno abierto de la sucursal.
+ *
+ * Es lo que TIENE que haber en el cajon: monto inicial mas los movimientos en
+ * efectivo de ese turno. Distinto de `cashOf`, que es el acumulado historico.
+ */
+export async function expectedOfShift(branchId: number): Promise<Monto> {
+  const turno = await prisma.cashShift.findFirst({ where: { branchId, status: 'open' } })
+  if (!turno) return '0.00'
+  const efectivo = await prisma.cashRegisterMovement.aggregate({
+    where: { shiftId: turno.id, paymentMethod: 'efectivo' },
+    _sum: { amount: true },
+  })
+  return aMonto(sumar(turno.openingAmount, sumaODefecto(efectivo._sum.amount)))
 }
 
 /** Stock actual de un producto en una sucursal. */

@@ -125,6 +125,7 @@ describe('La cadena oficial', () => {
       '20260806190000_phase2_product_active',
       '20260806193000_phase2_cash_count_difference',
       '20260807100000_phase3_decimal_money',
+      '20260807110000_phase3_cash_shifts',
     ])
   })
 

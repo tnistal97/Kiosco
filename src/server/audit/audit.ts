@@ -19,7 +19,19 @@ import { currentIp, currentRequestId } from '@/server/http/requestContext'
 export type DbClient = PrismaClient | Prisma.TransactionClient
 
 export type AuditAction =
-  'create' | 'update' | 'delete' | 'cancel' | 'login' | 'login_failed' | 'logout' | 'deny'
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'cancel'
+  | 'login'
+  | 'login_failed'
+  | 'logout'
+  | 'deny'
+  // Turnos de caja: abrir y cerrar no son "crear" y "actualizar". Un cierre
+  // con diferencia es el evento que despues se busca en la bitacora, y
+  // buscarlo como "update de CashShift" no lo distingue de nada.
+  | 'open'
+  | 'close'
 
 export type AuditResult = 'success' | 'failure'
 

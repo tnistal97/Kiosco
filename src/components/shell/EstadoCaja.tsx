@@ -22,6 +22,7 @@ import type { Monto } from '@/lib/money'
 export function EstadoCaja() {
   const puedeVer = usePermiso('cash.view')
   const [saldo, setSaldo] = useState<Monto | null>(null)
+  const [cargando, setCargando] = useState(true)
   const [fallo, setFallo] = useState(false)
 
   useEffect(() => {
@@ -39,10 +40,14 @@ export function EstadoCaja() {
         if (vivo) {
           setSaldo(r.balance)
           setFallo(false)
+          setCargando(false)
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return
-        if (vivo) setFallo(true)
+        if (vivo) {
+          setFallo(true)
+          setCargando(false)
+        }
       }
     }
 
@@ -67,7 +72,22 @@ export function EstadoCaja() {
 
   if (!puedeVer) return null
   if (fallo) return null
-  if (saldo === null) return <Skeleton className="hidden h-7 w-28 sm:block" />
+  if (cargando) return <Skeleton className="hidden h-11 w-28 sm:block" />
+
+  // Sin turno abierto no hay saldo del que hablar. Mostrar un cero se leeria
+  // como "no vendi nada", que es una afirmacion distinta y falsa.
+  if (saldo === null) {
+    return (
+      <Link
+        href="/caja"
+        className="hidden min-h-touch items-center gap-2 rounded-md border border-warning/45 px-2.5 text-sm text-warning transition-colors hover:bg-warning-quiet sm:flex"
+        title="No hay una caja abierta"
+      >
+        <span aria-hidden="true">●</span>
+        Caja cerrada
+      </Link>
+    )
+  }
 
   return (
     <Link
@@ -76,7 +96,7 @@ export function EstadoCaja() {
       // quedaba por debajo del minimo tactil en la cabecera de todas las
       // pantallas.
       className="hidden min-h-touch items-center gap-2 rounded-md border border-line px-2.5 transition-colors hover:border-line-strong hover:bg-raised sm:flex"
-      title="Saldo acumulado en efectivo de la sucursal"
+      title="Efectivo que tiene que haber en el cajón, según el turno en curso"
     >
       <span className="text-xs text-ink-muted">Caja</span>
       <Money amount={saldo} size="sm" />

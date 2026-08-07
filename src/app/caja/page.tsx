@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Alert,
   Button,
   Card,
   CardHeader,
@@ -25,6 +24,9 @@ import {
   aviso,
 } from '@/components/ui'
 import { DialogoArqueo } from '@/components/caja/DialogoArqueo'
+import { DialogoAbrirCaja, DialogoCerrarCaja } from '@/components/caja/DialogoTurno'
+import { PanelTurno } from '@/components/caja/PanelTurno'
+import { HistorialTurnos } from '@/components/caja/HistorialTurnos'
 import { DialogoMovimiento } from '@/components/caja/DialogoMovimiento'
 import { MovimientoRow, fechaCorta, medioLegible, tipoDe } from '@/components/caja/MovimientoRow'
 import { usePermiso } from '@/components/shell/SessionProvider'
@@ -33,9 +35,11 @@ import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { CERO, esCero, type Monto } from '@/lib/money'
 import {
   parseArqueos,
+  parseEstadoDeCaja,
   parseMovimientos,
   parseSaldo,
   type ArqueoDTO,
+  type EstadoDeCajaDTO,
   type MovimientoDTO,
 } from '@/modules/cash/dto'
 import { esObjeto, numero } from '@/lib/api-client'
@@ -61,6 +65,7 @@ function parsePaginaMovimientos(raw: unknown): Pagina {
 export default function CajaPage() {
   const puedeMover = usePermiso('cash.movement.create')
   const puedeArquear = usePermiso('cash.count.create')
+  const puedeAutorizar = usePermiso('cash.shift.authorize')
 
   const [saldo, setSaldo] = useState<Monto | null>(null)
   const [efectivoHoy, setEfectivoHoy] = useState<Monto>(CERO)
@@ -74,8 +79,14 @@ export default function CajaPage() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const [caja, setCaja] = useState<EstadoDeCajaDTO | null>(null)
+  /** Se incrementa al abrir o cerrar: es la senial para recargar el historial. */
+  const [recargas, setRecargas] = useState(0)
+
   const [movimientoAbierto, setMovimientoAbierto] = useState(false)
   const [arqueoAbierto, setArqueoAbierto] = useState(false)
+  const [abrirCajaAbierto, setAbrirCajaAbierto] = useState(false)
+  const [cerrarCajaAbierto, setCerrarCajaAbierto] = useState(false)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -87,11 +98,13 @@ export default function CajaPage() {
         dias: String(dias),
         tipo,
       })
-      const [pag, s, arq] = await Promise.all([
+      const [pag, s, arq, estado] = await Promise.all([
         apiRequest(`/api/cash?${params.toString()}`, { parse: parsePaginaMovimientos }),
         apiRequest('/api/cash/balance', { parse: parseSaldo }),
         apiRequest('/api/cash/count?limite=5', { parse: parseArqueos }),
+        apiRequest('/api/cash/shift', { parse: parseEstadoDeCaja }),
       ])
+      setCaja(estado)
       setMovimientos(pag.movimientos)
       setTotal(pag.total)
       setPaginas(pag.totalPages)
@@ -114,19 +127,26 @@ export default function CajaPage() {
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-5">
       {/*
-        Advertencia visible, no una nota al pie: el numero grande de arriba no
-        es el de un turno. Esconderlo haria que un encargado creyera que la
-        caja "cierra" cuando en realidad esta mirando un acumulado.
+        El turno primero. Es la respuesta a la unica pregunta que se hace en el
+        mostrador: "empece con esto, paso esto, tengo que tener esto".
+        Hasta la Fase 2 aca habia una advertencia diciendo que el numero grande
+        NO era el de un turno; ahora lo es.
       */}
-      <Alert tone="warning" title="Este saldo es acumulado, no el de un turno">
-        Suma todo el efectivo de la sucursal desde que se instaló el sistema. Los turnos de caja,
-        con apertura y cierre, llegan en la Fase&nbsp;3. Mientras tanto, el arqueo compara contra
-        este total.
-      </Alert>
+      <PanelTurno
+        estado={caja}
+        cargando={cargando}
+        onAbrir={() => {
+          setAbrirCajaAbierto(true)
+        }}
+        onCerrar={() => {
+          setCerrarCajaAbierto(true)
+        }}
+      />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <MetricCard
-          label="Saldo en efectivo"
+          label="Tiene que haber"
+          detail={saldo === null ? 'No hay caja abierta' : 'Esperado del turno en curso'}
           value={saldo === null ? '—' : <Money amount={saldo} size="lg" />}
         />
         <MetricCard
@@ -296,6 +316,8 @@ export default function CajaPage() {
         </div>
       </Card>
 
+      <HistorialTurnos recargar={recargas} />
+
       {arqueos.length > 0 && (
         <Card>
           <CardHeader title="Últimos arqueos" description="Lo contado contra lo esperado." />
@@ -331,6 +353,39 @@ export default function CajaPage() {
           void cargar()
         }}
       />
+
+      <DialogoAbrirCaja
+        abierto={abrirCajaAbierto}
+        onCerrar={() => {
+          setAbrirCajaAbierto(false)
+        }}
+        onHecho={() => {
+          setAbrirCajaAbierto(false)
+          aviso.ok('Caja abierta')
+          setRecargas((n) => n + 1)
+          notificarCambioDeCaja()
+          void cargar()
+        }}
+      />
+
+      {caja?.turno && (
+        <DialogoCerrarCaja
+          abierto={cerrarCajaAbierto}
+          turno={caja.turno}
+          umbral={caja.politica.umbralDiferencia}
+          puedeAutorizar={puedeAutorizar}
+          onCerrar={() => {
+            setCerrarCajaAbierto(false)
+          }}
+          onHecho={() => {
+            setCerrarCajaAbierto(false)
+            aviso.ok('Caja cerrada')
+            setRecargas((n) => n + 1)
+            notificarCambioDeCaja()
+            void cargar()
+          }}
+        />
+      )}
 
       <DialogoArqueo
         abierto={arqueoAbierto}

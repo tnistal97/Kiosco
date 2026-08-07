@@ -45,6 +45,20 @@ export const PERMISSIONS = [
   'cash.view',
   'cash.movement.create',
   'cash.count.create',
+  /**
+   * Turnos de caja. Ver docs/CASH_SHIFT_MODEL.md.
+   *
+   * `close` es el turno PROPIO. Cerrar el de otro es un permiso aparte:
+   * pasa cuando alguien se fue sin cerrar, y es una operacion de encargado.
+   *
+   * `authorize` cubre una diferencia por encima del umbral de la sucursal.
+   * Que un cajero no pueda autorizar su propio faltante es medio punto de
+   * todo el mecanismo.
+   */
+  'cash.shift.open',
+  'cash.shift.close',
+  'cash.shift.close.other',
+  'cash.shift.authorize',
   // Informacion administrativa
   'reports.view',
   'audit.view',
@@ -73,6 +87,9 @@ const PERFIL_CAJA: readonly Permission[] = [
   'stock.view',
   'cash.view',
   'cash.count.create',
+  // Abre y cierra SU caja. No la de otro, y no autoriza su propio faltante.
+  'cash.shift.open',
+  'cash.shift.close',
 ]
 
 const ROLE_PRESETS: Record<string, readonly Permission[]> = {
@@ -103,6 +120,10 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'cash.view',
     'cash.movement.create',
     'cash.count.create',
+    'cash.shift.open',
+    'cash.shift.close',
+    'cash.shift.close.other',
+    'cash.shift.authorize',
     'reports.view',
     'suppliers.view',
     'branches.view',

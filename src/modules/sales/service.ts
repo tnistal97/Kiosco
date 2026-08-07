@@ -22,6 +22,7 @@ import {
   sumar,
   type Dinero,
 } from '@/server/money'
+import { turnoAbiertoDe, turnoParaOperar } from '@/modules/cash/service.turnos'
 
 export type PaymentMethod = 'efectivo' | 'tarjeta' | 'mercado_pago'
 
@@ -89,6 +90,14 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
 
   return prisma.$transaction(
     async (tx) => {
+      // 0) La caja tiene que estar abierta, si la sucursal lo exige.
+      //
+      //    Va PRIMERO, antes de tocar el stock: rechazar una venta despues de
+      //    haber descontado unidades obligaria a devolverlas, y en una
+      //    transaccion que despues falla eso es facil de creer y dificil de
+      //    comprobar. Ver docs/CASH_SHIFT_MODEL.md.
+      const turno = await turnoParaOperar(tx, branchId)
+
       // 1) Los productos se leen de la base, filtrados por la sucursal de la
       //    sesion. Un producto de otra sucursal simplemente no aparece.
       const productos = await tx.product.findMany({
@@ -176,7 +185,8 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         select: { id: true, date: true },
       })
 
-      // 5) Movimiento de caja vinculado por clave foranea, no por texto.
+      // 5) Movimiento de caja vinculado por clave foranea, no por texto, y
+      //    colgado del turno abierto.
       await tx.cashRegisterMovement.create({
         data: {
           branchId,
@@ -186,6 +196,7 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
           description: `Venta #${venta.id}`,
           type: 'sale',
           saleId: venta.id,
+          shiftId: turno?.id ?? null,
         },
       })
 
@@ -222,6 +233,7 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         after: {
           id: venta.id,
           branchId,
+          turno: turno?.id ?? null,
           total: aMonto(total),
           paymentMethod: input.paymentMethod,
           items: itemsParaMostrar,
@@ -311,6 +323,13 @@ export async function cancelSale(
 
       let efectivoRevertido: Dinero = CERO_D
 
+      // El contramovimiento se cuelga del turno ABIERTO AHORA, no del turno en
+      // el que se hizo la venta. Es lo correcto: la plata sale del cajon de
+      // quien esta atendiendo hoy, no del de anteayer. Si el turno original ya
+      // cerro, su diferencia no se toca --un turno cerrado es inmutable-- y la
+      // devolucion aparece como egreso del turno actual.
+      const turnoActivo = await turnoAbiertoDe(tx, venta.branchId)
+
       for (const mov of originales) {
         await tx.cashRegisterMovement.create({
           data: {
@@ -323,6 +342,7 @@ export async function cancelSale(
             description: `Anulacion de venta #${saleId}: ${motivo}`,
             type: 'sale_cancel',
             saleId,
+            shiftId: turnoActivo?.id ?? null,
           },
         })
 

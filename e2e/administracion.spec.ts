@@ -249,12 +249,26 @@ test.describe('Sesion', () => {
 })
 
 test.describe('Caja', () => {
-  test('advierte que el saldo es acumulado y no un turno', async ({ page }) => {
+  test('muestra el turno abierto, no un acumulado', async ({ page }) => {
     await entrar(page, 'encargado')
     await page.goto('/caja')
 
-    await expect(page.getByText(/acumulado, no el de un turno/i)).toBeVisible()
-    await expect(page.getByText(/fase\s*3/i)).toBeVisible()
+    // Hasta la Fase 2 aca habia una advertencia diciendo que el numero grande
+    // NO era el de un turno. Ahora lo es, y la advertencia no existe.
+    await expect(page.getByText(/acumulado, no el de un turno/i)).toHaveCount(0)
+
+    await expect(page.getByText(/caja abierta por/i)).toBeVisible()
+    await expect(page.getByText('Tiene que haber').first()).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Cerrar la caja' })).toBeVisible()
+  })
+
+  test('el historial de turnos muestra el turno en curso', async ({ page }) => {
+    await entrar(page, 'encargado')
+    await page.goto('/caja')
+
+    await expect(page.getByText('Turnos de caja')).toBeVisible()
+    // El turno en curso aparece con su estado escrito, no solo con un color.
+    await expect(page.getByText('Abierto').first()).toBeVisible()
   })
 
   test('el arqueo muestra lo esperado y calcula la diferencia', async ({ page }) => {

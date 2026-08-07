@@ -47,6 +47,12 @@ export type ErrorCode =
   | 'DUPLICATE_USERNAME'
   | 'INSUFFICIENT_CASH'
   | 'CASH_REGISTER_MISMATCH'
+  // Turnos de caja. Ver docs/CASH_SHIFT_MODEL.md.
+  | 'NO_OPEN_SHIFT'
+  | 'SHIFT_ALREADY_OPEN'
+  | 'SHIFT_ALREADY_CLOSED'
+  | 'LEGACY_SHIFT'
+  | 'DIFFERENCE_NEEDS_AUTHORIZATION'
 
 /** Forma exacta del cuerpo de error. Compartida con el cliente. */
 export interface ApiErrorBody {

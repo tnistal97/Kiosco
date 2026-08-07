@@ -18,6 +18,7 @@ import { ResultadoBusqueda } from '@/components/venta/ResultadoBusqueda'
 import { Ticket } from '@/components/venta/Ticket'
 import { DialogoCobro, type MedioDePago } from '@/components/venta/DialogoCobro'
 import { AyudaAtajos } from '@/components/venta/AyudaAtajos'
+import { AvisoCajaCerrada } from '@/components/venta/AvisoCajaCerrada'
 import { EscanerCamara } from '@/components/venta/EscanerCamara'
 import { useSession } from '@/components/shell/SessionProvider'
 import { notificarCambioDeCaja } from '@/components/shell/EstadoCaja'
@@ -366,6 +367,8 @@ export default function VentaPage() {
   return (
     <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-3 sm:p-4">
+        <AvisoCajaCerrada />
+
         {avisoRestauracion && (
           <Alert
             tone="info"

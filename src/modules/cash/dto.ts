@@ -3,7 +3,7 @@
  */
 
 import { esObjeto, lista, numero, texto, textoOpcional, numeroOpcional } from '@/lib/api-client'
-import { montoODefecto, type Monto } from '@/lib/money'
+import { montoODefecto, montoOpcional, type Monto } from '@/lib/money'
 
 export type MetodoPago = 'efectivo' | 'tarjeta' | 'mercado_pago' | 'transferencia'
 
@@ -32,8 +32,12 @@ export interface MovimientoDTO {
 }
 
 export interface SaldoDTO {
-  balance: Monto
+  /** Esperado del turno abierto. `null` cuando no hay caja abierta. */
+  balance: Monto | null
   efectivoHoy: Monto
+  /** Acumulado historico de la sucursal. Se muestra con su nombre, no como "saldo". */
+  acumuladoHistorico: Monto
+  turnoAbierto: boolean
 }
 
 export interface ArqueoDTO {
@@ -94,9 +98,21 @@ export function parseMovimientos(raw: unknown): MovimientoDTO[] {
   return lista(raw, parseMovimiento)
 }
 
+const SIN_CAJA: SaldoDTO = {
+  balance: null,
+  efectivoHoy: '0.00',
+  acumuladoHistorico: '0.00',
+  turnoAbierto: false,
+}
+
 export function parseSaldo(raw: unknown): SaldoDTO {
-  if (!esObjeto(raw)) return { balance: '0.00', efectivoHoy: '0.00' }
-  return { balance: montoODefecto(raw.balance), efectivoHoy: montoODefecto(raw.efectivoHoy) }
+  if (!esObjeto(raw)) return SIN_CAJA
+  return {
+    balance: montoOpcional(raw.balance),
+    efectivoHoy: montoODefecto(raw.efectivoHoy),
+    acumuladoHistorico: montoODefecto(raw.acumuladoHistorico),
+    turnoAbierto: raw.turnoAbierto === true,
+  }
 }
 
 export function parseArqueo(raw: unknown): ArqueoDTO {
@@ -117,4 +133,92 @@ export function parseArqueo(raw: unknown): ArqueoDTO {
 export function parseArqueos(raw: unknown): ArqueoDTO[] {
   if (esObjeto(raw) && 'data' in raw) return lista(raw.data, parseArqueo)
   return lista(raw, parseArqueo)
+}
+
+// ---------------------------------------------------------------- turnos
+
+export type EstadoTurno = 'open' | 'closed' | 'legacy'
+
+export interface TurnoDTO {
+  id: number
+  status: EstadoTurno
+  openedAt: string
+  closedAt: string | null
+  openingAmount: Monto
+  /** Derivado mientras esta abierto; congelado al cerrar. */
+  expectedAmount: Monto
+  countedAmount: Monto | null
+  difference: Monto | null
+  openedBy: { id: number; name: string }
+  closedBy: { id: number; name: string } | null
+  authorizedBy: { id: number; name: string } | null
+  openingNotes: string | null
+  closingNotes: string | null
+  ventasEnEfectivo: Monto
+  ingresos: Monto
+  egresos: Monto
+  cantidadDeVentas: number
+}
+
+export interface PoliticaDeCajaDTO {
+  requiereTurno: boolean
+  umbralDiferencia: Monto
+}
+
+/** Un estado desconocido se trata como cerrado: es lo que menos habilita. */
+function parseEstadoTurno(raw: unknown): EstadoTurno {
+  const t = texto(raw)
+  return t === 'open' || t === 'legacy' ? t : 'closed'
+}
+
+export function parseTurno(raw: unknown): TurnoDTO {
+  if (!esObjeto(raw)) throw new Error('La respuesta no tiene la forma de un turno')
+  return {
+    id: numero(raw.id),
+    status: parseEstadoTurno(raw.status),
+    openedAt: texto(raw.openedAt),
+    closedAt: textoOpcional(raw.closedAt),
+    openingAmount: montoODefecto(raw.openingAmount),
+    expectedAmount: montoODefecto(raw.expectedAmount),
+    countedAmount: montoOpcional(raw.countedAmount),
+    difference: montoOpcional(raw.difference),
+    openedBy: parseUsuario(raw.openedBy),
+    closedBy: esObjeto(raw.closedBy) ? parseUsuario(raw.closedBy) : null,
+    authorizedBy: esObjeto(raw.authorizedBy) ? parseUsuario(raw.authorizedBy) : null,
+    openingNotes: textoOpcional(raw.openingNotes),
+    closingNotes: textoOpcional(raw.closingNotes),
+    ventasEnEfectivo: montoODefecto(raw.ventasEnEfectivo),
+    ingresos: montoODefecto(raw.ingresos),
+    egresos: montoODefecto(raw.egresos),
+    cantidadDeVentas: numero(raw.cantidadDeVentas),
+  }
+}
+
+export interface EstadoDeCajaDTO {
+  turno: TurnoDTO | null
+  politica: PoliticaDeCajaDTO
+}
+
+export function parseEstadoDeCaja(raw: unknown): EstadoDeCajaDTO {
+  const politica =
+    esObjeto(raw) && esObjeto(raw.politica)
+      ? {
+          requiereTurno: raw.politica.requiereTurno !== false,
+          umbralDiferencia: montoODefecto(raw.politica.umbralDiferencia),
+        }
+      : { requiereTurno: true, umbralDiferencia: '0.00' }
+
+  const turno = esObjeto(raw) && esObjeto(raw.turno) ? parseTurno(raw.turno) : null
+  return { turno, politica }
+}
+
+export function parseTurnos(raw: unknown): TurnoDTO[] {
+  if (esObjeto(raw) && 'data' in raw) return lista(raw.data, parseTurno)
+  return lista(raw, parseTurno)
+}
+
+/** El turno recien abierto o cerrado, tal como lo devuelve la ruta. */
+export function parseTurnoEnvuelto(raw: unknown): TurnoDTO {
+  if (esObjeto(raw) && esObjeto(raw.turno)) return parseTurno(raw.turno)
+  return parseTurno(raw)
 }
