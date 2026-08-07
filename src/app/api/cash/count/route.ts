@@ -1,11 +1,27 @@
 // src/app/api/cash/count/route.ts
 import { NextResponse } from 'next/server'
 import { handler } from '@/server/http/handler'
-import { arqueoSchema } from '@/modules/cash/schemas'
-import { registrarArqueo } from '@/modules/cash/service'
+import { arqueoSchema, listarArqueosQuerySchema } from '@/modules/cash/schemas'
+import { listarArqueos, registrarArqueo } from '@/modules/cash/service'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+/**
+ * Ultimos arqueos de la sucursal.
+ *
+ * Con `cash.view`, el mismo permiso que ver el saldo: quien puede ver cuanta
+ * plata dice que hay puede ver los recuentos que lo comprobaron.
+ */
+export const GET = handler(
+  {
+    auth: 'session',
+    permission: 'cash.view',
+    query: listarArqueosQuerySchema,
+    audit: 'GET /api/cash/count',
+  },
+  ({ session, query }) => listarArqueos(session, query.limite),
+)
 
 /**
  * Arqueo de caja: cuanto dinero hay fisicamente en el cajon.

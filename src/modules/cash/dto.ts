@@ -35,6 +35,16 @@ export interface SaldoDTO {
   efectivoHoy: number
 }
 
+export interface ArqueoDTO {
+  id: number
+  amount: number
+  expected: number
+  difference: number
+  date: string
+  notes: string | null
+  user: { id: number; name: string }
+}
+
 const USUARIO_DESCONOCIDO = { id: 0, name: 'Desconocido' }
 
 function parseUsuario(raw: unknown): { id: number; name: string } {
@@ -86,4 +96,24 @@ export function parseMovimientos(raw: unknown): MovimientoDTO[] {
 export function parseSaldo(raw: unknown): SaldoDTO {
   if (!esObjeto(raw)) return { balance: 0, efectivoHoy: 0 }
   return { balance: numero(raw.balance), efectivoHoy: numero(raw.efectivoHoy) }
+}
+
+export function parseArqueo(raw: unknown): ArqueoDTO {
+  if (!esObjeto(raw)) {
+    throw new Error('La respuesta no tiene la forma de un arqueo')
+  }
+  return {
+    id: numero(raw.id),
+    amount: numero(raw.amount),
+    expected: numero(raw.expected),
+    difference: numero(raw.difference),
+    date: texto(raw.date),
+    notes: textoOpcional(raw.notes),
+    user: parseUsuario(raw.user),
+  }
+}
+
+export function parseArqueos(raw: unknown): ArqueoDTO[] {
+  if (esObjeto(raw) && 'data' in raw) return lista(raw.data, parseArqueo)
+  return lista(raw, parseArqueo)
 }

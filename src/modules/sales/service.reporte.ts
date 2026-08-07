@@ -7,6 +7,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import type { Prisma } from '@prisma/client'
 import { invalid } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
@@ -63,7 +64,18 @@ export async function reporteDeVentas(
   const dias = (hasta.getTime() - desde.getTime()) / (24 * 60 * 60 * 1000)
   if (dias > MAX_DIAS_REPORTE) throw invalid(`El rango no puede superar ${MAX_DIAS_REPORTE} dias`)
 
-  const where = { branchId: session.branchId, date: { gte: desde, lte: hasta } }
+  const where: Prisma.SaleWhereInput = {
+    branchId: session.branchId,
+    date: { gte: desde, lte: hasta },
+    ...(query.estado === 'todas' ? {} : { status: query.estado }),
+    ...(query.userId === undefined ? {} : { userId: query.userId }),
+    ...(query.saleId === undefined ? {} : { id: query.saleId }),
+    // El medio de pago no vive en Sale sino en el movimiento de caja que la
+    // venta genera. Se filtra por la relacion, no por un campo que no existe.
+    ...(query.paymentMethod === undefined
+      ? {}
+      : { cashMovements: { some: { type: 'sale', paymentMethod: query.paymentMethod } } }),
+  }
 
   const [total, anuladas, ventas] = await Promise.all([
     prisma.sale.count({ where }),

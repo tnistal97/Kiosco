@@ -40,6 +40,13 @@ export const arqueoSchema = z
   })
   .strict()
 
+/** Ultimos arqueos. Tope acotado: es una lista de trabajo, no un informe. */
+export const listarArqueosQuerySchema = z
+  .object({
+    limite: z.coerce.number().int().min(1).max(50).default(10),
+  })
+  .strict()
+
 export const listarMovimientosQuerySchema = paginationQuerySchema.extend({
   /** Dias hacia atras. El listado por defecto son ayer y hoy. */
   dias: z.coerce.number().int().min(1).max(90).default(2),
@@ -49,3 +56,4 @@ export const listarMovimientosQuerySchema = paginationQuerySchema.extend({
 export type MovimientoManualInput = z.infer<typeof movimientoManualSchema>
 export type ArqueoInput = z.infer<typeof arqueoSchema>
 export type ListarMovimientosQuery = z.infer<typeof listarMovimientosQuerySchema>
+export type ListarArqueosQuery = z.infer<typeof listarArqueosQuerySchema>

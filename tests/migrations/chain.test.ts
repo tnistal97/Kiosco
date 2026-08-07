@@ -122,6 +122,8 @@ describe('La cadena oficial', () => {
       '20250605201717_add_value_to_product',
       '20260806120000_phase0_security_baseline',
       '20260806160000_phase1_audit_context',
+      '20260806190000_phase2_product_active',
+      '20260806193000_phase2_cash_count_difference',
     ])
   })
 
@@ -345,6 +347,8 @@ describe('Servidor existente', () => {
 
     expect(salida).toContain('20260806120000_phase0_security_baseline')
     expect(salida).toContain('20260806160000_phase1_audit_context')
+    expect(salida).toContain('20260806190000_phase2_product_active')
+    expect(salida).toContain('20260806193000_phase2_cash_count_difference')
     expect(salida).toContain('successfully applied')
     // Las archivadas no se vuelven a ejecutar.
     expect(salida).not.toContain('20250529181604_init')

@@ -55,10 +55,21 @@ export const anularVentaSchema = z
 
 const fechaSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato esperado: YYYY-MM-DD')
 
-/** Reporte administrativo por rango de fechas, paginado. */
+/**
+ * Reporte administrativo por rango de fechas, paginado.
+ *
+ * Los filtros son todos opcionales salvo el rango: sin rango, la consulta
+ * recorreria la tabla entera.
+ */
 export const reporteVentasQuerySchema = paginationQuerySchema.extend({
   start: fechaSchema,
   end: fechaSchema,
+  estado: z.enum(['todas', 'completed', 'canceled']).default('todas'),
+  /** Quien la registro. */
+  userId: idSchema.optional(),
+  paymentMethod: paymentMethodSchema.optional(),
+  /** Numero de venta exacto. Cuando esta, los demas filtros no estorban. */
+  saleId: idSchema.optional(),
 })
 
 export const listarVentasQuerySchema = paginationQuerySchema.extend({

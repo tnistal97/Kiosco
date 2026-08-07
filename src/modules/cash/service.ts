@@ -238,12 +238,10 @@ export interface ArqueoRegistrado {
  * el cliente, se podria declarar un arqueo cuadrado sobre una caja que no lo
  * esta, que es exactamente lo que un arqueo tiene que detectar.
  *
- * Los dos valores calculados se guardan hoy dentro de `notes`, porque
- * `CashCount` solo tiene la columna `amount`. Es una solucion provisoria: no
- * se puede consultar "arqueos con diferencia mayor a X" sin leer texto. Pasan
- * a columnas propias junto con `CashSession`, cuando el arqueo deje de
- * compararse contra el total corrido desde la instalacion y pase a compararse
- * contra un turno real. Ver docs/PHASE0_DECISIONS.md.
+ * Desde la Fase 2 el esperado y la diferencia son columnas propias, no una
+ * frase dentro de `notes`. Lo que sigue pendiente es contra QUE se compara:
+ * hoy es el total corrido de la sucursal desde la instalacion, no el de un
+ * turno. Eso llega con `CashSession`. Ver docs/PHASE0_DECISIONS.md.
  */
 export async function registrarArqueo(
   session: Session,
@@ -259,19 +257,15 @@ export async function registrarArqueo(
     const contado = redondear(input.amount)
     const diferencia = redondear(contado - esperado)
 
-    const notas = [
-      input.notes,
-      `Esperado: ${esperado}. Contado: ${contado}. Diferencia: ${diferencia}.`,
-    ]
-      .filter(Boolean)
-      .join(' | ')
-
     const arqueo = await tx.cashCount.create({
       data: {
         branchId: session.branchId,
         userId: session.userId,
         amount: contado,
-        notes: notas,
+        expected: esperado,
+        difference: diferencia,
+        // `notes` vuelve a ser lo que el usuario escribio, nada mas.
+        notes: input.notes ?? null,
       },
       select: { id: true, amount: true, date: true, notes: true },
     })
@@ -294,5 +288,39 @@ export async function registrarArqueo(
     })
 
     return { ...arqueo, esperado, diferencia }
+  })
+}
+
+export interface ArqueoListado {
+  id: number
+  amount: number
+  expected: number
+  difference: number
+  date: Date
+  notes: string | null
+  user: { id: number; name: string }
+}
+
+/**
+ * Ultimos arqueos de la sucursal.
+ *
+ * Sin paginacion completa a proposito: la pantalla muestra los ultimos, y un
+ * historial largo de arqueos es un informe, no una lista de trabajo. El tope
+ * esta acotado en el esquema.
+ */
+export async function listarArqueos(session: Session, limite: number): Promise<ArqueoListado[]> {
+  return prisma.cashCount.findMany({
+    where: { branchId: session.branchId },
+    select: {
+      id: true,
+      amount: true,
+      expected: true,
+      difference: true,
+      date: true,
+      notes: true,
+      user: { select: { id: true, name: true } },
+    },
+    orderBy: { date: 'desc' },
+    take: limite,
   })
 }
