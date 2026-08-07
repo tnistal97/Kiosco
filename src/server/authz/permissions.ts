@@ -36,6 +36,21 @@ export const PERMISSIONS = [
    * forma de cargarlo si no. Queda anotado en docs/PERMISSIONS_MATRIX.md.
    */
   'products.price.update',
+  /**
+   * Ver cuanto cuesta comprar un producto.
+   *
+   * No alcanza con esconder la columna en la pantalla: el costo NO SALE de los
+   * DTO de quien no tiene este permiso. La diferencia importa porque el costo
+   * es la informacion mas sensible del catalogo --con ella cualquiera calcula
+   * el margen del negocio-- y una respuesta de la API se lee con las
+   * herramientas del navegador sin saber programar.
+   *
+   * El endpoint que usa la caja NUNCA lo incluye, tenga o no el permiso quien
+   * este atendiendo: para cobrar no hace falta saber cuanto costo.
+   */
+  'products.cost.view',
+  /** Cambiar el costo. Exige motivo y deja historial inmutable. */
+  'products.cost.update',
   'products.delete',
   'categories.manage',
   // Inventario
@@ -135,6 +150,10 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'products.update',
     // El encargado si fija precios: es quien recibe la lista del proveedor.
     'products.price.update',
+    // Y ve y carga costos: es quien decide a cuanto se vende, y eso no se
+    // puede decidir sin saber a cuanto se compro.
+    'products.cost.view',
+    'products.cost.update',
     'categories.manage',
     'stock.view',
     'stock.adjust',
@@ -156,6 +175,12 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
    *
    * Igual que el cajero, mas anular ventas y hacer movimientos de caja. Es el
    * escalon que hoy falta: sin el, cada anulacion necesita al administrador.
+   *
+   * SIN `products.cost.view`, y es deliberado. El supervisor esta en el
+   * mostrador: su trabajo es que el turno cierre, no fijar precios. El costo
+   * es la informacion con la que se calcula el margen del negocio entero, y no
+   * hace falta para nada de lo que el supervisor hace. Se puede agregar el dia
+   * que se le den responsabilidades de compra.
    */
   supervisor: [
     ...PERFIL_CAJA,
@@ -190,6 +215,10 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'products.view',
     'products.create',
     'products.update',
+    // El costo es su materia prima: es quien negocia con el proveedor y quien
+    // carga la factura. Sin esto no podria hacer su trabajo.
+    'products.cost.view',
+    'products.cost.update',
     'categories.manage',
     'stock.view',
     'stock.adjust',

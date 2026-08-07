@@ -7,8 +7,16 @@
  */
 
 import { esObjeto, lista, numero, texto, textoOpcional } from '@/lib/api-client'
-import { montoODefecto, type Monto } from '@/lib/money'
+import { montoODefecto, montoOpcional, type Monto } from '@/lib/money'
+import { cantidadODefecto, type TextoCantidad } from '@/lib/cantidad'
 import { estadoDeStock, type EstadoStock } from '@/modules/inventory/minimum'
+import {
+  unidadDeCompraODefecto,
+  unidadDeVentaODefecto,
+  type UnidadDeCompra,
+  type UnidadDeVenta,
+} from './units'
+import { calcularRentabilidad, type Rentabilidad } from './margen'
 
 export interface CategoriaDTO {
   id: number
@@ -23,6 +31,7 @@ export interface ProveedorDTO {
 export interface ProductoDTO {
   id: number
   name: string
+  /** El codigo PRINCIPAL. Los alternativos solo vienen en el detalle. */
   barcode: string | null
   description: string | null
   price: Monto
@@ -30,11 +39,27 @@ export interface ProductoDTO {
   isActive: boolean
   category: CategoriaDTO
   supplier: ProveedorDTO | null
-  totalStock: number
-  /** Unidades por debajo de las cuales hay que reponer. Cero: sin configurar. */
-  minimumStock: number
+  saleUnit: UnidadDeVenta
+  purchaseUnit: UnidadDeCompra
+  unitsPerPurchaseUnit: TextoCantidad
+  totalStock: TextoCantidad
+  /** Cantidad por debajo de la cual hay que reponer. Cero: sin configurar. */
+  minimumStock: TextoCantidad
   /** OK | LOW | OUT. Lo calcula el servidor; si no viene, se calcula aca. */
   estado: EstadoStock
+  /**
+   * Costo de compra. `undefined` cuando la sesion no tiene
+   * `products.cost.view`: el servidor NO manda la clave, y aca no se inventa.
+   *
+   * `undefined` y `null` significan cosas distintas y la diferencia importa:
+   * `undefined` es "no te lo puedo mostrar", `null` es "no hay costo cargado".
+   */
+  cost?: Monto | null
+  rentabilidad?: Rentabilidad
+}
+
+export interface ProductoDetalladoDTO extends ProductoDTO {
+  alternateBarcodes: string[]
 }
 
 const CATEGORIA_VACIA: CategoriaDTO = { id: 0, name: 'Sin categoria' }
@@ -57,15 +82,16 @@ export function parseProducto(raw: unknown): ProductoDTO {
   if (!esObjeto(raw)) {
     throw new Error('La respuesta no tiene la forma de un producto')
   }
-  const totalStock = numero(raw.totalStock)
-  const minimumStock = numero(raw.minimumStock)
+  const totalStock = cantidadODefecto(raw.totalStock)
+  const minimumStock = cantidadODefecto(raw.minimumStock)
+  const price = montoODefecto(raw.price)
 
-  return {
+  const producto: ProductoDTO = {
     id: numero(raw.id),
     name: texto(raw.name),
     barcode: textoOpcional(raw.barcode),
     description: textoOpcional(raw.description),
-    price: montoODefecto(raw.price),
+    price,
     // Sin el campo se asume activo: es como se comportaba el catalogo antes
     // de que existiera la baja logica.
     isActive: raw.isActive !== false,
@@ -73,6 +99,9 @@ export function parseProducto(raw: unknown): ProductoDTO {
     supplier: esObjeto(raw.supplier)
       ? { id: numero(raw.supplier.id), name: texto(raw.supplier.name) }
       : null,
+    saleUnit: unidadDeVentaODefecto(raw.saleUnit),
+    purchaseUnit: unidadDeCompraODefecto(raw.purchaseUnit),
+    unitsPerPurchaseUnit: cantidadODefecto(raw.unitsPerPurchaseUnit, '1.000'),
     totalStock,
     minimumStock,
     // El servidor lo manda calculado. Si no viene --una respuesta vieja
@@ -80,6 +109,38 @@ export function parseProducto(raw: unknown): ProductoDTO {
     // MISMA funcion, no con una copia de la regla.
     estado: parseEstado(raw.estado) ?? estadoDeStock(totalStock, minimumStock),
   }
+
+  // La clave `cost` solo existe si el servidor la mando, y solo la manda a
+  // quien puede verla. Copiarla como `null` cuando no vino haria imposible
+  // distinguir "sin permiso" de "sin costo cargado".
+  if ('cost' in raw) {
+    const cost = montoOpcional(raw.cost)
+    producto.cost = cost
+    // El servidor ya la manda calculada; se recalcula aca si no vino, con la
+    // misma funcion, para que las dos puntas no puedan discrepar.
+    producto.rentabilidad = parseRentabilidad(raw.rentabilidad) ?? calcularRentabilidad(price, cost)
+  }
+
+  return producto
+}
+
+function parseRentabilidad(raw: unknown): Rentabilidad | null {
+  if (!esObjeto(raw)) return null
+  return {
+    ganancia: montoOpcional(raw.ganancia),
+    margen: typeof raw.margen === 'string' ? raw.margen : null,
+    markup: typeof raw.markup === 'string' ? raw.markup : null,
+    bajoCosto: raw.bajoCosto === true,
+  }
+}
+
+export function parseProductoDetallado(raw: unknown): ProductoDetalladoDTO {
+  const producto = parseProducto(raw)
+  const alternativos =
+    esObjeto(raw) && Array.isArray(raw.alternateBarcodes)
+      ? raw.alternateBarcodes.filter((c): c is string => typeof c === 'string')
+      : []
+  return { ...producto, alternateBarcodes: alternativos }
 }
 
 /**
@@ -108,4 +169,32 @@ export function parsePaginaProductos(raw: unknown): {
     }
   }
   return { data, total: data.length, totalPages: 1 }
+}
+
+export interface EventoDeProductoDTO {
+  tipo: 'precio' | 'costo' | 'stock'
+  fecha: string
+  texto: string
+  usuario: string
+  motivo: string | null
+}
+
+export function parseActividad(raw: unknown): EventoDeProductoDTO[] {
+  const filas = esObjeto(raw) && 'data' in raw ? raw.data : raw
+  if (!Array.isArray(filas)) return []
+
+  return filas.flatMap((fila: unknown): EventoDeProductoDTO[] => {
+    if (!esObjeto(fila)) return []
+    const tipo = fila.tipo
+    if (tipo !== 'precio' && tipo !== 'costo' && tipo !== 'stock') return []
+    return [
+      {
+        tipo,
+        fecha: texto(fila.fecha),
+        texto: texto(fila.texto),
+        usuario: texto(fila.usuario, 'Alguien'),
+        motivo: textoOpcional(fila.motivo),
+      },
+    ]
+  })
 }

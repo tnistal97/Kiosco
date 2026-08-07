@@ -3,25 +3,55 @@
  */
 
 import { z } from 'zod'
-import { amountSchema, idSchema, optionalText, shortText } from '@/server/http/validate'
+import {
+  amountSchema,
+  costSchema,
+  idSchema,
+  optionalText,
+  quantityOrZeroSchema,
+  shortText,
+} from '@/server/http/validate'
 import { paginationQuerySchema, sortSchema } from '@/server/http/pagination'
-
-/** Tope de unidades por producto. Un almacen no tiene un millon de nada. */
-export const STOCK_MAX = 1_000_000
+import { CANTIDAD_MAX } from '@/lib/cantidad'
+import { UNIDADES_DE_COMPRA, UNIDADES_DE_VENTA } from './units'
 
 /**
- * Unidades por debajo de las cuales hay que reponer.
+ * Tope de unidades por producto.
  *
- * Cero significa sin minimo configurado. Ver
- * `@/modules/inventory/minimum`, que es donde vive la regla de estados.
+ * Reexportado desde `@/lib/cantidad`, que es donde vive desde la Fase 3B para
+ * que los esquemas puedan usarlo sin arrastrar Prisma. El nombre viejo se
+ * conserva porque lo usan varios modulos y renombrarlo no arreglaria nada.
  */
-export const minimoSchema = z.number().int().min(0).max(STOCK_MAX)
+export const STOCK_MAX = CANTIDAD_MAX
 
 /**
- * Codigo de barras.
+ * Cantidad por debajo de la cual hay que reponer, en la unidad de venta.
  *
- * Se acepta vacio y se guarda como null, no como cadena vacia: `barcode` es
- * unico global, y dos productos sin codigo con "" chocarian entre si.
+ * Cero significa sin minimo configurado. Ver `@/modules/inventory/minimum`,
+ * que es donde vive la regla de estados.
+ */
+export const minimoSchema = quantityOrZeroSchema
+
+/**
+ * Un codigo de barras suelto.
+ *
+ * Se recorta y nada mas. NO se pasa a mayusculas: para un lector, dos codigos
+ * que difieren en mayusculas son dos codigos distintos, y normalizarlos aca
+ * haria que un producto quedara inalcanzable con su propia etiqueta.
+ */
+export const codigoSchema = z
+  .string()
+  .trim()
+  .min(1, 'El codigo de barras no puede estar vacio')
+  .max(64)
+  .regex(/^[0-9A-Za-z-]+$/, 'Codigo de barras invalido')
+
+/**
+ * Codigo de barras PRINCIPAL.
+ *
+ * Se acepta vacio y se guarda como null, no como cadena vacia: un producto
+ * puede no tener codigo --se busca por nombre-- y dos productos sin codigo con
+ * "" chocarian entre si en el indice unico.
  */
 export const barcodeSchema = z
   .string()
@@ -32,42 +62,105 @@ export const barcodeSchema = z
   .nullable()
   .optional()
 
-export const stockInicialSchema = z.number().int().min(0).max(STOCK_MAX)
+/**
+ * Codigos ALTERNATIVOS.
+ *
+ * Sin duplicados dentro de la misma lista: mandar dos veces el mismo codigo no
+ * es un intento de nada, pero guardarlo daria dos filas iguales y la segunda
+ * chocaria con el indice unico con un mensaje de PostgreSQL en vez de uno
+ * legible.
+ *
+ * Veinte de tope. Un producto con veinte codigos distintos ya es un problema
+ * de catalogo, no una funcionalidad.
+ */
+export const codigosAlternativosSchema = z
+  .array(codigoSchema)
+  .max(20, 'Como maximo 20 codigos alternativos')
+  .refine((v) => new Set(v).size === v.length, 'Hay codigos repetidos en la lista')
+  .optional()
+
+export const stockInicialSchema = quantityOrZeroSchema
+
+/** Unidad de venta. Cinco valores; PACK y BOX no se venden. */
+export const unidadDeVentaSchema = z.enum(UNIDADES_DE_VENTA)
+
+/** Unidad de compra. Las cinco de venta mas PACK y BOX. */
+export const unidadDeCompraSchema = z.enum(UNIDADES_DE_COMPRA)
+
+/**
+ * Cuantas unidades de venta trae una unidad de compra.
+ *
+ * Mayor que cero: un cero seria una division por cero en la Fase 3C, cuando
+ * este numero se use para repartir el costo de una caja entre sus unidades.
+ */
+export const unidadesPorCompraSchema = z
+  .union([z.string(), z.number()])
+  .superRefine((valor, ctx) => {
+    const texto = typeof valor === 'number' ? valor.toString() : valor.trim()
+    if (!/^\d+(\.\d{1,3})?$/.test(texto) || Number(texto) <= 0) {
+      ctx.addIssue({ code: 'custom', message: 'Las unidades por compra tienen que ser mayores que cero' }) // prettier-ignore
+      return
+    }
+    if (Number(texto) > CANTIDAD_MAX) {
+      ctx.addIssue({ code: 'custom', message: 'Unidades por compra fuera de rango' })
+    }
+  })
+  .transform((valor): string => (typeof valor === 'number' ? valor.toString() : valor.trim()))
 
 /**
  * Alta de producto.
  *
  * No declara `branchId`: la sucursal sale de la sesion.
+ *
+ * `cost` no exige motivo aca, a diferencia de la edicion: un alta no es un
+ * CAMBIO de costo y no escribe historial. El costo con el que nace un producto
+ * queda en la bitacora de su creacion.
  */
 export const crearProductoSchema = z
   .object({
     name: shortText(150),
     barcode: barcodeSchema,
+    alternateBarcodes: codigosAlternativosSchema,
     description: optionalText(500),
     price: amountSchema,
+    cost: costSchema.nullable().optional(),
     categoryId: idSchema,
     supplierId: idSchema.nullable().optional(),
-    totalStock: stockInicialSchema.default(0),
-    minimumStock: minimoSchema.default(0),
+    saleUnit: unidadDeVentaSchema.default('UNIT'),
+    purchaseUnit: unidadDeCompraSchema.default('UNIT'),
+    unitsPerPurchaseUnit: unidadesPorCompraSchema.default('1'),
+    totalStock: stockInicialSchema.default('0.000'),
+    minimumStock: minimoSchema.default('0.000'),
   })
   .strict()
 
 /**
  * Edicion de producto.
  *
- * `price` exige ademas el permiso `products.price.update`, y `totalStock`
- * exige `stock.adjust` mas un motivo. Los dos se comprueban en el servicio:
- * el esquema solo dice que forma tiene la entrada, no quien puede mandarla.
+ * Cuatro permisos distintos conviven en el mismo endpoint:
+ *
+ *   products.update        nombre, codigos, descripcion, categoria, unidades
+ *   products.price.update  precio
+ *   products.cost.update   costo, y ademas con motivo
+ *   stock.adjust           cantidad, y ademas con motivo
+ *
+ * Todos se comprueban en el servicio: el esquema solo dice que forma tiene la
+ * entrada, no quien puede mandarla.
  */
 export const editarProductoSchema = z
   .object({
     name: shortText(150).optional(),
     barcode: barcodeSchema,
+    alternateBarcodes: codigosAlternativosSchema,
     description: optionalText(500),
     price: amountSchema.optional(),
+    cost: costSchema.nullable().optional(),
     categoryId: idSchema.optional(),
     supplierId: idSchema.nullable().optional(),
     isActive: z.boolean().optional(),
+    saleUnit: unidadDeVentaSchema.optional(),
+    purchaseUnit: unidadDeCompraSchema.optional(),
+    unitsPerPurchaseUnit: unidadesPorCompraSchema.optional(),
     minimumStock: minimoSchema.optional(),
     totalStock: stockInicialSchema.optional(),
     /**
@@ -77,11 +170,22 @@ export const editarProductoSchema = z
      * del producto", que en la bitacora no explica nada.
      */
     stockReason: shortText(200).optional(),
+    /**
+     * Motivo del cambio de costo. Obligatorio si viene `cost`.
+     *
+     * Un costo que sube sin motivo declarado no se puede explicar despues, y
+     * explicar por que subio un precio es para lo que sirve el historial.
+     */
+    costReason: shortText(200).optional(),
   })
   .strict()
   .refine((v) => v.totalStock === undefined || (v.stockReason ?? '').trim().length >= 3, {
     message: 'Un ajuste de stock necesita un motivo',
     path: ['stockReason'],
+  })
+  .refine((v) => v.cost === undefined || (v.costReason ?? '').trim().length >= 3, {
+    message: 'Un cambio de costo necesita un motivo',
+    path: ['costReason'],
   })
 
 /** Campos por los que se permite ordenar el catalogo. Lista blanca. */
@@ -108,7 +212,7 @@ const idsSchema = z
 export const listarProductosQuerySchema = paginationQuerySchema
   .extend(sortSchema(CAMPOS_ORDEN_PRODUCTO, 'name').shape)
   .extend({
-    /** Busqueda por nombre o codigo de barras. */
+    /** Busqueda por nombre o por cualquiera de sus codigos de barras. */
     q: z.string().trim().max(100).optional(),
     categoryId: idSchema.optional(),
     ids: idsSchema,
@@ -128,6 +232,16 @@ export const listarProductosQuerySchema = paginationQuerySchema
       .transform((v) => v === 'true'),
   })
 
+/** Cambio de costo por su propio endpoint. Exige motivo, siempre. */
+export const cambiarCostoSchema = z
+  .object({
+    cost: costSchema.nullable(),
+    reason: shortText(200),
+    supplierId: idSchema.nullable().optional(),
+  })
+  .strict()
+
 export type CrearProductoInput = z.infer<typeof crearProductoSchema>
 export type EditarProductoInput = z.infer<typeof editarProductoSchema>
 export type ListarProductosQuery = z.infer<typeof listarProductosQuerySchema>
+export type CambiarCostoInput = z.infer<typeof cambiarCostoSchema>

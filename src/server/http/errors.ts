@@ -45,6 +45,15 @@ export type ErrorCode =
   | 'PRODUCT_HAS_SALES'
   /** Tiene historial en el libro de inventario: se da de baja, no se borra. */
   | 'PRODUCT_HAS_MOVEMENTS'
+  /** Tiene cambios de costo registrados, y ese historial es inmutable. */
+  | 'PRODUCT_HAS_COST_HISTORY'
+  /**
+   * Su unidad de venta ya no se puede cambiar: tiene cantidades guardadas en
+   * la unidad anterior y cambiarla reescribiria el significado de su pasado.
+   */
+  | 'PRODUCT_UNIT_LOCKED'
+  /** `1.235` unidades no existe. La unidad no admite esa fraccion. */
+  | 'INVALID_QUANTITY_FOR_UNIT'
   | 'DUPLICATE_BARCODE'
   | 'DUPLICATE_USERNAME'
   | 'INSUFFICIENT_CASH'
