@@ -1,9 +1,10 @@
 // src/hooks/useProducts.ts
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import { ApiError, apiRequest, mensajeDeError } from '@/lib/api-client'
 import {
   parseCategorias,
   parsePaginaProductos,
+  parseProducto,
   type CategoriaDTO,
   type ProductoDTO,
 } from '@/modules/products/dto'
@@ -149,26 +150,34 @@ export function useProducts(options: UseProductsOptions = {}) {
    * catalogo entero; con la busqueda paginada, escanear un producto que no
    * estuviera en la pagina actual habria abierto el alta de producto nuevo
    * sobre uno que ya existe.
+   *
+   * Desde la Fase 3B pega contra un endpoint dedicado, `/api/products/barcode/
+   * :code`, en vez de traer veinte candidatos con `q=` y filtrar aca. Dos
+   * motivos: es un acierto sobre el indice unico --una fila leida, con diez mil
+   * productos igual que con cien-- y encuentra por CUALQUIERA de los codigos
+   * del producto, no solo por el principal.
+   *
+   * Un 404 no es un error: es "ese codigo no esta". Cualquier otro fallo si se
+   * propaga, porque significa que no se pudo consultar y eso el cajero tiene
+   * que saberlo antes de dar por inexistente un producto que existe.
    */
   const buscarPorCodigo = useCallback(
     async (codigo: string, opciones: { soloActivos?: boolean } = {}): Promise<Product | null> => {
-      const q = codigo.trim()
-      if (!q) return null
+      const code = codigo.trim()
+      if (!code) return null
 
-      // Por omision, SOLO activos. El servidor devuelve todos si no se le
-      // dice nada, y confiar en ese valor por omision hacia que la caja
-      // pudiera vender un producto dado de baja: lo encontro la prueba de
-      // extremo a extremo del escaneo.
-      const params = new URLSearchParams({
-        q,
-        pageSize: '20',
-        estado: opciones.soloActivos === false ? 'todos' : 'activos',
-      })
-      const pagina = await apiRequest(`/api/products?${params.toString()}`, {
-        parse: parsePaginaProductos,
-      })
-      // El servidor busca por coincidencia parcial; aca se exige exacta.
-      return pagina.data.find((p) => p.barcode?.toLowerCase() === q.toLowerCase()) ?? null
+      // Por omision, SOLO activos. Confiar en el valor por omision del
+      // servidor hacia que la caja pudiera vender un producto dado de baja: lo
+      // encontro la prueba de extremo a extremo del escaneo.
+      const query = opciones.soloActivos === false ? '?estado=todos' : ''
+      try {
+        return await apiRequest(`/api/products/barcode/${encodeURIComponent(code)}${query}`, {
+          parse: parseProducto,
+        })
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return null
+        throw err
+      }
     },
     [],
   )

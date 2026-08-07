@@ -2,6 +2,8 @@
 
 import { useEffect, useId, useState } from 'react'
 import { cn } from './cn'
+import { aMilesimas, cantidadDesdeTexto, desdeMilesimas, type TextoCantidad } from '@/lib/cantidad'
+import { formatearCantidad, politicaDe, type UnidadDeVenta } from '@/modules/products/units'
 
 /**
  * Cantidad de una linea del ticket.
@@ -10,8 +12,13 @@ import { cn } from './cn'
  * pantalla tenga que acordarse:
  *
  *   - nunca cero, nunca negativo;
- *   - enteros (los productos por peso llegan en otra fase);
+ *   - el paso y los decimales los decide LA UNIDAD del producto: enteros en
+ *     `UNIT`, `G` y `ML`; de a milesima en `KG` y `L`;
  *   - nunca por encima del stock disponible.
+ *
+ * La politica no vive aca: vive en `@/modules/products/units` y la comparte
+ * con el servidor. Este componente solo la aplica. Si estuviera duplicada,
+ * `1.235 UNIT` entraria por un lado o por el otro.
  *
  * El campo se puede vaciar mientras se escribe --si no, borrar "1" para poner
  * "12" seria imposible-- pero al salir vuelve al ultimo valor valido. El
@@ -21,8 +28,8 @@ import { cn } from './cn'
 export function QuantityInput({
   value,
   onChange,
+  unit = 'UNIT',
   max,
-  min = 1,
   label = 'Cantidad',
   size = 'md',
   disabled = false,
@@ -30,10 +37,10 @@ export function QuantityInput({
   onEditingChange,
   className,
 }: {
-  value: number
-  onChange: (value: number) => void
-  max?: number
-  min?: number
+  value: TextoCantidad
+  onChange: (value: TextoCantidad) => void
+  unit?: UnidadDeVenta
+  max?: TextoCantidad
   label?: string
   size?: 'sm' | 'md'
   disabled?: boolean
@@ -41,28 +48,40 @@ export function QuantityInput({
   className?: string
 }) {
   const id = useId()
-  const [texto, setTexto] = useState(String(value))
+  const politica = politicaDe(unit)
+  const [texto, setTexto] = useState(() => formatearCantidad(value, unit))
 
   // El servidor puede corregir la cantidad (stock insuficiente, restauracion
   // del carrito). Cuando eso pasa, el campo tiene que reflejarlo.
   useEffect(() => {
-    setTexto(String(value))
-  }, [value])
+    setTexto(formatearCantidad(value, unit))
+  }, [value, unit])
 
-  const tope = max ?? Number.MAX_SAFE_INTEGER
-  const puedeSubir = !disabled && value < tope
-  const puedeBajar = !disabled && value > min
+  const paso = aMilesimas(politica.paso)
+  const minimo = aMilesimas(politica.minimo)
+  const tope = max === undefined ? Number.MAX_SAFE_INTEGER : aMilesimas(max)
+  const actual = aMilesimas(value)
 
-  function acotar(n: number): number {
-    if (!Number.isFinite(n)) return min
-    return Math.min(tope, Math.max(min, Math.trunc(n)))
+  const puedeSubir = !disabled && actual < tope
+  const puedeBajar = !disabled && actual > minimo
+
+  /** Al multiplo de paso mas cercano, dentro del rango. */
+  function acotar(milesimas: number): number {
+    if (!Number.isFinite(milesimas)) return minimo
+    const enPaso = Math.round(milesimas / paso) * paso
+    return Math.min(tope, Math.max(minimo, enPaso))
   }
 
-  function aplicar(n: number) {
-    const limpio = acotar(n)
-    setTexto(String(limpio))
-    if (limpio !== value) onChange(limpio)
+  function aplicar(milesimas: number) {
+    const limpio = acotar(milesimas)
+    setTexto(formatearCantidad(desdeMilesimas(limpio), unit))
+    if (limpio !== actual) onChange(desdeMilesimas(limpio))
   }
+
+  // "Agregar una unidad de cantidad" en un producto que se cuenta, "Agregar
+  // 0,001 kg de cantidad" en uno que se pesa. Un lector de pantalla que diga
+  // "agregar uno coma cero cero cero" no le sirve a nadie.
+  const deAPaso = politica.decimales === 0 ? 'una unidad' : `${politica.paso} ${politica.simbolo}`
 
   const alto = size === 'sm' ? 'h-9' : 'h-touch'
   const ancho = size === 'sm' ? 'w-9' : 'w-touch'
@@ -75,10 +94,10 @@ export function QuantityInput({
     <div className={cn('inline-flex items-stretch rounded-md border border-line', className)}>
       <button
         type="button"
-        aria-label={`Quitar una unidad de ${label.toLowerCase()}`}
+        aria-label={`Quitar ${deAPaso} de ${label.toLowerCase()}`}
         disabled={!puedeBajar}
         onClick={() => {
-          aplicar(value - 1)
+          aplicar(actual - paso)
         }}
         className={cn(boton, alto, ancho, 'rounded-l-md border-r')}
       >
@@ -100,10 +119,11 @@ export function QuantityInput({
       <input
         id={id}
         type="text"
-        inputMode="numeric"
+        inputMode="decimal"
         // `pattern` mantiene el teclado numerico en movil sin heredar las
-        // flechitas de `type=number`, que en un mostrador se tocan solas.
-        pattern="[0-9]*"
+        // flechitas de `type=number`, que en un mostrador se tocan solas. Con
+        // decimales entran tambien la coma y el punto.
+        pattern={politica.decimales === 0 ? '[0-9]*' : '[0-9.,]*'}
         value={texto}
         disabled={disabled}
         /**
@@ -117,23 +137,38 @@ export function QuantityInput({
          * El rol se declara a mano en vez de usar `type="number"` porque las
          * flechitas nativas, en una pantalla tactil de mostrador, se tocan
          * solas. Las flechas del teclado si funcionan, mas abajo.
+         *
+         * `aria-valuetext` lleva la unidad: sin el, un lector de pantalla
+         * anuncia "cero coma cuatro dos cinco" y no "0,425 kilogramos".
          */
         role="spinbutton"
-        aria-valuenow={value}
-        aria-valuemin={min}
-        aria-valuemax={max}
+        aria-valuenow={aMilesimas(value) / 1000}
+        aria-valuemin={minimo / 1000}
+        aria-valuemax={max === undefined ? undefined : tope / 1000}
+        aria-valuetext={`${formatearCantidad(value, unit)} ${politica.simbolo}`}
         onFocus={(e) => {
           e.currentTarget.select()
           onEditingChange?.(true)
         }}
         onBlur={() => {
-          aplicar(Number(texto))
+          const parseada = cantidadDesdeTexto(texto)
+          aplicar(parseada === null ? actual : aMilesimas(parseada))
           onEditingChange?.(false)
         }}
         onChange={(e) => {
-          const crudo = e.target.value.replace(/[^0-9]/g, '')
+          // Se filtra lo que no puede formar parte de un numero, y la coma o
+          // el punto solo cuando la unidad admite decimales. Asi, en un
+          // producto por unidad, tipear una coma simplemente no hace nada en
+          // vez de dejar escribir algo que despues se va a rechazar.
+          const permitido = politica.decimales === 0 ? /[^0-9]/g : /[^0-9.,]/g
+          const crudo = e.target.value.replace(permitido, '')
           setTexto(crudo)
-          if (crudo !== '') aplicar(Number(crudo))
+
+          const parseada = cantidadDesdeTexto(crudo)
+          if (parseada !== null) {
+            const milesimas = acotar(aMilesimas(parseada))
+            if (milesimas !== actual) onChange(desdeMilesimas(milesimas))
+          }
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
@@ -141,15 +176,16 @@ export function QuantityInput({
           }
           if (e.key === 'ArrowUp') {
             e.preventDefault()
-            aplicar(value + 1)
+            aplicar(actual + paso)
           }
           if (e.key === 'ArrowDown') {
             e.preventDefault()
-            aplicar(value - 1)
+            aplicar(actual - paso)
           }
         }}
         className={cn(
-          'w-14 border-0 bg-sunken text-center font-semibold text-ink outline-none',
+          'border-0 bg-sunken text-center font-semibold text-ink outline-none',
+          politica.decimales === 0 ? 'w-14' : 'w-20',
           'disabled:opacity-50',
           alto,
         )}
@@ -158,10 +194,10 @@ export function QuantityInput({
 
       <button
         type="button"
-        aria-label={`Agregar una unidad de ${label.toLowerCase()}`}
+        aria-label={`Agregar ${deAPaso} de ${label.toLowerCase()}`}
         disabled={!puedeSubir}
         onClick={() => {
-          aplicar(value + 1)
+          aplicar(actual + paso)
         }}
         className={cn(boton, alto, ancho, 'rounded-r-md border-l')}
       >

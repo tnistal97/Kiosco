@@ -11,6 +11,13 @@ import {
   etiquetaDeTipo,
   type TipoDeAjuste,
 } from '@/modules/inventory/movement-types'
+import { aMilesimas, cantidadDesdeTexto, desdeMilesimas } from '@/lib/cantidad'
+import {
+  esFraccionable,
+  formatearCantidad,
+  formatearCantidadConUnidad,
+  politicaDe,
+} from '@/modules/products/units'
 
 /**
  * Ajuste de inventario.
@@ -87,36 +94,50 @@ export function DialogoAjusteStock({
     setEnviando(false)
   }, [producto])
 
-  const actual = producto?.totalStock ?? 0
+  const unidad = producto?.saleUnit ?? 'UNIT'
+  const politica = politicaDe(unidad)
+  const fraccionable = esFraccionable(unidad)
+
+  // Toda la aritmetica en MILESIMAS enteras. En punto flotante, un ajuste de
+  // 0,1 kg sobre un saldo de 0,2 kg daria 0,30000000000000004 y el servidor lo
+  // rechazaria por una restriccion de la base que el usuario no puede entender.
+  const actual = aMilesimas(producto?.totalStock ?? '0.000')
   const resta = restaUnidades(tipo)
-  const n = Number(valor)
-  const numeroValido = valor.trim() !== '' && Number.isFinite(n)
+
+  const escrito = cantidadDesdeTexto(valor)
+  const numeroValido = escrito !== null
+  const n = escrito === null ? 0 : aMilesimas(escrito)
 
   // El delta que de verdad se va a mandar. Con un tipo que resta, lo que el
   // usuario escribe en positivo viaja en negativo.
-  const delta = !numeroValido ? 0 : resta ? -Math.abs(Math.trunc(n)) : Math.trunc(n)
+  const delta = !numeroValido ? 0 : resta ? -Math.abs(n) : n
 
   const nuevoTotal = !numeroValido
     ? actual
     : modo === 'total'
-      ? Math.max(0, Math.trunc(n))
+      ? Math.max(0, n)
       : Math.max(0, actual + delta)
 
   const cambia = numeroValido && nuevoTotal !== actual
   // Sacar mas de lo que hay no se manda: el servidor lo rechazaria igual, y
   // avisar antes evita el viaje.
   const alcanza = modo === 'total' || actual + delta >= 0
-  const valido = cambia && alcanza && motivo.trim().length >= 3
+  // La fraccion tiene que respetar el paso de la unidad. Es la misma regla que
+  // aplica el servidor, con la misma tabla: `1.235` en un producto por unidad
+  // no llega a viajar.
+  const enPaso = !numeroValido || n % aMilesimas(politica.paso) === 0
+  const valido = cambia && alcanza && enPaso && motivo.trim().length >= 3
 
   async function guardar() {
     if (!producto || enviando || !valido) return
     setEnviando(true)
     setError(null)
     try {
+      // Las cantidades viajan como cadena decimal, igual que los importes.
       const cuerpo =
         modo === 'delta'
-          ? { delta, type: tipo, reason: motivo.trim() }
-          : { quantity: nuevoTotal, reason: motivo.trim() }
+          ? { delta: desdeMilesimas(delta), type: tipo, reason: motivo.trim() }
+          : { quantity: desdeMilesimas(nuevoTotal), reason: motivo.trim() }
 
       await apiRequest(`/api/stock/${producto.id}`, {
         method: modo === 'delta' ? 'PATCH' : 'PUT',
@@ -164,7 +185,7 @@ export function DialogoAjusteStock({
           <div className="flex items-baseline justify-between rounded-lg border border-line bg-sunken px-4 py-3">
             <span className="text-sm text-ink-muted">Ahora hay</span>
             <span className="text-2xl font-semibold text-ink" data-numeric="">
-              {actual}
+              {formatearCantidadConUnidad(desdeMilesimas(actual), unidad)}
             </span>
           </div>
 
@@ -206,49 +227,70 @@ export function DialogoAjusteStock({
           <Field
             label={
               modo === 'total'
-                ? 'Unidades contadas'
+                ? `Cuánto contaste (${politica.simbolo})`
                 : resta
-                  ? 'Cuántas unidades'
-                  : 'Cantidad (negativa para restar)'
+                  ? `Cuánto sale (${politica.simbolo})`
+                  : `Cantidad en ${politica.simbolo} (negativa para restar)`
             }
             required
+            hint={fraccionable ? `Se admiten decimales: mínimo ${politica.paso}` : undefined}
           >
             <Input
-              inputMode="numeric"
-              placeholder={modo === 'total' ? 'Ej: 30' : resta ? 'Ej: 3' : 'Ej: 12  o  -3'}
+              inputMode={fraccionable ? 'decimal' : 'numeric'}
+              placeholder={
+                fraccionable
+                  ? modo === 'total'
+                    ? 'Ej: 3,250'
+                    : 'Ej: 0,750'
+                  : modo === 'total'
+                    ? 'Ej: 30'
+                    : resta
+                      ? 'Ej: 3'
+                      : 'Ej: 12  o  -3'
+              }
               value={valor}
               disabled={enviando}
               onChange={(e) => {
                 // Con un tipo que resta, el signo lo pone el diálogo: dejar
                 // escribir "-3" en un campo que ya significa "cuántas se
                 // rompieron" permitiría cargar +3 sin querer.
-                const limpio =
-                  modo === 'delta' && !resta
-                    ? e.target.value.replace(/[^0-9-]/g, '')
-                    : e.target.value.replace(/[^0-9]/g, '')
-                setValor(limpio)
+                //
+                // La coma y el punto solo entran si la unidad admite
+                // decimales: en un producto por unidad, tipear una coma
+                // simplemente no hace nada.
+                const digitos = fraccionable ? '0-9.,' : '0-9'
+                const conSigno = modo === 'delta' && !resta ? `${digitos}-` : digitos
+                setValor(e.target.value.replace(new RegExp(`[^${conSigno}]`, 'g'), ''))
               }}
             />
           </Field>
 
-          {cambia && alcanza && (
+          {cambia && alcanza && enPaso && (
             <Alert tone="info">
               Va a quedar en{' '}
               <strong className="text-ink" data-numeric="">
-                {nuevoTotal}
+                {formatearCantidadConUnidad(desdeMilesimas(nuevoTotal), unidad)}
               </strong>{' '}
-              {nuevoTotal === 1 ? 'unidad' : 'unidades'}{' '}
               <span className="text-ink-faint">
                 ({nuevoTotal > actual ? '+' : '−'}
-                {Math.abs(nuevoTotal - actual)})
+                {formatearCantidad(desdeMilesimas(Math.abs(nuevoTotal - actual)), unidad)})
               </span>
+            </Alert>
+          )}
+
+          {numeroValido && !enPaso && (
+            <Alert tone="warning" title="Cantidad no válida">
+              {politica.nombre === 'Unidad'
+                ? 'Un producto por unidad no admite fracciones.'
+                : `La cantidad tiene que ser múltiplo de ${politica.paso} ${politica.simbolo}.`}
             </Alert>
           )}
 
           {numeroValido && !alcanza && (
             <Alert tone="warning" title="No alcanza">
-              Hay {actual} {actual === 1 ? 'unidad' : 'unidades'} y estás sacando {Math.abs(delta)}.
-              El stock no puede quedar negativo.
+              Hay {formatearCantidadConUnidad(desdeMilesimas(actual), unidad)} y estás sacando{' '}
+              {formatearCantidadConUnidad(desdeMilesimas(Math.abs(delta)), unidad)}. El stock no
+              puede quedar negativo.
             </Alert>
           )}
 

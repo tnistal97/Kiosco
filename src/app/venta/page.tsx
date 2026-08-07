@@ -16,6 +16,7 @@ import {
 } from '@/components/ui'
 import { ResultadoBusqueda } from '@/components/venta/ResultadoBusqueda'
 import { Ticket } from '@/components/venta/Ticket'
+import { DialogoPeso } from '@/components/venta/DialogoPeso'
 import { DialogoCobro, type PagoParaEnviar } from '@/components/venta/DialogoCobro'
 import { AyudaAtajos } from '@/components/venta/AyudaAtajos'
 import { AvisoCajaCerrada } from '@/components/venta/AvisoCajaCerrada'
@@ -27,7 +28,9 @@ import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { parseVenta } from '@/modules/sales/dto'
 import { useHayCapaAbierta } from '@/store/overlays'
-import { totalDelTicket, unidadesDelTicket, useCartStore } from '@/store/cart'
+import { articulosDelTicket, totalDelTicket, useCartStore } from '@/store/cart'
+import { aMilesimas, type TextoCantidad } from '@/lib/cantidad'
+import { esFraccionable, formatearCantidadConUnidad } from '@/modules/products/units'
 
 /** Cuantos resultados se muestran. Mas no entran en pantalla sin scroll. */
 const RESULTADOS_VISIBLES = 8
@@ -59,6 +62,8 @@ export default function VentaPage() {
   const [cobroAbierto, setCobroAbierto] = useState(false)
   const [ticketAbierto, setTicketAbierto] = useState(false)
   const [camaraAbierta, setCamaraAbierta] = useState(false)
+  /** El producto cuyo peso se esta pidiendo. Null: no hay dialogo de peso. */
+  const [pesando, setPesando] = useState<Product | null>(null)
   const [estadoCodigo, setEstadoCodigo] = useState<BarcodeStatus>('idle')
   const [mensajeCodigo, setMensajeCodigo] = useState<string | null>(null)
   const [avisoRestauracion, setAvisoRestauracion] = useState<string | null>(null)
@@ -67,7 +72,7 @@ export default function VentaPage() {
   const campoBusqueda = useRef<HTMLInputElement>(null)
 
   const total = useMemo(() => totalDelTicket(items), [items])
-  const unidades = useMemo(() => unidadesDelTicket(items), [items])
+  const articulos = articulosDelTicket(items)
 
   /**
    * El escaner escucha salvo cuando molestaria.
@@ -77,7 +82,8 @@ export default function VentaPage() {
    * Es lo que impide que un escaneo agregue productos detras de la pantalla
    * de cobro.
    */
-  const escanerActivo = !hayCapa && !editandoCantidad && !escribiendoCodigo && !cobroAbierto
+  const escanerActivo =
+    !hayCapa && !editandoCantidad && !escribiendoCodigo && !cobroAbierto && pesando === null
 
   const visibles = products.slice(0, RESULTADOS_VISIBLES)
 
@@ -90,7 +96,7 @@ export default function VentaPage() {
   }, [])
 
   const agregarProducto = useCallback(
-    (p: Product, cantidad = 1) => {
+    (p: Product, cantidad?: TextoCantidad) => {
       const r = agregar(
         {
           id: p.id,
@@ -98,6 +104,7 @@ export default function VentaPage() {
           barcode: p.barcode,
           price: p.price,
           totalStock: p.totalStock,
+          saleUnit: p.saleUnit,
         },
         cantidad,
       )
@@ -106,12 +113,35 @@ export default function VentaPage() {
         return false
       }
       if (r === 'tope-de-stock') {
-        aviso.atencion(`No quedan más unidades de ${p.name}.`)
+        aviso.atencion(`No queda más stock de ${p.name}.`)
         return false
       }
       return true
     },
     [agregar],
+  )
+
+  /**
+   * Lo que pasa al elegir un producto, por escaneo o por busqueda.
+   *
+   * Un producto por unidad se agrega y listo. Uno que se pesa abre el dialogo
+   * INMEDIATAMENTE, sin pasos intermedios: despues de pasar un queso por el
+   * lector, lo unico que puede seguir es el peso. Pedir un clic mas seria
+   * hacerle avisar al cajero algo que el sistema ya sabe.
+   */
+  const elegirProducto = useCallback(
+    (p: Product): boolean => {
+      if (aMilesimas(p.totalStock) <= 0) {
+        aviso.atencion(`${p.name} está agotado.`)
+        return false
+      }
+      if (esFraccionable(p.saleUnit)) {
+        setPesando(p)
+        return true
+      }
+      return agregarProducto(p)
+    },
+    [agregarProducto],
   )
 
   // --------------------------------------------------------------- escaneo
@@ -124,10 +154,14 @@ export default function VentaPage() {
         // Primero entre los activos, que es lo normal.
         const activo = await buscarPorCodigo(codigo)
         if (activo) {
-          const ok = agregarProducto(activo)
+          const ok = elegirProducto(activo)
           setEstadoCodigo(ok ? 'ok' : 'error')
           setMensajeCodigo(
-            ok ? `${activo.name} · agregado` : `${activo.name} · sin stock disponible`,
+            ok
+              ? esFraccionable(activo.saleUnit)
+                ? `${activo.name} · ingresá el peso`
+                : `${activo.name} · agregado`
+              : `${activo.name} · sin stock disponible`,
           )
           return
         }
@@ -147,7 +181,7 @@ export default function VentaPage() {
         setMensajeCodigo(mensajeDeError(err, 'No se pudo consultar el código.'))
       }
     },
-    [agregarProducto, buscarPorCodigo],
+    [elegirProducto, buscarPorCodigo],
   )
 
   useBarcodeScanner({
@@ -190,12 +224,16 @@ export default function VentaPage() {
             cambios.push('se quitó un producto que ya no está disponible')
             continue
           }
-          if (p.totalStock <= 0) {
+          if (aMilesimas(p.totalStock) <= 0) {
             cambios.push(`${p.name} quedó sin stock`)
             continue
           }
-          const cantidad = Math.min(linea.q, p.totalStock)
-          if (cantidad < linea.q) cambios.push(`${p.name}: solo quedan ${p.totalStock}`)
+          if (aMilesimas(linea.q) > aMilesimas(p.totalStock)) {
+            cambios.push(
+              `${p.name}: solo quedan ${formatearCantidadConUnidad(p.totalStock, p.saleUnit)}`,
+            )
+          }
+          // El store acota al stock por su cuenta, con el paso de la unidad.
           agregar(
             {
               id: p.id,
@@ -203,8 +241,9 @@ export default function VentaPage() {
               barcode: p.barcode,
               price: p.price,
               totalStock: p.totalStock,
+              saleUnit: p.saleUnit,
             },
-            cantidad,
+            linea.q,
           )
           restauradas++
         }
@@ -301,7 +340,7 @@ export default function VentaPage() {
       e.preventDefault()
       const elegido = visibles[resaltado]
       if (elegido) {
-        agregarProducto(elegido)
+        elegirProducto(elegido)
         setSearchTerm('')
         setResaltado(0)
         campoCodigo.current?.focus()
@@ -337,6 +376,7 @@ export default function VentaPage() {
     vaciar()
     setCobroAbierto(false)
     setTicketAbierto(false)
+    setPesando(null)
     setSearchTerm('')
     setResaltado(0)
     setEstadoCodigo('idle')
@@ -349,7 +389,7 @@ export default function VentaPage() {
     <Ticket
       lineas={items}
       total={total}
-      unidades={unidades}
+      articulos={articulos}
       onCantidad={cambiarCantidad}
       onQuitar={quitar}
       onEditando={setEditandoCantidad}
@@ -472,7 +512,7 @@ export default function VentaPage() {
                     setResaltado(i)
                   }}
                   onAgregar={() => {
-                    agregarProducto(p)
+                    elegirProducto(p)
                     campoCodigo.current?.focus()
                   }}
                 />
@@ -502,12 +542,12 @@ export default function VentaPage() {
           }}
         >
           Ticket
-          {unidades > 0 && (
+          {articulos > 0 && (
             <span
               className="ml-1.5 rounded-full bg-primary px-2 py-0.5 text-xs text-ink-on-solid"
               data-numeric=""
             >
-              {unidades}
+              {articulos}
             </span>
           )}
         </Button>
@@ -535,6 +575,20 @@ export default function VentaPage() {
       >
         {panelTicket}
       </Drawer>
+
+      <DialogoPeso
+        abierto={pesando !== null}
+        producto={pesando}
+        onCerrar={() => {
+          setPesando(null)
+          devolverFoco()
+        }}
+        onConfirmar={(cantidad) => {
+          if (pesando) agregarProducto(pesando, cantidad)
+          setPesando(null)
+          devolverFoco()
+        }}
+      />
 
       <EscanerCamara
         abierto={camaraAbierta}

@@ -19,11 +19,12 @@ import {
   esNegativo,
   esPositivo,
   montoDesdeTexto,
-  multiplicarMonto,
   restarMontos,
   sumarMontos,
   type Monto,
 } from '@/lib/money'
+import { precioPorCantidad } from '@/lib/cantidad'
+import { formatearCantidadConUnidad } from '@/modules/products/units'
 import {
   MEDIOS_COBRABLES,
   esEfectivo,
@@ -317,11 +318,11 @@ export function DialogoCobro({
           <ul className="max-h-40 divide-y divide-line overflow-y-auto px-3">
             {lineas.map((l) => (
               <li key={l.productId} className="flex items-center gap-3 py-2 text-sm">
-                <span className="w-8 shrink-0 text-ink-muted" data-numeric="">
-                  ×{l.quantity}
+                <span className="w-16 shrink-0 text-right text-ink-muted" data-numeric="">
+                  {formatearCantidadConUnidad(l.quantity, l.saleUnit)}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-ink">{l.name}</span>
-                <Money amount={multiplicarMonto(l.price, l.quantity)} size="sm" />
+                <Money amount={precioPorCantidad(l.price, l.quantity)} size="sm" />
               </li>
             ))}
           </ul>

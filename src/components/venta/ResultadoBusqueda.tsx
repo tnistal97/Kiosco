@@ -2,6 +2,8 @@
 
 import { Money, StockBadge, cn } from '@/components/ui'
 import type { Product } from '@/hooks/useProducts'
+import { aMilesimas } from '@/lib/cantidad'
+import { denominadorDePrecio, esFraccionable } from '@/modules/products/units'
 
 /**
  * Una fila de resultado de busqueda.
@@ -24,7 +26,8 @@ export function ResultadoBusqueda({
   onAgregar: () => void
   onHover: () => void
 }) {
-  const agotado = producto.totalStock <= 0
+  const agotado = aMilesimas(producto.totalStock) <= 0
+  const porPeso = esFraccionable(producto.saleUnit)
 
   return (
     <li>
@@ -55,11 +58,26 @@ export function ResultadoBusqueda({
                 <span className="font-mono">{producto.barcode}</span>
               </>
             )}
+            {/* Un producto por peso avisa que va a pedir el peso: asi el
+                cajero sabe que el diálogo que se abre no es un error. */}
+            {porPeso && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>se pesa</span>
+              </>
+            )}
           </p>
         </div>
 
-        <StockBadge quantity={producto.totalStock} />
-        <Money amount={producto.price} size="lg" className="w-28 text-right" />
+        <StockBadge quantity={producto.totalStock} unit={producto.saleUnit} />
+        <span className="w-28 text-right">
+          <Money amount={producto.price} size="lg" />
+          {porPeso && (
+            <span className="block text-xs text-ink-faint">
+              {denominadorDePrecio(producto.saleUnit)}
+            </span>
+          )}
+        </span>
       </button>
     </li>
   )

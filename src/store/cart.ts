@@ -1,5 +1,14 @@
 import { create } from 'zustand'
-import { CERO, multiplicarMonto, sumarMontos, type Monto } from '@/lib/money'
+import { CERO, sumarMontos, type Monto } from '@/lib/money'
+import {
+  aMilesimas,
+  cantidad as normalizar,
+  desdeMilesimas,
+  precioPorCantidad,
+  sumarCantidades,
+  type TextoCantidad,
+} from '@/lib/cantidad'
+import { politicaDe, type UnidadDeVenta } from '@/modules/products/units'
 
 /**
  * El ticket en curso.
@@ -23,7 +32,18 @@ import { CERO, multiplicarMonto, sumarMontos, type Monto } from '@/lib/money'
  */
 
 const CLAVE = 'kiosco:ticket'
-const VERSION = 1
+
+/**
+ * Version 2 desde la Fase 3B.
+ *
+ * En la 1 la cantidad se guardaba como NUMERO. Leer un `2` viejo como
+ * `TextoCantidad` daria `"2"` --que casualmente funciona-- pero un `0.425`
+ * guardado en punto flotante podria volver como `0.42500000000000004`. El
+ * cambio de version descarta los tickets anteriores en vez de arriesgarse a
+ * interpretarlos mal: se pierde un ticket a medias, una sola vez, en el
+ * despliegue.
+ */
+const VERSION = 2
 
 /** Un ticket mas viejo que esto no se restaura: ya no es el de este turno. */
 const VIGENCIA_MS = 12 * 60 * 60 * 1000
@@ -34,9 +54,10 @@ export interface CartLine {
   barcode: string | null
   /** Ultimo precio conocido del servidor. Referencia, no fuente de verdad. */
   price: Monto
-  /** Ultimo stock conocido del servidor. */
-  stock: number
-  quantity: number
+  /** Ultimo stock conocido del servidor, en la unidad de venta. */
+  stock: TextoCantidad
+  quantity: TextoCantidad
+  saleUnit: UnidadDeVenta
 }
 
 /** Lo que de verdad se escribe en el navegador. */
@@ -44,7 +65,7 @@ interface TicketGuardado {
   v: number
   branchId: number
   ts: number
-  lines: Array<{ p: number; q: number }>
+  lines: Array<{ p: number; q: TextoCantidad }>
 }
 
 export type ResultadoAgregar = 'agregado' | 'sumado' | 'sin-stock' | 'tope-de-stock'
@@ -54,7 +75,8 @@ export interface ProductoParaTicket {
   name: string
   barcode: string | null
   price: Monto
-  totalStock: number
+  totalStock: TextoCantidad
+  saleUnit: UnidadDeVenta
 }
 
 interface CartState {
@@ -63,8 +85,8 @@ interface CartState {
   /** Cambia cuando el ticket se rehidrata: sirve para no pintar antes de tiempo. */
   hidratado: boolean
 
-  add: (producto: ProductoParaTicket, cantidad?: number) => ResultadoAgregar
-  setQuantity: (productId: number, cantidad: number) => void
+  add: (producto: ProductoParaTicket, cantidad?: TextoCantidad) => ResultadoAgregar
+  setQuantity: (productId: number, cantidad: TextoCantidad) => void
   remove: (productId: number) => void
   clear: () => void
 
@@ -75,25 +97,35 @@ interface CartState {
   usarSucursal: (branchId: number) => void
 
   /** Vuelca el ticket guardado en memoria. No consulta al servidor. */
-  hidratar: (branchId: number) => Array<{ p: number; q: number }>
+  hidratar: (branchId: number) => Array<{ p: number; q: TextoCantidad }>
 }
 
 /**
  * Total del ticket. Referencia: el definitivo lo calcula el servidor.
  *
- * La cuenta se hace en centavos enteros --dentro de `multiplicarMonto` y
- * `sumarMontos`--, no en punto flotante. Con quince lineas de precios con
- * centavos, sumar en `Float` mostraba un total un centavo distinto del que
- * despues cobraba el servidor, y el cajero no tenia forma de saber cual era
- * el bueno.
+ * La cuenta se hace en enteros --centavos por milesimas, dentro de
+ * `precioPorCantidad`--, no en punto flotante. Con 0,425 kg a $9.800,
+ * `9800 * 0.425` en `Float` da `4164.999999999999` y el ticket mostraria un
+ * centavo menos que el que despues cobra el servidor.
  */
 export function totalDelTicket(items: CartLine[]): Monto {
   if (items.length === 0) return CERO
-  return sumarMontos(...items.map((i) => multiplicarMonto(i.price, i.quantity)))
+  return sumarMontos(...items.map((i) => precioPorCantidad(i.price, i.quantity)))
 }
 
-export function unidadesDelTicket(items: CartLine[]): number {
-  return items.reduce((s, i) => s + i.quantity, 0)
+/**
+ * Cuantos articulos hay en el ticket.
+ *
+ * Cuenta LINEAS, no unidades, y desde la Fase 3B no puede ser de otra manera:
+ * sumar 3 unidades de gaseosa con 0,425 kg de queso daria 3,425 de nada.
+ */
+export function articulosDelTicket(items: CartLine[]): number {
+  return items.length
+}
+
+/** La cantidad con la que se agrega un producto cuando nadie la especifica. */
+export function cantidadInicial(unidad: UnidadDeVenta): TextoCantidad {
+  return politicaDe(unidad).minimo
 }
 
 function guardar(branchId: number | null, items: CartLine[]): void {
@@ -137,14 +169,17 @@ function leer(): TicketGuardado | null {
 
     const crudas: unknown[] = d.lines
     const lines = crudas
-      .filter(
-        (l): l is { p: number; q: number } =>
-          typeof l === 'object' &&
-          l !== null &&
-          typeof (l as { p?: unknown }).p === 'number' &&
-          typeof (l as { q?: unknown }).q === 'number',
-      )
-      .map((l) => ({ p: Math.trunc(l.p), q: Math.max(1, Math.trunc(l.q)) }))
+      .flatMap((l): Array<{ p: number; q: TextoCantidad }> => {
+        if (typeof l !== 'object' || l === null) return []
+        const linea = l as { p?: unknown; q?: unknown }
+        if (typeof linea.p !== 'number') return []
+        if (typeof linea.q !== 'string') return []
+        try {
+          return [{ p: Math.trunc(linea.p), q: normalizar(linea.q) }]
+        } catch {
+          return []
+        }
+      })
       .slice(0, 200)
 
     return { v: VERSION, branchId: d.branchId, ts: d.ts, lines }
@@ -162,25 +197,54 @@ export function olvidarTicketGuardado(): void {
   }
 }
 
+/**
+ * La cantidad, ajustada al paso de su unidad y acotada al stock.
+ *
+ * El paso importa tanto como el tope: sin el, `setQuantity(3.7)` sobre un
+ * producto que se vende por unidad dejaria 3,7 unidades en el ticket, el
+ * servidor lo rechazaria y el cajero no entenderia por que. Se redondea al
+ * multiplo mas cercano, que es lo que hace el campo numerico.
+ */
+function acotar(
+  cantidad: TextoCantidad,
+  stock: TextoCantidad,
+  unidad: UnidadDeVenta,
+): TextoCantidad {
+  const politica = politicaDe(unidad)
+  const paso = aMilesimas(politica.paso)
+  const minimo = aMilesimas(politica.minimo)
+  const tope = aMilesimas(stock)
+
+  const enPaso = Math.round(aMilesimas(cantidad) / paso) * paso
+  return desdeMilesimas(Math.min(tope, Math.max(minimo, enPaso)))
+}
+
 export const useCartStore = create<CartState>((set, get) => ({
   branchId: null,
   items: [],
   hidratado: false,
 
-  add(producto, cantidad = 1) {
-    if (producto.totalStock <= 0) return 'sin-stock'
+  add(producto, cantidad) {
+    if (aMilesimas(producto.totalStock) <= 0) return 'sin-stock'
 
+    const pedida = cantidad ?? cantidadInicial(producto.saleUnit)
     const { items, branchId } = get()
     const existente = items.find((i) => i.productId === producto.id)
 
     if (existente) {
-      const deseada = existente.quantity + cantidad
-      const permitida = Math.min(deseada, producto.totalStock)
+      const deseada = sumarCantidades(existente.quantity, pedida)
+      const permitida = acotar(deseada, producto.totalStock, producto.saleUnit)
       if (permitida === existente.quantity) return 'tope-de-stock'
 
       const nuevos = items.map((i) =>
         i.productId === producto.id
-          ? { ...i, quantity: permitida, price: producto.price, stock: producto.totalStock }
+          ? {
+              ...i,
+              quantity: permitida,
+              price: producto.price,
+              stock: producto.totalStock,
+              saleUnit: producto.saleUnit,
+            }
           : i,
       )
       set({ items: nuevos })
@@ -196,7 +260,8 @@ export const useCartStore = create<CartState>((set, get) => ({
         barcode: producto.barcode,
         price: producto.price,
         stock: producto.totalStock,
-        quantity: Math.min(cantidad, producto.totalStock),
+        saleUnit: producto.saleUnit,
+        quantity: acotar(pedida, producto.totalStock, producto.saleUnit),
       },
     ]
     set({ items: nuevos })
@@ -207,10 +272,9 @@ export const useCartStore = create<CartState>((set, get) => ({
   setQuantity(productId, cantidad) {
     const { items, branchId } = get()
     // Cero no vacia la linea por accidente: quitar es una accion aparte, con
-    // su propio boton. Un cero tipeado se corrige al minimo.
-    const entera = Math.max(1, Math.trunc(cantidad))
+    // su propio boton. Un cero tipeado se corrige al minimo de su unidad.
     const nuevos = items.map((i) =>
-      i.productId === productId ? { ...i, quantity: Math.min(entera, Math.max(1, i.stock)) } : i,
+      i.productId === productId ? { ...i, quantity: acotar(cantidad, i.stock, i.saleUnit) } : i,
     )
     set({ items: nuevos })
     guardar(branchId, nuevos)
@@ -244,10 +308,11 @@ export const useCartStore = create<CartState>((set, get) => ({
           barcode: p.barcode,
           price: p.price,
           stock: p.totalStock,
-          quantity: Math.min(i.quantity, Math.max(1, p.totalStock)),
+          saleUnit: p.saleUnit,
+          quantity: acotar(i.quantity, p.totalStock, p.saleUnit),
         }
       })
-      .filter((i) => i.stock > 0)
+      .filter((i) => aMilesimas(i.stock) > 0)
 
     set({ items: nuevos })
     guardar(branchId, nuevos)

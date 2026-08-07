@@ -3,6 +3,12 @@
 import type { ReactNode } from 'react'
 import { cn } from './cn'
 import { estadoDeStock } from '@/modules/inventory/minimum'
+import type { TextoCantidad } from '@/lib/cantidad'
+import {
+  formatearCantidad,
+  formatearCantidadConUnidad,
+  type UnidadDeVenta,
+} from '@/modules/products/units'
 
 /**
  * Etiquetas de estado.
@@ -96,8 +102,20 @@ export function SaleStatusBadge({ status }: { status: string }) {
  * aviso no significaba nada. Con `minimum = 0` el producto solo puede estar
  * agotado o en stock: nadie configuro cuanto tiene que haber, y el sistema no
  * lo inventa. Ver docs/INVENTORY_LEDGER.md, seccion 8.
+ *
+ * La cantidad llega como cadena decimal y con su unidad, desde la Fase 3B. Un
+ * "3,500" sin unidad no dice si son tres kilos y medio o tres unidades y
+ * media, y la segunda no existe.
  */
-export function StockBadge({ quantity, minimum = 0 }: { quantity: number; minimum?: number }) {
+export function StockBadge({
+  quantity,
+  minimum = '0.000',
+  unit = 'UNIT',
+}: {
+  quantity: TextoCantidad
+  minimum?: TextoCantidad
+  unit?: UnidadDeVenta
+}) {
   const estado = estadoDeStock(quantity, minimum)
 
   if (estado === 'OUT') {
@@ -110,13 +128,14 @@ export function StockBadge({ quantity, minimum = 0 }: { quantity: number; minimu
   if (estado === 'LOW') {
     return (
       <StatusBadge tone="warning" glyph="▲">
-        Quedan {quantity} · mín. {minimum}
+        Quedan {formatearCantidadConUnidad(quantity, unit)} · mín.{' '}
+        {formatearCantidad(minimum, unit)}
       </StatusBadge>
     )
   }
   return (
     <StatusBadge tone="neutral" glyph="●">
-      {quantity} en stock
+      {formatearCantidadConUnidad(quantity, unit)} en stock
     </StatusBadge>
   )
 }

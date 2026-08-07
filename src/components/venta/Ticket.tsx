@@ -3,7 +3,9 @@
 import { memo } from 'react'
 import { Button, EmptyState, IconButton, Money, QuantityInput, cn } from '@/components/ui'
 import type { CartLine } from '@/store/cart'
-import { multiplicarMonto, type Monto } from '@/lib/money'
+import type { Monto } from '@/lib/money'
+import { aMilesimas, desdeMilesimas, precioPorCantidad, type TextoCantidad } from '@/lib/cantidad'
+import { denominadorDePrecio, politicaDe } from '@/modules/products/units'
 
 /**
  * El ticket en curso.
@@ -23,12 +25,13 @@ export const LineaTicket = memo(function LineaTicket({
   onEditando,
 }: {
   linea: CartLine
-  onCantidad: (productId: number, cantidad: number) => void
+  onCantidad: (productId: number, cantidad: TextoCantidad) => void
   onQuitar: (productId: number) => void
   onEditando: (editando: boolean) => void
 }) {
-  const subtotal = multiplicarMonto(linea.price, linea.quantity)
-  const enElTope = linea.quantity >= linea.stock
+  const subtotal = precioPorCantidad(linea.price, linea.quantity)
+  const enElTope = aMilesimas(linea.quantity) >= aMilesimas(linea.stock)
+  const paso = aMilesimas(politicaDe(linea.saleUnit).paso)
 
   /**
    * Atajos de la linea, activos mientras el foco esta dentro de ella.
@@ -42,12 +45,12 @@ export const LineaTicket = memo(function LineaTicket({
   function atajos(e: React.KeyboardEvent<HTMLLIElement>) {
     if (e.key === '+') {
       e.preventDefault()
-      onCantidad(linea.productId, linea.quantity + 1)
+      onCantidad(linea.productId, desdeMilesimas(aMilesimas(linea.quantity) + paso))
       return
     }
     if (e.key === '-' || e.key === '−') {
       e.preventDefault()
-      onCantidad(linea.productId, linea.quantity - 1)
+      onCantidad(linea.productId, desdeMilesimas(aMilesimas(linea.quantity) - paso))
       return
     }
     if (e.key === 'Delete') {
@@ -65,7 +68,8 @@ export const LineaTicket = memo(function LineaTicket({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-ink">{linea.name}</p>
           <p className="mt-0.5 text-xs text-ink-faint">
-            <Money amount={linea.price} size="sm" tone="muted" /> c/u
+            <Money amount={linea.price} size="sm" tone="muted" />{' '}
+            {denominadorDePrecio(linea.saleUnit) || 'c/u'}
             {enElTope && <span className="ml-2 text-warning">· sin más stock</span>}
           </p>
         </div>
@@ -96,6 +100,7 @@ export const LineaTicket = memo(function LineaTicket({
         <QuantityInput
           size="sm"
           value={linea.quantity}
+          unit={linea.saleUnit}
           max={linea.stock}
           label={`Cantidad de ${linea.name}`}
           onChange={(q) => {
@@ -112,7 +117,7 @@ export const LineaTicket = memo(function LineaTicket({
 export function Ticket({
   lineas,
   total,
-  unidades,
+  articulos,
   onCantidad,
   onQuitar,
   onEditando,
@@ -123,8 +128,14 @@ export function Ticket({
 }: {
   lineas: CartLine[]
   total: Monto
-  unidades: number
-  onCantidad: (productId: number, cantidad: number) => void
+  /**
+   * Cuantas LINEAS tiene el ticket, no cuantas unidades.
+   *
+   * Desde que hay productos por peso no puede ser otra cosa: sumar 3 gaseosas
+   * con 0,425 kg de queso daria 3,425 de nada.
+   */
+  articulos: number
+  onCantidad: (productId: number, cantidad: TextoCantidad) => void
   onQuitar: (productId: number) => void
   onEditando: (editando: boolean) => void
   onVaciar: () => void
@@ -144,7 +155,7 @@ export function Ticket({
           Ticket
           {!vacio && (
             <span className="ml-2 font-normal text-ink-muted" data-numeric="">
-              {unidades} {unidades === 1 ? 'unidad' : 'unidades'}
+              {articulos} {articulos === 1 ? 'artículo' : 'artículos'}
             </span>
           )}
         </h2>

@@ -15,25 +15,47 @@ import {
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import type { CategoriaDTO, ProductoDTO, ProveedorDTO } from '@/modules/products/dto'
-import { MINIMO_SUGERIDO } from '@/modules/inventory/minimum'
+import { minimoSugerido } from '@/modules/inventory/minimum'
+import { aMilesimas, cantidadDesdeTexto } from '@/lib/cantidad'
+import { montoDesdeTexto } from '@/lib/money'
+import { calcularRentabilidad, formatearPorcentaje } from '@/modules/products/margen'
+import {
+  NOMBRE_DE_UNIDAD_DE_COMPRA,
+  POLITICA_DE_UNIDAD,
+  UNIDADES_DE_COMPRA,
+  UNIDADES_DE_VENTA,
+  esFraccionable,
+  formatearCantidadConUnidad,
+  politicaDe,
+  type UnidadDeCompra,
+  type UnidadDeVenta,
+} from '@/modules/products/units'
+import { ActividadReciente } from './ActividadReciente'
+import { CodigosDeBarras } from './CodigosDeBarras'
 
 /**
  * Alta y edicion de un producto.
  *
- * Organizado en tres secciones porque son tres permisos distintos:
+ * Cinco secciones, y cada una responde una pregunta distinta:
  *
- *   Información   products.update        nombre, código, categoría, proveedor
- *   Venta         products.price.update  precio, alta y baja
- *   Inventario    stock.adjust           cantidad, con motivo obligatorio
+ *   Información     que es                nombre, categoria, estado, descripcion
+ *   Identificación  como se lo encuentra  codigo principal y alternativos
+ *   Venta           como se lo cobra      unidad de venta y precio
+ *   Compra / costo  cuanto cuesta         unidad de compra, factor, costo, margen
+ *   Inventario      cuanto hay            stock (solo lectura) y minimo
+ *
+ * **El stock actual NO se edita aca.** Cambio de la Fase 3B: antes "Unidades"
+ * era un campo mas del formulario y se guardaba con el mismo boton que una
+ * correccion de descripcion. Un movimiento de inventario es una operacion con
+ * su motivo, su tipo y su fila en el libro, y ahora se hace donde corresponde:
+ * el boton "Ajustar" de la pantalla de stock. Lo unico que se carga aca es el
+ * stock INICIAL, y solo al dar de alta, porque ahi no hay ajuste: hay un
+ * producto que nace.
  *
  * Sin permiso de precio el campo NO es un input deshabilitado: es texto. Un
- * input gris invita a intentarlo; el texto dice que ese numero no es asunto
- * de quien esta mirando. El servidor lo comprueba igual — esconder un campo
- * no impide mandar el PUT a mano.
- *
- * El ajuste de stock esta separado del resto a proposito. Antes "Agregar al
- * stock" era un campo mas del formulario de edicion, sin motivo, y se
- * guardaba con el mismo boton que una correccion de descripcion.
+ * input gris invita a intentarlo; el texto dice que ese numero no es asunto de
+ * quien esta mirando. Con el costo pasa lo mismo, y ademas ni siquiera llega al
+ * navegador: el servidor no lo manda. Ver docs/PERMISSIONS_MATRIX.md.
  */
 export function DialogoProducto({
   producto,
@@ -52,48 +74,95 @@ export function DialogoProducto({
   proveedores: ProveedorDTO[]
 }) {
   const puedeEditarPrecio = usePermiso('products.price.update')
-  const puedeAjustarStock = usePermiso('stock.adjust')
+  const puedeVerCosto = usePermiso('products.cost.view')
+  const puedeEditarCosto = usePermiso('products.cost.update')
   const esAlta = producto === null
 
   const [nombre, setNombre] = useState('')
   const [codigo, setCodigo] = useState('')
+  const [alternativos, setAlternativos] = useState<string[]>([])
   const [categoria, setCategoria] = useState('')
   const [proveedor, setProveedor] = useState('')
   const [descripcion, setDescripcion] = useState('')
   const [precio, setPrecio] = useState('')
+  const [costo, setCosto] = useState('')
+  const [motivoCosto, setMotivoCosto] = useState('')
+  const [unidadVenta, setUnidadVenta] = useState<UnidadDeVenta>('UNIT')
+  const [unidadCompra, setUnidadCompra] = useState<UnidadDeCompra>('UNIT')
+  const [porCompra, setPorCompra] = useState('1')
   const [activo, setActivo] = useState(true)
-  const [stock, setStock] = useState('')
-  const [motivoStock, setMotivoStock] = useState('')
+  const [stockInicial, setStockInicial] = useState('0')
   const [minimo, setMinimo] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!abierto) return
+    const unidad = producto?.saleUnit ?? 'UNIT'
     setNombre(producto?.name ?? '')
     setCodigo(producto?.barcode ?? '')
+    setAlternativos([])
     setCategoria(String(producto?.category.id ?? categorias[0]?.id ?? ''))
     setProveedor(String(producto?.supplier?.id ?? ''))
     setDescripcion(producto?.description ?? '')
     setPrecio(producto ? String(producto.price) : '')
+    setCosto(producto?.cost ?? '')
+    setMotivoCosto('')
+    setUnidadVenta(unidad)
+    setUnidadCompra(producto?.purchaseUnit ?? 'UNIT')
+    setPorCompra(producto?.unitsPerPurchaseUnit ?? '1')
     setActivo(producto?.isActive ?? true)
-    setStock(producto ? String(producto.totalStock) : '0')
-    setMotivoStock('')
-    setMinimo(producto ? String(producto.minimumStock) : String(MINIMO_SUGERIDO))
+    setStockInicial('0')
+    setMinimo(producto ? producto.minimumStock : minimoSugerido(unidad))
     setError(null)
     setEnviando(false)
   }, [abierto, producto, categorias])
 
-  const precioNum = Number(precio.replace(',', '.'))
-  const stockNum = Number(stock)
-  const minimoNum = Number(minimo)
-  const minimoValido = minimo.trim() !== '' && Number.isFinite(minimoNum) && minimoNum >= 0
-  const stockCambio = producto !== null && stockNum !== producto.totalStock
-  const precioValido = Number.isFinite(precioNum) && precioNum > 0
+  // Al abrir la ficha de un producto que ya existe se traen sus codigos
+  // alternativos, que el listado no manda: la caja pide hasta cien productos
+  // por peticion y no los necesita.
+  useEffect(() => {
+    if (!abierto || producto === null) return
+    let vivo = true
+    void apiRequest(`/api/products/${producto.id}`, {
+      parse: (raw): string[] => {
+        if (typeof raw !== 'object' || raw === null) return []
+        const lista = (raw as { alternateBarcodes?: unknown }).alternateBarcodes
+        return Array.isArray(lista) ? lista.filter((c): c is string => typeof c === 'string') : []
+      },
+    })
+      .then((lista) => {
+        if (vivo) setAlternativos(lista)
+      })
+      .catch(() => {
+        // Sin los alternativos la ficha sigue siendo utilizable. No se manda
+        // `alternateBarcodes` en el PUT si no se pudieron leer, asi que un
+        // fallo aca no los borra.
+      })
+    return () => {
+      vivo = false
+    }
+  }, [abierto, producto])
 
-  const faltaMotivo = stockCambio && motivoStock.trim().length < 3
+  const precioMonto = montoDesdeTexto(precio)
+  const costoMonto = costo.trim() === '' ? null : montoDesdeTexto(costo)
+  const minimoCantidad = cantidadDesdeTexto(minimo === '' ? '0' : minimo)
+  const stockCantidad = cantidadDesdeTexto(stockInicial === '' ? '0' : stockInicial)
+
+  const rentabilidad = calcularRentabilidad(precioMonto ?? '0.00', costoMonto)
+
+  const costoCambio = !esAlta && (producto.cost ?? '') !== costo.trim()
+  const faltaMotivoCosto = costoCambio && motivoCosto.trim().length < 3
+
   const valido =
-    nombre.trim().length > 0 && categoria !== '' && (esAlta ? precioValido : true) && !faltaMotivo
+    nombre.trim().length > 0 &&
+    categoria !== '' &&
+    (esAlta ? precioMonto !== null : true) &&
+    // Las dos cantidades tienen que parsear. Se puede llegar a `null` tipeando
+    // "1.2.3": el campo filtra los caracteres, no la forma.
+    minimoCantidad !== null &&
+    stockCantidad !== null &&
+    !faltaMotivoCosto
 
   async function guardar() {
     if (enviando || !valido) return
@@ -107,33 +176,45 @@ export function DialogoProducto({
           body: {
             name: nombre.trim(),
             barcode: codigo.trim(),
+            alternateBarcodes: alternativos,
             description: descripcion.trim(),
-            price: precioNum,
+            price: precioMonto,
+            ...(puedeEditarCosto && costoMonto !== null ? { cost: costoMonto } : {}),
             categoryId: Number(categoria),
             supplierId: proveedor === '' ? null : Number(proveedor),
-            totalStock: Number.isFinite(stockNum) ? Math.max(0, Math.trunc(stockNum)) : 0,
-            minimumStock: minimoValido ? Math.trunc(minimoNum) : 0,
+            saleUnit: unidadVenta,
+            purchaseUnit: unidadCompra,
+            unitsPerPurchaseUnit: porCompra === '' ? '1' : porCompra.replace(',', '.'),
+            totalStock: stockCantidad,
+            minimumStock: minimoCantidad,
           },
           parse: () => null,
         })
       } else {
-        // Solo se mandan los campos que el usuario puede tocar. El precio no
-        // viaja si no tiene el permiso: asi ni siquiera puede fallar por algo
-        // que no eligio.
+        // Solo se mandan los campos que el usuario puede tocar. El precio y el
+        // costo no viajan si no tiene el permiso: asi ni siquiera pueden fallar
+        // por algo que no eligio.
         const cuerpo: Record<string, unknown> = {
           name: nombre.trim(),
           barcode: codigo.trim(),
+          alternateBarcodes: alternativos,
           description: descripcion.trim(),
           categoryId: Number(categoria),
           supplierId: proveedor === '' ? null : Number(proveedor),
+          purchaseUnit: unidadCompra,
+          unitsPerPurchaseUnit: porCompra === '' ? '1' : porCompra.replace(',', '.'),
         }
-        if (minimoValido) cuerpo.minimumStock = Math.trunc(minimoNum)
-        if (puedeEditarPrecio && precioValido) cuerpo.price = precioNum
+        cuerpo.minimumStock = minimoCantidad
+        if (puedeEditarPrecio && precioMonto !== null) cuerpo.price = precioMonto
         if (puedeEditarPrecio) cuerpo.isActive = activo
-        if (puedeAjustarStock && stockCambio) {
-          cuerpo.totalStock = Math.max(0, Math.trunc(stockNum))
-          cuerpo.stockReason = motivoStock.trim()
+        if (puedeEditarCosto && costoCambio) {
+          cuerpo.cost = costoMonto
+          cuerpo.costReason = motivoCosto.trim()
         }
+        // La unidad de venta solo viaja si el producto todavia no tiene
+        // historial. El servidor lo rechaza igual --y la base tambien-- pero
+        // mandarla siempre haria fallar cualquier edicion de un producto viejo.
+        if (unidadVenta !== producto.saleUnit) cuerpo.saleUnit = unidadVenta
 
         await apiRequest(`/api/products/${producto.id}`, {
           method: 'PUT',
@@ -147,6 +228,8 @@ export function DialogoProducto({
       setEnviando(false)
     }
   }
+
+  const politicaVenta = politicaDe(unidadVenta)
 
   return (
     <Dialog
@@ -190,17 +273,6 @@ export function DialogoProducto({
               />
             </Field>
 
-            <Field label="Código de barras" hint="Vacío si el producto no tiene etiqueta.">
-              <Input
-                value={codigo}
-                disabled={enviando}
-                className="font-mono"
-                onChange={(e) => {
-                  setCodigo(e.target.value)
-                }}
-              />
-            </Field>
-
             <Field label="Categoría" required>
               <Select
                 value={categoria}
@@ -234,6 +306,20 @@ export function DialogoProducto({
               </Select>
             </Field>
 
+            {!esAlta && puedeEditarPrecio && (
+              <div className="flex items-end sm:col-span-2">
+                <Checkbox
+                  checked={activo}
+                  disabled={enviando}
+                  label="En venta"
+                  description="Un producto dado de baja no aparece en la caja."
+                  onChange={(e) => {
+                    setActivo(e.target.checked)
+                  }}
+                />
+              </div>
+            )}
+
             <Field label="Descripción" className="sm:col-span-2">
               <Textarea
                 rows={2}
@@ -247,10 +333,49 @@ export function DialogoProducto({
           </div>
         </Seccion>
 
+        <Seccion titulo="Identificación">
+          <CodigosDeBarras
+            principal={codigo}
+            alternativos={alternativos}
+            deshabilitado={enviando}
+            onPrincipal={setCodigo}
+            onAlternativos={setAlternativos}
+          />
+        </Seccion>
+
         <Seccion titulo="Venta">
-          {puedeEditarPrecio || esAlta ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Precio" required={esAlta}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              label="Unidad de venta"
+              hint={
+                esAlta
+                  ? 'Cómo se cobra: por unidad o por peso.'
+                  : 'No se puede cambiar si el producto ya tiene movimientos.'
+              }
+            >
+              <Select
+                value={unidadVenta}
+                disabled={enviando}
+                onChange={(e) => {
+                  const u = e.target.value as UnidadDeVenta
+                  setUnidadVenta(u)
+                  if (esAlta) setMinimo(minimoSugerido(u))
+                }}
+              >
+                {UNIDADES_DE_VENTA.map((u) => (
+                  <option key={u} value={u}>
+                    {POLITICA_DE_UNIDAD[u].nombre} ({POLITICA_DE_UNIDAD[u].simbolo})
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            {puedeEditarPrecio || esAlta ? (
+              <Field
+                label={`Precio por ${politicaVenta.simbolo}`}
+                required={esAlta}
+                hint={esFraccionable(unidadVenta) ? 'Lo que sale un kilo entero.' : undefined}
+              >
                 <Input
                   inputMode="decimal"
                   value={precio}
@@ -260,123 +385,170 @@ export function DialogoProducto({
                   }}
                 />
               </Field>
-              {!esAlta && (
-                <div className="flex items-end">
-                  <Checkbox
-                    checked={activo}
-                    disabled={enviando}
-                    label="En venta"
-                    description="Un producto dado de baja no aparece en la caja."
-                    onChange={(e) => {
-                      setActivo(e.target.checked)
-                    }}
-                  />
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-baseline justify-between rounded-lg border border-line bg-sunken px-4 py-3">
+                  <span className="text-sm text-ink-muted">Precio</span>
+                  <Money amount={producto.price} size="lg" />
                 </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-baseline justify-between rounded-lg border border-line bg-sunken px-4 py-3">
-                <span className="text-sm text-ink-muted">Precio</span>
-                <Money amount={producto.price} size="lg" />
+                <p className="text-xs text-ink-faint">
+                  Cambiar precios necesita el permiso <code>products.price.update</code>.
+                </p>
               </div>
-              <p className="text-xs text-ink-faint">
-                Cambiar precios necesita el permiso <code>products.price.update</code>. Podés editar
-                el resto de la ficha.
-              </p>
-            </div>
-          )}
+            )}
+          </div>
         </Seccion>
 
-        {!esAlta && (
-          <Seccion titulo="Inventario">
-            {puedeAjustarStock ? (
-              <div className="flex flex-col gap-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Field
-                    label="Unidades"
-                    hint={`Ahora hay ${producto.totalStock}. Escribí el total, no la diferencia.`}
-                  >
-                    <Input
-                      inputMode="numeric"
-                      value={stock}
-                      disabled={enviando}
-                      onChange={(e) => {
-                        setStock(e.target.value.replace(/[^0-9]/g, ''))
-                      }}
-                    />
-                  </Field>
+        <Seccion titulo="Compra y costo">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Unidad de compra" hint="Cómo llega del proveedor.">
+              <Select
+                value={unidadCompra}
+                disabled={enviando}
+                onChange={(e) => {
+                  setUnidadCompra(e.target.value as UnidadDeCompra)
+                }}
+              >
+                {UNIDADES_DE_COMPRA.map((u) => (
+                  <option key={u} value={u}>
+                    {NOMBRE_DE_UNIDAD_DE_COMPRA[u]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
-                  <CampoMinimo
-                    valor={minimo}
-                    onCambio={setMinimo}
-                    deshabilitado={enviando}
-                    stock={producto.totalStock}
+            <Field
+              label="Unidades por compra"
+              hint={`Cuántos ${politicaVenta.simbolo} trae una ${NOMBRE_DE_UNIDAD_DE_COMPRA[unidadCompra].toLowerCase()}.`}
+            >
+              <Input
+                inputMode="decimal"
+                value={porCompra}
+                disabled={enviando}
+                onChange={(e) => {
+                  setPorCompra(e.target.value.replace(/[^0-9.,]/g, ''))
+                }}
+              />
+            </Field>
+
+            {puedeVerCosto ? (
+              <>
+                <Field
+                  label="Costo"
+                  hint={
+                    puedeEditarCosto
+                      ? 'Vacío si no se sabe. No poner el precio: sería un margen falso.'
+                      : `Necesita el permiso products.cost.update para cambiarlo.`
+                  }
+                >
+                  <Input
+                    inputMode="decimal"
+                    value={costo}
+                    disabled={enviando || !puedeEditarCosto}
+                    onChange={(e) => {
+                      setCosto(e.target.value)
+                    }}
                   />
+                </Field>
+
+                <div className="flex flex-col justify-end gap-1 text-sm">
+                  <Linea etiqueta="Ganancia">
+                    {rentabilidad.ganancia === null ? (
+                      <span className="text-ink-faint">—</span>
+                    ) : (
+                      <Money amount={rentabilidad.ganancia} size="sm" />
+                    )}
+                  </Linea>
+                  <Linea etiqueta="Margen">{formatearPorcentaje(rentabilidad.margen)}</Linea>
+                  <Linea etiqueta="Markup">{formatearPorcentaje(rentabilidad.markup)}</Linea>
+                  {rentabilidad.bajoCosto && (
+                    <p className="text-xs text-danger">Se vende por debajo del costo.</p>
+                  )}
                 </div>
 
-                {stockCambio && (
+                {costoCambio && (
                   <Field
-                    label="Motivo del ajuste"
+                    label="Motivo del cambio de costo"
                     required
-                    hint="Obligatorio. Queda en la bitácora con tu nombre."
-                    error={faltaMotivo && motivoStock.length > 0 ? 'Escribí un motivo.' : null}
+                    className="sm:col-span-2"
+                    hint="Obligatorio. Queda en el historial de costos, que no se puede editar."
+                    error={faltaMotivoCosto && motivoCosto.length > 0 ? 'Escribí un motivo.' : null}
                   >
                     <Input
-                      value={motivoStock}
+                      value={motivoCosto}
                       disabled={enviando}
-                      placeholder="Ej: rotura, recuento, entrada de mercadería"
+                      placeholder="Ej: aumento del proveedor, lista de mayo"
                       onChange={(e) => {
-                        setMotivoStock(e.target.value)
+                        setMotivoCosto(e.target.value)
                       }}
                     />
                   </Field>
                 )}
-              </div>
+              </>
             ) : (
-              <div className="flex flex-col gap-3">
-                <div className="flex items-baseline justify-between rounded-lg border border-line bg-sunken px-4 py-3">
-                  <span className="text-sm text-ink-muted">Unidades</span>
-                  <span className="text-lg font-semibold text-ink" data-numeric="">
-                    {producto.totalStock}
-                  </span>
-                </div>
-                <CampoMinimo
-                  valor={minimo}
-                  onCambio={setMinimo}
-                  deshabilitado={enviando}
-                  stock={producto.totalStock}
-                />
-              </div>
+              <p className="text-xs text-ink-faint sm:col-span-2">
+                El costo y el margen necesitan el permiso <code>products.cost.view</code>.
+              </p>
             )}
-          </Seccion>
-        )}
+          </div>
+        </Seccion>
 
-        {esAlta && (
-          <Seccion titulo="Inventario">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Stock inicial" hint="Cuántas unidades entran hoy.">
+        <Seccion titulo="Inventario">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {esAlta ? (
+              <Field
+                label={`Stock inicial (${politicaVenta.simbolo})`}
+                hint="Cuánto entra hoy. Queda como movimiento inicial del libro."
+              >
                 <Input
-                  inputMode="numeric"
-                  value={stock}
+                  inputMode={esFraccionable(unidadVenta) ? 'decimal' : 'numeric'}
+                  value={stockInicial}
                   disabled={enviando}
                   onChange={(e) => {
-                    setStock(e.target.value.replace(/[^0-9]/g, ''))
+                    const permitido = esFraccionable(unidadVenta) ? /[^0-9.,]/g : /[^0-9]/g
+                    setStockInicial(e.target.value.replace(permitido, ''))
                   }}
                 />
               </Field>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-baseline justify-between rounded-lg border border-line bg-sunken px-4 py-3">
+                  <span className="text-sm text-ink-muted">Stock actual</span>
+                  <span className="text-lg font-semibold text-ink" data-numeric="">
+                    {formatearCantidadConUnidad(producto.totalStock, producto.saleUnit)}
+                  </span>
+                </div>
+                <p className="text-xs text-ink-faint">
+                  El stock no se edita acá: se mueve con el botón <strong>Ajustar</strong> de la
+                  pantalla de stock, que pide motivo y deja la operación en el libro.
+                </p>
+              </div>
+            )}
 
-              <CampoMinimo
-                valor={minimo}
-                onCambio={setMinimo}
-                deshabilitado={enviando}
-                stock={Number.isFinite(stockNum) ? stockNum : 0}
-              />
-            </div>
-          </Seccion>
-        )}
+            <CampoMinimo
+              valor={minimo}
+              onCambio={setMinimo}
+              deshabilitado={enviando}
+              unidad={unidadVenta}
+              stock={producto?.totalStock ?? stockInicial}
+            />
+          </div>
+        </Seccion>
+
+        {!esAlta && <ActividadReciente productId={producto.id} abierto={abierto} />}
       </div>
     </Dialog>
+  )
+}
+
+function Linea({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-ink-muted">{etiqueta}</span>
+      <span className="font-medium text-ink" data-numeric="">
+        {children}
+      </span>
+    </div>
   )
 }
 
@@ -392,33 +564,37 @@ function CampoMinimo({
   valor,
   onCambio,
   deshabilitado,
+  unidad,
   stock,
 }: {
   valor: string
   onCambio: (v: string) => void
   deshabilitado: boolean
-  stock: number
+  unidad: UnidadDeVenta
+  stock: string
 }) {
-  const n = Number(valor)
-  const configurado = valor.trim() !== '' && Number.isFinite(n) && n > 0
+  const cantidad = cantidadDesdeTexto(valor === '' ? '0' : valor)
+  const minimo = cantidad === null ? 0 : aMilesimas(cantidad)
+  const hay = aMilesimas(cantidadDesdeTexto(stock === '' ? '0' : stock) ?? '0.000')
 
   return (
     <Field
-      label="Mínimo de reposición"
+      label={`Mínimo de reposición (${politicaDe(unidad).simbolo})`}
       hint={
-        !configurado
-          ? 'Cero: sin mínimo. No va a avisar cuando queden pocas.'
-          : stock > 0 && stock <= n
-            ? `Con ${stock} unidades ya está bajo mínimo.`
-            : 'Avisa cuando queden estas unidades o menos.'
+        minimo <= 0
+          ? 'Cero: sin mínimo. No va a avisar cuando quede poco.'
+          : hay > 0 && hay <= minimo
+            ? 'Con el stock actual ya está bajo mínimo.'
+            : 'Avisa cuando quede esta cantidad o menos.'
       }
     >
       <Input
-        inputMode="numeric"
+        inputMode={esFraccionable(unidad) ? 'decimal' : 'numeric'}
         value={valor}
         disabled={deshabilitado}
         onChange={(e) => {
-          onCambio(e.target.value.replace(/[^0-9]/g, ''))
+          const permitido = esFraccionable(unidad) ? /[^0-9.,]/g : /[^0-9]/g
+          onCambio(e.target.value.replace(permitido, ''))
         }}
       />
     </Field>
