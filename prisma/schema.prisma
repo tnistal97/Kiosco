@@ -65,20 +65,29 @@ model Category {
 }
 
 model Product {
-  id          Int           @id @default(autoincrement())
+  id          Int     @id @default(autoincrement())
   name        String
-  barcode     String?       @unique
+  barcode     String? @unique
   description String?
   supplierId  Int?
   categoryId  Int
   price       Float
   value       Int?
   branchId    Int
-  stocks      BranchStock[]
-  saleItems   SaleItem[]
-  category    Category      @relation(fields: [categoryId], references: [id])
-  supplier    Supplier?     @relation(fields: [supplierId], references: [id])
-  branch      Branch        @relation(fields: [branchId], references: [id])
+
+  /// Un producto dado de baja sale del catalogo de venta pero conserva su
+  /// historial. Nunca se borra: los items de venta lo referencian, y borrarlo
+  /// falsearia los reportes de meses anteriores.
+  isActive Boolean @default(true)
+
+  stocks    BranchStock[]
+  saleItems SaleItem[]
+  category  Category      @relation(fields: [categoryId], references: [id])
+  supplier  Supplier?     @relation(fields: [supplierId], references: [id])
+  branch    Branch        @relation(fields: [branchId], references: [id])
+
+  /// La caja busca por sucursal y por estado en cada tecla.
+  @@index([branchId, isActive])
 }
 
 model BranchStock {
@@ -210,10 +219,23 @@ model CashCount {
   id       Int      @id @default(autoincrement())
   branchId Int
   userId   Int
+  /// Lo que se conto fisicamente en el cajon.
   amount   Float
   date     DateTime @default(now())
   notes    String? // notas u observaciones opcionales
 
+  /// Lo que el sistema esperaba. Lo calcula el servidor, nunca el cliente.
+  expected Float @default(0)
+
+  /// contado - esperado. Positivo sobra, negativo falta.
+  ///
+  /// Se guarda calculado y no se deduce al leer: asi se puede preguntar por
+  /// "arqueos con diferencia" sin recorrer texto. Antes los dos valores
+  /// vivian dentro de `notes` como una frase.
+  difference Float @default(0)
+
   branch Branch @relation(fields: [branchId], references: [id])
   user   User   @relation(fields: [userId], references: [id])
+
+  @@index([branchId, date])
 }

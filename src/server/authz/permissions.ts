@@ -24,6 +24,18 @@ export const PERMISSIONS = [
   'products.view',
   'products.create',
   'products.update',
+  /**
+   * Cambiar el precio de un producto que ya existe.
+   *
+   * Separado de `products.update` a proposito: corregir un nombre mal escrito
+   * y cambiar cuanto sale un producto no son la misma responsabilidad. Quien
+   * repone mercaderia necesita lo primero y no lo segundo.
+   *
+   * Alcance: solo la EDICION. El alta sigue cubierta por `products.create`,
+   * porque dar de alta un producto implica ponerle un precio y no habria
+   * forma de cargarlo si no. Queda anotado en docs/PERMISSIONS_MATRIX.md.
+   */
+  'products.price.update',
   'products.delete',
   'categories.manage',
   // Inventario
@@ -83,6 +95,8 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'products.view',
     'products.create',
     'products.update',
+    // El encargado si fija precios: es quien recibe la lista del proveedor.
+    'products.price.update',
     'categories.manage',
     'stock.view',
     'stock.adjust',
@@ -123,6 +137,10 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
    *
    * No vende y no toca la caja: separar quien compra de quien cobra es el
    * control basico contra el desvio de mercaderia.
+   *
+   * Sin `products.price.update`: puede cargar un producto nuevo con su
+   * precio, pero no retocar el de uno que ya se esta vendiendo. El precio de
+   * venta lo decide quien maneja el local.
    */
   compras: [
     'products.view',

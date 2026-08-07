@@ -1,6 +1,6 @@
 # Matriz de permisos
 
-> Estado a la Fase 1. La fuente de verdad es
+> Estado a la Fase 2. La fuente de verdad es
 > [`src/server/authz/permissions.ts`](../src/server/authz/permissions.ts); este
 > documento la explica. Si los dos difieren, manda el código, y el test
 > `tests/authorization/permissions-matrix.test.ts` falla hasta que coincidan.
@@ -46,55 +46,57 @@ habría exigido migrar los usuarios existentes sin ganar nada.
 
 ## Rol × permiso
 
-| Permiso                | duenio | admin | encargado | supervisor | cajero | vendedor | repositor | compras | auditor |
-| ---------------------- | :----: | :---: | :-------: | :--------: | :----: | :------: | :-------: | :-----: | :-----: |
-| `sales.create`         |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |
-| `sales.view`           |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |
-| `sales.cancel`         |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |
-| `products.view`        |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ✔     |    ✔    |    ✔    |
-| `products.create`      |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |
-| `products.update`      |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |
-| `products.delete`      |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |
-| `categories.manage`    |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |
-| `stock.view`           |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ✔     |    ✔    |    ✔    |
-| `stock.adjust`         |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ✔     |    ✔    |    ·    |
-| `cash.view`            |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |
-| `cash.movement.create` |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |
-| `cash.count.create`    |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |
-| `reports.view`         |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ✔    |    ✔    |
-| `audit.view`           |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |
-| `users.view`           |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |
-| `users.manage`         |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |
-| `branches.view`        |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |
-| `branches.manage`      |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |
-| `suppliers.view`       |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |
-| `suppliers.manage`     |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |
+| Permiso                 | duenio | admin | encargado | supervisor | cajero | vendedor | repositor | compras | auditor |
+| ----------------------- | :----: | :---: | :-------: | :--------: | :----: | :------: | :-------: | :-----: | :-----: |
+| `sales.create`          |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |
+| `sales.view`            |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |
+| `sales.cancel`          |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |
+| `products.view`         |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ✔     |    ✔    |    ✔    |
+| `products.create`       |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |
+| `products.update`       |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |
+| `products.price.update` |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |
+| `products.delete`       |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |
+| `categories.manage`     |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |
+| `stock.view`            |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ✔     |    ✔    |    ✔    |
+| `stock.adjust`          |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ✔     |    ✔    |    ·    |
+| `cash.view`             |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |
+| `cash.movement.create`  |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |
+| `cash.count.create`     |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |
+| `reports.view`          |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ✔    |    ✔    |
+| `audit.view`            |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |
+| `users.view`            |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |
+| `users.manage`          |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |
+| `branches.view`         |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |
+| `branches.manage`       |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |
+| `suppliers.view`        |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |
+| `suppliers.manage`      |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |
 
 ## Permiso × ruta × impacto
 
-| Permiso                | Rutas                                                                   | Qué habilita                | Impacto si se otorga de más                                                                       |
-| ---------------------- | ----------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
-| `sales.create`         | `POST /api/sales`                                                       | Registrar una venta         | Descuenta stock y suma a la caja.                                                                 |
-| `sales.view`           | — _(sin uso)_                                                           | Ver ventas propias          | Ninguno hoy. Ver nota abajo.                                                                      |
-| `sales.cancel`         | `POST /api/sales/:id/cancel`                                            | Anular una venta            | **Devuelve dinero de la caja y restituye stock.** El permiso más sensible de la operación diaria. |
-| `products.view`        | `GET /api/products`<br>`GET /api/products/:id`<br>`GET /api/categories` | Leer el catálogo            | Expone precios de costo si algún día se agregan.                                                  |
-| `products.create`      | `POST /api/products`                                                    | Alta de producto            | Un producto con precio erróneo se vende a ese precio.                                             |
-| `products.update`      | `PUT /api/products/:id`                                                 | Editar ficha y precio       | **Cambiar el precio de venta.**                                                                   |
-| `products.delete`      | `DELETE /api/products/:id`                                              | Baja de producto            | Se niega si figura en ventas, así que no destruye historial.                                      |
-| `categories.manage`    | `POST /api/categories`                                                  | Crear categorías            | Bajo.                                                                                             |
-| `stock.view`           | `GET /api/stock/:productId`                                             | Consultar existencias       | Bajo.                                                                                             |
-| `stock.adjust`         | `PUT /api/stock/:productId`<br>`PATCH /api/stock/:productId`            | Recuento y ajuste           | **Permite tapar un faltante ajustando el inventario.** Exige motivo y queda auditado.             |
-| `cash.view`            | `GET /api/cash`<br>`GET /api/cash/balance`<br>`GET /api/cash/:id`       | Ver movimientos y saldo     | Expone la recaudación.                                                                            |
-| `cash.movement.create` | `POST /api/cash`                                                        | Ingreso, retiro, depósito   | **Retirar dinero de la caja.**                                                                    |
-| `cash.count.create`    | `POST /api/cash/count`                                                  | Arqueo                      | Bajo: el esperado y la diferencia los calcula el servidor.                                        |
-| `reports.view`         | `GET /api/admin/sales`                                                  | Reporte de ventas por rango | Expone la facturación del período.                                                                |
-| `audit.view`           | `GET /api/audit`                                                        | Leer la bitácora            | Expone toda la actividad, incluidos los intentos rechazados.                                      |
-| `users.view`           | `GET /api/users`<br>`GET /api/roles`                                    | Listar personal             | Nombres de usuario. Nunca hashes.                                                                 |
-| `users.manage`         | `POST /api/users`                                                       | Alta de personal            | **Escalada de privilegios: crear un usuario con rol administrador.**                              |
-| `branches.view`        | `GET /api/branches`                                                     | Ver sucursales              | Bajo.                                                                                             |
-| `branches.manage`      | `POST /api/branches`<br>`PATCH /api/branches`                           | Alta y edición de sucursal  | Alto cuando haya varias.                                                                          |
-| `suppliers.view`       | `GET /api/suppliers`                                                    | Ver proveedores             | Bajo.                                                                                             |
-| `suppliers.manage`     | `POST /api/suppliers`                                                   | Alta de proveedor           | Bajo hoy; alto cuando existan compras y cuenta corriente.                                         |
+| Permiso                 | Rutas                                                                   | Qué habilita                | Impacto si se otorga de más                                                                       |
+| ----------------------- | ----------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `sales.create`          | `POST /api/sales`                                                       | Registrar una venta         | Descuenta stock y suma a la caja.                                                                 |
+| `sales.view`            | — _(sin uso)_                                                           | Ver ventas propias          | Ninguno hoy. Ver nota abajo.                                                                      |
+| `sales.cancel`          | `POST /api/sales/:id/cancel`                                            | Anular una venta            | **Devuelve dinero de la caja y restituye stock.** El permiso más sensible de la operación diaria. |
+| `products.view`         | `GET /api/products`<br>`GET /api/products/:id`<br>`GET /api/categories` | Leer el catálogo            | Expone precios de costo si algún día se agregan.                                                  |
+| `products.create`       | `POST /api/products`                                                    | Alta de producto            | Un producto con precio erróneo se vende a ese precio.                                             |
+| `products.update`       | `PUT /api/products/:id`                                                 | Editar la ficha             | Nombre, código, descripción, categoría, proveedor. No incluye el precio.                          |
+| `products.price.update` | `PUT /api/products/:id` (campo `price`)                                 | Cambiar el precio de venta  | **Cambia cuánto se le cobra al cliente.** Separado de la edición desde la Fase 2.                 |
+| `products.delete`       | `DELETE /api/products/:id`                                              | Baja de producto            | Se niega si figura en ventas, así que no destruye historial.                                      |
+| `categories.manage`     | `POST /api/categories`                                                  | Crear categorías            | Bajo.                                                                                             |
+| `stock.view`            | `GET /api/stock/:productId`                                             | Consultar existencias       | Bajo.                                                                                             |
+| `stock.adjust`          | `PUT /api/stock/:productId`<br>`PATCH /api/stock/:productId`            | Recuento y ajuste           | **Permite tapar un faltante ajustando el inventario.** Exige motivo y queda auditado.             |
+| `cash.view`             | `GET /api/cash`<br>`GET /api/cash/balance`<br>`GET /api/cash/:id`       | Ver movimientos y saldo     | Expone la recaudación.                                                                            |
+| `cash.movement.create`  | `POST /api/cash`                                                        | Ingreso, retiro, depósito   | **Retirar dinero de la caja.**                                                                    |
+| `cash.count.create`     | `POST /api/cash/count`                                                  | Arqueo                      | Bajo: el esperado y la diferencia los calcula el servidor.                                        |
+| `reports.view`          | `GET /api/admin/sales`                                                  | Reporte de ventas por rango | Expone la facturación del período.                                                                |
+| `audit.view`            | `GET /api/audit`                                                        | Leer la bitácora            | Expone toda la actividad, incluidos los intentos rechazados.                                      |
+| `users.view`            | `GET /api/users`<br>`GET /api/roles`                                    | Listar personal             | Nombres de usuario. Nunca hashes.                                                                 |
+| `users.manage`          | `POST /api/users`                                                       | Alta de personal            | **Escalada de privilegios: crear un usuario con rol administrador.**                              |
+| `branches.view`         | `GET /api/branches`                                                     | Ver sucursales              | Bajo.                                                                                             |
+| `branches.manage`       | `POST /api/branches`<br>`PATCH /api/branches`                           | Alta y edición de sucursal  | Alto cuando haya varias.                                                                          |
+| `suppliers.view`        | `GET /api/suppliers`                                                    | Ver proveedores             | Bajo.                                                                                             |
+| `suppliers.manage`      | `POST /api/suppliers`                                                   | Alta de proveedor           | Bajo hoy; alto cuando existan compras y cuenta corriente.                                         |
 
 ### Rutas sin permiso
 
@@ -117,15 +119,27 @@ administrativo por `reports.view`.
 Queda anotado como deuda: si en la Fase 2 no aparece esa pantalla, hay que
 sacarlo del catálogo en vez de dejarlo dando una sensación falsa de control.
 
-### Permisos con alcance demasiado amplio
+### El precio, separado de la ficha
 
-Uno, y está señalado aquí porque conviene corregirlo en la Fase 2:
+Hasta la Fase 1, `products.update` incluía el cambio de precio: editar la
+descripción de un producto y cambiar cuánto sale eran la misma operación. En
+la Fase 2 se separaron.
 
-**`products.update` incluye el cambio de precio.** Editar la descripción de un
-producto y cambiar su precio de venta son operaciones de riesgo muy distinto,
-y hoy comparten permiso. Debería separarse en `products.update` y
-`products.price.update`. No se hizo ahora porque implica decidir quién puede
-cambiar precios en el almacén, que es una decisión del negocio y no técnica.
+`products.price.update` lo tienen **solo** `duenio`, `admin` y `encargado`.
+No lo tienen `supervisor`, `cajero`, `repositor`, `compras` ni `auditor`. Un
+repositor que corrige un nombre mal escrito no puede tocar el precio.
+
+Se comprueba en el servidor, en `editarProducto`, y no solamente escondiendo
+el campo en la pantalla: esconder un input no impide mandar el `PUT` a mano.
+Un `price` idéntico al que ya tiene el producto no se rechaza — no es un
+intento de saltear el permiso, y fallar ahí obligaría a la pantalla a saber
+qué campos vienen "sucios".
+
+**Límite conocido:** el alta sí lleva precio y está cubierta por
+`products.create`. Es deliberado: dar de alta un producto implica ponerle un
+precio, y exigir los dos permisos dejaría a `compras` sin poder cargar
+mercadería nueva, que es exactamente su trabajo. Lo que `compras` no puede
+hacer es retocar el precio de algo que ya se está vendiendo.
 
 ## Pruebas asociadas
 

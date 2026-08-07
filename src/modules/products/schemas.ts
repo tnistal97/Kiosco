@@ -47,6 +47,7 @@ export const crearProductoSchema = z
     description: optionalText(500),
     price: amountSchema,
     categoryId: idSchema,
+    supplierId: idSchema.nullable().optional(),
     totalStock: stockInicialSchema.default(0),
   })
   .strict()
@@ -54,9 +55,9 @@ export const crearProductoSchema = z
 /**
  * Edicion de producto.
  *
- * `totalStock` sigue aca por compatibilidad con la pantalla actual, pero
- * exige ademas el permiso stock.adjust y se audita como un ajuste de
- * inventario aparte. Cuando exista StockMovement deja de editarse desde aca.
+ * `price` exige ademas el permiso `products.price.update`, y `totalStock`
+ * exige `stock.adjust` mas un motivo. Los dos se comprueban en el servicio:
+ * el esquema solo dice que forma tiene la entrada, no quien puede mandarla.
  */
 export const editarProductoSchema = z
   .object({
@@ -65,12 +66,43 @@ export const editarProductoSchema = z
     description: optionalText(500),
     price: amountSchema.optional(),
     categoryId: idSchema.optional(),
+    supplierId: idSchema.nullable().optional(),
+    isActive: z.boolean().optional(),
     totalStock: stockInicialSchema.optional(),
+    /**
+     * Motivo del ajuste de inventario. Obligatorio si viene `totalStock`.
+     *
+     * Antes el ajuste se guardaba con el texto fijo "Ajuste desde la ficha
+     * del producto", que en la bitacora no explica nada.
+     */
+    stockReason: shortText(200).optional(),
   })
   .strict()
+  .refine((v) => v.totalStock === undefined || (v.stockReason ?? '').trim().length >= 3, {
+    message: 'Un ajuste de stock necesita un motivo',
+    path: ['stockReason'],
+  })
 
 /** Campos por los que se permite ordenar el catalogo. Lista blanca. */
 export const CAMPOS_ORDEN_PRODUCTO = ['name', 'price', 'id'] as const
+
+/** Filtro de estado del catalogo. La caja usa siempre `activos`. */
+export const ESTADOS_PRODUCTO = ['activos', 'inactivos', 'todos'] as const
+
+/**
+ * Lista de identificadores separados por coma.
+ *
+ * La usa la caja para restaurar el ticket guardado: pide de una sola vez los
+ * productos que tenia y vuelve con precio y stock frescos. Sin esto serian
+ * quince peticiones para un ticket de quince lineas.
+ */
+const idsSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+(,\d+)*$/, 'Lista de identificadores invalida')
+  .transform((v) => v.split(',').map(Number))
+  .refine((v) => v.length <= 100, 'Como maximo 100 identificadores')
+  .optional()
 
 export const listarProductosQuerySchema = paginationQuerySchema
   .extend(sortSchema(CAMPOS_ORDEN_PRODUCTO, 'name').shape)
@@ -78,8 +110,15 @@ export const listarProductosQuerySchema = paginationQuerySchema
     /** Busqueda por nombre o codigo de barras. */
     q: z.string().trim().max(100).optional(),
     categoryId: idSchema.optional(),
+    ids: idsSchema,
+    estado: z.enum(ESTADOS_PRODUCTO).default('todos'),
     /** Solo productos por debajo del umbral de stock critico. */
     lowStock: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
+    /** Solo productos sin unidades. */
+    sinStock: z
       .enum(['true', 'false'])
       .default('false')
       .transform((v) => v === 'true'),

@@ -13,13 +13,21 @@ export interface CategoriaDTO {
   name: string
 }
 
+export interface ProveedorDTO {
+  id: number
+  name: string
+}
+
 export interface ProductoDTO {
   id: number
   name: string
   barcode: string | null
   description: string | null
   price: number
+  /** Un producto dado de baja no aparece en la caja. */
+  isActive: boolean
   category: CategoriaDTO
+  supplier: ProveedorDTO | null
   totalStock: number
 }
 
@@ -44,7 +52,13 @@ export function parseProducto(raw: unknown): ProductoDTO {
     barcode: textoOpcional(raw.barcode),
     description: textoOpcional(raw.description),
     price: numero(raw.price),
+    // Sin el campo se asume activo: es como se comportaba el catalogo antes
+    // de que existiera la baja logica.
+    isActive: raw.isActive !== false,
     category: parseCategoria(raw.category),
+    supplier: esObjeto(raw.supplier)
+      ? { id: numero(raw.supplier.id), name: texto(raw.supplier.name) }
+      : null,
     totalStock: numero(raw.totalStock),
   }
 }

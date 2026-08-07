@@ -10,7 +10,7 @@
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@prisma/client'
 import { audit } from '@/server/audit/audit'
-import { conflict, invalid, notFound } from '@/server/http/errors'
+import { conflict, forbidden, invalid, notFound } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
 import {
@@ -26,7 +26,9 @@ export interface ProductoListado {
   barcode: string | null
   description: string | null
   price: number
+  isActive: boolean
   category: { id: number; name: string }
+  supplier: { id: number; name: string } | null
   totalStock: number
 }
 
@@ -36,7 +38,9 @@ const CAMPOS_PRODUCTO = {
   barcode: true,
   description: true,
   price: true,
+  isActive: true,
   category: { select: { id: true, name: true } },
+  supplier: { select: { id: true, name: true } },
 } as const
 
 /**
@@ -75,6 +79,8 @@ export async function listarProductos(
   const where: Prisma.ProductWhereInput = {
     branchId: session.branchId,
     ...(query.categoryId === undefined ? {} : { categoryId: query.categoryId }),
+    ...(query.ids === undefined ? {} : { id: { in: query.ids } }),
+    ...(query.estado === 'todos' ? {} : { isActive: query.estado === 'activos' }),
     ...(query.q
       ? {
           OR: [
@@ -85,6 +91,22 @@ export async function listarProductos(
       : {}),
     ...(query.lowStock
       ? { stocks: { some: { branchId: session.branchId, quantity: { lt: STOCK_CRITICO } } } }
+      : {}),
+    // Va en `AND` y no en `OR` para no pisar el `OR` de la busqueda por
+    // texto: dos claves `OR` en el mismo objeto y la segunda gana en
+    // silencio, con lo que buscar y filtrar por agotados a la vez daria
+    // resultados que no cumplen las dos condiciones.
+    ...(query.sinStock
+      ? {
+          AND: [
+            {
+              OR: [
+                { stocks: { none: { branchId: session.branchId } } },
+                { stocks: { some: { branchId: session.branchId, quantity: { lte: 0 } } } },
+              ],
+            },
+          ],
+        }
       : {}),
   }
 
@@ -139,6 +161,7 @@ export async function crearProducto(session: Session, input: CrearProductoInput)
         description: input.description ?? null,
         price: input.price,
         categoryId: input.categoryId,
+        supplierId: input.supplierId ?? null,
         // La sucursal la fija el servidor, siempre.
         branchId: session.branchId,
       },
@@ -171,15 +194,33 @@ export async function crearProducto(session: Session, input: CrearProductoInput)
 /**
  * Edicion del producto.
  *
- * `totalStock` sigue aceptandose porque la pantalla de productos lo usa, pero
- * exige el permiso stock.adjust ademas de products.update, y queda auditado
- * como un ajuste de inventario aparte.
+ * Tres permisos distintos conviven en el mismo endpoint, y cada campo exige
+ * el suyo:
+ *
+ *   products.update        nombre, codigo, descripcion, categoria, proveedor
+ *   products.price.update  precio
+ *   stock.adjust           cantidad, y ademas con motivo
+ *
+ * El precio se comprueba aca, en el servidor, y no solo escondiendo el campo
+ * en la pantalla: esconder un input no impide mandar el PUT a mano.
+ *
+ * Un cambio de precio que no cambia nada --mandar el mismo numero-- no se
+ * rechaza: no es un intento de saltear el permiso, y fallar ahi obligaria a
+ * la pantalla a saber que campos vienen "sucios".
  */
 export async function editarProducto(session: Session, id: number, input: EditarProductoInput) {
   const antes = await productoDeLaSucursal(session, id)
 
+  if (
+    input.price !== undefined &&
+    input.price !== antes.price &&
+    !session.permissions.has('products.price.update')
+  ) {
+    throw forbidden('No tiene permiso para cambiar el precio de un producto')
+  }
+
   if (input.totalStock !== undefined && !session.permissions.has('stock.adjust')) {
-    throw conflict('No tiene permiso para ajustar el stock desde la ficha del producto')
+    throw forbidden('No tiene permiso para ajustar el stock')
   }
 
   if (input.barcode) {
@@ -207,6 +248,8 @@ export async function editarProducto(session: Session, id: number, input: Editar
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.price !== undefined ? { price: input.price } : {}),
         ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
+        ...(input.supplierId !== undefined ? { supplierId: input.supplierId } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       },
     })
 
@@ -235,18 +278,22 @@ export async function editarProducto(session: Session, id: number, input: Editar
         select: { id: true, quantity: true },
       })
 
+      // El motivo lo declara quien ajusta. El esquema lo exige; aca queda
+      // guardado tal cual en la bitacora.
+      const motivo = input.stockReason ?? 'Ajuste desde la ficha del producto'
+
       await audit(tx, {
         userId: session.userId,
         branchId: session.branchId,
         table: 'BranchStock',
         recordId: stockDespues.id,
         action: 'update',
-        reason: 'Ajuste desde la ficha del producto',
+        reason: motivo,
         before: { quantity: stockAntes?.quantity ?? 0 },
         after: {
           quantity: stockDespues.quantity,
           diferencia: stockDespues.quantity - (stockAntes?.quantity ?? 0),
-          motivo: 'Ajuste desde la ficha del producto',
+          motivo,
           branchId: session.branchId,
           productId: id,
         },

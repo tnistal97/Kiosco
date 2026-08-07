@@ -64,8 +64,20 @@ const CASOS: Caso[] = [
       }),
   },
   {
-    nombre: 'cambiar el precio de un producto',
+    // Editar la ficha y cambiar el precio son dos permisos distintos desde
+    // la Fase 2. Quien repone mercaderia corrige un nombre mal escrito; el
+    // precio de venta lo decide quien maneja el local.
+    nombre: 'editar la ficha de un producto',
     permiso: 'products.update',
+    ejecutar: (u) =>
+      invocar('@/app/api/products/[id]/route', 'PUT', `/api/products/${fx.productoA.id}`, u, {
+        params: { id: String(fx.productoA.id) },
+        body: { name: 'Nombre corregido' },
+      }),
+  },
+  {
+    nombre: 'cambiar el precio de un producto',
+    permiso: 'products.price.update',
     ejecutar: (u) =>
       invocar('@/app/api/products/[id]/route', 'PUT', `/api/products/${fx.productoA.id}`, u, {
         params: { id: String(fx.productoA.id) },
