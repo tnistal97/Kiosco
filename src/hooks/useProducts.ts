@@ -19,6 +19,31 @@ const DEBOUNCE_MS = 250
 
 export type CampoOrden = 'name' | 'price' | 'id'
 
+/**
+ * Trae varios productos por identificador, en una sola peticion.
+ *
+ * La usa la caja al restaurar el ticket guardado: de lo que quedo en el
+ * navegador solo salen identificadores y cantidades, y el precio y el stock
+ * se vuelven a preguntar aca. Un ticket de quince lineas es una peticion, no
+ * quince.
+ *
+ * Solo devuelve productos activos: uno dado de baja no vuelve al ticket.
+ */
+export async function buscarProductosPorIds(ids: number[]): Promise<Product[]> {
+  const limpios = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))].slice(0, 100)
+  if (limpios.length === 0) return []
+
+  const params = new URLSearchParams({
+    ids: limpios.join(','),
+    estado: 'activos',
+    pageSize: String(Math.min(limpios.length, PAGE_SIZE_MAX)),
+  })
+  const pagina = await apiRequest(`/api/products?${params.toString()}`, {
+    parse: parsePaginaProductos,
+  })
+  return pagina.data
+}
+
 export interface UseProductsOptions {
   /**
    * La busqueda y la paginacion las resuelve el servidor.
@@ -36,6 +61,9 @@ export interface UseProductsOptions {
 export interface FiltrosProductos {
   categoryId?: number
   lowStock?: boolean
+  sinStock?: boolean
+  /** 'activos' | 'inactivos' | 'todos'. La caja usa siempre 'activos'. */
+  estado?: 'activos' | 'inactivos' | 'todos'
   sortBy?: CampoOrden
   sortDir?: 'asc' | 'desc'
 }
@@ -73,6 +101,8 @@ export function useProducts(options: UseProductsOptions = {}) {
         if (enServidor && q) params.set('q', q)
         if (f.categoryId !== undefined) params.set('categoryId', String(f.categoryId))
         if (f.lowStock) params.set('lowStock', 'true')
+        if (f.sinStock) params.set('sinStock', 'true')
+        if (f.estado) params.set('estado', f.estado)
         if (f.sortBy) params.set('sortBy', f.sortBy)
         if (f.sortDir) params.set('sortDir', f.sortDir)
 
@@ -113,21 +143,20 @@ export function useProducts(options: UseProductsOptions = {}) {
    * estuviera en la pagina actual habria abierto el alta de producto nuevo
    * sobre uno que ya existe.
    */
-  const buscarPorCodigo = useCallback(async (codigo: string): Promise<Product | null> => {
-    const q = codigo.trim()
-    if (!q) return null
-    try {
+  const buscarPorCodigo = useCallback(
+    async (codigo: string, opciones: { soloActivos?: boolean } = {}): Promise<Product | null> => {
+      const q = codigo.trim()
+      if (!q) return null
       const params = new URLSearchParams({ q, pageSize: '20' })
+      if (opciones.soloActivos === false) params.set('estado', 'todos')
       const pagina = await apiRequest(`/api/products?${params.toString()}`, {
         parse: parsePaginaProductos,
       })
       // El servidor busca por coincidencia parcial; aca se exige exacta.
       return pagina.data.find((p) => p.barcode?.toLowerCase() === q.toLowerCase()) ?? null
-    } catch (err) {
-      console.error(err)
-      return null
-    }
-  }, [])
+    },
+    [],
+  )
 
   const fetchCategories = useCallback(async () => {
     try {

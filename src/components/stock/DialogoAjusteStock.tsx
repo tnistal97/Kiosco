@@ -1,0 +1,205 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { Alert, Button, Dialog, Field, Input, RadioGroup } from '@/components/ui'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import type { Product } from '@/hooks/useProducts'
+
+/**
+ * Ajuste de inventario.
+ *
+ * Dos formas de escribirlo porque en el mostrador se piensa de las dos
+ * maneras: "entraron 12" y "quedan 30". Al servidor siempre va el total, que
+ * es lo unico que no depende de que nadie mas haya tocado el stock mientras
+ * se llenaba el formulario.
+ *
+ * El motivo es obligatorio, y esa es la razon de que este dialogo exista: el
+ * ajuste dejo de ser un campo escondido en la ficha del producto que se
+ * guardaba junto con la descripcion, sin explicacion y con el texto fijo
+ * "Ajuste desde la ficha del producto" en la bitacora.
+ */
+type Modo = 'delta' | 'total'
+
+const MODOS = [
+  { value: 'delta' as const, label: 'Entraron / salieron', description: 'Sumar o restar' },
+  { value: 'total' as const, label: 'Recuento', description: 'Cuántas hay ahora' },
+]
+
+const MOTIVOS_FRECUENTES = [
+  'Entrada de mercadería',
+  'Rotura',
+  'Vencimiento',
+  'Recuento físico',
+  'Error de carga',
+]
+
+export function DialogoAjusteStock({
+  producto,
+  onCerrar,
+  onAjustado,
+}: {
+  producto: Product | null
+  onCerrar: () => void
+  onAjustado: () => void
+}) {
+  const [modo, setModo] = useState<Modo>('delta')
+  const [valor, setValor] = useState('')
+  const [motivo, setMotivo] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!producto) return
+    setModo('delta')
+    setValor('')
+    setMotivo('')
+    setError(null)
+    setEnviando(false)
+  }, [producto])
+
+  const actual = producto?.totalStock ?? 0
+  const n = Number(valor)
+  const numeroValido = valor.trim() !== '' && Number.isFinite(n)
+  const nuevoTotal = !numeroValido
+    ? actual
+    : modo === 'total'
+      ? Math.max(0, Math.trunc(n))
+      : Math.max(0, actual + Math.trunc(n))
+
+  const cambia = numeroValido && nuevoTotal !== actual
+  const valido = cambia && motivo.trim().length >= 3
+
+  async function guardar() {
+    if (!producto || enviando || !valido) return
+    setEnviando(true)
+    setError(null)
+    try {
+      await apiRequest(`/api/products/${producto.id}`, {
+        method: 'PUT',
+        body: { totalStock: nuevoTotal, stockReason: motivo.trim() },
+        parse: () => null,
+      })
+      onAjustado()
+    } catch (err) {
+      setError(mensajeDeError(err, 'No se pudo ajustar el stock.'))
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={producto !== null}
+      onClose={onCerrar}
+      title={producto ? `Ajustar ${producto.name}` : 'Ajustar stock'}
+      size="md"
+      dismissible={!enviando}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCerrar} disabled={enviando}>
+            Cancelar
+          </Button>
+          <Button
+            variant="primary"
+            loading={enviando}
+            disabled={!valido}
+            onClick={() => void guardar()}
+          >
+            Guardar ajuste
+          </Button>
+        </>
+      }
+    >
+      {producto && (
+        <div className="flex flex-col gap-5">
+          {error && (
+            <Alert tone="danger" title="No se ajustó">
+              {error}
+            </Alert>
+          )}
+
+          <div className="flex items-baseline justify-between rounded-lg border border-line bg-sunken px-4 py-3">
+            <span className="text-sm text-ink-muted">Ahora hay</span>
+            <span className="text-2xl font-semibold text-ink" data-numeric="">
+              {actual}
+            </span>
+          </div>
+
+          <RadioGroup
+            legend="Cómo lo querés cargar"
+            name="modo-ajuste"
+            value={modo}
+            onChange={(m) => {
+              setModo(m)
+              setValor('')
+            }}
+            options={MODOS}
+            columns={2}
+          />
+
+          <Field
+            label={modo === 'delta' ? 'Cantidad (negativa para restar)' : 'Unidades contadas'}
+            required
+          >
+            <Input
+              inputMode="numeric"
+              placeholder={modo === 'delta' ? 'Ej: 12  o  -3' : 'Ej: 30'}
+              value={valor}
+              disabled={enviando}
+              onChange={(e) => {
+                const limpio =
+                  modo === 'delta'
+                    ? e.target.value.replace(/[^0-9-]/g, '')
+                    : e.target.value.replace(/[^0-9]/g, '')
+                setValor(limpio)
+              }}
+            />
+          </Field>
+
+          {cambia && (
+            <Alert tone="info">
+              Va a quedar en{' '}
+              <strong className="text-ink" data-numeric="">
+                {nuevoTotal}
+              </strong>{' '}
+              {nuevoTotal === 1 ? 'unidad' : 'unidades'}{' '}
+              <span className="text-ink-faint">
+                ({nuevoTotal > actual ? '+' : '−'}
+                {Math.abs(nuevoTotal - actual)})
+              </span>
+            </Alert>
+          )}
+
+          <Field
+            label="Motivo"
+            required
+            hint="Obligatorio. Queda en la bitácora con tu nombre y la fecha."
+          >
+            <Input
+              value={motivo}
+              disabled={enviando}
+              onChange={(e) => {
+                setMotivo(e.target.value)
+              }}
+            />
+          </Field>
+
+          <div className="flex flex-wrap gap-1.5">
+            {MOTIVOS_FRECUENTES.map((m) => (
+              <Button
+                key={m}
+                size="xs"
+                variant="secondary"
+                disabled={enviando}
+                onClick={() => {
+                  setMotivo(m)
+                }}
+              >
+                {m}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+    </Dialog>
+  )
+}

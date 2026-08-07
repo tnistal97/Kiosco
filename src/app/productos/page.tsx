@@ -1,220 +1,437 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
-
-import toast from 'react-hot-toast'
+import { useCallback, useEffect, useState } from 'react'
+import {
+  Badge,
+  Button,
+  Card,
+  CardList,
+  CardListItem,
+  ConfirmationDialog,
+  DropdownItem,
+  DropdownMenu,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  Money,
+  Pagination,
+  SearchInput,
+  Select,
+  SkeletonRows,
+  SortableTH,
+  StockBadge,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+  Table,
+  TableWrap,
+  aviso,
+} from '@/components/ui'
+import { DialogoProducto } from '@/components/productos/DialogoProducto'
+import { usePermiso } from '@/components/shell/SessionProvider'
 import { useProducts, type CampoOrden, type Product } from '@/hooks/useProducts'
-import { apiRequest, mensajeDeError } from '@/lib/api-client'
-import { STOCK_CRITICO } from '@/modules/products/schemas'
+import { apiRequest, lista, mensajeDeError, esObjeto, numero, texto } from '@/lib/api-client'
+import type { ProveedorDTO } from '@/modules/products/dto'
 
-import ProductsHeader from '@/components/productos/ProductsHeader'
-import ProductsMetrics from '@/components/productos/ProductsMetrics'
-import ProductsFilters from '@/components/productos/ProductsFilters'
-import ProductsTable from '@/components/productos/ProductosTable'
-import ProductsPagination from '@/components/productos/ProductsPagination'
-import ProductoModal from '@/components/productos/ProductoModal'
+const POR_PAGINA = 25
 
-type SortKey = 'id' | 'name' | 'category' | 'stock' | 'price'
-type SortDirection = 'asc' | 'desc'
-
-/** Campos que el servidor sabe ordenar. Ver CAMPOS_ORDEN_PRODUCTO. */
-const ORDEN_EN_SERVIDOR: Partial<Record<SortKey, CampoOrden>> = {
-  id: 'id',
-  name: 'name',
-  price: 'price',
+function parseProveedores(raw: unknown): ProveedorDTO[] {
+  const fuente = esObjeto(raw) && 'data' in raw ? raw.data : raw
+  return lista(fuente, (p) => {
+    if (!esObjeto(p)) throw new Error('La respuesta no tiene la forma de un proveedor')
+    return { id: numero(p.id), name: texto(p.name) }
+  })
 }
 
 export default function ProductosPage() {
-  // La busqueda, el filtrado, el orden y la paginacion los resuelve el
-  // servidor. Antes se traia el catalogo entero y se hacia todo en memoria;
-  // con el tope de pagina eso habria ocultado productos sin avisar.
+  const puedeCrear = usePermiso('products.create')
+  const puedeEditar = usePermiso('products.update')
+  const puedeBorrar = usePermiso('products.delete')
+
   const {
     products,
     categories,
     searchTerm,
     setSearchTerm,
+    filtros,
     aplicarFiltros,
-    page: currentPage,
-    setPage: setCurrentPage,
-    totalPages,
+    page,
+    setPage,
     total,
+    totalPages,
     fetchProducts,
-  } = useProducts({ enServidor: true, pageSize: 20 })
+    isLoading,
+    error,
+  } = useProducts({ enServidor: true, pageSize: POR_PAGINA })
 
-  const [categoryFilter, setCategoryFilter] = useState<string>('Todas')
-  const [lowStockFilter, setLowStockFilter] = useState<boolean>(false)
+  const [proveedores, setProveedores] = useState<ProveedorDTO[]>([])
+  const [editando, setEditando] = useState<Product | null>(null)
+  const [dialogoAbierto, setDialogoAbierto] = useState(false)
+  const [borrando, setBorrando] = useState<Product | null>(null)
 
-  const [sortConfig, setSortConfig] = useState<{
-    key: SortKey
-    direction: SortDirection
-  }>({
-    key: 'id',
-    direction: 'asc',
-  })
-
-  // Modal crear/editar
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
-
-  // Los filtros que el servidor entiende se le mandan a el.
   useEffect(() => {
-    const categoria = categories.find((c) => c.name === categoryFilter)
-    aplicarFiltros({
-      ...(categoryFilter !== 'Todas' && categoria ? { categoryId: categoria.id } : {}),
-      ...(lowStockFilter ? { lowStock: true } : {}),
-      ...(ORDEN_EN_SERVIDOR[sortConfig.key]
-        ? { sortBy: ORDEN_EN_SERVIDOR[sortConfig.key], sortDir: sortConfig.direction }
-        : {}),
-    })
-  }, [categoryFilter, lowStockFilter, sortConfig, categories, aplicarFiltros])
+    apiRequest('/api/suppliers', { parse: parseProveedores })
+      .then(setProveedores)
+      // Sin proveedores la ficha sigue sirviendo: es un campo opcional.
+      .catch(() => {
+        setProveedores([])
+      })
+  }, [])
 
-  // `categoria` y `stock` no son campos de la tabla Product, asi que el
-  // servidor no los ordena. Se ordena la pagina recibida, que es lo unico
-  // que se puede hacer sin agregar un join solo para esto.
-  const paginated = useMemo(() => {
-    const { key, direction } = sortConfig
-    if (ORDEN_EN_SERVIDOR[key]) return products
+  const ordenar = useCallback(
+    (campo: CampoOrden) => {
+      const mismo = filtros.sortBy === campo
+      aplicarFiltros({
+        ...filtros,
+        sortBy: campo,
+        sortDir: mismo && filtros.sortDir === 'asc' ? 'desc' : 'asc',
+      })
+    },
+    [filtros, aplicarFiltros],
+  )
 
-    const copy = [...products]
-    copy.sort((a, b) => {
-      const cmp =
-        key === 'category'
-          ? a.category.name.localeCompare(b.category.name)
-          : a.totalStock - b.totalStock
-      return direction === 'asc' ? cmp : -cmp
-    })
-    return copy
-  }, [products, sortConfig])
-
-  // Métricas de la página visible. El total sí es del servidor.
-  const totalProductos = total
-  const totalUnidades = products.reduce((sum, p) => sum + p.totalStock, 0)
-  const stockCriticoCount = products.filter((p) => p.totalStock < STOCK_CRITICO).length
-
-  const handleSort = (key: SortKey) => {
-    setCurrentPage(1)
-    setSortConfig((prev) => {
-      if (prev.key === key) {
-        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
-      }
-      return { key, direction: 'asc' }
-    })
-  }
-
-  const clearFilters = () => {
-    setSearchTerm('')
-    setCategoryFilter('Todas')
-    setLowStockFilter(false)
-    setCurrentPage(1)
-  }
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('¿Confirma que desea eliminar este producto?')) return
+  async function borrar() {
+    if (!borrando) return
     try {
-      // Antes esto era `await fetch(...)` sin mirar la respuesta: un 403 por
-      // falta de permiso, o un 409 porque el producto figura en ventas,
-      // terminaba igual mostrando "eliminado correctamente".
-      await apiRequest(`/api/products/${id}`, { method: 'DELETE', parse: () => null })
-      await fetchProducts()
-      toast.success('✅ Producto eliminado correctamente.', {
-        duration: 4000,
-        style: {
-          background: '#1f2937',
-          color: '#f9fafb',
-          fontSize: '1.2rem',
-          padding: '1rem 1.5rem',
-          border: '2px solid #374151',
-          borderRadius: '0.75rem',
-        },
-        iconTheme: {
-          primary: '#22c55e',
-          secondary: '#1f2937',
-        },
-      })
+      await apiRequest(`/api/products/${borrando.id}`, { method: 'DELETE', parse: () => null })
+      aviso.ok(`Se eliminó ${borrando.name}.`)
+      setBorrando(null)
+      void fetchProducts()
     } catch (err) {
-      console.error('Error eliminando producto:', err)
-      toast.error(mensajeDeError(err, 'No se pudo eliminar el producto.'), {
-        duration: 5000,
-        style: {
-          background: '#991b1b',
-          color: '#f9fafb',
-          fontSize: '1.2rem',
-          padding: '1rem 1.5rem',
-          border: '2px solid #7f1d1d',
-          borderRadius: '0.75rem',
-        },
-        iconTheme: {
-          primary: '#f87171',
-          secondary: '#991b1b',
-        },
-      })
+      // Un producto con ventas no se puede borrar. El servidor lo explica; se
+      // muestra tal cual en vez de un "no se pudo" que no dice por que.
+      aviso.error(mensajeDeError(err, 'No se pudo eliminar el producto.'))
+      setBorrando(null)
     }
   }
 
-  const handleCreate = () => {
-    setEditingProduct(null)
-    setIsModalOpen(true)
-  }
-
-  const handleEdit = (p: Product) => {
-    setEditingProduct(p)
-    setIsModalOpen(true)
-  }
-
-  const onSaved = async () => {
-    await fetchProducts()
-    setIsModalOpen(false)
-  }
+  const orden = filtros.sortBy ?? 'name'
+  const dir = filtros.sortDir ?? 'asc'
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-8 font-sans">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <ProductsHeader onCreate={handleCreate} />
+    <div className="mx-auto flex max-w-7xl flex-col gap-4 p-3 sm:p-5">
+      <Card padded={false}>
+        <div className="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-end">
+          <div className="lg:max-w-md lg:flex-1">
+            <SearchInput
+              label="Buscar productos"
+              placeholder="Nombre o código de barras…"
+              value={searchTerm}
+              loading={isLoading}
+              onClear={() => {
+                setSearchTerm('')
+              }}
+              onChange={(e) => {
+                setSearchTerm(e.target.value)
+              }}
+            />
+          </div>
 
-        <ProductsMetrics
-          totalProductos={totalProductos}
-          totalUnidades={totalUnidades}
-          stockCriticoCount={stockCriticoCount}
-          lowStockFilter={lowStockFilter}
-          setLowStockFilter={setLowStockFilter}
-          clearFilters={clearFilters}
-          categoryFilter={categoryFilter}
-          searchTerm={searchTerm}
-        />
+          <div className="flex flex-wrap gap-2">
+            <Select
+              aria-label="Categoría"
+              value={filtros.categoryId === undefined ? '' : String(filtros.categoryId)}
+              onChange={(e) => {
+                aplicarFiltros({
+                  ...filtros,
+                  categoryId: e.target.value === '' ? undefined : Number(e.target.value),
+                })
+              }}
+              className="w-auto"
+            >
+              <option value="">Todas las categorías</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
 
-        <ProductsFilters
-          categories={categories}
-          categoryFilter={categoryFilter}
-          setCategoryFilter={setCategoryFilter}
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          clearFilters={clearFilters}
+            <Select
+              aria-label="Estado"
+              value={filtros.estado ?? 'todos'}
+              onChange={(e) => {
+                aplicarFiltros({
+                  ...filtros,
+                  estado: e.target.value as 'activos' | 'inactivos' | 'todos',
+                })
+              }}
+              className="w-auto"
+            >
+              <option value="todos">Todos</option>
+              <option value="activos">En venta</option>
+              <option value="inactivos">Dados de baja</option>
+            </Select>
 
-          setLowStockFilter={setLowStockFilter}
-        />
+            <Select
+              aria-label="Stock"
+              value={filtros.sinStock ? 'agotados' : filtros.lowStock ? 'bajos' : ''}
+              onChange={(e) => {
+                const v = e.target.value
+                aplicarFiltros({
+                  ...filtros,
+                  lowStock: v === 'bajos',
+                  sinStock: v === 'agotados',
+                })
+              }}
+              className="w-auto"
+            >
+              <option value="">Cualquier stock</option>
+              <option value="bajos">Stock bajo</option>
+              <option value="agotados">Agotados</option>
+            </Select>
+          </div>
 
-        <ProductsTable
-          data={paginated}
-          sortConfig={sortConfig}
-          onSort={handleSort}
-          onEdit={handleEdit}
-          onDelete={(id) => void handleDelete(id)}
-        />
+          {puedeCrear && (
+            <Button
+              variant="primary"
+              className="lg:ml-auto"
+              onClick={() => {
+                setEditando(null)
+                setDialogoAbierto(true)
+              }}
+            >
+              Nuevo producto
+            </Button>
+          )}
+        </div>
 
-        <ProductsPagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          setCurrentPage={setCurrentPage}
-        />
-      </div>
+        <div className="p-3">
+          {error ? (
+            <ErrorState description={error} onRetry={() => void fetchProducts()} />
+          ) : isLoading ? (
+            <SkeletonRows rows={8} />
+          ) : products.length === 0 ? (
+            <EmptyState
+              title={searchTerm ? 'Ningún producto coincide' : 'Todavía no hay productos'}
+              description={
+                searchTerm
+                  ? 'Probá con otro texto o quitá los filtros.'
+                  : 'Cargá el primero para empezar a vender.'
+              }
+              action={
+                puedeCrear && !searchTerm ? (
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      setEditando(null)
+                      setDialogoAbierto(true)
+                    }}
+                  >
+                    Nuevo producto
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <>
+              <div className="hidden md:block">
+                <TableWrap className="border-0">
+                  <Table caption="Catálogo de la sucursal">
+                    <THead>
+                      <TR>
+                        <SortableTH
+                          active={orden === 'name'}
+                          direction={dir}
+                          onSort={() => {
+                            ordenar('name')
+                          }}
+                        >
+                          Producto
+                        </SortableTH>
+                        <TH>Categoría</TH>
+                        <TH>Estado</TH>
+                        <TH>Stock</TH>
+                        <SortableTH
+                          align="right"
+                          active={orden === 'price'}
+                          direction={dir}
+                          onSort={() => {
+                            ordenar('price')
+                          }}
+                        >
+                          Precio
+                        </SortableTH>
+                        <TH align="right">
+                          <span className="sr-only">Acciones</span>
+                        </TH>
+                      </TR>
+                    </THead>
+                    <TBody>
+                      {products.map((p) => (
+                        <TR key={p.id}>
+                          <TD>
+                            <p className="font-medium text-ink">{p.name}</p>
+                            {p.barcode && (
+                              <p className="font-mono text-xs text-ink-faint">{p.barcode}</p>
+                            )}
+                          </TD>
+                          <TD className="text-ink-muted">{p.category.name}</TD>
+                          <TD>
+                            {p.isActive ? (
+                              <Badge tone="neutral">
+                                <span aria-hidden="true">✓</span> En venta
+                              </Badge>
+                            ) : (
+                              <Badge tone="warning">
+                                <span aria-hidden="true">⊘</span> De baja
+                              </Badge>
+                            )}
+                          </TD>
+                          <TD>
+                            <StockBadge quantity={p.totalStock} />
+                          </TD>
+                          <TD align="right">
+                            <Money amount={p.price} />
+                          </TD>
+                          <TD align="right">
+                            <AccionesProducto
+                              producto={p}
+                              puedeEditar={puedeEditar}
+                              puedeBorrar={puedeBorrar}
+                              onEditar={() => {
+                                setEditando(p)
+                                setDialogoAbierto(true)
+                              }}
+                              onBorrar={() => {
+                                setBorrando(p)
+                              }}
+                            />
+                          </TD>
+                        </TR>
+                      ))}
+                    </TBody>
+                  </Table>
+                </TableWrap>
+              </div>
 
-      <ProductoModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        categories={categories}
-        product={editingProduct}
-        onSaved={() => void onSaved()}
+              <CardList className="md:hidden">
+                {products.map((p) => (
+                  <CardListItem key={p.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-ink">{p.name}</p>
+                        <p className="mt-0.5 text-xs text-ink-faint">{p.category.name}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <StockBadge quantity={p.totalStock} />
+                          {!p.isActive && (
+                            <Badge tone="warning">
+                              <span aria-hidden="true">⊘</span> De baja
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        <Money amount={p.price} />
+                        <AccionesProducto
+                          producto={p}
+                          puedeEditar={puedeEditar}
+                          puedeBorrar={puedeBorrar}
+                          onEditar={() => {
+                            setEditando(p)
+                            setDialogoAbierto(true)
+                          }}
+                          onBorrar={() => {
+                            setBorrando(p)
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </CardListItem>
+                ))}
+              </CardList>
+
+              <Pagination
+                className="mt-4"
+                page={page}
+                pageSize={POR_PAGINA}
+                total={total}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                disabled={isLoading}
+              />
+            </>
+          )}
+        </div>
+      </Card>
+
+      <DialogoProducto
+        producto={editando}
+        abierto={dialogoAbierto}
+        categorias={categories}
+        proveedores={proveedores}
+        onCerrar={() => {
+          setDialogoAbierto(false)
+        }}
+        onGuardado={() => {
+          setDialogoAbierto(false)
+          aviso.ok(editando ? 'Producto actualizado.' : 'Producto creado.')
+          void fetchProducts()
+        }}
+      />
+
+      <ConfirmationDialog
+        open={borrando !== null}
+        onClose={() => {
+          setBorrando(null)
+        }}
+        onConfirm={borrar}
+        title="Eliminar el producto"
+        confirmLabel="Eliminar"
+        message={
+          <>
+            Se va a eliminar <strong className="text-ink">{borrando?.name}</strong> del catálogo. Si
+            figura en alguna venta el sistema no lo va a permitir: en ese caso, dalo de baja desde
+            la ficha.
+          </>
+        }
       />
     </div>
+  )
+}
+
+/**
+ * Acciones de la fila, dentro de un menu.
+ *
+ * "Eliminar" ya no es un boton rojo pegado a "Editar". Era la accion
+ * destructiva mas facil de tocar por accidente de todo el sistema: mismo
+ * tamanio, mismo lugar, en cada una de las cuarenta filas.
+ */
+function AccionesProducto({
+  producto,
+  puedeEditar,
+  puedeBorrar,
+  onEditar,
+  onBorrar,
+}: {
+  producto: Product
+  puedeEditar: boolean
+  puedeBorrar: boolean
+  onEditar: () => void
+  onBorrar: () => void
+}) {
+  if (!puedeEditar && !puedeBorrar) return null
+
+  return (
+    <DropdownMenu
+      trigger={
+        <IconButton label={`Acciones de ${producto.name}`} size="sm">
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="12" cy="5" r="1.6" />
+            <circle cx="12" cy="12" r="1.6" />
+            <circle cx="12" cy="19" r="1.6" />
+          </svg>
+        </IconButton>
+      }
+    >
+      {puedeEditar && <DropdownItem onClick={onEditar}>Editar</DropdownItem>}
+      {puedeBorrar && (
+        <DropdownItem tone="danger" onClick={onBorrar}>
+          Eliminar
+        </DropdownItem>
+      )}
+    </DropdownMenu>
   )
 }
