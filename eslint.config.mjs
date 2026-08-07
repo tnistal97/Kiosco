@@ -204,12 +204,28 @@ export default tseslint.config(
 
   // ------------------------------------------- configuracion y scripts sueltos
   {
-    files: ['*.{js,mjs,cjs,ts}', 'scripts/**/*.ts', 'prisma/**/*.ts'],
-    languageOptions: { globals: { ...globals.node } },
+    files: ['*.{js,mjs,cjs,ts}', 'scripts/**/*.{ts,mjs,js}', 'prisma/**/*.ts'],
+    languageOptions: {
+      globals: { ...globals.node },
+      // `scripts/verificar-pwa.mjs` usa `await` en el nivel superior, que
+      // solo es valido en un modulo.
+      sourceType: 'module',
+      ecmaVersion: 'latest',
+    },
     rules: {
       // Los scripts de mantenimiento escriben por consola a proposito.
       'no-console': 'off',
     },
+  },
+
+  // ------------------------------------------------ automatizacion con navegador
+  // `scripts/screenshots.ts`, `scripts/ui-metrics.ts` y
+  // `scripts/verificar-pwa.mjs` corren en Node, pero pasan funciones a
+  // `page.evaluate()`, que las ejecuta DENTRO del navegador. Ahi `document`,
+  // `caches` y `getComputedStyle` existen de verdad.
+  {
+    files: ['scripts/screenshots.ts', 'scripts/ui-metrics.ts', 'scripts/verificar-pwa.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 
   // ---------------------------------------------------------- ficheros sin tipos
