@@ -125,6 +125,43 @@ export function montoODefecto(valor: unknown, porOmision: Monto = CERO): Monto {
   return montoOpcional(valor) ?? porOmision
 }
 
+/**
+ * Lo que alguien escribe en un campo, convertido a importe.
+ *
+ * Acepta las dos formas que se tipean de verdad en un mostrador:
+ *
+ *   "1234,56"   coma decimal, que es lo que dice el teclado en castellano
+ *   "1234.56"   punto decimal, que es lo que sale del teclado numerico
+ *   "1.234,56"  con separador de miles, que es como se lee en pantalla
+ *
+ * Devuelve `null` --y no un cero-- cuando no es un importe. Un cero silencioso
+ * en un arqueo significa "conte cero pesos", que es una afirmacion muy
+ * distinta de "todavia no escribi nada".
+ *
+ * Rechaza mas de dos decimales por la misma razon que el servidor: no se puede
+ * cobrar medio centavo, y aceptarlo en el campo obligaria a explicar despues
+ * por que el numero cambio solo.
+ */
+export function montoDesdeTexto(entrada: string): Monto | null {
+  const limpio = entrada.trim()
+  if (limpio === '') return null
+
+  // Con los dos separadores presentes, el punto es de miles y la coma es
+  // decimal: "1.234,56". Es el unico caso sin ambiguedad.
+  const normalizado =
+    limpio.includes(',') && limpio.includes('.')
+      ? limpio.replace(/\./g, '').replace(',', '.')
+      : limpio.replace(',', '.')
+
+  if (!/^[+-]?\d+(\.\d{1,2})?$/.test(normalizado)) return null
+
+  try {
+    return desdeCentavos(aCentavos(normalizado))
+  } catch {
+    return null
+  }
+}
+
 export function sumarMontos(...montos: Monto[]): Monto {
   return desdeCentavos(montos.reduce((total, m) => total + aCentavos(m), 0))
 }

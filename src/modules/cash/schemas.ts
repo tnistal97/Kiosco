@@ -5,6 +5,7 @@
 import { z } from 'zod'
 import { amountSchema, optionalText, paymentMethodSchema } from '@/server/http/validate'
 import { paginationQuerySchema } from '@/server/http/pagination'
+import { esPositivo } from '@/lib/money'
 
 export const TIPOS_MOVIMIENTO = ['ingreso', 'retiro', 'deposito'] as const
 export type TipoMovimiento = (typeof TIPOS_MOVIMIENTO)[number]
@@ -19,7 +20,9 @@ export type TipoMovimiento = (typeof TIPOS_MOVIMIENTO)[number]
  */
 export const movimientoManualSchema = z
   .object({
-    amount: amountSchema.refine((n) => n > 0, 'El monto debe ser mayor que cero'),
+    // `esPositivo` y no `> 0`: despues de `amountSchema` el importe es una
+    // cadena, y `'9.00' > 0` en JavaScript no es la comparacion que parece.
+    amount: amountSchema.refine(esPositivo, 'El monto debe ser mayor que cero'),
     paymentMethod: paymentMethodSchema,
     description: optionalText(300),
     movementType: z.enum(TIPOS_MOVIMIENTO),

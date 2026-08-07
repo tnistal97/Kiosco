@@ -28,27 +28,27 @@ import { BarcodeInput } from '@/components/ui/BarcodeInput'
 describe('Dinero', () => {
   it('un solo formato en toda la aplicacion', () => {
     // Antes convivian `$4850.00` y `$ 134.600,00` en la misma pantalla.
-    expect(formatMoney(4850)).toBe(formatMoney(4850))
-    expect(formatMoney(4850)).toMatch(/4\.850,00/)
-    expect(formatMoney(134600)).toMatch(/134\.600,00/)
-    expect(formatMoney(0)).toMatch(/0,00/)
+    expect(formatMoney('4850.00')).toBe(formatMoney('4850'))
+    expect(formatMoney('4850.00')).toMatch(/4\.850,00/)
+    expect(formatMoney('134600.00')).toMatch(/134\.600,00/)
+    expect(formatMoney('0.00')).toMatch(/0,00/)
   })
 
   it('el signo se muestra explicito, no solo por color', () => {
-    const { rerender } = render(<Money amount={-1500} signed />)
+    const { rerender } = render(<Money amount="-1500.00" signed />)
     expect(screen.getByText(/−/)).toBeInTheDocument()
 
-    rerender(<Money amount={1500} signed />)
+    rerender(<Money amount="1500.00" signed />)
     expect(screen.getByText(/\+/)).toBeInTheDocument()
   })
 
   it('sin `signed` no antepone signo', () => {
-    render(<Money amount={1500} />)
+    render(<Money amount="1500.00" />)
     expect(screen.queryByText(/^\+/)).toBeNull()
   })
 
   it('usa cifras de ancho fijo para que el total no baile', () => {
-    const { container } = render(<Money amount={1500} />)
+    const { container } = render(<Money amount="1500.00" />)
     expect(container.querySelector('[data-numeric]')).not.toBeNull()
   })
 })

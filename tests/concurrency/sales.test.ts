@@ -9,6 +9,8 @@
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { seedFixture, prisma, stockOf, cashOf, type Fixture } from '../helpers/db'
+import { multiplicarMonto } from '@/lib/money'
+import { aMonto, sumaODefecto } from '@/server/money'
 import { call, sessionCookie } from '../helpers/http'
 
 let fx: Fixture
@@ -49,7 +51,7 @@ describe('Caso 9 — ventas simultaneas', () => {
     expect(
       await cashOf(fx.branchA.id),
       'Se perdieron actualizaciones de caja: dos ventas leyeron el mismo saldo',
-    ).toBe(fx.productoA.price * N)
+    ).toBe(multiplicarMonto(fx.productoA.price, N))
 
     expect(await stockOf(fx.branchA.id, fx.productoA.id), 'Se perdieron descuentos de stock').toBe(
       50 - N,
@@ -72,7 +74,7 @@ describe('Caso 9 — ventas simultaneas', () => {
     expect(exitosas, 'Se vendieron mas unidades de las que habia').toBe(3)
     expect(await stockOf(fx.branchA.id, fx.productoA.id)).toBe(0)
     expect(await prisma.sale.count()).toBe(3)
-    expect(await cashOf(fx.branchA.id)).toBe(fx.productoA.price * 3)
+    expect(await cashOf(fx.branchA.id)).toBe(multiplicarMonto(fx.productoA.price, 3))
   })
 
   it('el stock nunca queda negativo bajo carga', async () => {
@@ -108,6 +110,6 @@ describe('Caso 9 — ventas simultaneas', () => {
       _sum: { amount: true },
     })
 
-    expect(await cashOf(fx.branchA.id)).toBe(efectivo._sum.amount ?? 0)
+    expect(await cashOf(fx.branchA.id)).toBe(aMonto(sumaODefecto(efectivo._sum.amount)))
   })
 })

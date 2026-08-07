@@ -25,6 +25,7 @@ import {
   minMonto,
   monto,
   montoODefecto,
+  montoDesdeTexto,
   montoOpcional,
   multiplicarMonto,
   negarMonto,
@@ -138,6 +139,42 @@ describe('Normalizacion en el borde de entrada', () => {
     expect(montoODefecto(undefined)).toBe(CERO)
     expect(montoODefecto('x', '5.00')).toBe('5.00')
     expect(montoODefecto('9.90')).toBe('9.90')
+  })
+})
+
+describe('Lo que se tipea en un campo', () => {
+  it('acepta coma decimal, que es lo que dice el teclado en castellano', () => {
+    expect(montoDesdeTexto('1234,56')).toBe('1234.56')
+    expect(montoDesdeTexto('0,07')).toBe('0.07')
+  })
+
+  it('acepta punto decimal, que es lo que sale del teclado numerico', () => {
+    expect(montoDesdeTexto('1234.56')).toBe('1234.56')
+    expect(montoDesdeTexto('1234')).toBe('1234.00')
+  })
+
+  it('acepta el separador de miles, que es como se lee en pantalla', () => {
+    expect(montoDesdeTexto('1.234,56')).toBe('1234.56')
+    expect(montoDesdeTexto('134.600,00')).toBe('134600.00')
+  })
+
+  it('devuelve null y no cero cuando todavia no se escribio nada', () => {
+    // Un cero silencioso en un arqueo significa "conte cero pesos", que es
+    // una afirmacion muy distinta de "todavia no escribi nada".
+    expect(montoDesdeTexto('')).toBeNull()
+    expect(montoDesdeTexto('   ')).toBeNull()
+    expect(montoDesdeTexto('abc')).toBeNull()
+    expect(montoDesdeTexto('12,,3')).toBeNull()
+  })
+
+  it('rechaza mas de dos decimales: no se puede cobrar medio centavo', () => {
+    expect(montoDesdeTexto('10,555')).toBeNull()
+    expect(montoDesdeTexto('10.001')).toBeNull()
+  })
+
+  it('el cero escrito a proposito si vale', () => {
+    expect(montoDesdeTexto('0')).toBe('0.00')
+    expect(montoDesdeTexto('0,00')).toBe('0.00')
   })
 })
 

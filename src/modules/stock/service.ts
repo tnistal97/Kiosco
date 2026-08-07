@@ -16,13 +16,15 @@ import { audit } from '@/server/audit/audit'
 import { conflict, notFound } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
 import type { AjusteAbsolutoInput, AjusteRelativoInput } from './schemas'
+import type { Monto } from '@/lib/money'
+import { aMonto } from '@/server/money'
 
 export interface StockDeProducto {
   id: number
   productId: number
   name: string
   barcode: string | null
-  price: number
+  price: Monto
   category: { id: number; name: string }
   quantity: number
 }
@@ -64,7 +66,12 @@ export async function stockDe(session: Session, productId: number): Promise<Stoc
     select: { quantity: true },
   })
 
-  return { ...producto, productId: producto.id, quantity: stock?.quantity ?? 0 }
+  return {
+    ...producto,
+    price: aMonto(producto.price),
+    productId: producto.id,
+    quantity: stock?.quantity ?? 0,
+  }
 }
 
 /** Fija la cantidad exacta. Es el recuento de inventario. */

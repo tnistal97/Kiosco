@@ -12,6 +12,7 @@ import {
   SkeletonRows,
 } from '@/components/ui'
 import { useSession } from '@/components/shell/SessionProvider'
+import { montoODefecto, type Monto } from '@/lib/money'
 import { apiRequest, esObjeto, lista, mensajeDeError, numero, texto, textoOpcional } from '@/lib/api-client' // prettier-ignore
 
 interface SucursalDTO {
@@ -20,7 +21,7 @@ interface SucursalDTO {
   address: string | null
   email: string | null
   phone: string | null
-  currentCash: number
+  currentCash: Monto
 }
 
 function parseSucursales(raw: unknown): SucursalDTO[] {
@@ -33,7 +34,7 @@ function parseSucursales(raw: unknown): SucursalDTO[] {
       address: textoOpcional(s.address),
       email: textoOpcional(s.email),
       phone: textoOpcional(s.phone),
-      currentCash: numero(s.currentCash),
+      currentCash: montoODefecto(s.currentCash),
     }
   })
 }

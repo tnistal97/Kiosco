@@ -7,6 +7,8 @@
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { seedFixture, prisma, stockOf, cashOf, type Fixture } from '../helpers/db'
+import { multiplicarMonto, negarMonto } from '@/lib/money'
+import { aMonto } from '@/server/money'
 import { call, sessionCookie } from '../helpers/http'
 
 let fx: Fixture
@@ -58,11 +60,11 @@ describe('Caso 12 — anulacion valida', () => {
 
   it('revierte el efectivo de la caja', async () => {
     const saleId = await venderDosUnidades()
-    expect(await cashOf(fx.branchA.id)).toBe(fx.productoA.price * 2)
+    expect(await cashOf(fx.branchA.id)).toBe(multiplicarMonto(fx.productoA.price, 2))
 
     await anular(saleId, { reason: 'Error de cobro' })
 
-    expect(await cashOf(fx.branchA.id)).toBe(0)
+    expect(await cashOf(fx.branchA.id)).toBe('0.00')
   })
 
   it('no borra la venta: la marca como anulada', async () => {
@@ -93,9 +95,13 @@ describe('Caso 12 — anulacion valida', () => {
 
     expect(movimientos).toHaveLength(2)
     const [entrada, contramovimiento] = movimientos
-    expect(entrada?.amount).toBe(fx.productoA.price * 2)
-    expect(contramovimiento?.amount).toBe(-fx.productoA.price * 2)
-    expect(contramovimiento?.type).toBe('sale_cancel')
+    if (!entrada || !contramovimiento) throw new Error('Faltan movimientos')
+
+    const esperado = multiplicarMonto(fx.productoA.price, 2)
+    expect(aMonto(entrada.amount)).toBe(esperado)
+    // El contramovimiento es el opuesto EXACTO: los dos suman cero sin residuo.
+    expect(aMonto(contramovimiento.amount)).toBe(negarMonto(esperado))
+    expect(contramovimiento.type).toBe('sale_cancel')
   })
 
   it('registra la anulacion en la bitacora con antes y despues', async () => {
@@ -140,7 +146,7 @@ describe('Proteccion de la anulacion', () => {
 
     // El stock no se restauro dos veces.
     expect(await stockOf(fx.branchA.id, fx.productoA.id)).toBe(10)
-    expect(await cashOf(fx.branchA.id)).toBe(0)
+    expect(await cashOf(fx.branchA.id)).toBe('0.00')
   })
 
   it('dos anulaciones simultaneas restauran el stock una sola vez', async () => {
@@ -155,7 +161,7 @@ describe('Proteccion de la anulacion', () => {
     expect(exitosas).toHaveLength(1)
 
     expect(await stockOf(fx.branchA.id, fx.productoA.id)).toBe(10)
-    expect(await cashOf(fx.branchA.id)).toBe(0)
+    expect(await cashOf(fx.branchA.id)).toBe('0.00')
   })
 
   it('anular una venta inexistente devuelve 404', async () => {
@@ -200,7 +206,7 @@ describe('Una venta anulada sigue apareciendo en los reportes', () => {
     const antes = await consultar()
     expect(antes.body.totales.ventas).toBe(1)
     expect(antes.body.totales.anuladas).toBe(0)
-    expect(antes.body.totales.recaudado).toBe(fx.productoA.price * 2)
+    expect(antes.body.totales.recaudado).toBe(multiplicarMonto(fx.productoA.price, 2))
 
     await anular(saleId, { reason: 'No suma' })
 
@@ -210,6 +216,6 @@ describe('Una venta anulada sigue apareciendo en los reportes', () => {
     expect(
       despues.body.totales.recaudado,
       'Una venta anulada seguia sumando a la recaudacion del reporte',
-    ).toBe(0)
+    ).toBe('0.00')
   })
 })

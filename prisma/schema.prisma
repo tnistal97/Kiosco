@@ -21,7 +21,11 @@ model Branch {
   cashCounts    CashCount[]
   productsList  Product[]
   auditLogs     AuditLog[]
-  currentCash   Float                  @default(0)
+
+  /// Saldo en efectivo. `Decimal(14,2)` desde la Fase 3: en `Float` la suma
+  /// de ventas y la reversion de una anulacion no volvian al mismo numero.
+  /// Ver docs/PHASE3_MONEY_MIGRATION.md.
+  currentCash Decimal @default(0) @db.Decimal(14, 2)
 }
 
 model Role {
@@ -71,9 +75,15 @@ model Product {
   description String?
   supplierId  Int?
   categoryId  Int
-  price       Float
-  value       Int?
-  branchId    Int
+
+  /// Precio de venta. Dos decimales: es lo que se cobra.
+  price Decimal @db.Decimal(14, 2)
+
+  /// Sin uso. Quedo de una migracion de mayo de 2025 y no se borra: quitar
+  /// una columna en una migracion que corre en el servidor es exactamente lo
+  /// que docs/DATABASE_MIGRATION_STRATEGY.md prohibe. Deuda anotada.
+  value    Int?
+  branchId Int
 
   /// Un producto dado de baja sale del catalogo de venta pero conserva su
   /// historial. Nunca se borra: los items de venta lo referencian, y borrarlo
@@ -147,11 +157,14 @@ model Sale {
 }
 
 model SaleItem {
-  id        Int   @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
   saleId    Int
   productId Int
   quantity  Int
-  price     Float
+
+  /// Precio congelado en el momento de vender. Cambiar el precio del producto
+  /// no reescribe las ventas de ayer.
+  price Decimal @db.Decimal(14, 2)
 
   sale    Sale    @relation(fields: [saleId], references: [id])
   product Product @relation(fields: [productId], references: [id])
@@ -194,10 +207,14 @@ model AuditLog {
 }
 
 model CashRegisterMovement {
-  id            Int      @id @default(autoincrement())
-  branchId      Int
-  userId        Int
-  amount        Float
+  id       Int @id @default(autoincrement())
+  branchId Int
+  userId   Int
+
+  /// Importe con signo: positivo entra, negativo sale. El signo lo decide el
+  /// servidor a partir del tipo, nunca el cliente.
+  amount Decimal @db.Decimal(14, 2)
+
   paymentMethod String
   description   String?
   date          DateTime @default(now())
@@ -220,19 +237,19 @@ model CashCount {
   branchId Int
   userId   Int
   /// Lo que se conto fisicamente en el cajon.
-  amount   Float
+  amount   Decimal  @db.Decimal(14, 2)
   date     DateTime @default(now())
   notes    String? // notas u observaciones opcionales
 
   /// Lo que el sistema esperaba. Lo calcula el servidor, nunca el cliente.
-  expected Float @default(0)
+  expected Decimal @default(0) @db.Decimal(14, 2)
 
   /// contado - esperado. Positivo sobra, negativo falta.
   ///
   /// Se guarda calculado y no se deduce al leer: asi se puede preguntar por
   /// "arqueos con diferencia" sin recorrer texto. Antes los dos valores
   /// vivian dentro de `notes` como una frase.
-  difference Float @default(0)
+  difference Decimal @default(0) @db.Decimal(14, 2)
 
   branch Branch @relation(fields: [branchId], references: [id])
   user   User   @relation(fields: [userId], references: [id])

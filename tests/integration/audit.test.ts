@@ -122,9 +122,11 @@ describe('Eventos que deben quedar registrados', () => {
     })
     expect(log).not.toBeNull()
 
-    const cambios = log?.changes as { before?: { price?: number }; after?: { price?: number } }
+    // La bitacora guarda los importes como cadena con escala fija, igual que
+    // la API: un `20000` pelado no dice si eran pesos o centavos.
+    const cambios = log?.changes as { before?: { price?: string }; after?: { price?: string } }
     expect(cambios.before?.price).toBe(fx.productoA.price)
-    expect(cambios.after?.price).toBe(20000)
+    expect(cambios.after?.price).toBe('20000.00')
   })
 
   it('ajuste de stock, con motivo y diferencia', async () => {

@@ -3,6 +3,7 @@
 import { memo } from 'react'
 import { Button, EmptyState, IconButton, Money, QuantityInput, cn } from '@/components/ui'
 import type { CartLine } from '@/store/cart'
+import { multiplicarMonto, type Monto } from '@/lib/money'
 
 /**
  * El ticket en curso.
@@ -26,7 +27,7 @@ export const LineaTicket = memo(function LineaTicket({
   onQuitar: (productId: number) => void
   onEditando: (editando: boolean) => void
 }) {
-  const subtotal = linea.price * linea.quantity
+  const subtotal = multiplicarMonto(linea.price, linea.quantity)
   const enElTope = linea.quantity >= linea.stock
 
   /**
@@ -121,7 +122,7 @@ export function Ticket({
   className,
 }: {
   lineas: CartLine[]
-  total: number
+  total: Monto
   unidades: number
   onCantidad: (productId: number, cantidad: number) => void
   onQuitar: (productId: number) => void

@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { seedFixture, prisma, type Fixture } from '../helpers/db'
 import { call, sessionCookie, type RouteHandler } from '../helpers/http'
+import { aMonto } from '@/server/money'
 
 let fx: Fixture
 
@@ -166,7 +167,8 @@ describe('Caso 10 — no puede eliminarse fisicamente todo el catalogo', () => {
 
     expect(res.status).toBe(403)
     const p = await prisma.product.findUniqueOrThrow({ where: { id: fx.productoA.id } })
-    expect(p.price).toBe(fx.productoA.price)
+    // Prisma devuelve un `Decimal`: se compara su forma canonica, no el objeto.
+    expect(aMonto(p.price)).toBe(fx.productoA.price)
   })
 })
 

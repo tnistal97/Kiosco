@@ -7,6 +7,7 @@
  */
 
 import { esObjeto, lista, numero, texto, textoOpcional } from '@/lib/api-client'
+import { montoODefecto, type Monto } from '@/lib/money'
 
 export interface CategoriaDTO {
   id: number
@@ -23,7 +24,7 @@ export interface ProductoDTO {
   name: string
   barcode: string | null
   description: string | null
-  price: number
+  price: Monto
   /** Un producto dado de baja no aparece en la caja. */
   isActive: boolean
   category: CategoriaDTO
@@ -51,7 +52,7 @@ export function parseProducto(raw: unknown): ProductoDTO {
     name: texto(raw.name),
     barcode: textoOpcional(raw.barcode),
     description: textoOpcional(raw.description),
-    price: numero(raw.price),
+    price: montoODefecto(raw.price),
     // Sin el campo se asume activo: es como se comportaba el catalogo antes
     // de que existiera la baja logica.
     isActive: raw.isActive !== false,

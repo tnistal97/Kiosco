@@ -3,19 +3,20 @@
  */
 
 import { esObjeto, lista, numero, texto, textoOpcional, numeroOpcional } from '@/lib/api-client'
+import { montoODefecto, type Monto } from '@/lib/money'
 
 export type MetodoPago = 'efectivo' | 'tarjeta' | 'mercado_pago' | 'transferencia'
 
 export interface ItemMovimientoDTO {
   id: number
   quantity: number
-  price: number
+  price: Monto
   product: { id: number; name: string }
 }
 
 export interface MovimientoDTO {
   id: number
-  amount: number
+  amount: Monto
   paymentMethod: string
   /** 'sale' | 'sale_cancel' | 'manual' | 'withdrawal' | 'deposit' */
   type: string
@@ -31,15 +32,15 @@ export interface MovimientoDTO {
 }
 
 export interface SaldoDTO {
-  balance: number
-  efectivoHoy: number
+  balance: Monto
+  efectivoHoy: Monto
 }
 
 export interface ArqueoDTO {
   id: number
-  amount: number
-  expected: number
-  difference: number
+  amount: Monto
+  expected: Monto
+  difference: Monto
   date: string
   notes: string | null
   user: { id: number; name: string }
@@ -59,7 +60,7 @@ function parseItemMovimiento(raw: unknown): ItemMovimientoDTO {
   return {
     id: numero(raw.id),
     quantity: numero(raw.quantity),
-    price: numero(raw.price),
+    price: montoODefecto(raw.price),
     product: parseUsuario(raw.product),
   }
 }
@@ -70,7 +71,7 @@ export function parseMovimiento(raw: unknown): MovimientoDTO {
   }
   return {
     id: numero(raw.id),
-    amount: numero(raw.amount),
+    amount: montoODefecto(raw.amount),
     paymentMethod: texto(raw.paymentMethod, 'efectivo'),
     type: texto(raw.type, 'manual'),
     description: textoOpcional(raw.description),
@@ -94,8 +95,8 @@ export function parseMovimientos(raw: unknown): MovimientoDTO[] {
 }
 
 export function parseSaldo(raw: unknown): SaldoDTO {
-  if (!esObjeto(raw)) return { balance: 0, efectivoHoy: 0 }
-  return { balance: numero(raw.balance), efectivoHoy: numero(raw.efectivoHoy) }
+  if (!esObjeto(raw)) return { balance: '0.00', efectivoHoy: '0.00' }
+  return { balance: montoODefecto(raw.balance), efectivoHoy: montoODefecto(raw.efectivoHoy) }
 }
 
 export function parseArqueo(raw: unknown): ArqueoDTO {
@@ -104,9 +105,9 @@ export function parseArqueo(raw: unknown): ArqueoDTO {
   }
   return {
     id: numero(raw.id),
-    amount: numero(raw.amount),
-    expected: numero(raw.expected),
-    difference: numero(raw.difference),
+    amount: montoODefecto(raw.amount),
+    expected: montoODefecto(raw.expected),
+    difference: montoODefecto(raw.difference),
     date: texto(raw.date),
     notes: textoOpcional(raw.notes),
     user: parseUsuario(raw.user),

@@ -6,6 +6,7 @@ import { Money, Skeleton } from '@/components/ui'
 import { apiRequest } from '@/lib/api-client'
 import { parseSaldo } from '@/modules/cash/dto'
 import { usePermiso } from './SessionProvider'
+import type { Monto } from '@/lib/money'
 
 /**
  * Saldo de caja en la cabecera.
@@ -20,7 +21,7 @@ import { usePermiso } from './SessionProvider'
  */
 export function EstadoCaja() {
   const puedeVer = usePermiso('cash.view')
-  const [saldo, setSaldo] = useState<number | null>(null)
+  const [saldo, setSaldo] = useState<Monto | null>(null)
   const [fallo, setFallo] = useState(false)
 
   useEffect(() => {

@@ -18,6 +18,7 @@ import {
 } from '@/components/ui'
 import { useSession } from '@/components/shell/SessionProvider'
 import { apiRequest } from '@/lib/api-client'
+import { CERO, esCero, esPositivo, type Monto } from '@/lib/money'
 import { parsePaginaProductos } from '@/modules/products/dto'
 import { parsePaginaVentas, type VentaDTO } from '@/modules/sales/dto'
 import { parseArqueos, parseSaldo, type ArqueoDTO } from '@/modules/cash/dto'
@@ -31,11 +32,11 @@ function hoy(): string {
 }
 
 interface Panel {
-  saldo: number | null
-  efectivoHoy: number
+  saldo: Monto | null
+  efectivoHoy: Monto
   ventasHoy: number
   anuladasHoy: number
-  recaudadoHoy: number
+  recaudadoHoy: Monto
   ultimasVentas: VentaDTO[]
   bajos: Product[]
   agotados: number
@@ -44,10 +45,10 @@ interface Panel {
 
 const VACIO: Panel = {
   saldo: null,
-  efectivoHoy: 0,
+  efectivoHoy: CERO,
   ventasHoy: 0,
   anuladasHoy: 0,
-  recaudadoHoy: 0,
+  recaudadoHoy: CERO,
   ultimasVentas: [],
   bajos: [],
   agotados: 0,
@@ -180,18 +181,18 @@ export default function InicioPage() {
             <MetricCard
               href="/caja"
               label="Efectivo en caja"
-              value={<Money amount={datos.saldo ?? 0} size="lg" />}
+              value={<Money amount={datos.saldo ?? CERO} size="lg" />}
               detail={
                 datos.ultimoArqueo
-                  ? datos.ultimoArqueo.difference === 0
+                  ? esCero(datos.ultimoArqueo.difference)
                     ? 'Último arqueo: cuadró'
-                    : `Último arqueo: ${datos.ultimoArqueo.difference > 0 ? 'sobró' : 'faltó'}`
+                    : `Último arqueo: ${esPositivo(datos.ultimoArqueo.difference) ? 'sobró' : 'faltó'}`
                   : 'Sin arqueos todavía'
               }
               tone={
                 !datos.ultimoArqueo
                   ? 'neutral'
-                  : datos.ultimoArqueo.difference === 0
+                  : esCero(datos.ultimoArqueo.difference)
                     ? 'success'
                     : 'warning'
               }

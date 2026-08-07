@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Button, Money, cn } from '@/components/ui'
+import { montoOpcional } from '@/lib/money'
 
 /**
  * Visor de cambios: campo, antes, después.
@@ -54,8 +55,13 @@ const MONETARIOS = new Set(['price', 'total', 'amount', 'contado', 'esperado', '
 function mostrar(clave: string, valor: unknown) {
   if (valor === null || valor === undefined) return <span className="text-ink-faint">—</span>
   if (typeof valor === 'boolean') return valor ? 'Sí' : 'No'
-  if (typeof valor === 'number' && MONETARIOS.has(clave)) {
-    return <Money amount={valor} size="sm" />
+
+  // La bitacora guarda los importes como cadena desde la Fase 3, pero las
+  // entradas anteriores los tienen como numero. Se aceptan las dos formas: una
+  // bitacora que deja de mostrar lo viejo no sirve para auditar.
+  if (MONETARIOS.has(clave)) {
+    const importe = montoOpcional(valor)
+    if (importe !== null) return <Money amount={importe} size="sm" />
   }
   if (typeof valor === 'object') {
     // Un objeto anidado (los items de una venta, por ejemplo) no entra en una

@@ -16,6 +16,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { PrismaClient } from '@prisma/client'
 import { seedFixture, prisma, type Fixture } from '../helpers/db'
 import { call, sessionCookie } from '../helpers/http'
+import { multiplicarMonto } from '@/lib/money'
 
 let fx: Fixture
 
@@ -165,7 +166,7 @@ describe('Los listados no crecen con la cantidad de datos', () => {
     expect(res.body.pagination.total).toBe(30)
     // Los totales son del rango, no de la pagina.
     expect(res.body.totales.ventas).toBe(30)
-    expect(res.body.totales.recaudado).toBe(fx.productoA.price * 30)
+    expect(res.body.totales.recaudado).toBe(multiplicarMonto(fx.productoA.price, 30))
   })
 })
 

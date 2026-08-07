@@ -3,13 +3,21 @@
  */
 
 import { esObjeto, lista, numero, texto, textoOpcional } from '@/lib/api-client'
+import {
+  CERO,
+  montoODefecto,
+  montoOpcional,
+  multiplicarMonto,
+  sumarMontos,
+  type Monto,
+} from '@/lib/money'
 
 export type EstadoVenta = 'completed' | 'canceled'
 
 export interface ItemVentaDTO {
   id: number
   quantity: number
-  price: number
+  price: Monto
   product: { id: number; name: string }
 }
 
@@ -17,7 +25,7 @@ export interface VentaDTO {
   id: number
   date: string
   status: EstadoVenta
-  total: number
+  total: Monto
   paymentMethod: string | null
   canceledAt: string | null
   cancelReason: string | null
@@ -42,7 +50,7 @@ export function parseItemVenta(raw: unknown): ItemVentaDTO {
   return {
     id: numero(raw.id),
     quantity: numero(raw.quantity),
-    price: numero(raw.price),
+    price: montoODefecto(raw.price),
     product: parsePersona(raw.product),
   }
 }
@@ -64,9 +72,10 @@ export function parseVenta(raw: unknown): VentaDTO {
     // El servidor ya manda el total calculado; si faltara se recalcula aca
     // con los mismos items, nunca con un valor que haya puesto el navegador.
     total:
-      typeof raw.total === 'number'
-        ? numero(raw.total)
-        : items.reduce((suma, i) => suma + i.price * i.quantity, 0),
+      montoOpcional(raw.total) ??
+      (items.length === 0
+        ? CERO
+        : sumarMontos(...items.map((i) => multiplicarMonto(i.price, i.quantity)))),
     paymentMethod: textoOpcional(raw.paymentMethod),
     canceledAt: textoOpcional(raw.canceledAt),
     cancelReason: textoOpcional(raw.cancelReason),
@@ -87,7 +96,7 @@ export function parseVentas(raw: unknown): VentaDTO[] {
 export interface TotalesVentas {
   ventas: number
   anuladas: number
-  recaudado: number
+  recaudado: Monto
 }
 
 export interface PaginaVentas {
@@ -110,7 +119,7 @@ export function parsePaginaVentas(raw: unknown): PaginaVentas {
     totales: {
       ventas: numero(totales.ventas, data.length),
       anuladas: numero(totales.anuladas),
-      recaudado: numero(totales.recaudado),
+      recaudado: montoODefecto(totales.recaudado),
     },
   }
 }

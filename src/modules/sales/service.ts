@@ -11,6 +11,17 @@ import type { Prisma } from '@prisma/client'
 import { audit } from '@/server/audit/audit'
 import { conflict, invalid, notFound } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
+import type { Monto } from '@/lib/money'
+import {
+  CERO_D,
+  aMonto,
+  esCero,
+  multiplicar,
+  negar,
+  redondearPesos,
+  sumar,
+  type Dinero,
+} from '@/server/money'
 
 export type PaymentMethod = 'efectivo' | 'tarjeta' | 'mercado_pago'
 
@@ -23,7 +34,7 @@ export interface SaleLineInput {
 interface Catalogado {
   id: number
   name: string
-  price: number
+  price: Dinero
 }
 
 export interface CreateSaleInput {
@@ -31,27 +42,25 @@ export interface CreateSaleInput {
   paymentMethod: PaymentMethod
 }
 
+/**
+ * Lo que sale hacia la API.
+ *
+ * Los importes viajan como cadena decimal, no como numero: un numero de JSON
+ * es un `double` de IEEE 754 y devolveria el importe al tipo del que acabamos
+ * de sacarlo. Ver docs/PHASE3_MONEY_MIGRATION.md.
+ */
 export interface CreatedSale {
   id: number
-  total: number
+  total: Monto
   date: Date
   items: Array<{
     productId: number
     name: string
     quantity: number
-    price: number
-    subtotal: number
+    price: Monto
+    subtotal: Monto
   }>
   paymentMethod: PaymentMethod
-}
-
-/**
- * El dinero se guarda en Float (deuda documentada, se migra a Decimal en la
- * fase 2). Mientras tanto, todo importe se redondea a dos decimales en el
- * mismo punto para que la suma de subtotales y el total no diverjan.
- */
-function redondear(n: number): number {
-  return Math.round(n * 100) / 100
 }
 
 /**
@@ -134,16 +143,22 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         }
       }
 
-      // 3) Precios y total, siempre desde la base.
+      // 3) Precios y total, siempre desde la base y siempre en Decimal.
+      //
+      //    El subtotal se redondea a dos decimales porque es una linea del
+      //    ticket --se puede leer y se puede cobrar--. El total es la suma de
+      //    subtotales ya redondeados: asi el ticket cierra con lo que muestra,
+      //    linea por linea. Sumar exacto y redondear al final daria un total
+      //    que no coincide con la suma de lo que el cliente ve.
       const itemsConPrecio = pedido.map(({ producto, quantity }) => ({
         productId: producto.id,
         name: producto.name,
         quantity,
         price: producto.price,
-        subtotal: redondear(producto.price * quantity),
+        subtotal: redondearPesos(multiplicar(producto.price, quantity)),
       }))
 
-      const total = redondear(itemsConPrecio.reduce((suma, i) => suma + i.subtotal, 0))
+      const total = sumar(...itemsConPrecio.map((i) => i.subtotal))
 
       // 4) Venta e items.
       const venta = await tx.sale.create({
@@ -187,6 +202,17 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         })
       }
 
+      // La bitacora guarda los importes como cadena, igual que la API: un
+      // JSON con `4850.000000001` adentro seria una prueba documental de algo
+      // que nunca paso.
+      const itemsParaMostrar = itemsConPrecio.map((i) => ({
+        productId: i.productId,
+        name: i.name,
+        quantity: i.quantity,
+        price: aMonto(i.price),
+        subtotal: aMonto(i.subtotal),
+      }))
+
       await audit(tx, {
         userId: session.userId,
         branchId: session.branchId,
@@ -196,18 +222,18 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         after: {
           id: venta.id,
           branchId,
-          total,
+          total: aMonto(total),
           paymentMethod: input.paymentMethod,
-          items: itemsConPrecio,
+          items: itemsParaMostrar,
         },
         origin: 'POST /api/sales',
       })
 
       return {
         id: venta.id,
-        total,
+        total: aMonto(total),
         date: venta.date,
-        items: itemsConPrecio,
+        items: itemsParaMostrar,
         paymentMethod: input.paymentMethod,
       }
     },
@@ -219,7 +245,7 @@ export interface CancelResult {
   id: number
   status: 'canceled'
   restoredItems: number
-  cashReversed: number
+  cashReversed: Monto
 }
 
 /**
@@ -283,14 +309,16 @@ export async function cancelSale(
         select: { amount: true, paymentMethod: true },
       })
 
-      let efectivoRevertido = 0
+      let efectivoRevertido: Dinero = CERO_D
 
       for (const mov of originales) {
         await tx.cashRegisterMovement.create({
           data: {
             branchId: venta.branchId,
             userId: session.userId,
-            amount: redondear(-mov.amount),
+            // El contramovimiento es el opuesto EXACTO del original, no un
+            // importe recalculado: asi la suma de los dos da cero sin residuo.
+            amount: negar(mov.amount),
             paymentMethod: mov.paymentMethod,
             description: `Anulacion de venta #${saleId}: ${motivo}`,
             type: 'sale_cancel',
@@ -299,11 +327,11 @@ export async function cancelSale(
         })
 
         if (mov.paymentMethod === 'efectivo') {
-          efectivoRevertido = redondear(efectivoRevertido + mov.amount)
+          efectivoRevertido = sumar(efectivoRevertido, mov.amount)
         }
       }
 
-      if (efectivoRevertido !== 0) {
+      if (!esCero(efectivoRevertido)) {
         await tx.branch.update({
           where: { id: venta.branchId },
           data: { currentCash: { decrement: efectivoRevertido } },
@@ -317,12 +345,21 @@ export async function cancelSale(
         recordId: saleId,
         action: 'cancel',
         reason: motivo,
-        before: { status: 'completed', items, vendedorId: venta.userId, fecha: venta.date },
+        before: {
+          status: 'completed',
+          items: items.map((i) => ({
+            productId: i.productId,
+            quantity: i.quantity,
+            price: aMonto(i.price),
+          })),
+          vendedorId: venta.userId,
+          fecha: venta.date,
+        },
         after: {
           status: 'canceled',
           motivo,
           anuladaPor: session.userId,
-          efectivoRevertido,
+          efectivoRevertido: aMonto(efectivoRevertido),
         },
         origin: 'POST /api/sales/:id/cancel',
       })
@@ -331,7 +368,7 @@ export async function cancelSale(
         id: saleId,
         status: 'canceled' as const,
         restoredItems: items.length,
-        cashReversed: efectivoRevertido,
+        cashReversed: aMonto(efectivoRevertido),
       }
     },
     { timeout: 15_000, maxWait: 15_000 },

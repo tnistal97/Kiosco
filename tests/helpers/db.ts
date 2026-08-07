@@ -8,6 +8,8 @@
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcrypt'
 import { knownRoles } from '@/server/authz/permissions'
+import type { Monto } from '@/lib/money'
+import { aMonto } from '@/server/money'
 
 export { prisma }
 
@@ -42,9 +44,16 @@ export interface Fixture {
   cajeroB: TestUser
   /** Usuario dado de baja. */
   inactivo: TestUser
-  productoA: { id: number; name: string; price: number; barcode: string }
+  /**
+   * Los precios salen como CADENA decimal, igual que por la API.
+   *
+   * Asi las pruebas comparan `'12500.00'` contra lo que devuelve el endpoint,
+   * sin convertir a numero en el medio --que es justo donde se colaban los
+   * centavos fantasma que la Fase 3 vino a eliminar--.
+   */
+  productoA: { id: number; name: string; price: Monto; barcode: string }
   /** Producto de la sucursal B. Un usuario de A no debe poder tocarlo. */
-  productoB: { id: number; name: string; price: number; barcode: string }
+  productoB: { id: number; name: string; price: Monto; barcode: string }
   categoryId: number
   /** Un usuario por cada rol del catalogo, todos en la sucursal A. */
   porRol: Record<string, TestUser>
@@ -151,13 +160,13 @@ export async function seedFixture(): Promise<Fixture> {
     productoA: {
       id: productoA.id,
       name: productoA.name,
-      price: productoA.price,
+      price: aMonto(productoA.price),
       barcode: productoA.barcode ?? '',
     },
     productoB: {
       id: productoB.id,
       name: productoB.name,
-      price: productoB.price,
+      price: aMonto(productoB.price),
       barcode: productoB.barcode ?? '',
     },
     categoryId: category.id,
@@ -173,8 +182,8 @@ export async function stockOf(branchId: number, productId: number): Promise<numb
   return row?.quantity ?? 0
 }
 
-/** Saldo de caja de la sucursal. */
-export async function cashOf(branchId: number): Promise<number> {
+/** Saldo de caja de la sucursal, como cadena decimal. */
+export async function cashOf(branchId: number): Promise<Monto> {
   const b = await prisma.branch.findUnique({ where: { id: branchId } })
-  return b?.currentCash ?? 0
+  return b === null ? '0.00' : aMonto(b.currentCash)
 }

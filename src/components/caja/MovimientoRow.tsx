@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Badge, Money, TD, TR, cn } from '@/components/ui'
+import { Badge, Money, TD, TR, cn, tonoPorSigno } from '@/components/ui'
+import { multiplicarMonto } from '@/lib/money'
 import type { MovimientoDTO } from '@/modules/cash/dto'
 
 /**
@@ -94,7 +95,7 @@ export function MovimientoRow({ movimiento }: { movimiento: MovimientoDTO }) {
           <Money
             amount={movimiento.amount}
             signed
-            tone={movimiento.amount < 0 ? 'out' : 'in'}
+            tone={tonoPorSigno(movimiento.amount)}
             size="md"
           />
         </TD>
@@ -123,7 +124,7 @@ export function MovimientoRow({ movimiento }: { movimiento: MovimientoDTO }) {
                     ×{i.quantity}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-ink">{i.product.name}</span>
-                  <Money amount={i.price * i.quantity} size="sm" />
+                  <Money amount={multiplicarMonto(i.price, i.quantity)} size="sm" />
                 </li>
               ))}
             </ul>

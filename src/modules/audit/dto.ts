@@ -3,6 +3,7 @@
  */
 
 import { esObjeto, lista, numero, numeroOpcional, texto, textoOpcional } from '@/lib/api-client'
+import { CERO, montoODefecto, type Monto } from '@/lib/money'
 import type { Pagination } from '@/server/http/pagination'
 
 export interface EntradaAuditoriaDTO {
@@ -83,18 +84,18 @@ export interface ItemSnapshot {
   productId: number
   name: string
   quantity: number
-  price: number
+  price: Monto
 }
 
 export function parseItemsDeSnapshot(raw: unknown): ItemSnapshot[] {
   return lista(raw, (item): ItemSnapshot => {
-    if (!esObjeto(item)) return { id: 0, productId: 0, name: 'Producto', quantity: 0, price: 0 }
+    if (!esObjeto(item)) return { id: 0, productId: 0, name: 'Producto', quantity: 0, price: CERO }
     return {
       id: numero(item.id),
       productId: numero(item.productId),
       name: texto(item.name, 'Producto'),
       quantity: numero(item.quantity),
-      price: numero(item.price),
+      price: montoODefecto(item.price),
     }
   })
 }

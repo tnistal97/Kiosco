@@ -12,6 +12,16 @@ import {
   formatMoney,
 } from '@/components/ui'
 import type { CartLine } from '@/store/cart'
+import {
+  CERO,
+  compararMontos,
+  esNegativo,
+  esPositivo,
+  montoDesdeTexto,
+  multiplicarMonto,
+  restarMontos,
+  type Monto,
+} from '@/lib/money'
 
 /**
  * Cobro.
@@ -41,9 +51,9 @@ const MEDIOS = [
 
 export interface VentaHecha {
   id: number
-  total: number
+  total: Monto
   medio: MedioDePago
-  vuelto: number | null
+  vuelto: Monto | null
 }
 
 export function DialogoCobro({
@@ -57,7 +67,7 @@ export function DialogoCobro({
   abierto: boolean
   onCerrar: () => void
   lineas: CartLine[]
-  total: number
+  total: Monto
   /** Devuelve el numero de venta. Lanza si el servidor la rechaza. */
   onCobrar: (medio: MedioDePago) => Promise<number>
   /** Cierra el resultado y deja la caja lista para la proxima. */
@@ -82,13 +92,14 @@ export function DialogoCobro({
     setEnviando(false)
   }, [abierto])
 
-  const montoRecibido = useMemo(() => {
-    const n = Number(recibido.replace(',', '.'))
-    return Number.isFinite(n) ? n : 0
-  }, [recibido])
+  // El vuelto se calcula en centavos enteros. Con `Number` y punto flotante,
+  // pagar $100 justos sobre un total de $99,99 mostraba un vuelto de
+  // 0.010000000000005 pesos.
+  const montoRecibido = useMemo(() => montoDesdeTexto(recibido) ?? CERO, [recibido])
+  const hayRecibido = medio === 'efectivo' && esPositivo(montoRecibido)
 
-  const vuelto = medio === 'efectivo' && montoRecibido > 0 ? montoRecibido - total : null
-  const faltaPlata = medio === 'efectivo' && montoRecibido > 0 && montoRecibido < total
+  const vuelto = hayRecibido ? restarMontos(montoRecibido, total) : null
+  const faltaPlata = hayRecibido && compararMontos(montoRecibido, total) < 0
 
   async function cobrar() {
     if (enviando || hecha) return
@@ -137,7 +148,7 @@ export function DialogoCobro({
               <dt className="text-ink-muted">Medio de pago</dt>
               <dd className="text-ink">{MEDIOS.find((m) => m.value === hecha.medio)?.label}</dd>
             </div>
-            {hecha.vuelto !== null && hecha.vuelto >= 0 && (
+            {hecha.vuelto !== null && !esNegativo(hecha.vuelto) && (
               <div className="flex justify-between gap-3">
                 <dt className="text-ink-muted">Vuelto</dt>
                 <dd>
@@ -192,7 +203,7 @@ export function DialogoCobro({
                   ×{l.quantity}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-ink">{l.name}</span>
-                <Money amount={l.price * l.quantity} size="sm" />
+                <Money amount={multiplicarMonto(l.price, l.quantity)} size="sm" />
               </li>
             ))}
           </ul>
@@ -227,10 +238,10 @@ export function DialogoCobro({
 
             {faltaPlata && (
               <Alert tone="warning">
-                Faltan <Money amount={total - montoRecibido} size="sm" tone="out" />
+                Faltan <Money amount={restarMontos(total, montoRecibido)} size="sm" tone="out" />
               </Alert>
             )}
-            {vuelto !== null && vuelto >= 0 && (
+            {vuelto !== null && !faltaPlata && (
               <div className="flex items-baseline justify-between rounded-lg border border-line bg-raised px-4 py-3">
                 <span className="text-sm text-ink-muted">Vuelto</span>
                 <Money amount={vuelto} size="xl" />

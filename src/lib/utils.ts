@@ -1,5 +1,12 @@
-export const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(value)
+/*
+ * Aca vivia un tercer `formatCurrency(value: number)`.
+ *
+ * Se elimino junto con `src/lib/formatCurrency.ts`, que era un cuarto. Ninguno
+ * se usaba, pero los dos tomaban un `number`: el dia que alguien los agarrara
+ * por comodidad, el importe volveria a ser punto flotante. El unico formateo
+ * de dinero del sistema es `formatearMonto` en `@/lib/money`, que parte de una
+ * cadena decimal.
+ */
 
 export const formatDate = (
   date: Date | string,

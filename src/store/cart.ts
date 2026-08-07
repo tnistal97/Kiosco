@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { CERO, multiplicarMonto, sumarMontos, type Monto } from '@/lib/money'
 
 /**
  * El ticket en curso.
@@ -32,7 +33,7 @@ export interface CartLine {
   name: string
   barcode: string | null
   /** Ultimo precio conocido del servidor. Referencia, no fuente de verdad. */
-  price: number
+  price: Monto
   /** Ultimo stock conocido del servidor. */
   stock: number
   quantity: number
@@ -52,7 +53,7 @@ export interface ProductoParaTicket {
   id: number
   name: string
   barcode: string | null
-  price: number
+  price: Monto
   totalStock: number
 }
 
@@ -77,13 +78,18 @@ interface CartState {
   hidratar: (branchId: number) => Array<{ p: number; q: number }>
 }
 
-function total(items: CartLine[]): number {
-  return items.reduce((s, i) => s + i.price * i.quantity, 0)
-}
-
-/** Total del ticket. Referencia: el definitivo lo calcula el servidor. */
-export function totalDelTicket(items: CartLine[]): number {
-  return Math.round(total(items) * 100) / 100
+/**
+ * Total del ticket. Referencia: el definitivo lo calcula el servidor.
+ *
+ * La cuenta se hace en centavos enteros --dentro de `multiplicarMonto` y
+ * `sumarMontos`--, no en punto flotante. Con quince lineas de precios con
+ * centavos, sumar en `Float` mostraba un total un centavo distinto del que
+ * despues cobraba el servidor, y el cajero no tenia forma de saber cual era
+ * el bueno.
+ */
+export function totalDelTicket(items: CartLine[]): Monto {
+  if (items.length === 0) return CERO
+  return sumarMontos(...items.map((i) => multiplicarMonto(i.price, i.quantity)))
 }
 
 export function unidadesDelTicket(items: CartLine[]): number {

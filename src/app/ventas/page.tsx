@@ -30,6 +30,7 @@ import { DialogoAnular } from '@/components/ventas/DialogoAnular'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { notificarCambioDeCaja } from '@/components/shell/EstadoCaja'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import { CERO, multiplicarMonto, sumarMontos } from '@/lib/money'
 import { parsePaginaVentas, type TotalesVentas, type VentaDTO } from '@/modules/sales/dto'
 import { medioLegible } from '@/components/caja/MovimientoRow'
 
@@ -68,7 +69,11 @@ export default function VentasPage() {
 
   const [ventas, setVentas] = useState<VentaDTO[]>([])
   const [paginas, setPaginas] = useState(1)
-  const [totales, setTotales] = useState<TotalesVentas>({ ventas: 0, anuladas: 0, recaudado: 0 })
+  const [totales, setTotales] = useState<TotalesVentas>({
+    ventas: 0,
+    anuladas: 0,
+    recaudado: CERO,
+  })
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandida, setExpandida] = useState<number | null>(null)
@@ -115,10 +120,10 @@ export default function VentasPage() {
       setPagina(1)
     }
 
-  const totalPagina = useMemo(
-    () => ventas.filter((v) => v.status !== 'canceled').reduce((s, v) => s + v.total, 0),
-    [ventas],
-  )
+  const totalPagina = useMemo(() => {
+    const vigentes = ventas.filter((v) => v.status !== 'canceled')
+    return vigentes.length === 0 ? CERO : sumarMontos(...vigentes.map((v) => v.total))
+  }, [ventas])
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-4 p-3 sm:p-5">
@@ -368,7 +373,7 @@ function DetalleVenta({ venta }: { venta: VentaDTO }) {
               ×{i.quantity}
             </span>
             <span className="min-w-0 flex-1 truncate text-ink">{i.product.name}</span>
-            <Money amount={i.price * i.quantity} size="sm" />
+            <Money amount={multiplicarMonto(i.price, i.quantity)} size="sm" />
           </li>
         ))}
       </ul>

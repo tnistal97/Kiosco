@@ -1,5 +1,6 @@
 'use client'
 
+import { absMonto, esCero, esNegativo, formatearMonto, type Monto } from '@/lib/money'
 import { cn } from './cn'
 
 /**
@@ -12,18 +13,15 @@ import { cn } from './cn'
  * El signo se muestra explicito cuando el numero tiene direccion (un
  * movimiento de caja entra o sale). El color acompania, pero el signo es lo
  * que informa: quien no distingue rojo de verde tiene que poder leerlo igual.
+ *
+ * `amount` es una CADENA decimal --`"1234.56"`--, no un numero. Desde la Fase
+ * 3 los importes viajan asi desde el servidor y llegan hasta aca sin pasar por
+ * `Number` ni una sola vez. Ver docs/PHASE3_MONEY_MIGRATION.md.
  */
 
-const FORMATO = new Intl.NumberFormat('es-AR', {
-  style: 'currency',
-  currency: 'ARS',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-
 /** Formatea sin JSX. Para textos, atributos y mensajes. */
-export function formatMoney(amount: number): string {
-  return FORMATO.format(amount)
+export function formatMoney(amount: Monto): string {
+  return formatearMonto(amount)
 }
 
 export type MoneySize = 'sm' | 'md' | 'lg' | 'xl' | 'hero'
@@ -45,8 +43,21 @@ const TONOS: Record<MoneyTone, string> = {
   muted: 'text-ink-muted',
 }
 
+/**
+ * Tono segun el signo del importe.
+ *
+ * Estaba escrito a mano en seis lugares como `x < 0 ? 'out' : 'in'`, y con
+ * importes que ahora son cadenas ese `<` compara alfabeticamente: `"-10.00"`
+ * es menor que `"5.00"` por casualidad, y `"9.00"` es MAYOR que `"10.00"`.
+ * Concentrarlo aca evita seis oportunidades de equivocarse.
+ */
+export function tonoPorSigno(amount: Monto): MoneyTone {
+  if (esCero(amount)) return 'neutral'
+  return esNegativo(amount) ? 'out' : 'in'
+}
+
 export interface MoneyProps {
-  amount: number
+  amount: Monto
   size?: MoneySize
   tone?: MoneyTone
   /** Antepone + o − segun el signo. Para movimientos de caja. */
@@ -61,8 +72,8 @@ export function Money({
   signed = false,
   className,
 }: MoneyProps) {
-  const texto = FORMATO.format(Math.abs(amount))
-  const signo = !signed ? '' : amount < 0 ? '−' : '+'
+  const texto = formatearMonto(absMonto(amount))
+  const signo = !signed ? '' : esNegativo(amount) ? '−' : '+'
 
   return (
     <span

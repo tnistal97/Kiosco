@@ -8,6 +8,7 @@
 
 import { z } from 'zod'
 import { invalid } from '@/server/http/errors'
+import { monto, type Monto } from '@/lib/money'
 
 /** Entero positivo, tambien desde string (parametros de ruta y query). */
 export const idSchema = z.coerce.number().int().positive().max(2_147_483_647)
@@ -29,18 +30,43 @@ export const quantitySchema = z
   .max(100_000, 'Cantidad fuera de rango')
   .finite()
 
-/** Importe de dinero. Positivo, con dos decimales como maximo. */
+/**
+ * Importe de dinero. Positivo, con dos decimales como maximo.
+ *
+ * Acepta cadena o numero y SIEMPRE devuelve una cadena canonica --`"4850.00"`--
+ * para que el servicio la pase a `Decimal` sin volver a tocarla.
+ *
+ * La cadena es la forma preferida y la que manda la aplicacion desde la Fase
+ * 3. El numero se sigue aceptando por dos razones: hay clientes viejos que lo
+ * mandan asi, y rechazarlo obligaria a una migracion coordinada de cliente y
+ * servidor por un cambio que no lo necesita. Un numero de JSON con dos
+ * decimales sobrevive el viaje sin perder nada; lo que rompia era operar con
+ * el, y eso ya no pasa en ningun lado.
+ *
+ * `1e9` de tope: mas que eso no es una venta de almacen, es un dedo apoyado.
+ */
 export const amountSchema = z
-  .number()
-  .finite('Importe invalido')
-  .nonnegative('El importe no puede ser negativo')
-  .max(1_000_000_000, 'Importe fuera de rango')
-  .refine(
-    (n) => Number.isInteger(Math.round(n * 100)) && Math.abs(n * 100 - Math.round(n * 100)) < 1e-6,
-    {
-      message: 'El importe admite como maximo dos decimales',
-    },
-  )
+  .union([z.string(), z.number()])
+  .superRefine((valor, ctx) => {
+    if (typeof valor === 'number' && !Number.isFinite(valor)) {
+      ctx.addIssue({ code: 'custom', message: 'Importe invalido' })
+      return
+    }
+    const texto = typeof valor === 'number' ? valor.toString() : valor.trim()
+    if (!/^\d+(\.\d{1,2})?$/.test(texto)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: /^-/.test(texto)
+          ? 'El importe no puede ser negativo'
+          : 'El importe debe ser un numero con dos decimales como maximo',
+      })
+      return
+    }
+    if (Number(texto) > 1_000_000_000) {
+      ctx.addIssue({ code: 'custom', message: 'Importe fuera de rango' })
+    }
+  })
+  .transform((valor): Monto => monto(valor))
 
 /** Texto corto obligatorio con longitud maxima. */
 export const shortText = (max = 200) => z.string().trim().min(1).max(max)

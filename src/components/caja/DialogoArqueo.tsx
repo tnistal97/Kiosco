@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Dialog, Field, Input, Money, Textarea } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import { esCero, esNegativo, montoDesdeTexto, restarMontos, type Monto } from '@/lib/money'
+import { tonoPorSigno } from '@/components/ui'
 
 /**
  * Arqueo: cuanto hay fisicamente en el cajon.
@@ -24,7 +26,7 @@ export function DialogoArqueo({
   abierto: boolean
   onCerrar: () => void
   onHecho: () => void
-  esperado: number
+  esperado: Monto
 }) {
   const [contado, setContado] = useState('')
   const [notas, setNotas] = useState('')
@@ -39,13 +41,13 @@ export function DialogoArqueo({
     setEnviando(false)
   }, [abierto])
 
-  const importe = useMemo(() => {
-    const n = Number(contado.replace(',', '.'))
-    return Number.isFinite(n) ? n : null
-  }, [contado])
+  // Lo que se tipea se lee como importe exacto, no como `Number`: con
+  // "1234,56" el camino viejo daba 1234.56 en punto flotante y la diferencia
+  // contra el esperado podia salir por un centavo.
+  const importe = useMemo(() => montoDesdeTexto(contado), [contado])
 
-  const diferencia = importe === null ? null : Math.round((importe - esperado) * 100) / 100
-  const valido = importe !== null && importe >= 0 && contado.trim() !== ''
+  const diferencia = importe === null ? null : restarMontos(importe, esperado)
+  const valido = importe !== null && !esNegativo(importe)
 
   async function guardar() {
     if (enviando || !valido) return
@@ -117,17 +119,14 @@ export function DialogoArqueo({
 
         {diferencia !== null && contado.trim() !== '' && (
           <Alert
-            tone={diferencia === 0 ? 'success' : diferencia < 0 ? 'danger' : 'warning'}
-            title={diferencia === 0 ? 'Cuadra' : diferencia < 0 ? 'Falta plata' : 'Sobra plata'}
+            tone={esCero(diferencia) ? 'success' : esNegativo(diferencia) ? 'danger' : 'warning'}
+            title={
+              esCero(diferencia) ? 'Cuadra' : esNegativo(diferencia) ? 'Falta plata' : 'Sobra plata'
+            }
           >
             <span className="flex items-center gap-2">
               Diferencia:
-              <Money
-                amount={diferencia}
-                signed
-                size="sm"
-                tone={diferencia === 0 ? 'neutral' : diferencia < 0 ? 'out' : 'in'}
-              />
+              <Money amount={diferencia} signed size="sm" tone={tonoPorSigno(diferencia)} />
             </span>
           </Alert>
         )}

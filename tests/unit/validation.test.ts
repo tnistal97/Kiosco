@@ -64,6 +64,35 @@ describe('Importes', () => {
     expect(esValido(amountSchema, Number.NaN)).toBe(false)
     expect(esValido(amountSchema, Number.POSITIVE_INFINITY)).toBe(false)
   })
+
+  it('acepta la cadena decimal, que es como los manda la aplicacion', () => {
+    expect(esValido(amountSchema, '0.00')).toBe(true)
+    expect(esValido(amountSchema, '12500')).toBe(true)
+    expect(esValido(amountSchema, '1234.56')).toBe(true)
+  })
+
+  it('normaliza a la forma canonica, venga como venga', () => {
+    // Es lo que despues recibe el servicio para pasarlo a `Decimal`: siempre
+    // la misma forma, con la escala completa.
+    expect(amountSchema.parse('1234.5')).toBe('1234.50')
+    expect(amountSchema.parse('1234')).toBe('1234.00')
+    expect(amountSchema.parse(1234.56)).toBe('1234.56')
+    expect(amountSchema.parse(0)).toBe('0.00')
+  })
+
+  it('rechaza cadenas que no son importes', () => {
+    expect(esValido(amountSchema, '')).toBe(false)
+    expect(esValido(amountSchema, 'mil pesos')).toBe(false)
+    // Coma decimal: la convierte la pantalla, no el servidor. Aceptarla aca
+    // obligaria a adivinar si "1,234" son mil doscientos o uno con coma.
+    expect(esValido(amountSchema, '1,50')).toBe(false)
+    expect(esValido(amountSchema, '10.001')).toBe(false)
+    expect(esValido(amountSchema, '-5.00')).toBe(false)
+  })
+
+  it('rechaza un importe fuera de rango', () => {
+    expect(esValido(amountSchema, '1000000001.00')).toBe(false)
+  })
 })
 
 describe('Identificadores', () => {

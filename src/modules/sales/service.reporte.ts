@@ -12,6 +12,8 @@ import { invalid } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
 import { MAX_DIAS_REPORTE, type ReporteVentasQuery } from './schemas'
+import type { Monto } from '@/lib/money'
+import { aMonto, multiplicar, redondearPesos, sumar, type Dinero } from '@/server/money'
 
 export interface VentaDelReporte {
   id: number
@@ -20,13 +22,13 @@ export interface VentaDelReporte {
   canceledAt: Date | null
   cancelReason: string | null
   paymentMethod: string | null
-  total: number
+  total: Monto
   user: { id: number; name: string }
   canceledBy: { id: number; name: string } | null
   items: Array<{
     id: number
     quantity: number
-    price: number
+    price: Monto
     product: { id: number; name: string }
   }>
 }
@@ -35,11 +37,18 @@ export interface TotalesDelReporte {
   /** Ventas no anuladas del rango completo, no solo de la pagina. */
   ventas: number
   anuladas: number
-  recaudado: number
+  recaudado: Monto
 }
 
-function redondear(n: number): number {
-  return Math.round(n * 100) / 100
+/**
+ * Total de una lista de lineas.
+ *
+ * Cada subtotal se redondea a dos decimales y despues se suman, en ese orden y
+ * no al reves: es como se arma el ticket, y el reporte tiene que dar lo mismo
+ * que el papel que se llevo el cliente.
+ */
+function totalDeLineas(lineas: Array<{ price: Dinero; quantity: number }>): Dinero {
+  return sumar(...lineas.map((l) => redondearPesos(multiplicar(l.price, l.quantity))))
 }
 
 /**
@@ -121,11 +130,12 @@ export async function reporteDeVentas(
     select: { price: true, quantity: true },
   })
 
-  const data: VentaDelReporte[] = ventas.map(({ cashMovements, ...venta }) => ({
+  const data: VentaDelReporte[] = ventas.map(({ cashMovements, items, ...venta }) => ({
     ...venta,
     date: venta.date.toISOString(),
     paymentMethod: cashMovements[0]?.paymentMethod ?? null,
-    total: redondear(venta.items.reduce((s, i) => s + i.price * i.quantity, 0)),
+    items: items.map((i) => ({ ...i, price: aMonto(i.price) })),
+    total: aMonto(totalDeLineas(items)),
   }))
 
   return {
@@ -133,7 +143,7 @@ export async function reporteDeVentas(
     totales: {
       ventas: total - anuladas,
       anuladas,
-      recaudado: redondear(recaudado.reduce((s, i) => s + i.price * i.quantity, 0)),
+      recaudado: aMonto(totalDeLineas(recaudado)),
     },
   }
 }

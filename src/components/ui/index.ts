@@ -23,7 +23,7 @@ export type { BarcodeInputProps, BarcodeStatus } from './BarcodeInput'
 
 export { QuantityInput } from './QuantityInput'
 
-export { Money, formatMoney } from './Money'
+export { Money, formatMoney, tonoPorSigno } from './Money'
 export type { MoneyProps, MoneySize, MoneyTone } from './Money'
 
 export { Badge, StatusBadge, SaleStatusBadge, StockBadge } from './Badge'

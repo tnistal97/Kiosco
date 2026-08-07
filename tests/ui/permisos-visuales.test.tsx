@@ -45,7 +45,7 @@ const PRODUCTO: ProductoDTO = {
   name: 'Yerba mate 1 kg',
   barcode: '7790001000011',
   description: null,
-  price: 4850,
+  price: '4850.00',
   isActive: true,
   category: { id: 1, name: 'Almacen' },
   supplier: null,
@@ -76,7 +76,8 @@ describe('Precio en la ficha del producto', () => {
     const campo = screen.getByLabelText(/^precio/i)
     expect(campo).toBeInstanceOf(HTMLInputElement)
     expect(campo).not.toBeDisabled()
-    expect(campo).toHaveValue('4850')
+    // El campo trae la escala completa: es el mismo texto que devuelve la API.
+    expect(campo).toHaveValue('4850.00')
   })
 
   it('SIN products.price.update el precio no es un campo', async () => {

@@ -124,6 +124,7 @@ describe('La cadena oficial', () => {
       '20260806160000_phase1_audit_context',
       '20260806190000_phase2_product_active',
       '20260806193000_phase2_cash_count_difference',
+      '20260807100000_phase3_decimal_money',
     ])
   })
 
@@ -266,6 +267,43 @@ describe('Instalacion nueva', () => {
     )
   })
 
+  it('deja el dinero en numeric(14,2) y nada en double precision', async () => {
+    const columnas = await consultar<{
+      table_name: string
+      column_name: string
+      data_type: string
+      numeric_precision: number
+      numeric_scale: number
+    }>(
+      url,
+      `SELECT table_name, column_name, data_type, numeric_precision, numeric_scale
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND (table_name, column_name) IN (
+            ('Product','price'), ('SaleItem','price'), ('Branch','currentCash'),
+            ('CashRegisterMovement','amount'),
+            ('CashCount','amount'), ('CashCount','expected'), ('CashCount','difference')
+          )
+        ORDER BY table_name, column_name`,
+    )
+
+    expect(columnas, 'Falta alguna columna monetaria').toHaveLength(7)
+    for (const c of columnas) {
+      expect(c.data_type, `${c.table_name}.${c.column_name}`).toBe('numeric')
+      expect(Number(c.numeric_precision), `${c.table_name}.${c.column_name}`).toBe(14)
+      expect(Number(c.numeric_scale), `${c.table_name}.${c.column_name}`).toBe(2)
+    }
+
+    // Y que no quede ninguna suelta: la busqueda es POR TIPO, no por nombre,
+    // asi que encuentra tambien una columna monetaria que se llame distinto.
+    const sueltas = await consultar<{ table_name: string; column_name: string }>(
+      url,
+      `SELECT table_name, column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND data_type = 'double precision'`,
+    )
+    expect(sueltas.map((c) => `${c.table_name}.${c.column_name}`)).toEqual([])
+  })
+
   it('acepta una anulacion completa', async () => {
     await expect(
       consultar(
@@ -331,6 +369,28 @@ describe('Servidor existente', () => {
         `INSERT INTO "User" (username, name, password, "roleId", "branchId")
            SELECT 'historico', 'Historico', 'x', r.id, b.id FROM "Role" r, "Branch" b`,
       )
+
+      // Dinero con el residuo tipico de haber sumado en punto flotante. Es lo
+      // que de verdad hay en un servidor que llevo dos anios en Float, y lo
+      // que la migracion tiene que dejar limpio.
+      await cliente.query(`INSERT INTO "Category" (name) VALUES ('Almacen')`)
+      await cliente.query(
+        `INSERT INTO "Product" (name, price, "categoryId", "branchId")
+           SELECT 'Yerba con residuo', 4850.000000001, c.id, b.id FROM "Category" c, "Branch" b`,
+      )
+      await cliente.query(
+        `INSERT INTO "Product" (name, price, "categoryId", "branchId")
+           SELECT 'Suma de 0,1 y 0,2', 0.1::float8 + 0.2::float8, c.id, b.id
+             FROM "Category" c, "Branch" b`,
+      )
+      // Un importe que redondea justo en el medio: 1,005 tiene que subir.
+      await cliente.query(
+        `INSERT INTO "Product" (name, price, "categoryId", "branchId")
+           SELECT 'Medio centavo', 1.005, c.id, b.id FROM "Category" c, "Branch" b`,
+      )
+      await cliente.query(
+        `UPDATE "Branch" SET "currentCash" = 71000.00000000003 WHERE name = 'Sucursal Centro'`,
+      )
     } finally {
       await cliente.end()
     }
@@ -357,6 +417,38 @@ describe('Servidor existente', () => {
   it('conserva los datos que ya existian', async () => {
     const filas = await consultar<{ username: string }>(url, `SELECT username FROM "User"`)
     expect(filas.map((f) => f.username)).toContain('historico')
+  })
+
+  it('limpia el residuo de punto flotante sin perder el valor', async () => {
+    // `numeric` sale del driver como cadena, que es justamente lo que hace
+    // util la comprobacion: se compara el texto exacto, no un `Number` que
+    // volveria a introducir el error que estamos midiendo.
+    const productos = await consultar<{ name: string; price: string }>(
+      url,
+      `SELECT name, price::text AS price FROM "Product" ORDER BY id`,
+    )
+    const porNombre = new Map(productos.map((p) => [p.name, p.price]))
+
+    expect(porNombre.get('Yerba con residuo')).toBe('4850.00')
+    // 0.1 + 0.2 valia 0.30000000000000004 y ahora vale 0,30 y punto.
+    expect(porNombre.get('Suma de 0,1 y 0,2')).toBe('0.30')
+    // Medio centavo sube, como en una calculadora. No redondeo al par.
+    expect(porNombre.get('Medio centavo')).toBe('1.01')
+
+    const sucursal = await consultar<{ saldo: string }>(
+      url,
+      `SELECT "currentCash"::text AS saldo FROM "Branch" WHERE name = 'Sucursal Centro'`,
+    )
+    expect(sucursal[0]?.saldo).toBe('71000.00')
+  })
+
+  it('tampoco deja columnas monetarias en double precision', async () => {
+    const sueltas = await consultar<{ table_name: string; column_name: string }>(
+      url,
+      `SELECT table_name, column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND data_type = 'double precision'`,
+    )
+    expect(sueltas.map((c) => `${c.table_name}.${c.column_name}`)).toEqual([])
   })
 
   it('deja el esquema sin diferencias contra schema.prisma', () => {

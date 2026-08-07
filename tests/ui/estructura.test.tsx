@@ -48,7 +48,7 @@ describe('Tablas', () => {
             <TR>
               <TD>Yerba mate 1 kg</TD>
               <TD align="right">
-                <Money amount={4850} />
+                <Money amount="4850.00" />
               </TD>
             </TR>
           </TBody>

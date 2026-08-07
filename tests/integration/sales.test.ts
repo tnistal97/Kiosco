@@ -9,6 +9,8 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { seedFixture, prisma, stockOf, cashOf, type Fixture } from '../helpers/db'
 import { call, sessionCookie } from '../helpers/http'
+import { multiplicarMonto } from '@/lib/money'
+import { aMonto } from '@/server/money'
 
 let fx: Fixture
 
@@ -46,7 +48,7 @@ describe('Caso 6 — el precio lo decide el servidor', () => {
 
     expect(await prisma.saleItem.count()).toBe(0)
     expect(await prisma.sale.count()).toBe(0)
-    expect(await cashOf(fx.branchA.id)).toBe(0)
+    expect(await cashOf(fx.branchA.id)).toBe('0.00')
     expect(await stockOf(fx.branchA.id, fx.productoA.id)).toBe(10)
   })
 
@@ -57,7 +59,7 @@ describe('Caso 6 — el precio lo decide el servidor', () => {
     })
 
     expect(res.status).toBeLessThan(300)
-    expect(await cashOf(fx.branchA.id)).toBe(fx.productoA.price * 3)
+    expect(await cashOf(fx.branchA.id)).toBe(multiplicarMonto(fx.productoA.price, 3))
   })
 
   it('un descuento arbitrario del cliente no se aplica', async () => {
@@ -124,7 +126,7 @@ describe('Caso 8 — una venta fallida no deja cambios parciales', () => {
     expect(await prisma.sale.count()).toBe(0)
     expect(await prisma.saleItem.count()).toBe(0)
     expect(await prisma.cashRegisterMovement.count()).toBe(0)
-    expect(await cashOf(fx.branchA.id)).toBe(0)
+    expect(await cashOf(fx.branchA.id)).toBe('0.00')
   })
 
   it('si un item excede el stock, no se registra nada de la venta', async () => {
@@ -152,7 +154,7 @@ describe('Caso 8 — una venta fallida no deja cambios parciales', () => {
     expect(await stockOf(fx.branchA.id, fx.productoA.id)).toBe(10)
     expect(await stockOf(fx.branchA.id, otro.id)).toBe(1)
     expect(await prisma.sale.count()).toBe(0)
-    expect(await cashOf(fx.branchA.id)).toBe(0)
+    expect(await cashOf(fx.branchA.id)).toBe('0.00')
   })
 })
 
@@ -229,14 +231,16 @@ describe('Una venta correcta deja todo consistente', () => {
     expect(venta.userId).toBe(fx.cajero.id)
     expect(venta.status).toBe('completed')
     expect(venta.items).toHaveLength(1)
-    expect(venta.items[0]?.price).toBe(fx.productoA.price)
+    const linea = venta.items[0]
+    if (!linea) throw new Error('La venta quedo sin lineas')
+    expect(aMonto(linea.price)).toBe(fx.productoA.price)
 
     expect(await stockOf(fx.branchA.id, fx.productoA.id)).toBe(8)
-    expect(await cashOf(fx.branchA.id)).toBe(fx.productoA.price * 2)
+    expect(await cashOf(fx.branchA.id)).toBe(multiplicarMonto(fx.productoA.price, 2))
 
     const mov = await prisma.cashRegisterMovement.findFirstOrThrow()
     expect(mov.type).toBe('sale')
-    expect(mov.amount).toBe(fx.productoA.price * 2)
+    expect(aMonto(mov.amount)).toBe(multiplicarMonto(fx.productoA.price, 2))
     expect(mov.saleId, 'El movimiento de caja no quedo vinculado a la venta').toBe(venta.id)
 
     const logs = await prisma.auditLog.findMany({ where: { tableName: 'Sale' } })
@@ -251,7 +255,7 @@ describe('Una venta correcta deja todo consistente', () => {
     })
 
     expect(res.status).toBeLessThan(300)
-    expect(await cashOf(fx.branchA.id)).toBe(0)
+    expect(await cashOf(fx.branchA.id)).toBe('0.00')
     expect(await prisma.cashRegisterMovement.count()).toBe(1)
   })
 })

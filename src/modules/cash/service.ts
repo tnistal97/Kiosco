@@ -18,11 +18,17 @@ import { conflict, invalid, notFound } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
 import type { ArqueoInput, ListarMovimientosQuery, MovimientoManualInput } from './schemas'
-
-/** Redondeo a dos decimales, en el mismo punto para todos los importes. */
-function redondear(n: number): number {
-  return Math.round(n * 100) / 100
-}
+import type { Monto } from '@/lib/money'
+import {
+  aMonto,
+  dinero,
+  esNegativo,
+  multiplicar,
+  restar,
+  sumar,
+  sumaODefecto,
+  type Dinero,
+} from '@/server/money'
 
 const CAMPOS_MOVIMIENTO = {
   id: true,
@@ -51,7 +57,7 @@ const CAMPOS_MOVIMIENTO = {
 
 export interface MovimientoListado {
   id: number
-  amount: number
+  amount: Monto
   paymentMethod: string
   description: string | null
   date: Date
@@ -61,7 +67,7 @@ export interface MovimientoListado {
   saleItems: Array<{
     id: number
     quantity: number
-    price: number
+    price: Monto
     product: { id: number; name: string }
   }> | null
   user: { id: number; name: string }
@@ -101,18 +107,19 @@ export async function listarMovimientos(
     }),
   ])
 
-  const data = movimientos.map(({ sale, ...mov }) => ({
+  const data = movimientos.map(({ sale, amount, ...mov }) => ({
     ...mov,
+    amount: aMonto(amount),
     saleStatus: sale?.status ?? null,
-    saleItems: sale?.items ?? null,
+    saleItems: sale?.items.map((i) => ({ ...i, price: aMonto(i.price) })) ?? null,
   }))
 
   return paginado(data, total, query)
 }
 
 export interface Saldo {
-  balance: number
-  efectivoHoy: number
+  balance: Monto
+  efectivoHoy: Monto
 }
 
 export async function saldoActual(session: Session): Promise<Saldo> {
@@ -135,14 +142,14 @@ export async function saldoActual(session: Session): Promise<Saldo> {
   })
 
   return {
-    balance: sucursal.currentCash,
-    efectivoHoy: hoy._sum.amount ?? 0,
+    balance: aMonto(sucursal.currentCash),
+    efectivoHoy: aMonto(sumaODefecto(hoy._sum.amount)),
   }
 }
 
 export interface MovimientoCreado {
   id: number
-  amount: number
+  amount: Monto
   paymentMethod: string
   description: string | null
   date: Date
@@ -166,7 +173,8 @@ export async function registrarMovimientoManual(
   }
 
   const signo = input.movementType === 'retiro' ? -1 : 1
-  const importe = redondear(input.amount * signo)
+  // El cliente manda siempre un monto positivo; el signo lo pone el servidor.
+  const importe: Dinero = multiplicar(dinero(input.amount), signo)
 
   return prisma.$transaction(async (tx) => {
     if (input.paymentMethod === 'efectivo') {
@@ -175,9 +183,10 @@ export async function registrarMovimientoManual(
         select: { currentCash: true },
       })
 
-      if (signo < 0 && sucursal.currentCash + importe < 0) {
+      if (signo < 0 && esNegativo(sumar(sucursal.currentCash, importe))) {
         throw conflict(
-          `No se puede retirar ${input.amount}: el saldo en caja es ${sucursal.currentCash}`,
+          `No se puede retirar ${aMonto(dinero(input.amount))}: ` +
+            `el saldo en caja es ${aMonto(sucursal.currentCash)}`,
           { code: 'INSUFFICIENT_CASH' },
         )
       }
@@ -207,6 +216,8 @@ export async function registrarMovimientoManual(
       },
     })
 
+    const salida: MovimientoCreado = { ...creado, amount: aMonto(creado.amount) }
+
     await audit(tx, {
       userId: session.userId,
       branchId: session.branchId,
@@ -214,21 +225,21 @@ export async function registrarMovimientoManual(
       recordId: creado.id,
       action: 'create',
       reason: input.description ?? null,
-      after: creado,
+      after: salida,
       origin: 'POST /api/cash',
     })
 
-    return creado
+    return salida
   })
 }
 
 export interface ArqueoRegistrado {
   id: number
-  amount: number
+  amount: Monto
   date: Date
   notes: string | null
-  esperado: number
-  diferencia: number
+  esperado: Monto
+  diferencia: Monto
 }
 
 /**
@@ -253,9 +264,9 @@ export async function registrarArqueo(
       select: { currentCash: true },
     })
 
-    const esperado = redondear(sucursal.currentCash)
-    const contado = redondear(input.amount)
-    const diferencia = redondear(contado - esperado)
+    const esperado = sucursal.currentCash
+    const contado = dinero(input.amount)
+    const diferencia = restar(contado, esperado)
 
     const arqueo = await tx.cashCount.create({
       data: {
@@ -278,24 +289,29 @@ export async function registrarArqueo(
       action: 'create',
       reason: input.notes ?? null,
       after: {
-        contado,
-        esperado,
-        diferencia,
+        contado: aMonto(contado),
+        esperado: aMonto(esperado),
+        diferencia: aMonto(diferencia),
         motivo: input.notes ?? null,
         branchId: session.branchId,
       },
       origin: 'POST /api/cash/count',
     })
 
-    return { ...arqueo, esperado, diferencia }
+    return {
+      ...arqueo,
+      amount: aMonto(arqueo.amount),
+      esperado: aMonto(esperado),
+      diferencia: aMonto(diferencia),
+    }
   })
 }
 
 export interface ArqueoListado {
   id: number
-  amount: number
-  expected: number
-  difference: number
+  amount: Monto
+  expected: Monto
+  difference: Monto
   date: Date
   notes: string | null
   user: { id: number; name: string }
@@ -309,7 +325,7 @@ export interface ArqueoListado {
  * esta acotado en el esquema.
  */
 export async function listarArqueos(session: Session, limite: number): Promise<ArqueoListado[]> {
-  return prisma.cashCount.findMany({
+  const arqueos = await prisma.cashCount.findMany({
     where: { branchId: session.branchId },
     select: {
       id: true,
@@ -323,4 +339,11 @@ export async function listarArqueos(session: Session, limite: number): Promise<A
     orderBy: { date: 'desc' },
     take: limite,
   })
+
+  return arqueos.map((a) => ({
+    ...a,
+    amount: aMonto(a.amount),
+    expected: aMonto(a.expected),
+    difference: aMonto(a.difference),
+  }))
 }

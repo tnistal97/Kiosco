@@ -19,17 +19,32 @@ import {
   type EditarProductoInput,
   type ListarProductosQuery,
 } from './schemas'
+import type { Monto } from '@/lib/money'
+import { aMonto, dinero, iguales, type Dinero } from '@/server/money'
 
 export interface ProductoListado {
   id: number
   name: string
   barcode: string | null
   description: string | null
-  price: number
+  price: Monto
   isActive: boolean
   category: { id: number; name: string }
   supplier: { id: number; name: string } | null
   totalStock: number
+}
+
+/**
+ * Deja el precio como cadena antes de que el producto salga del modulo.
+ *
+ * Prisma devuelve `Decimal`, que serializado a JSON da `"4850"` --sin la
+ * escala--. La API tiene que entregar siempre `"4850.00"`: el cliente no
+ * deberia tener que adivinar cuantos decimales habia.
+ */
+function conPrecioSerializado<T extends { price: Dinero }>(
+  producto: T,
+): Omit<T, 'price'> & { price: Monto } {
+  return { ...producto, price: aMonto(producto.price) }
 }
 
 const CAMPOS_PRODUCTO = {
@@ -124,7 +139,7 @@ export async function listarProductos(
   ])
 
   const data = productos.map(({ stocks, ...producto }) => ({
-    ...producto,
+    ...conPrecioSerializado(producto),
     totalStock: stocks[0]?.quantity ?? 0,
   }))
 
@@ -137,7 +152,11 @@ export async function obtenerProducto(session: Session, id: number) {
     where: { id: producto.categoryId },
     select: { id: true, name: true },
   })
-  return { ...producto, category: categoria, totalStock: await cantidadDe(id, session.branchId) }
+  return {
+    ...conPrecioSerializado(producto),
+    category: categoria,
+    totalStock: await cantidadDe(id, session.branchId),
+  }
 }
 
 export async function crearProducto(session: Session, input: CrearProductoInput) {
@@ -181,14 +200,14 @@ export async function crearProducto(session: Session, input: CrearProductoInput)
       table: 'Product',
       recordId: producto.id,
       action: 'create',
-      after: { ...producto, stockInicial: stock.quantity },
+      after: { ...conPrecioSerializado(producto), stockInicial: stock.quantity },
       origin: 'POST /api/products',
     })
 
     return { producto, stock }
   })
 
-  return { ...resultado.producto, totalStock: resultado.stock.quantity }
+  return { ...conPrecioSerializado(resultado.producto), totalStock: resultado.stock.quantity }
 }
 
 /**
@@ -211,9 +230,12 @@ export async function crearProducto(session: Session, input: CrearProductoInput)
 export async function editarProducto(session: Session, id: number, input: EditarProductoInput) {
   const antes = await productoDeLaSucursal(session, id)
 
+  // `iguales` y no `!==`: son dos `Decimal`, y comparar objetos por identidad
+  // daria "cambio" siempre. Mandar el mismo precio no es un intento de
+  // saltear el permiso.
   if (
     input.price !== undefined &&
-    input.price !== antes.price &&
+    !iguales(dinero(input.price), antes.price) &&
     !session.permissions.has('products.price.update')
   ) {
     throw forbidden('No tiene permiso para cambiar el precio de un producto')
@@ -259,8 +281,8 @@ export async function editarProducto(session: Session, id: number, input: Editar
       table: 'Product',
       recordId: id,
       action: 'update',
-      before: antes,
-      after: despues,
+      before: conPrecioSerializado(antes),
+      after: conPrecioSerializado(despues),
       origin: 'PUT /api/products/:id',
     })
 
@@ -309,7 +331,7 @@ export async function editarProducto(session: Session, id: number, input: Editar
       cantidad = actual?.quantity ?? 0
     }
 
-    return { ...despues, totalStock: cantidad }
+    return { ...conPrecioSerializado(despues), totalStock: cantidad }
   })
 }
 

@@ -12,6 +12,7 @@ import {
   ErrorState,
   MetricCard,
   Money,
+  tonoPorSigno,
   Pagination,
   Select,
   SkeletonRows,
@@ -29,6 +30,7 @@ import { MovimientoRow, fechaCorta, medioLegible, tipoDe } from '@/components/ca
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { notificarCambioDeCaja } from '@/components/shell/EstadoCaja'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import { CERO, esCero, type Monto } from '@/lib/money'
 import {
   parseArqueos,
   parseMovimientos,
@@ -60,8 +62,8 @@ export default function CajaPage() {
   const puedeMover = usePermiso('cash.movement.create')
   const puedeArquear = usePermiso('cash.count.create')
 
-  const [saldo, setSaldo] = useState<number | null>(null)
-  const [efectivoHoy, setEfectivoHoy] = useState(0)
+  const [saldo, setSaldo] = useState<Monto | null>(null)
+  const [efectivoHoy, setEfectivoHoy] = useState<Monto>(CERO)
   const [movimientos, setMovimientos] = useState<MovimientoDTO[]>([])
   const [arqueos, setArqueos] = useState<ArqueoDTO[]>([])
   const [pagina, setPagina] = useState(1)
@@ -129,7 +131,7 @@ export default function CajaPage() {
         />
         <MetricCard
           label="Movimiento de hoy"
-          value={<Money amount={efectivoHoy} size="lg" signed tone={efectivoHoy < 0 ? 'out' : 'in'} />} // prettier-ignore
+          value={<Money amount={efectivoHoy} size="lg" signed tone={tonoPorSigno(efectivoHoy)} />}
           detail="Solo efectivo"
         />
         <MetricCard
@@ -140,13 +142,13 @@ export default function CajaPage() {
                 amount={ultimoArqueo.difference}
                 size="lg"
                 signed
-                tone={ultimoArqueo.difference === 0 ? 'neutral' : ultimoArqueo.difference < 0 ? 'out' : 'in'} // prettier-ignore
+                tone={tonoPorSigno(ultimoArqueo.difference)}
               />
             ) : (
               '—'
             )
           }
-          tone={!ultimoArqueo ? 'neutral' : ultimoArqueo.difference === 0 ? 'success' : 'warning'}
+          tone={!ultimoArqueo ? 'neutral' : esCero(ultimoArqueo.difference) ? 'success' : 'warning'}
           detail={
             ultimoArqueo
               ? `${fechaCorta(ultimoArqueo.date)} · ${ultimoArqueo.user.name}`
@@ -273,12 +275,7 @@ export default function CajaPage() {
                             {fechaCorta(m.date)} · {medioLegible(m.paymentMethod)} · {m.user.name}
                           </p>
                         </div>
-                        <Money
-                          amount={m.amount}
-                          signed
-                          tone={m.amount < 0 ? 'out' : 'in'}
-                          size="md"
-                        />
+                        <Money amount={m.amount} signed tone={tonoPorSigno(m.amount)} size="md" />
                       </div>
                     </CardListItem>
                   )
@@ -311,12 +308,7 @@ export default function CajaPage() {
                   <span className="text-ink-muted">
                     contó <Money amount={a.amount} size="sm" tone="muted" />
                   </span>
-                  <Money
-                    amount={a.difference}
-                    signed
-                    size="md"
-                    tone={a.difference === 0 ? 'neutral' : a.difference < 0 ? 'out' : 'in'}
-                  />
+                  <Money amount={a.difference} signed size="md" tone={tonoPorSigno(a.difference)} />
                 </span>
                 {a.notes && (
                   <p className="w-full text-xs text-ink-faint sm:w-auto sm:basis-full">{a.notes}</p>
@@ -342,7 +334,7 @@ export default function CajaPage() {
 
       <DialogoArqueo
         abierto={arqueoAbierto}
-        esperado={saldo ?? 0}
+        esperado={saldo ?? CERO}
         onCerrar={() => {
           setArqueoAbierto(false)
         }}
