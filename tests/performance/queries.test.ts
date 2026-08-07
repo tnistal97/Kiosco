@@ -91,6 +91,70 @@ async function registrarVentas(n: number): Promise<void> {
   }
 }
 
+describe('Una venta no hace mas consultas por producto de las que declara', () => {
+  /**
+   * El libro de inventario agrego escrituras a la venta: por cada linea, un
+   * INSERT que asegura la fila de stock, el UPDATE que aplica el delta y la
+   * fila del movimiento. Antes era un solo UPDATE.
+   *
+   * Lo que NO puede pasar es que crezca mas que linealmente, o que aparezca
+   * una lectura por linea escondida --el N+1 clasico--. Se mide con una y con
+   * cuatro lineas y se compara la pendiente.
+   */
+  async function consultasDeUnaVenta(lineas: number): Promise<number> {
+    const ids: number[] = []
+    for (let i = 0; i < lineas; i++) {
+      const p = await prisma.product.create({
+        data: {
+          name: `Medido ${String(i)}`,
+          price: 1000,
+          categoryId: fx.categoryId,
+          branchId: fx.branchA.id,
+        },
+      })
+      await prisma.branchStock.create({
+        data: { branchId: fx.branchA.id, productId: p.id, quantity: 100 },
+      })
+      ids.push(p.id)
+    }
+
+    const { POST } = await import('@/app/api/sales/route')
+    const cookie = await sessionCookie(fx.cajero)
+
+    const { resultado, consultas: n } = await contando(() =>
+      call(POST, '/api/sales', {
+        method: 'POST',
+        cookie,
+        body: {
+          items: ids.map((id) => ({ productId: id, quantity: 1 })),
+          paymentMethod: 'efectivo',
+        },
+      }),
+    )
+
+    if (resultado.status >= 300) throw new Error(`La venta medida fallo: ${resultado.text}`)
+    return n
+  }
+
+  it('el costo por linea es constante: no hay una lectura escondida por producto', async () => {
+    const unaLinea = await consultasDeUnaVenta(1)
+    const cuatroLineas = await consultasDeUnaVenta(4)
+
+    const porLinea = (cuatroLineas - unaLinea) / 3
+
+    expect(
+      porLinea,
+      `Cada linea de venta cuesta ${String(porLinea)} consultas. ` +
+        'El libro necesita tres --asegurar la fila de stock, aplicar el delta, escribir el ' +
+        'movimiento--; mas que eso significa que se cola una lectura por producto.',
+    ).toBeLessThanOrEqual(3)
+
+    // Y el costo fijo tampoco puede dispararse: turno, productos, venta,
+    // pagos, movimiento de caja, saldo de sucursal y auditoria.
+    expect(unaLinea - porLinea, 'el costo fijo de una venta crecio').toBeLessThanOrEqual(15)
+  })
+})
+
 describe('Los listados no crecen con la cantidad de datos', () => {
   it('el catalogo devuelve una pagina, no el catalogo entero', async () => {
     await crearProductos(60)

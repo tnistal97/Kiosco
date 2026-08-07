@@ -132,6 +132,31 @@ test.describe('accesibilidad automatizada', () => {
     expect(detalle(violations)).toBe('sin faltas')
   })
 
+  test('/stock/movimientos no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/stock/movimientos')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+    // Con la tabla cargada: los filtros vacios no ejercitan las celdas, que es
+    // donde vive la mitad del riesgo de una pantalla de historial.
+    await expect(page.getByRole('table')).toBeVisible()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el dialogo de ajuste de stock no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/stock')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+
+    await page.getByRole('button', { name: 'Ajustar' }).first().click()
+    const dialogo = page.getByRole('dialog')
+    await expect(dialogo.getByLabel(/qué pasó/i)).toBeVisible()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
   test('/usuarios no tiene faltas', async ({ page }) => {
     await entrar(page, 'duenio')
     await page.goto('/usuarios')
