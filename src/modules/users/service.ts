@@ -11,11 +11,11 @@
 import bcrypt from 'bcrypt'
 import { prisma } from '@/lib/prisma'
 import { audit } from '@/server/audit/audit'
-import { conflict, invalid } from '@/server/http/errors'
+import { conflict, invalid, notFound } from '@/server/http/errors'
 import { knownRoles } from '@/server/authz/permissions'
 import type { Session } from '@/server/auth/session'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
-import type { CrearUsuarioInput, ListarUsuariosQuery } from './schemas'
+import type { CrearUsuarioInput, EditarUsuarioInput, ListarUsuariosQuery } from './schemas'
 
 /** Coste de bcrypt. 12 rondas: ~250 ms por hash en el hardware actual. */
 const BCRYPT_ROUNDS = 12
@@ -133,5 +133,87 @@ export async function crearUsuario(
     })
 
     return user
+  })
+}
+
+/**
+ * Modificacion de un usuario del personal.
+ *
+ * Tres barreras, y las tres importan:
+ *
+ *  1. Solo usuarios de la misma sucursal. Un administrador no toca el
+ *     personal de otro local.
+ *  2. Nadie se edita a si mismo por aca. Sin esto, el unico administrador
+ *     podria darse de baja o bajarse el rol y dejar el sistema sin nadie que
+ *     pueda administrarlo.
+ *  3. Dar de baja incrementa `sessionVersion`, con lo que las sesiones
+ *     abiertas de esa persona dejan de valer en el acto. Sin eso, quien tiene
+ *     la pestania abierta sigue operando hasta que venza el token.
+ */
+export async function editarUsuario(
+  session: Session,
+  id: number,
+  input: EditarUsuarioInput,
+): Promise<UsuarioPublico> {
+  if (id === session.userId) {
+    throw conflict(
+      'No podes modificar tu propio usuario desde esta pantalla. Pediselo a otro administrador.',
+    )
+  }
+
+  const antes = await prisma.user.findFirst({
+    where: { id, branchId: session.branchId },
+    select: { ...CAMPOS_PUBLICOS, sessionVersion: true },
+  })
+  if (!antes) throw notFound('Usuario no encontrado')
+
+  if (input.roleId !== undefined) {
+    const rol = await prisma.role.findUnique({ where: { id: input.roleId } })
+    if (!rol) throw invalid('El rol indicado no existe')
+    if (!knownRoles().includes(rol.name)) {
+      throw invalid(
+        `El rol "${rol.name}" no tiene permisos definidos. Roles validos: ${knownRoles().join(', ')}`,
+      )
+    }
+  }
+
+  // Dar de baja revoca; volver a habilitar no toca la version.
+  const revoca = input.isActive === false && antes.isActive
+
+  return prisma.$transaction(async (tx) => {
+    const despues = await tx.user.update({
+      where: { id },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.roleId !== undefined ? { roleId: input.roleId } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        ...(revoca ? { sessionVersion: { increment: 1 } } : {}),
+      },
+      select: CAMPOS_PUBLICOS,
+    })
+
+    await audit(tx, {
+      userId: session.userId,
+      branchId: session.branchId,
+      table: 'User',
+      recordId: id,
+      action: 'update',
+      // Ni hash ni sessionVersion: la bitacora guarda que cambio, no como
+      // esta hecha la sesion.
+      before: {
+        name: antes.name,
+        rol: antes.role.name,
+        isActive: antes.isActive,
+      },
+      after: {
+        name: despues.name,
+        rol: despues.role.name,
+        isActive: despues.isActive,
+        ...(revoca ? { sesionesRevocadas: true } : {}),
+      },
+      origin: 'PUT /api/users/:id',
+    })
+
+    return despues
   })
 }
