@@ -1,292 +1,355 @@
-// src/app/caja/page.tsx
 'use client'
-import toast from 'react-hot-toast'
-import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { useProducts, Product } from '@/hooks/useProducts'
-import { useCartStore } from '@/store/cart'
+
+import { useCallback, useEffect, useState } from 'react'
+import {
+  Alert,
+  Button,
+  Card,
+  CardHeader,
+  CardList,
+  CardListItem,
+  EmptyState,
+  ErrorState,
+  MetricCard,
+  Money,
+  Pagination,
+  Select,
+  SkeletonRows,
+  TBody,
+  TH,
+  THead,
+  TR,
+  Table,
+  TableWrap,
+  aviso,
+} from '@/components/ui'
+import { DialogoArqueo } from '@/components/caja/DialogoArqueo'
+import { DialogoMovimiento } from '@/components/caja/DialogoMovimiento'
+import { MovimientoRow, fechaCorta, medioLegible, tipoDe } from '@/components/caja/MovimientoRow'
+import { usePermiso } from '@/components/shell/SessionProvider'
+import { notificarCambioDeCaja } from '@/components/shell/EstadoCaja'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import {
+  parseArqueos,
+  parseMovimientos,
+  parseSaldo,
+  type ArqueoDTO,
+  type MovimientoDTO,
+} from '@/modules/cash/dto'
+import { esObjeto, numero } from '@/lib/api-client'
 
-import SearchBar from '@/components/caja/SearchBar'
-import ProductTable from '@/components/caja/ProductTable'
-import CartSidebar from '@/components/caja/CartSidebar'
-import MobileCartModal from '@/components/caja/MobileCartModal'
-import CartButton from '@/components/caja/CartButton'
-import NewProductModal from '@/components/caja/NewProductModal'
-import ConfirmSaleModal from '@/components/caja/ConfirmSaleModal'
+const POR_PAGINA = 25
 
-export default function CashRegisterPage() {
-  // La busqueda la resuelve el servidor: la caja ya no descarga el catalogo
-  // entero cada vez que se abre la pantalla. El escaneo sigue funcionando
-  // igual, porque el termino buscado se compara tambien contra el codigo de
-  // barras del lado del servidor.
-  const {
-    products,
-    fetchProducts,
-    searchTerm: search,
-    setSearchTerm: setSearch,
-    buscarPorCodigo,
-    isLoading,
-    error,
-  } = useProducts({ enServidor: true })
-  const [isCartOpenMobile, setIsCartOpenMobile] = useState(false)
+interface Pagina {
+  movimientos: MovimientoDTO[]
+  total: number
+  totalPages: number
+}
 
-  // Union type para método de pago
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<
-    'efectivo' | 'tarjeta' | 'mercado_pago'
-  >('efectivo')
+function parsePaginaMovimientos(raw: unknown): Pagina {
+  const movimientos = parseMovimientos(raw)
+  const p = esObjeto(raw) && esObjeto(raw.pagination) ? raw.pagination : null
+  return {
+    movimientos,
+    total: p ? numero(p.total) : movimientos.length,
+    totalPages: p ? Math.max(1, numero(p.totalPages)) : 1,
+  }
+}
 
-  // Modal “nuevo producto”
-  const [isNewProductModalOpen, setIsNewProductModalOpen] = useState(false)
-  const [newBarcode, setNewBarcode] = useState('')
+export default function CajaPage() {
+  const puedeMover = usePermiso('cash.movement.create')
+  const puedeArquear = usePermiso('cash.count.create')
 
-  // Modal “confirmar venta”
-  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false)
+  const [saldo, setSaldo] = useState<number | null>(null)
+  const [efectivoHoy, setEfectivoHoy] = useState(0)
+  const [movimientos, setMovimientos] = useState<MovimientoDTO[]>([])
+  const [arqueos, setArqueos] = useState<ArqueoDTO[]>([])
+  const [pagina, setPagina] = useState(1)
+  const [paginas, setPaginas] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [dias, setDias] = useState(2)
+  const [tipo, setTipo] = useState('todos')
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const items = useCartStore((s) => s.items)
-  const total = useMemo(
-    () => items.reduce((acc, i) => acc + i.product.price * i.quantity, 0),
-    [items],
-  )
+  const [movimientoAbierto, setMovimientoAbierto] = useState(false)
+  const [arqueoAbierto, setArqueoAbierto] = useState(false)
 
-  // El filtrado ya lo hizo el servidor. Se conserva un filtro local sobre lo
-  // recibido para que la lista responda de inmediato a cada tecla, sin
-  // esperar la ida y vuelta: son los mismos criterios, aplicados dos veces.
-  const filteredProducts = useMemo(() => {
-    const term = search.trim().toLowerCase()
-    if (!term) return products
-    return products.filter(
-      (p: Product) =>
-        p.name.toLowerCase().includes(term) || (p.barcode ?? '').toLowerCase().includes(term),
-    )
-  }, [products, search])
-
-  // Mapa productId → cantidad en carrito
-  const quantitiesMap = useMemo(() => {
-    const map: Record<number, number> = {}
-    items.forEach((item) => {
-      map[item.product.id] = item.quantity
-    })
-    return map
-  }, [items])
-
-  // Lógica de “confirmSale”: la llamaremos solo desde el modal de confirmación
-  async function confirmSale() {
+  const cargar = useCallback(async () => {
+    setCargando(true)
+    setError(null)
     try {
-      // 1️⃣ Validar que los productos sigan existiendo
-      const allProductIds = new Set(products.map((p) => p.id))
-      for (const item of items) {
-        if (!allProductIds.has(item.product.id)) {
-          throw new Error(`El producto con ID ${item.product.id} ya no existe.`)
-        }
-      }
-
-      // 2️⃣ Payload
-      //
-      // No se manda el precio. El servidor lo toma del catalogo y rechaza la
-      // peticion si el navegador intenta enviarlo. Antes se mandaba, y se
-      // guardaba tal cual: bastaba con editar la peticion para llevarse un
-      // producto de $12.500 por $1.
-      const body = {
-        items: items.map((item) => ({
-          productId: item.product.id,
-          quantity: item.quantity,
-        })),
-        paymentMethod: selectedPaymentMethod,
-      }
-
-      // 3️⃣ Llamada a /api/sales
-      await apiRequest('/api/sales', { method: 'POST', body, parse: () => null })
-
-      // 4️⃣ Notificación de éxito
-      toast.success(`✅ Venta registrada correctamente!`, {
-        duration: 5000,
-        style: {
-          background: '#1f2937', // bg-gray-800
-          color: '#f9fafb', // texto claro
-          fontSize: '1.2rem', // aún más grande
-          padding: '1rem 1.5rem',
-          border: '2px solid #374151', // border-gray-700
-          borderRadius: '0.75rem',
-        },
-        iconTheme: {
-          primary: '#22c55e', // green-500
-          secondary: '#1f2937',
-        },
+      const params = new URLSearchParams({
+        page: String(pagina),
+        pageSize: String(POR_PAGINA),
+        dias: String(dias),
+        tipo,
       })
-
-      // Limpiar carrito y búsqueda
-      useCartStore.getState().clearCart()
-      void fetchProducts()
-      setSearch('')
-      setIsConfirmModalOpen(false)
-    } catch (error) {
-      console.error(error)
-      toast.error(mensajeDeError(error, 'Error al procesar la venta'), {
-        duration: 6000,
-        style: {
-          background: '#991b1b', // bg-red-800
-          color: '#f9fafb', // texto claro
-          fontSize: '1.2rem', // más grande
-          padding: '1rem 1.5rem',
-          border: '2px solid #7f1d1d', // border-red-900
-          borderRadius: '0.75rem',
-        },
-        iconTheme: {
-          primary: '#f87171', // red-400
-          secondary: '#991b1b',
-        },
-      })
+      const [pag, s, arq] = await Promise.all([
+        apiRequest(`/api/cash?${params.toString()}`, { parse: parsePaginaMovimientos }),
+        apiRequest('/api/cash/balance', { parse: parseSaldo }),
+        apiRequest('/api/cash/count?limite=5', { parse: parseArqueos }),
+      ])
+      setMovimientos(pag.movimientos)
+      setTotal(pag.total)
+      setPaginas(pag.totalPages)
+      setSaldo(s.balance)
+      setEfectivoHoy(s.efectivoHoy)
+      setArqueos(arq)
+    } catch (err) {
+      setError(mensajeDeError(err, 'No se pudieron cargar los movimientos.'))
+    } finally {
+      setCargando(false)
     }
-  }
+  }, [pagina, dias, tipo])
 
-  // Vaciar carrito
-  const clearCart = () => {
-    useCartStore.getState().clearCart()
-  }
-
-  // Barcode USB support: “tecla → buffer → Enter → setSearch”
-  // Si no existe, se abre modal de “nuevo producto”
-  const barcodeBuffer = useRef('')
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout
+    void cargar()
+  }, [cargar])
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        const code = barcodeBuffer.current
-        if (code) {
-          setSearch(code)
-          // La busqueda va contra el servidor, no contra la lista cargada:
-          // el producto escaneado puede no estar en la pagina actual.
-          void buscarPorCodigo(code).then((encontrado) => {
-            if (encontrado) useCartStore.getState().addToCart(encontrado)
-            else {
-              setNewBarcode(code)
-              setIsNewProductModalOpen(true)
-            }
-          })
-          barcodeBuffer.current = ''
-        }
-        e.preventDefault()
-        return
-      }
-      if (/^[0-9a-zA-Z]+$/.test(e.key)) {
-        barcodeBuffer.current += e.key
-        clearTimeout(timeoutId)
-        timeoutId = setTimeout(() => {
-          barcodeBuffer.current = ''
-        }, 200)
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => {
-      clearTimeout(timeoutId)
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [buscarPorCodigo, setSearch])
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg text-center w-full max-w-md">
-          <p className="text-xl font-medium text-gray-900 dark:text-gray-100 mb-4">⚠️ {error}</p>
-          <button
-            onClick={() => void fetchProducts()}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-base transition focus:outline-none focus:ring-2 focus:ring-blue-400"
-          >
-            Reintentar
-          </button>
-        </div>
-      </div>
-    )
-  }
+  const ultimoArqueo = arqueos[0]
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-gray-100 dark:bg-gray-900 pt-16">
-      {/* ─── IZQUIERDA: SearchBar + ProductTable ─────────────────────────── */}
-      <main className="flex flex-col flex-1 bg-gray-100 dark:bg-gray-900">
-        <header className="sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 py-3 px-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
-            {/* SearchBar, siempre enfocado */}
-            <SearchBar
-              searchValue={search}
-              setSearchValue={setSearch}
-              disabled={isLoading}
-              onEnter={(value) => {
-                const found = products.find((p) => p.barcode?.toLowerCase() === value.toLowerCase())
-                if (found) {
-                  useCartStore.getState().addToCart(found)
-                } else {
-                  setNewBarcode(value)
-                  setIsNewProductModalOpen(true)
-                }
-              }}
-            />
+    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-5">
+      {/*
+        Advertencia visible, no una nota al pie: el numero grande de arriba no
+        es el de un turno. Esconderlo haria que un encargado creyera que la
+        caja "cierra" cuando en realidad esta mirando un acumulado.
+      */}
+      <Alert tone="warning" title="Este saldo es acumulado, no el de un turno">
+        Suma todo el efectivo de la sucursal desde que se instaló el sistema. Los turnos de caja,
+        con apertura y cierre, llegan en la Fase&nbsp;3. Mientras tanto, el arqueo compara contra
+        este total.
+      </Alert>
 
-            {/* Selector de método de pago */}
-            <div className="flex items-center space-x-4">
-              <select
-                value={selectedPaymentMethod}
-                onChange={(e) =>
-                  setSelectedPaymentMethod(
-                    e.target.value as 'efectivo' | 'tarjeta' | 'mercado_pago',
-                  )
-                }
-                className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <MetricCard
+          label="Saldo en efectivo"
+          value={saldo === null ? '—' : <Money amount={saldo} size="lg" />}
+        />
+        <MetricCard
+          label="Movimiento de hoy"
+          value={<Money amount={efectivoHoy} size="lg" signed tone={efectivoHoy < 0 ? 'out' : 'in'} />} // prettier-ignore
+          detail="Solo efectivo"
+        />
+        <MetricCard
+          label="Último arqueo"
+          value={
+            ultimoArqueo ? (
+              <Money
+                amount={ultimoArqueo.difference}
+                size="lg"
+                signed
+                tone={ultimoArqueo.difference === 0 ? 'neutral' : ultimoArqueo.difference < 0 ? 'out' : 'in'} // prettier-ignore
+              />
+            ) : (
+              '—'
+            )
+          }
+          tone={!ultimoArqueo ? 'neutral' : ultimoArqueo.difference === 0 ? 'success' : 'warning'}
+          detail={
+            ultimoArqueo
+              ? `${fechaCorta(ultimoArqueo.date)} · ${ultimoArqueo.user.name}`
+              : 'Todavía no se hizo ninguno'
+          }
+        />
+      </div>
+
+      <Card padded={false}>
+        <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
+          <Select
+            aria-label="Rango de días"
+            value={String(dias)}
+            onChange={(e) => {
+              setDias(Number(e.target.value))
+              setPagina(1)
+            }}
+            className="w-auto"
+          >
+            <option value="1">Hoy</option>
+            <option value="2">Ayer y hoy</option>
+            <option value="7">Última semana</option>
+            <option value="30">Último mes</option>
+          </Select>
+
+          <Select
+            aria-label="Tipo de movimiento"
+            value={tipo}
+            onChange={(e) => {
+              setTipo(e.target.value)
+              setPagina(1)
+            }}
+            className="w-auto"
+          >
+            <option value="todos">Todos los tipos</option>
+            <option value="sale">Ventas</option>
+            <option value="sale_cancel">Anulaciones</option>
+            <option value="ingreso">Ingresos</option>
+            <option value="retiro">Retiros</option>
+            <option value="deposito">Depósitos</option>
+          </Select>
+
+          <div className="ml-auto flex gap-2">
+            {puedeMover && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setMovimientoAbierto(true)
+                }}
               >
-                <option value="efectivo">💵 Efectivo</option>
-                <option value="tarjeta">💳 Tarjeta</option>
-                <option value="mercado_pago">🏦 Mercado Pago</option>
-              </select>
-
-              {/* Botón de carrito (móvil) */}
-              <CartButton onClick={() => setIsCartOpenMobile(true)} total={total} />
-            </div>
-          </div>
-        </header>
-
-        {/* ─── Listado productos (scrollable) ───────────────────────────────── */}
-        <div className="flex-1 overflow-auto p-6">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow p-4">
-            <ProductTable
-              filteredProducts={filteredProducts}
-              quantitiesMap={quantitiesMap}
-              isLoading={isLoading}
-            />
+                Nuevo movimiento
+              </Button>
+            )}
+            {puedeArquear && (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setArqueoAbierto(true)
+                }}
+              >
+                Hacer arqueo
+              </Button>
+            )}
           </div>
         </div>
-      </main>
 
-      {/* ─── SIDEBAR fijo en desktop ─────────────────────────────────────────── */}
-      <CartSidebar onConfirm={() => setIsConfirmModalOpen(true)} onClear={clearCart} />
+        <div className="p-3">
+          {error ? (
+            <ErrorState description={error} onRetry={() => void cargar()} />
+          ) : cargando ? (
+            <SkeletonRows rows={6} />
+          ) : movimientos.length === 0 ? (
+            <EmptyState
+              title="No hay movimientos en este rango"
+              description="Probá con un rango más amplio o quitá el filtro de tipo."
+            />
+          ) : (
+            <>
+              {/* Escritorio: tabla. */}
+              <div className="hidden md:block">
+                <TableWrap className="border-0">
+                  <Table caption="Movimientos de caja">
+                    <THead>
+                      <TR>
+                        <TH>Tipo</TH>
+                        <TH>Fecha</TH>
+                        <TH>Detalle</TH>
+                        <TH>Medio</TH>
+                        <TH>Usuario</TH>
+                        <TH align="right">Importe</TH>
+                        <TH align="center">
+                          <span className="sr-only">Ver detalle</span>
+                        </TH>
+                      </TR>
+                    </THead>
+                    <TBody>
+                      {movimientos.map((m) => (
+                        <MovimientoRow key={m.id} movimiento={m} />
+                      ))}
+                    </TBody>
+                  </Table>
+                </TableWrap>
+              </div>
 
-      {/* ─── MODAL carrito (móvil) ─────────────────────────────────────────── */}
-      <MobileCartModal
-        isOpen={isCartOpenMobile}
-        onClose={() => setIsCartOpenMobile(false)}
-        onConfirm={() => setIsConfirmModalOpen(true)}
-        onClear={clearCart}
-        paymentMethod={selectedPaymentMethod}
-        setPaymentMethod={setSelectedPaymentMethod}
-        isConfirming={false}
+              {/* Móvil: tarjetas. Una tabla de siete columnas a 375 px no se
+                  arregla achicando la fuente. */}
+              <CardList className="md:hidden">
+                {movimientos.map((m) => {
+                  const t = tipoDe(m.type)
+                  return (
+                    <CardListItem key={m.id}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-ink">
+                            <span aria-hidden="true" className="mr-1.5">
+                              {t.glifo}
+                            </span>
+                            {t.etiqueta}
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-ink-muted">
+                            {m.description ?? '—'}
+                          </p>
+                          <p className="mt-1 text-xs text-ink-faint">
+                            {fechaCorta(m.date)} · {medioLegible(m.paymentMethod)} · {m.user.name}
+                          </p>
+                        </div>
+                        <Money
+                          amount={m.amount}
+                          signed
+                          tone={m.amount < 0 ? 'out' : 'in'}
+                          size="md"
+                        />
+                      </div>
+                    </CardListItem>
+                  )
+                })}
+              </CardList>
+
+              <Pagination
+                className="mt-4"
+                page={pagina}
+                pageSize={POR_PAGINA}
+                total={total}
+                totalPages={paginas}
+                onPageChange={setPagina}
+                disabled={cargando}
+              />
+            </>
+          )}
+        </div>
+      </Card>
+
+      {arqueos.length > 0 && (
+        <Card>
+          <CardHeader title="Últimos arqueos" description="Lo contado contra lo esperado." />
+          <ul className="flex flex-col divide-y divide-line">
+            {arqueos.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5">
+                <span className="w-28 shrink-0 text-sm text-ink-muted">{fechaCorta(a.date)}</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">{a.user.name}</span>
+                <span className="flex items-center gap-3 text-sm">
+                  <span className="text-ink-muted">
+                    contó <Money amount={a.amount} size="sm" tone="muted" />
+                  </span>
+                  <Money
+                    amount={a.difference}
+                    signed
+                    size="md"
+                    tone={a.difference === 0 ? 'neutral' : a.difference < 0 ? 'out' : 'in'}
+                  />
+                </span>
+                {a.notes && (
+                  <p className="w-full text-xs text-ink-faint sm:w-auto sm:basis-full">{a.notes}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      <DialogoMovimiento
+        abierto={movimientoAbierto}
+        onCerrar={() => {
+          setMovimientoAbierto(false)
+        }}
+        onHecho={() => {
+          setMovimientoAbierto(false)
+          aviso.ok('Movimiento registrado.')
+          notificarCambioDeCaja()
+          void cargar()
+        }}
       />
 
-      {/* ─── MODAL “Confirmar Venta” ────────────────────────────────────────── */}
-      <ConfirmSaleModal
-        isOpen={isConfirmModalOpen}
-        onClose={() => setIsConfirmModalOpen(false)}
-        onConfirm={() => void confirmSale()}
-        paymentMethod={selectedPaymentMethod}
-      />
-
-      {/* ─── MODAL “Nuevo Producto” ─────────────────────────────────────────── */}
-      <NewProductModal
-        isOpen={isNewProductModalOpen}
-        barcode={newBarcode}
-        onClose={() => setIsNewProductModalOpen(false)}
-        onCreated={() => {
-          void fetchProducts()
-          setIsNewProductModalOpen(false)
+      <DialogoArqueo
+        abierto={arqueoAbierto}
+        esperado={saldo ?? 0}
+        onCerrar={() => {
+          setArqueoAbierto(false)
+        }}
+        onHecho={() => {
+          setArqueoAbierto(false)
+          aviso.ok('Arqueo registrado.')
+          void cargar()
         }}
       />
     </div>
