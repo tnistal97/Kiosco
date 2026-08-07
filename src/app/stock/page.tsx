@@ -212,7 +212,11 @@ export default function StockPage() {
                           </TD>
                           <TD className="text-ink-muted">{p.category.name}</TD>
                           <TD>
-                            <StockBadge quantity={p.totalStock} minimum={p.minimumStock} />
+                            <StockBadge
+                              quantity={p.totalStock}
+                              minimum={p.minimumStock}
+                              unit={p.saleUnit}
+                            />
                           </TD>
                           <TD align="right">
                             <Money amount={p.price} size="sm" tone="muted" />
@@ -245,7 +249,11 @@ export default function StockPage() {
                         <p className="truncate text-sm font-medium text-ink">{p.name}</p>
                         <p className="mt-0.5 text-xs text-ink-faint">{p.category.name}</p>
                         <div className="mt-2">
-                          <StockBadge quantity={p.totalStock} minimum={p.minimumStock} />
+                          <StockBadge
+                            quantity={p.totalStock}
+                            minimum={p.minimumStock}
+                            unit={p.saleUnit}
+                          />
                         </div>
                       </div>
                       {puedeAjustar && (

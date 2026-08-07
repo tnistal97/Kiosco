@@ -91,7 +91,7 @@ test.describe('Ajustar stock', () => {
     await expect(dialogo).toBeAttached()
 
     // Sin motivo no se puede guardar.
-    await dialogo.getByLabel(/cantidad/i).fill('-3')
+    await dialogo.getByLabel(/^cantidad en /i).fill('-3')
     await expect(dialogo.getByRole('button', { name: /guardar ajuste/i })).toBeDisabled()
 
     await dialogo.getByLabel('Motivo').fill('Rotura de mercadería')

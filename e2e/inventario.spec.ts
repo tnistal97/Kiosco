@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { PRODUCTOS, entrar, escanear, salir } from './ayudantes'
+import { PRODUCTOS, entrar, escanear, leerMonto, salir } from './ayudantes'
 
 /**
  * El libro de inventario, de punta a punta.
@@ -115,7 +115,7 @@ test.describe('Ajustes y perdidas', () => {
 
     const dialogo = page.getByRole('dialog')
     await dialogo.getByLabel(/qué pasó/i).selectOption('MANUAL_ADJUSTMENT')
-    await dialogo.getByLabel(/cantidad/i).fill('12')
+    await dialogo.getByLabel(/^cantidad en /i).fill('12')
     await dialogo.getByLabel('Motivo').fill('Entrada de mercadería del jueves')
     await dialogo.getByRole('button', { name: /guardar ajuste/i }).click()
 
@@ -129,8 +129,10 @@ test.describe('Ajustes y perdidas', () => {
     const ajuste = filaDe(page, PRODUCTOS.leche.nombre, 'Ajuste')
     await expect(ajuste).toBeVisible()
     await expect(ajuste.getByText('+12')).toBeVisible()
-    await expect(ajuste.getByText(String(antes), { exact: true })).toBeVisible()
-    await expect(ajuste.getByText(String(antes + 12), { exact: true })).toBeVisible()
+    // Los dos saldos, con su unidad. Desde la Fase 3B la fila los muestra
+    // formateados --"30 u."-- y no como numero pelado.
+    await expect(ajuste).toContainText(String(antes))
+    await expect(ajuste).toContainText(String(antes + 12))
     await expect(ajuste.getByText(/entrada de mercadería del jueves/i)).toBeVisible()
   })
 
@@ -148,7 +150,7 @@ test.describe('Ajustes y perdidas', () => {
 
     // En el mostrador nadie dice "se rompieron menos tres": se escribe 3 y el
     // diálogo manda −3.
-    await dialogo.getByLabel(/cuántas unidades/i).fill('3')
+    await dialogo.getByLabel(/^cuánto sale/i).fill('3')
     await dialogo.getByLabel('Motivo').fill('Se cayó el cajón al descargar')
     await expect(dialogo.getByText(new RegExp(`va a quedar en\\s*${String(antes - 3)}`, 'i'))).toBeVisible() // prettier-ignore
     await dialogo.getByRole('button', { name: /guardar ajuste/i }).click()
@@ -170,7 +172,7 @@ test.describe('Ajustes y perdidas', () => {
 
     const dialogo = page.getByRole('dialog')
     await dialogo.getByLabel(/qué pasó/i).selectOption('LOSS')
-    await dialogo.getByLabel(/cuántas unidades/i).fill(String(antes + 50))
+    await dialogo.getByLabel(/^cuánto sale/i).fill(String(antes + 50))
     await dialogo.getByLabel('Motivo').fill('Intento imposible')
 
     await expect(dialogo.getByText(/no alcanza/i)).toBeVisible()
@@ -277,8 +279,18 @@ test.describe('Alertas de reposicion', () => {
     await fila.locator('button[aria-expanded]').first().click()
     await page.getByRole('menuitem', { name: 'Editar' }).click()
 
+    // El stock ya no es un campo de la ficha: se lee de la seccion Inventario,
+    // que desde la Fase 3B es de solo lectura. Mover inventario se hace con el
+    // boton "Ajustar", que pide motivo y deja fila en el libro.
     const ficha = page.getByRole('dialog')
-    const stockActual = Number(await ficha.getByLabel('Unidades').inputValue())
+    const stockActual = leerMonto(
+      (
+        await ficha
+          .getByText(/^\d+([.,]\d+)? u\.$/)
+          .first()
+          .innerText()
+      ).replace(' u.', ''),
+    )
     await ficha.getByLabel(/mínimo de reposición/i).fill(String(stockActual))
     await expect(ficha.getByText(/ya está bajo mínimo/i)).toBeVisible()
     await ficha.getByRole('button', { name: /guardar/i }).click()

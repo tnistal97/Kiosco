@@ -222,9 +222,14 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
       }
 
       if (faltantes.length > 0) {
-        throw invalid(`Producto no disponible en esta sucursal: ${faltantes.join(', ')}`, {
-          code: 'PRODUCT_NOT_IN_BRANCH',
-        })
+        // El tercer argumento es el que lleva el codigo; el segundo son los
+        // detalles de validacion. Escrito en el segundo, el error salia con
+        // codigo generico `VALIDATION` y el cliente no podia distinguirlo.
+        throw invalid(
+          `Producto no disponible en esta sucursal: ${faltantes.join(', ')}`,
+          undefined,
+          { code: 'PRODUCT_NOT_IN_BRANCH' },
+        )
       }
 
       // 1 bis) La cantidad tiene que tener sentido para la unidad del producto.
@@ -240,7 +245,9 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         const unidad = unidadDeVentaODefecto(linea.producto.saleUnit)
         const motivo = motivoDeCantidadInvalida(unidad, aTextoCantidad(linea.quantity))
         if (motivo !== null) {
-          throw invalid(`${linea.producto.name}: ${motivo}`, { code: 'INVALID_QUANTITY_FOR_UNIT' })
+          throw invalid(`${linea.producto.name}: ${motivo}`, undefined, {
+            code: 'INVALID_QUANTITY_FOR_UNIT',
+          })
         }
       }
 

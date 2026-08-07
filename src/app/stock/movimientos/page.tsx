@@ -28,6 +28,12 @@ import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { parsePaginaMovimientos, type MovimientoDTO } from '@/modules/inventory/dto'
 import { TIPOS_MOVIMIENTO, etiquetaDeTipo } from '@/modules/inventory/movement-types'
+import { aMilesimas, desdeMilesimas, type TextoCantidad } from '@/lib/cantidad'
+import {
+  formatearCantidad,
+  formatearCantidadConUnidad,
+  type UnidadDeVenta,
+} from '@/modules/products/units'
 import { enlaceDeReferencia, textoDeReferencia } from '@/modules/inventory/referencias'
 import Link from 'next/link'
 
@@ -54,15 +60,16 @@ function cuando(iso: string): { hora: string; fecha: string } {
 }
 
 /** El delta, con su signo y su color. Es la columna que se mira primero. */
-function Variacion({ cantidad }: { cantidad: number }) {
-  const entra = cantidad > 0
+function Variacion({ cantidad, unidad }: { cantidad: TextoCantidad; unidad: UnidadDeVenta }) {
+  const entra = aMilesimas(cantidad) > 0
+  const absoluta = desdeMilesimas(Math.abs(aMilesimas(cantidad)))
   return (
     <span
       data-numeric=""
       className={cn('font-semibold tabular-nums', entra ? 'text-success' : 'text-danger')}
     >
       {entra ? '+' : '−'}
-      {Math.abs(cantidad)}
+      {formatearCantidadConUnidad(absoluta, unidad)}
     </span>
   )
 }
@@ -295,13 +302,13 @@ export default function MovimientosPage() {
                             </TD>
                             <TD className="text-ink-muted">{m.typeLabel}</TD>
                             <TD align="right">
-                              <Variacion cantidad={m.quantity} />
+                              <Variacion cantidad={m.quantity} unidad={m.product.saleUnit} />
                             </TD>
                             <TD align="right" className="text-ink-muted tabular-nums">
                               {m.previousQuantity}
                             </TD>
                             <TD align="right" className="font-medium text-ink tabular-nums">
-                              {m.resultingQuantity}
+                              {formatearCantidad(m.resultingQuantity, m.product.saleUnit)}
                             </TD>
                             <TD>
                               <Referencia movimiento={m} />
@@ -330,13 +337,15 @@ export default function MovimientosPage() {
                             {t.hora} · {t.fecha} · {m.typeLabel}
                           </p>
                           <p className="mt-1 text-xs text-ink-muted">
-                            {m.previousQuantity} → {m.resultingQuantity} · {m.user.name}
+                            {formatearCantidad(m.previousQuantity, m.product.saleUnit)} →{' '}
+                            {formatearCantidad(m.resultingQuantity, m.product.saleUnit)} ·{' '}
+                            {m.user.name}
                           </p>
                           {m.reason && (
                             <p className="mt-1 truncate text-xs text-ink-faint">{m.reason}</p>
                           )}
                         </div>
-                        <Variacion cantidad={m.quantity} />
+                        <Variacion cantidad={m.quantity} unidad={m.product.saleUnit} />
                       </div>
                     </CardListItem>
                   )

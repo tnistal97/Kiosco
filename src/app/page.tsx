@@ -332,7 +332,11 @@ export default function InicioPage() {
                   {datos.bajos.map((p) => (
                     <li key={p.id} className="flex items-center gap-3 py-2.5">
                       <span className="min-w-0 flex-1 truncate text-sm text-ink">{p.name}</span>
-                      <StockBadge quantity={p.totalStock} minimum={p.minimumStock} />
+                      <StockBadge
+                        quantity={p.totalStock}
+                        minimum={p.minimumStock}
+                        unit={p.saleUnit}
+                      />
                     </li>
                   ))}
                 </ul>

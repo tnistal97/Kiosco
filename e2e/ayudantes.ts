@@ -17,6 +17,10 @@ export const PRODUCTOS = {
   agotado: { codigo: '7790008000036', nombre: 'Helado 1 L', precio: 6800 },
   /** Dado de baja en el seed. */
   deBaja: { codigo: '7790002000083', nombre: 'Gaseosa naranja 2 L (discontinuada)' },
+  /** POR PESO: se vende por kilo y el escaneo pide el peso. */
+  queso: { codigo: '7790003000048', nombre: 'Queso cremoso', precio: 9800 },
+  /** Codigo ALTERNATIVO de la yerba: tiene que encontrar el mismo producto. */
+  yerbaAlternativo: { codigo: '7790001099911', nombre: 'Yerba mate 1 kg' },
 } as const
 
 /**

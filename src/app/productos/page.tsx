@@ -281,7 +281,7 @@ export default function ProductosPage() {
                             )}
                           </TD>
                           <TD>
-                            <StockBadge quantity={p.totalStock} />
+                            <StockBadge quantity={p.totalStock} unit={p.saleUnit} />
                           </TD>
                           <TD align="right">
                             <Money amount={p.price} />
@@ -315,7 +315,7 @@ export default function ProductosPage() {
                         <p className="truncate text-sm font-medium text-ink">{p.name}</p>
                         <p className="mt-0.5 text-xs text-ink-faint">{p.category.name}</p>
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          <StockBadge quantity={p.totalStock} />
+                          <StockBadge quantity={p.totalStock} unit={p.saleUnit} />
                           {!p.isActive && (
                             <Badge tone="warning">
                               <span aria-hidden="true">⊘</span> De baja

@@ -18,7 +18,15 @@
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { Prisma } from '@prisma/client'
-import { seedFixture, prisma, stockOf, ponerStock, type Fixture, num } from '../helpers/db'
+import {
+  seedFixture,
+  prisma,
+  stockOf,
+  stockExacto,
+  ponerStock,
+  type Fixture,
+  num,
+} from '../helpers/db'
 import { call, sessionCookie } from '../helpers/http'
 
 let fx: Fixture
@@ -195,4 +203,93 @@ describe('Operaciones de distinto tipo a la vez', () => {
       expect(await prisma.stockMovement.count({ where: { type: 'SALE_CANCEL' } })).toBe(1)
     }
   }, 60_000)
+})
+
+/**
+ * Concurrencia con fracciones.
+ *
+ * Es el caso que la Fase 3B agrega y el que mas expone el motivo de haber
+ * elegido `numeric`: con `double precision`, dos cortes simultaneos de 0,1 kg
+ * sobre un saldo de 0,2 kg no dejarian cero, dejarian 2,7e-17. La restriccion
+ * `resultingQuantity = previousQuantity + quantity` rechazaria la segunda fila
+ * y la venta fallaria sin que nadie pudiera explicar por que.
+ */
+describe('Dos cortes del mismo queso a la vez', () => {
+  async function venderPeso(peso: string) {
+    const { POST } = await import('@/app/api/sales/route')
+    return call<{ id: number }>(POST, '/api/sales', {
+      method: 'POST',
+      cookie: await sessionCookie(fx.cajero),
+      body: {
+        items: [{ productId: fx.productoPeso.id, quantity: peso }],
+        paymentMethod: 'efectivo',
+      },
+    })
+  }
+
+  /** La cadena del libro del producto por peso, en cadenas con escala. */
+  async function exigirCadenaDelQueso(): Promise<string> {
+    const saldo = await stockExacto(fx.branchA.id, fx.productoPeso.id)
+
+    const movimientos = await prisma.stockMovement.findMany({
+      where: { branchId: fx.branchA.id, productId: fx.productoPeso.id },
+      orderBy: { id: 'asc' },
+    })
+
+    const ultimo = movimientos.at(-1)
+    expect(ultimo?.resultingQuantity.toFixed(3), 'el saldo no es el ultimo movimiento').toBe(saldo)
+
+    for (let i = 1; i < movimientos.length; i++) {
+      expect(
+        movimientos[i]?.previousQuantity.toFixed(3),
+        `el movimiento ${String(movimientos[i]?.id)} arranca en un saldo que nadie dejo`,
+      ).toBe(movimientos[i - 1]?.resultingQuantity.toFixed(3))
+    }
+
+    const suma = movimientos.reduce((acc, m) => acc.plus(m.quantity), new Prisma.Decimal(0))
+    expect(suma.toFixed(3), 'la suma del libro no da el saldo').toBe(saldo)
+
+    return saldo
+  }
+
+  it('dos ventas simultaneas de 0,5 kg sobre 0,75 kg: pasa una sola', async () => {
+    await ponerStock(fx.branchA.id, fx.productoPeso.id, '0.75', fx.admin.id)
+
+    const [a, b] = await Promise.all([venderPeso('0.500'), venderPeso('0.500')])
+    const ok = [a, b].filter((r) => r.status === 201)
+
+    expect(ok, 'las dos ventas pasaron: el saldo quedaria negativo').toHaveLength(1)
+    expect(await exigirCadenaDelQueso()).toBe('0.250')
+  }, 30_000)
+
+  it('diez cortes concurrentes de 0,1 kg dejan el libro exacto', async () => {
+    await ponerStock(fx.branchA.id, fx.productoPeso.id, '1', fx.admin.id)
+
+    const resultados = await Promise.all(Array.from({ length: 10 }, () => venderPeso('0.100')))
+    const ok = resultados.filter((r) => r.status === 201)
+
+    expect(ok, 'un kilo da exactamente diez cortes de cien gramos').toHaveLength(10)
+    // Y el saldo es CERO, no 0.000000000000000027.
+    expect(await exigirCadenaDelQueso()).toBe('0.000')
+  }, 60_000)
+
+  it('venta y ajuste fraccionados a la vez no se pisan', async () => {
+    await ponerStock(fx.branchA.id, fx.productoPeso.id, '2', fx.admin.id)
+
+    const { PATCH } = await import('@/app/api/stock/[id]/route')
+    const [venta, ajuste] = await Promise.all([
+      venderPeso('0.333'),
+      call(PATCH, `/api/stock/${String(fx.productoPeso.id)}`, {
+        method: 'PATCH',
+        cookie: await sessionCookie(fx.admin),
+        params: { id: String(fx.productoPeso.id) },
+        body: { delta: '0.667', reason: 'Entrada concurrente' },
+      }),
+    ])
+
+    expect(venta.status).toBe(201)
+    expect(ajuste.status).toBe(200)
+    // 2 − 0,333 + 0,667 = 2,334, sin residuo y en cualquier orden.
+    expect(await exigirCadenaDelQueso()).toBe('2.334')
+  }, 30_000)
 })

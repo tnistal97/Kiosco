@@ -57,7 +57,10 @@ test('escanear el mismo producto dos veces suma cantidad, no lineas', async ({ p
 
   const ticket = page.getByRole('region', { name: 'Ticket en curso' })
   await expect(ticket.getByText(PRODUCTOS.yerba.nombre, { exact: true })).toHaveCount(1)
-  await expect(ticket.getByText('2 unidades')).toBeVisible()
+  await expect(
+    ticket.getByText('1 artículo'),
+    'el segundo escaneo abrio una linea nueva',
+  ).toBeVisible()
   expect(await totalDelTicket(page)).toBe(PRODUCTOS.yerba.precio * 2)
 })
 

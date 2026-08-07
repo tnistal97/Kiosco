@@ -8,6 +8,8 @@
 
 import { esObjeto, lista, numero, numeroOpcional, texto, textoOpcional } from '@/lib/api-client'
 import type { Pagination } from '@/server/http/pagination'
+import { cantidadODefecto, type TextoCantidad } from '@/lib/cantidad'
+import { unidadDeVentaODefecto, type UnidadDeVenta } from '@/modules/products/units'
 import { etiquetaDeTipo } from './movement-types'
 
 export interface MovimientoDTO {
@@ -16,14 +18,23 @@ export interface MovimientoDTO {
   type: string
   /** Nombre para mostrar. El codigo crudo no llega a la pantalla. */
   typeLabel: string
-  /** Delta con signo: negativo sale, positivo entra. */
-  quantity: number
-  previousQuantity: number
-  resultingQuantity: number
+  /**
+   * Delta con signo: negativo sale, positivo entra. CADENA decimal.
+   *
+   * Desde la Fase 3B viaja como `"-0.750"` y no como numero. Parsearlo con
+   * `numero()` --que devuelve el valor por omision cuando no recibe un
+   * numero-- hacia que la pantalla mostrara "0" en cada movimiento
+   * fraccionado. Lo encontro la prueba de extremo a extremo del ajuste por
+   * rotura.
+   */
+  quantity: TextoCantidad
+  previousQuantity: TextoCantidad
+  resultingQuantity: TextoCantidad
   referenceType: string | null
   referenceId: number | null
   reason: string | null
-  product: { id: number; name: string; barcode: string | null }
+  /** Con su unidad: sin ella, un `-0,750` no dice si son kilos o unidades. */
+  product: { id: number; name: string; barcode: string | null; saleUnit: UnidadDeVenta }
   user: { id: number; name: string }
   branch: { id: number; name: string }
 }
@@ -45,9 +56,9 @@ export function parseMovimiento(raw: unknown): MovimientoDTO {
     // Si el servidor no mando la etiqueta, se resuelve aca. Un codigo crudo en
     // pantalla es una fila que nadie entiende.
     typeLabel: textoOpcional(raw.typeLabel) ?? etiquetaDeTipo(type),
-    quantity: numero(raw.quantity),
-    previousQuantity: numero(raw.previousQuantity),
-    resultingQuantity: numero(raw.resultingQuantity),
+    quantity: cantidadODefecto(raw.quantity),
+    previousQuantity: cantidadODefecto(raw.previousQuantity),
+    resultingQuantity: cantidadODefecto(raw.resultingQuantity),
     referenceType: textoOpcional(raw.referenceType),
     referenceId: numeroOpcional(raw.referenceId),
     reason: textoOpcional(raw.reason),
@@ -56,8 +67,9 @@ export function parseMovimiento(raw: unknown): MovimientoDTO {
           id: numero(raw.product.id),
           name: texto(raw.product.name, 'Producto'),
           barcode: textoOpcional(raw.product.barcode),
+          saleUnit: unidadDeVentaODefecto(raw.product.saleUnit),
         }
-      : { id: 0, name: 'Producto', barcode: null },
+      : { id: 0, name: 'Producto', barcode: null, saleUnit: 'UNIT' },
     user: esObjeto(raw.user)
       ? { id: numero(raw.user.id), name: texto(raw.user.name, 'Desconocido') }
       : { id: 0, name: 'Desconocido' },

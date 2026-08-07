@@ -103,11 +103,15 @@ async function moverStock(m: {
 type SemillaProducto = {
   nombre: string
   barcode: string
+  /** Codigos adicionales. El lector encuentra el producto con cualquiera. */
+  alternativos?: string[]
   categoria: string
   proveedor: string
   precio: number
   costo: number
   stock: number
+  /** Unidad de venta. Por omision UNIT, que es como se vende casi todo. */
+  unidad?: 'UNIT' | 'KG' | 'G' | 'L' | 'ML'
   descripcion?: string
   /** Dado de baja: no aparece en la caja, si en el catalogo y en el historial. */
   inactivo?: boolean
@@ -133,7 +137,7 @@ const PROVEEDORES = [
 
 const PRODUCTOS: SemillaProducto[] = [
   // Almacen
-  { nombre: 'Yerba mate 1 kg', barcode: '7790001000011', categoria: 'Almacen', proveedor: 'Distribuidora del Norte', precio: 4850, costo: 3200, stock: 24 }, // prettier-ignore
+  { nombre: 'Yerba mate 1 kg', barcode: '7790001000011', alternativos: ['7790001099911'], categoria: 'Almacen', proveedor: 'Distribuidora del Norte', precio: 4850, costo: 3200, stock: 24 }, // prettier-ignore
   { nombre: 'Azucar 1 kg', barcode: '7790001000028', categoria: 'Almacen', proveedor: 'Distribuidora del Norte', precio: 1450, costo: 980, stock: 40 }, // prettier-ignore
   { nombre: 'Arroz largo fino 1 kg', barcode: '7790001000035', categoria: 'Almacen', proveedor: 'Mayorista Central', precio: 1780, costo: 1190, stock: 31 }, // prettier-ignore
   { nombre: 'Fideos guiseros 500 g', barcode: '7790001000042', categoria: 'Almacen', proveedor: 'Mayorista Central', precio: 1120, costo: 720, stock: 55 }, // prettier-ignore
@@ -159,7 +163,7 @@ const PRODUCTOS: SemillaProducto[] = [
   { nombre: 'Leche entera 1 L', barcode: '7790003000017', categoria: 'Lacteos', proveedor: 'Lacteos La Pradera', precio: 1690, costo: 1180, stock: 30 }, // prettier-ignore
   { nombre: 'Yogur bebible 900 g', barcode: '7790003000024', categoria: 'Lacteos', proveedor: 'Lacteos La Pradera', precio: 2890, costo: 2050, stock: 16 }, // prettier-ignore
   { nombre: 'Manteca 200 g', barcode: '7790003000031', categoria: 'Lacteos', proveedor: 'Lacteos La Pradera', precio: 2450, costo: 1780, stock: 11 }, // prettier-ignore
-  { nombre: 'Queso cremoso x kg', barcode: '7790003000048', categoria: 'Lacteos', proveedor: 'Lacteos La Pradera', precio: 9800, costo: 7200, stock: 6 }, // prettier-ignore
+  { nombre: 'Queso cremoso', barcode: '7790003000048', categoria: 'Lacteos', proveedor: 'Lacteos La Pradera', precio: 9800, costo: 7200, stock: 6, unidad: 'KG', descripcion: 'Se vende por peso' }, // prettier-ignore
   { nombre: 'Dulce de leche 400 g', barcode: '7790003000055', categoria: 'Lacteos', proveedor: 'Lacteos La Pradera', precio: 2790, costo: 1950, stock: 19 }, // prettier-ignore
 
   // Panificados
@@ -269,6 +273,11 @@ async function main() {
   // lo rechace. TRUNCATE no dispara disparadores de fila y es la unica puerta,
   // reservada para vaciar una base descartable.
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "StockMovement" CASCADE')
+  // El historial de costos tiene el mismo disparador de inmutabilidad y se
+  // vacia por la misma puerta. Los codigos de barras van con el producto
+  // (ON DELETE CASCADE), pero se limpian igual por claridad del orden.
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "ProductCostHistory" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "ProductBarcode" CASCADE')
 
   await prisma.stockCheck.deleteMany()
   await prisma.saleItem.deleteMany()
@@ -384,10 +393,22 @@ async function main() {
     const creado = await prisma.product.create({
       data: {
         name: p.nombre,
-        barcode: p.barcode,
         description: p.descripcion ?? null,
         price: p.precio,
-        value: p.costo,
+        // El costo va a `cost`, su columna, desde la Fase 3B. Antes se
+        // escribia en `value`, que es una columna muerta de mayo de 2025 y no
+        // significaba nada.
+        cost: p.costo,
+        saleUnit: p.unidad ?? 'UNIT',
+        purchaseUnit: p.unidad ?? 'UNIT',
+        // Los codigos viven en `ProductBarcode`: `Product.barcode` quedo
+        // congelada. Ver docs/PHASE3_BARCODES.md.
+        barcodes: {
+          create: [
+            { code: p.barcode, isPrimary: true },
+            ...(p.alternativos ?? []).map((code) => ({ code, isPrimary: false })),
+          ],
+        },
         categoryId: categorias.get(p.categoria) ?? 0,
         supplierId: proveedores.get(p.proveedor) ?? null,
         branchId: sucursal.id,

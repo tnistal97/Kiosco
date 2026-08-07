@@ -293,8 +293,17 @@ export function RadioGroup<T extends string>({
               />
               <span className="flex min-w-0 flex-col">
                 <span className="truncate text-sm font-medium">{op.label}</span>
+                {/*
+                  `text-ink-muted` y no `text-ink-faint`.
+
+                  El faint es legible sobre el fondo hundido de la opcion sin
+                  elegir, pero NO sobre `bg-primary-quiet`, que es el de la
+                  elegida: axe lo marca como falta seria de contraste. Se usa el
+                  mismo tono en las dos para que la descripcion no cambie de
+                  legibilidad segun este seleccionada o no.
+                */}
                 {op.description && (
-                  <span className="truncate text-xs text-ink-faint">{op.description}</span>
+                  <span className="truncate text-xs text-ink-muted">{op.description}</span>
                 )}
               </span>
             </label>

@@ -311,6 +311,118 @@ describe('Instalacion nueva', () => {
     expect(sueltas.map((c) => `${c.table_name}.${c.column_name}`)).toEqual([])
   })
 
+  it('deja las cantidades en numeric(14,3) y ninguna en integer', async () => {
+    const columnas = await consultar<{
+      table_name: string
+      column_name: string
+      data_type: string
+      numeric_precision: number
+      numeric_scale: number
+    }>(
+      url,
+      `SELECT table_name, column_name, data_type, numeric_precision, numeric_scale
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND (table_name, column_name) IN (
+            ('BranchStock','quantity'), ('SaleItem','quantity'),
+            ('StockMovement','quantity'), ('StockMovement','previousQuantity'),
+            ('StockMovement','resultingQuantity'), ('Product','minimumStock'),
+            ('Product','unitsPerPurchaseUnit')
+          )
+        ORDER BY table_name, column_name`,
+    )
+
+    expect(columnas, 'Falta alguna columna de cantidad').toHaveLength(7)
+    for (const c of columnas) {
+      expect(c.data_type, `${c.table_name}.${c.column_name}`).toBe('numeric')
+      expect(Number(c.numeric_precision), `${c.table_name}.${c.column_name}`).toBe(14)
+      expect(Number(c.numeric_scale), `${c.table_name}.${c.column_name}`).toBe(3)
+    }
+  })
+
+  it('las restricciones del libro siguen vivas SOBRE DECIMALES', async () => {
+    // Es la razon entera de haber elegido `numeric`: si estas restricciones no
+    // sobrevivieran a la conversion, el libro dejaria de significar algo.
+    await consultar(
+      url,
+      `INSERT INTO "Category" (name) VALUES ('Fiambreria')
+         ON CONFLICT (name) DO NOTHING`,
+    )
+    await consultar(
+      url,
+      `INSERT INTO "Product" (name, price, "categoryId", "branchId", "saleUnit")
+         SELECT 'Queso', 9800, c.id, b.id, 'KG' FROM "Category" c, "Branch" b
+          WHERE c.name = 'Fiambreria' LIMIT 1`,
+    )
+
+    // 5,500 − 0,250 no da 5,200.
+    await expect(
+      consultar(
+        url,
+        `INSERT INTO "StockMovement"
+           ("branchId","productId","type","quantity","previousQuantity","resultingQuantity","userId")
+         SELECT b.id, p.id, 'SALE', -0.250, 5.500, 5.200, u.id
+           FROM "Branch" b, "Product" p, "User" u WHERE p.name = 'Queso' LIMIT 1`,
+      ),
+    ).rejects.toThrow(/saldos_check/)
+
+    // Y la buena entra.
+    await expect(
+      consultar(
+        url,
+        `INSERT INTO "StockMovement"
+           ("branchId","productId","type","quantity","previousQuantity","resultingQuantity","userId")
+         SELECT b.id, p.id, 'SALE', -0.250, 5.500, 5.250, u.id
+           FROM "Branch" b, "Product" p, "User" u WHERE p.name = 'Queso' LIMIT 1`,
+      ),
+    ).resolves.toBeDefined()
+  })
+
+  it('crea las tablas y restricciones de la Fase 3B', async () => {
+    const tablas = await consultar<{ table_name: string }>(
+      url,
+      `SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name IN ('ProductBarcode','ProductCostHistory')
+        ORDER BY table_name`,
+    )
+    expect(tablas.map((t) => t.table_name)).toEqual(['ProductBarcode', 'ProductCostHistory'])
+
+    const restricciones = await consultar<{ conname: string }>(
+      url,
+      `SELECT conname FROM pg_constraint
+        WHERE conname IN ('Product_saleUnit_check','Product_purchaseUnit_check',
+                          'Product_unitsPerPurchaseUnit_check','Product_minimumStock_fraccion_check',
+                          'Product_cost_check','ProductBarcode_code_check',
+                          'ProductCostHistory_costos_check','ProductCostHistory_motivo_check')
+        ORDER BY conname`,
+    )
+    expect(restricciones, 'falta alguna restriccion de la Fase 3B').toHaveLength(8)
+
+    const indices = await consultar<{ indexname: string }>(
+      url,
+      `SELECT indexname FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND indexname IN ('ProductBarcode_code_key','ProductBarcode_productId_principal_key',
+                            'ProductCostHistory_productId_createdAt_idx')
+        ORDER BY indexname`,
+    )
+    expect(indices, 'falta algun indice de la Fase 3B').toHaveLength(3)
+  })
+
+  it('el historial de costos tampoco se puede editar ni borrar', async () => {
+    await consultar(
+      url,
+      `INSERT INTO "ProductCostHistory" ("productId","newCost","userId","reason")
+         SELECT p.id, 750, u.id, 'Carga inicial de prueba'
+           FROM "Product" p, "User" u LIMIT 1`,
+    )
+    await expect(consultar(url, `UPDATE "ProductCostHistory" SET "newCost" = 1`)).rejects.toThrow(
+      /inmutable/i,
+    )
+    await expect(consultar(url, `DELETE FROM "ProductCostHistory"`)).rejects.toThrow(/inmutable/i)
+  })
+
   it('acepta una anulacion completa', async () => {
     await expect(
       consultar(
@@ -570,6 +682,51 @@ describe('Servidor existente', () => {
     } finally {
       await cliente.end()
     }
+  })
+
+  it('los codigos de barras se migran sin perder ninguno', async () => {
+    const filas = await consultar<{ nombre: string; code: string; principal: boolean }>(
+      url,
+      `SELECT p.name AS nombre, pb.code, pb."isPrimary" AS principal
+         FROM "Product" p
+         JOIN "ProductBarcode" pb ON pb."productId" = p.id
+        WHERE p.barcode IS NOT NULL
+        ORDER BY p.id`,
+    )
+
+    const productosConCodigo = await consultar<{ total: string }>(
+      url,
+      `SELECT count(*)::text AS total FROM "Product"
+        WHERE barcode IS NOT NULL AND btrim(barcode) <> ''`,
+    )
+
+    expect(filas).toHaveLength(Number(productosConCodigo[0]?.total ?? 0))
+    for (const f of filas) {
+      expect(f.principal, `${f.nombre} quedo con un codigo que no es el principal`).toBe(true)
+    }
+  })
+
+  it('el catalogo existente queda en UNIT, sin costo y sin unidades inventadas', async () => {
+    // Preservar el comportamiento es LA condicion de esta migracion: un
+    // producto que decia 24 tiene que seguir diciendo 24 unidades, no 24 kg.
+    const inventados = await consultar<{ total: string }>(
+      url,
+      `SELECT count(*)::text AS total FROM "Product"
+        WHERE "saleUnit" <> 'UNIT' OR "purchaseUnit" <> 'UNIT'
+           OR "unitsPerPurchaseUnit" <> 1 OR cost IS NOT NULL`,
+    )
+    expect(Number(inventados[0]?.total ?? 0), 'la migracion invento datos').toBe(0)
+  })
+
+  it('las cantidades historicas no cambiaron de valor al volverse decimales', async () => {
+    const rotas = await consultar<{ total: string }>(
+      url,
+      `SELECT count(*)::text AS total FROM "BranchStock"
+        WHERE quantity <> trunc(quantity)`,
+    )
+    // Antes de la Fase 3B no existia ninguna cantidad fraccionada: cualquier
+    // decimal aca seria daño de la conversion.
+    expect(Number(rotas[0]?.total ?? 0)).toBe(0)
   })
 
   it('el libro no se puede editar ni borrar, ni con SQL directo', async () => {

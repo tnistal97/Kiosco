@@ -104,9 +104,13 @@ export function DialogoAjusteStock({
   const actual = aMilesimas(producto?.totalStock ?? '0.000')
   const resta = restaUnidades(tipo)
 
-  const escrito = cantidadDesdeTexto(valor)
+  // El signo se parsea aparte: `cantidadDesdeTexto` rechaza los negativos a
+  // proposito --nadie tipea un peso negativo en el diálogo de la balanza-- y
+  // acá "−3" es una entrada legítima para un ajuste genérico.
+  const negativo = valor.trim().startsWith('-')
+  const escrito = cantidadDesdeTexto(valor.trim().replace(/^-/, ''))
   const numeroValido = escrito !== null
-  const n = escrito === null ? 0 : aMilesimas(escrito)
+  const n = escrito === null ? 0 : (negativo ? -1 : 1) * aMilesimas(escrito)
 
   // El delta que de verdad se va a mandar. Con un tipo que resta, lo que el
   // usuario escribe en positivo viaja en negativo.

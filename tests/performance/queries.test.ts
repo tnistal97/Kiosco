@@ -54,10 +54,17 @@ async function crearProductos(n: number): Promise<void> {
     const p = await prisma.product.create({
       data: {
         name: `Producto ${i}`,
-        barcode: `900000000${String(i).padStart(4, '0')}`,
         price: 100 + i,
         categoryId: fx.categoryId,
         branchId: fx.branchA.id,
+        // Dos codigos por producto: es lo que hace realista la medicion del
+        // lector. Con uno solo, el indice tendria la mitad de las filas.
+        barcodes: {
+          create: [
+            { code: `900000000${String(i).padStart(4, '0')}`, isPrimary: true },
+            { code: `ALT${String(i).padStart(6, '0')}`, isPrimary: false },
+          ],
+        },
       },
     })
     await prisma.branchStock.create({
@@ -340,5 +347,64 @@ describe('Una venta hace un numero acotado de escrituras', () => {
     expect(await prisma.cashRegisterMovement.count()).toBe(1)
     expect(await prisma.auditLog.count({ where: { tableName: 'Sale' } })).toBe(1)
     expect(await prisma.saleItem.count()).toBe(3)
+  })
+})
+
+/**
+ * El lector, que es la consulta mas repetida del sistema.
+ *
+ * Un cajero escanea una vez por producto por venta. Con quince lineas y
+ * doscientos tickets al dia son tres mil aciertos: es LA consulta que no puede
+ * crecer con el catalogo.
+ */
+describe('La busqueda por codigo de barras no crece con el catalogo', () => {
+  it('es una sola consulta, y una sola fila leida', async () => {
+    await crearProductos(60)
+
+    const { GET } = await import('@/app/api/products/barcode/[code]/route')
+    const cookie = await sessionCookie(fx.cajero)
+    const { resultado, consultas } = await contando(() =>
+      call<{ id: number }>(GET, '/api/products/barcode/9000000000030', {
+        cookie,
+        params: { code: '9000000000030' },
+      }),
+    )
+
+    expect(resultado.status).toBe(200)
+    // Antes el lector pedia veinte candidatos con `q=` y filtraba en el
+    // navegador. Ahora es un acierto directo sobre el indice unico.
+    expect(consultas, `la busqueda por codigo hizo ${String(consultas)} consultas`).toBeLessThanOrEqual(2) // prettier-ignore
+  })
+
+  it('encuentra por un alternativo con el mismo coste', async () => {
+    await crearProductos(60)
+
+    const { GET } = await import('@/app/api/products/barcode/[code]/route')
+    const cookie = await sessionCookie(fx.cajero)
+    const { resultado, consultas } = await contando(() =>
+      call<{ id: number }>(GET, '/api/products/barcode/ALT000030', {
+        cookie,
+        params: { code: 'ALT000030' },
+      }),
+    )
+
+    expect(resultado.status).toBe(200)
+    expect(consultas).toBeLessThanOrEqual(2)
+  })
+
+  it('el plan de consulta USA el indice unico, no un recorrido de tabla', async () => {
+    // Es la prueba que de verdad protege el rendimiento: contar consultas no
+    // distingue una consulta rapida de una que recorre ciento veinte mil
+    // filas. Si alguien cambia el `findUnique` por un `findFirst` con `mode:
+    // insensitive`, PostgreSQL deja de poder usar el indice y esto falla.
+    await crearProductos(60)
+
+    const plan = await prisma.$queryRawUnsafe<Array<Record<string, string>>>(
+      `EXPLAIN SELECT * FROM "ProductBarcode" WHERE code = '9000000000030'`,
+    )
+    const texto = plan.map((f) => Object.values(f).join(' ')).join(' | ')
+
+    expect(texto, `el plan fue: ${texto}`).toMatch(/Index (Only )?Scan/)
+    expect(texto).not.toMatch(/Seq Scan/)
   })
 })
