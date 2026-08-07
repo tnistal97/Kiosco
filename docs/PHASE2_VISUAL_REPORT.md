@@ -38,6 +38,38 @@ secundarios —copiar un identificador y ver más campos— dentro de un detalle
 ya abierto. Están documentados en `Button.tsx` y la prueba de extremo a
 extremo comprueba que a 375 px no quede ninguno.
 
+## Lo que pesa cada pantalla
+
+Medido con `next build` en las dos ramas. La columna «antes» sale de compilar
+`feat/almacen-phase1-foundation` en un árbol de trabajo aparte; los nombres de
+ruta cambiaron —antes `/caja` era la pantalla de vender y `/ventas` era la de
+la caja registradora—, así que la tabla empareja por lo que hace cada una, no
+por su URL.
+
+| Pantalla             | Antes                   | Ahora              |
+| -------------------- | ----------------------- | ------------------ |
+| Vender               | 116 kB (`/caja`)        | 170 kB (`/venta`)  |
+| Caja registradora    | 130 kB (`/ventas`)      | 165 kB (`/caja`)   |
+| Historial de ventas  | 107 kB (`/admin/sales`) | 165 kB (`/ventas`) |
+| Auditoría            | 107 kB                  | 183 kB             |
+| Productos            | 150 kB                  | 166 kB             |
+| Inicio               | 107 kB                  | 183 kB             |
+| Login                | 109 kB                  | 163 kB             |
+| Lector de cámara     | 218 kB (ruta `/camera`) | se carga aparte    |
+| Compartido por todas | 102 kB                  | 104 kB             |
+| **La más pesada**    | **218 kB**              | **186 kB**         |
+
+**Sube, y hay que decirlo.** Cada pantalla pesa entre 15 y 75 kB más porque
+pasó de una tabla desnuda a diálogos con foco atrapado, menús accesibles,
+avisos y estados de carga y de error. Eso es Headless UI más la biblioteca de
+componentes, y se paga una sola vez: lo compartido subió 2 kB.
+
+Lo que sí bajó es el techo. El lector de cámara era una **ruta entera de
+218 kB** que había que visitar para escanear; ahora `EscanerCamara` hace
+`import('@zxing/browser')` cuando se abre, así que quien vende con lector de
+mano —la mayoría— nunca lo descarga. La pantalla más pesada del sistema pasó
+de 218 kB a 186 kB.
+
 ## Las pantallas
 
 ### Venta
