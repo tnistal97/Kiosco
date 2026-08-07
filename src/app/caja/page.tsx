@@ -226,7 +226,7 @@ export default function CajaPage() {
           ) : (
             <>
               {/* Escritorio: tabla. */}
-              <div className="hidden md:block">
+              <div className="hidden lg:block">
                 <TableWrap className="border-0">
                   <Table caption="Movimientos de caja">
                     <THead>
@@ -253,7 +253,7 @@ export default function CajaPage() {
 
               {/* Móvil: tarjetas. Una tabla de siete columnas a 375 px no se
                   arregla achicando la fuente. */}
-              <CardList className="md:hidden">
+              <CardList className="lg:hidden">
                 {movimientos.map((m) => {
                   const t = tipoDe(m.type)
                   return (

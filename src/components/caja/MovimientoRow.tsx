@@ -75,11 +75,17 @@ export function MovimientoRow({ movimiento }: { movimiento: MovimientoDTO }) {
           <span className={cn('block max-w-72 truncate', anulada && 'line-through opacity-70')}>
             {movimiento.description ?? '—'}
           </span>
-          {movimiento.saleId !== null && (
-            <span className="text-xs text-ink-faint" data-numeric="">
-              Venta #{movimiento.saleId}
-              {anulada && ' · anulada'}
-            </span>
+          {/* La referencia a la venta solo si aporta algo: cuando la
+              descripcion ya dice "Venta #482", repetirla debajo es ruido. */}
+          {movimiento.saleId !== null &&
+            movimiento.description !== `Venta #${movimiento.saleId}` && (
+              <span className="text-xs text-ink-faint" data-numeric="">
+                Venta #{movimiento.saleId}
+                {anulada && ' · anulada'}
+              </span>
+            )}
+          {movimiento.saleId !== null && anulada && (
+            <span className="ml-1 text-xs text-danger">· anulada</span>
           )}
         </TD>
         <TD className="text-ink-muted">{medioLegible(movimiento.paymentMethod)}</TD>

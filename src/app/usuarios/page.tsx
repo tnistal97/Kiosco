@@ -156,7 +156,7 @@ export default function UsuariosPage() {
             <EmptyState title="No hay usuarios con ese filtro" />
           ) : (
             <>
-              <div className="hidden md:block">
+              <div className="hidden lg:block">
                 <TableWrap className="border-0">
                   <Table caption="Personal de la sucursal">
                     <THead>
@@ -235,7 +235,7 @@ export default function UsuariosPage() {
                 </TableWrap>
               </div>
 
-              <CardList className="md:hidden">
+              <CardList className="lg:hidden">
                 {usuarios.map((u) => (
                   <CardListItem key={u.id}>
                     <div className="flex items-start justify-between gap-3">

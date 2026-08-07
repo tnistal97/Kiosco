@@ -21,8 +21,14 @@ const prisma = new PrismaClient()
 
 const CLAVE_DEMO = 'Demo1234!'
 
-/** Fecha relativa a un instante fijo, para que las capturas sean reproducibles. */
-const AHORA = new Date('2026-08-06T15:00:00.000Z')
+/**
+ * Todo se sitúa relativo a AHORA.
+ *
+ * Es la hora real, no una fecha fija: con una fecha fija, al día siguiente el
+ * panel muestra "0 ventas hoy" y la caja "sin movimientos", que es justo lo
+ * que el seed viene a evitar.
+ */
+const AHORA = new Date()
 function haceHoras(h: number): Date {
   return new Date(AHORA.getTime() - h * 3_600_000)
 }

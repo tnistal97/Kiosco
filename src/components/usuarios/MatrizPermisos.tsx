@@ -146,7 +146,7 @@ export function MatrizPermisos({ roles }: { roles: RolDTO[] }) {
         fijas con `position: sticky` dentro del contenedor desplazable hacian
         que la PAGINA entera se corriera al costado.
       */}
-      <div className="flex flex-col gap-3 p-4 md:hidden">
+      <div className="flex flex-col gap-3 p-4 lg:hidden">
         {detalle.map((r) => {
           const suyos = AREAS.flatMap((a) =>
             a.permisos.filter((p) => r.permissions.includes(p.clave)),
@@ -173,7 +173,7 @@ export function MatrizPermisos({ roles }: { roles: RolDTO[] }) {
         })}
       </div>
 
-      <TableWrap className="hidden rounded-none border-x-0 border-b-0 md:block">
+      <TableWrap className="hidden rounded-none border-x-0 border-b-0 lg:block">
         <Table caption="Matriz de permisos por rol">
           <THead>
             <TR>

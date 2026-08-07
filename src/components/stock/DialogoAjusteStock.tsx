@@ -201,7 +201,7 @@ export function DialogoAjusteStock({
             {MOTIVOS_FRECUENTES.map((m) => (
               <Button
                 key={m}
-                size="xs"
+                size="sm"
                 variant="secondary"
                 disabled={enviando}
                 onClick={() => {

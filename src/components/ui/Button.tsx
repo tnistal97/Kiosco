@@ -16,9 +16,11 @@ import { cn } from './cn'
  *   ghost      acciones de fila y de barra: sin fondo hasta que se apunta.
  *   danger     destruye o anula. Nunca al lado de una accion comun.
  *
- * Todos los tamanios llegan a 44 px de alto salvo `xs`, que existe solo para
- * controles dentro de una celda de tabla en escritorio y no debe usarse como
- * unico camino a una accion.
+ * Todos los tamanios llegan a 44 px de alto salvo `xs`, que mide 32 y esta
+ * reservado a controles SECUNDARIOS dentro de un detalle ya abierto --copiar
+ * un identificador, ver mas campos--. Nunca para la accion principal de una
+ * fila ni para nada que se toque con el dedo: eso va en `sm` o mas grande, y
+ * la prueba de extremo a extremo a 375 px lo comprueba.
  */
 export type ButtonVariant = 'primary' | 'confirm' | 'secondary' | 'ghost' | 'danger'
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg'

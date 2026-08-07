@@ -143,18 +143,18 @@ stock bajo y uno dado de baja), doce ventas —una anulada—, movimientos de
 caja, arqueos y bitácora. Diez usuarios, **uno por rol**, todos con la clave
 `Demo1234!`:
 
-| Usuario      | Rol         | Para probar                                   |
-| ------------ | ----------- | --------------------------------------------- |
-| `admin`      | Administrador | Todo                                        |
-| `duenio`     | Dueño       | Igual que admin, por ahora                    |
-| `encargado`  | Encargado   | Cambia precios, anula, arquea                 |
-| `supervisor` | Supervisor  | Anula sin ser administrador                   |
-| `cajero`     | Cajero      | Vende y nada más                              |
-| `repositor`  | Repositor   | Solo stock: no vende ni edita fichas          |
-| `compras`    | Compras     | Edita fichas pero **no precios**              |
-| `auditor`    | Auditor     | Solo lectura, incluida la bitácora            |
-| `exempleado` | Cajero      | Dado de baja: no puede entrar                 |
-| `norte`      | Encargado   | Otra sucursal: para probar el aislamiento     |
+| Usuario      | Rol           | Para probar                               |
+| ------------ | ------------- | ----------------------------------------- |
+| `admin`      | Administrador | Todo                                      |
+| `duenio`     | Dueño         | Igual que admin, por ahora                |
+| `encargado`  | Encargado     | Cambia precios, anula, arquea             |
+| `supervisor` | Supervisor    | Anula sin ser administrador               |
+| `cajero`     | Cajero        | Vende y nada más                          |
+| `repositor`  | Repositor     | Solo stock: no vende ni edita fichas      |
+| `compras`    | Compras       | Edita fichas pero **no precios**          |
+| `auditor`    | Auditor       | Solo lectura, incluida la bitácora        |
+| `exempleado` | Cajero        | Dado de baja: no puede entrar             |
+| `norte`      | Encargado     | Otra sucursal: para probar el aislamiento |
 
 El seed **se niega a correr** si la base no termina en `_dev`. Es la misma
 guarda que usa la suite de pruebas.

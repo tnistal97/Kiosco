@@ -181,7 +181,7 @@ export default function StockPage() {
                           <TD align="right">
                             {puedeAjustar && (
                               <Button
-                                size="xs"
+                                size="sm"
                                 variant="secondary"
                                 onClick={() => {
                                   setAjustando(p)

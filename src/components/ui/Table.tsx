@@ -156,7 +156,8 @@ export function SortableTH({
         type="button"
         onClick={onSort}
         className={cn(
-          'inline-flex items-center gap-1 rounded-sm py-1 transition-colors hover:text-ink',
+          // `min-h-touch`: en una tablet el encabezado se toca con el dedo.
+          'inline-flex min-h-touch items-center gap-1 rounded-sm transition-colors hover:text-ink',
           active && 'text-ink',
         )}
       >

@@ -148,7 +148,7 @@ export function Ticket({
           )}
         </h2>
         {!vacio && (
-          <Button size="xs" variant="ghost" onClick={onVaciar}>
+          <Button size="sm" variant="ghost" onClick={onVaciar}>
             Vaciar
           </Button>
         )}

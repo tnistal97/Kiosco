@@ -21,7 +21,20 @@ if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(BASE)) {
   throw new Error(`Solo contra la aplicacion local. Recibido: ${BASE}`)
 }
 
-const RUTAS = ['/', '/caja', '/productos', '/ventas', '/control/caja', '/admin/sales', '/admin/auditoria'] // prettier-ignore
+/**
+ * Las pantallas de cada version.
+ *
+ * La Fase 2 renombro casi todas: la caja registradora era `/caja` y el libro
+ * de caja era `/ventas`, justo al reves de lo que dicen esos nombres.
+ */
+const ANTES = process.argv[2] === 'before'
+
+const RUTAS = ANTES
+  ? ['/', '/caja', '/productos', '/ventas', '/control/caja', '/admin/sales', '/admin/auditoria']
+  : ['/', '/venta', '/caja', '/ventas', '/productos', '/stock', '/auditoria', '/usuarios']
+
+/** La pantalla de venta, que es la que interesa medir en peticiones. */
+const RUTA_VENTA = ANTES ? '/caja' : '/venta'
 const VIEWPORTS = [
   { nombre: '375x812', width: 375, height: 812 },
   { nombre: '768x1024', width: 768, height: 1024 },
@@ -64,6 +77,9 @@ const MEDIR_TACTIL = `(() => {
     if (r.width === 0 || r.height === 0) continue
     const style = getComputedStyle(el)
     if (style.visibility === 'hidden' || style.display === 'none') continue
+    // El enlace de "saltar al contenido" mide un pixel hasta que recibe el
+    // foco, y entonces sale a tamanio completo. No se toca con el dedo.
+    if (el.classList.contains('sr-only-focusable')) continue
     const lado = Math.min(r.width, r.height)
     if (lado < minimo) minimo = lado
     if (lado < 44) chicos++
@@ -87,13 +103,36 @@ const MEDIR_LABELS = `(() => {
   return sin
 })()`
 
-const MEDIR_DESBORDE = `document.documentElement.scrollWidth > document.documentElement.clientWidth + 1`
+/**
+ * Desborde real: se intenta desplazar la pagina y se mira si se movio.
+ *
+ * Comparar `scrollWidth` con `clientWidth` cuenta tambien el contenido que
+ * desborda pero esta recortado --una tabla ancha dentro de su propio
+ * `overflow-x-auto`, que es exactamente lo que se busca-- y da falsos
+ * positivos.
+ */
+const MEDIR_DESBORDE = `(() => {
+  const antes = window.scrollX
+  window.scrollTo(600, window.scrollY)
+  const movio = window.scrollX !== antes
+  window.scrollTo(antes, window.scrollY)
+  return movio
+})()`
 
-/** Ancho del elemento de navegacion principal, si existe. */
+/**
+ * Ancho de la navegacion visible.
+ *
+ * Antes era una barra que envolvia en dos filas; ahora en movil es un cajon
+ * que se abre con un boton. Se mide lo que ocupa en pantalla: si la barra
+ * lateral esta oculta, lo que hay es la cabecera.
+ */
 const MEDIR_NAV = `(() => {
-  const nav = document.querySelector('nav, header')
-  if (!nav) return null
-  return Math.round(nav.getBoundingClientRect().width)
+  const lateral = document.querySelector('aside')
+  if (lateral && getComputedStyle(lateral).display !== 'none') {
+    return Math.round(lateral.getBoundingClientRect().width)
+  }
+  const cabecera = document.querySelector('header')
+  return cabecera ? Math.round(cabecera.getBoundingClientRect().width) : null
 })()`
 
 async function medir(destino: string): Promise<Medicion> {
@@ -124,13 +163,16 @@ async function medir(destino: string): Promise<Medicion> {
     })
 
     contador = 0
-    await page.goto(`${BASE}/caja`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`${BASE}${RUTA_VENTA}`, { waitUntil: 'domcontentloaded' })
     await page.waitForLoadState('networkidle').catch(() => undefined)
     await page.waitForTimeout(2500)
     salida.peticionesApiAlAbrirCaja = contador
 
     contador = 0
-    const buscador = page.locator('input[type="text"], input[type="search"], input:not([type])').first() // prettier-ignore
+    // El buscador por nombre, no el campo de codigo: en la version nueva el
+    // primer `input` de la pantalla es el del lector, y escribir ahi no
+    // dispara ninguna consulta hasta que se manda Enter.
+    const buscador = page.locator('input[type="search"]').first()
     await buscador.fill('Yerba').catch(() => undefined)
     await page.waitForTimeout(2000)
     salida.peticionesApiPorBusqueda = contador
@@ -167,7 +209,7 @@ async function medir(destino: string): Promise<Medicion> {
       divsTotal += await page.evaluate<number>(MEDIR_DIVS)
       sinLabelTotal += await page.evaluate<number>(MEDIR_LABELS)
 
-      if (vp.width === 375 && ruta === '/caja') {
+      if (vp.width === 375 && ruta === RUTA_VENTA) {
         salida.anchoNavegacionMovilPx = await page.evaluate<number | null>(MEDIR_NAV)
       }
     }

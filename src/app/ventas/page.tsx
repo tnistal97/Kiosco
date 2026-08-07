@@ -260,7 +260,7 @@ export default function VentasPage() {
                             <TD align="right">
                               {puedeAnular && !anulada && (
                                 <Button
-                                  size="xs"
+                                  size="sm"
                                   variant="danger"
                                   onClick={(e) => {
                                     e.stopPropagation()

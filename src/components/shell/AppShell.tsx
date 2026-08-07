@@ -99,7 +99,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             setCajonAbierto(true)
           }}
         />
-        <main id="contenido" className="min-h-0 flex-1 overflow-y-auto">
+        {/*
+          `overflow-x-hidden` ademas de `overflow-y-auto`: sin el, una tabla
+          ancha desplazaba la PAGINA entera al costado y se perdian de vista
+          la navegacion y el total. Ahora cada tabla se desplaza dentro de su
+          propio contenedor, que es lo que corresponde.
+        */}
+        <main id="contenido" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
           {children}
         </main>
       </div>
