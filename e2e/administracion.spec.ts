@@ -178,10 +178,23 @@ test.describe('Acceso por rol', () => {
   test('entrar directo a una ruta sin permiso responde, no rompe', async ({ page }) => {
     await entrar(page, 'cajero')
 
-    // El middleware deja pasar (hay sesion) y la pantalla pide los datos: el
-    // servidor responde 403 y la pantalla lo muestra como error, no en blanco.
+    // Se espera la RESPUESTA, no el pintado: esperar el aviso en pantalla
+    // dependia de cuando terminara de renderizar y fallaba de a ratos.
+    const respuesta = page.waitForResponse(
+      (r) => r.url().includes('/api/audit') && r.status() === 403,
+    )
     await page.goto('/auditoria')
-    await expect(page.getByRole('alert').or(page.getByText(/no se pudo/i))).toBeVisible()
+    await respuesta
+
+    // El middleware deja pasar --hay sesion-- y el servidor rechaza. La
+    // pantalla lo muestra como error, no queda en blanco. Se filtra por texto
+    // porque la region de avisos tambien es un `alert`, y esta vacia.
+    const aviso = page.getByRole('alert').filter({ hasText: /no se pudo cargar/i })
+    await expect(aviso).toBeVisible()
+
+    // Y dice por que, en castellano: no un codigo ni una traza.
+    await expect(aviso).toContainText(/falta el permiso/i)
+    await expect(aviso.getByRole('button', { name: 'Reintentar' })).toBeVisible()
   })
 })
 
