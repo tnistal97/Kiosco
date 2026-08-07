@@ -191,6 +191,39 @@ export default tseslint.config(
     },
   },
 
+  // -------------------------------------------- el dinero no se vuelve numero
+  //
+  // Un importe sale de la base como `Decimal` y se opera como `Decimal`. En el
+  // momento en que alguien escribe `precio.toNumber()` para "hacer una cuenta
+  // rapida", el importe vuelve a ser un `double` de IEEE 754 y con el vuelven
+  // los centavos fantasma que toda la Fase 3 existe para eliminar.
+  //
+  // La regla vive aca y no solo en un comentario porque un comentario se
+  // rompe el dia que alguien tiene apuro. Ver docs/PHASE3_MONEY_MIGRATION.md.
+  //
+  // `src/server/money.ts` esta excluido: es el unico lugar autorizado a cruzar
+  // la frontera, y lo hace en una sola funcion documentada.
+  {
+    files: ['src/modules/**/*.ts', 'src/server/**/*.ts', 'src/app/api/**/*.ts'],
+    ignores: ['src/server/money.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression > MemberExpression[property.name='toNumber']",
+          message:
+            'No conviertas un importe a number: la aritmetica financiera se hace con Decimal. ' +
+            'Usa los helpers de @/server/money (sumar, restar, multiplicar, comparar).',
+        },
+        {
+          selector:
+            "CallExpression[callee.name='Number'] > MemberExpression[property.name='price']",
+          message: 'Un precio no se convierte a number. Ver @/server/money.',
+        },
+      ],
+    },
+  },
+
   // ------------------------------------------------------------------- tests
   {
     files: ['tests/**/*.ts'],
