@@ -23,16 +23,29 @@ if (enJsdom) {
   })
 
   /**
-   * jsdom no implementa estas dos y Headless UI las usa.
+   * jsdom no implementa estas tres y Headless UI las usa.
    *
    * Sin `matchMedia` el componente revienta al montar; sin `scrollIntoView`
-   * falla al mover el foco dentro de un menu.
+   * falla al mover el foco dentro de un menu; sin `ResizeObserver` el menu
+   * lanza `ReferenceError` DESPUES de que la prueba termino, al arrancar su
+   * maquina de estados. Ese ultimo no rompia ninguna prueba, pero vitest lo
+   * contaba como error sin manejar --y un error sin manejar puede tapar uno
+   * de verdad--.
    *
    * La comprobacion va sobre una vista sin tipos a proposito: los tipos del
-   * DOM dicen que las dos existen siempre, asi que preguntarlo directamente
+   * DOM dicen que las tres existen siempre, asi que preguntarlo directamente
    * seria "codigo muerto" para el compilador. En jsdom no existen.
    */
   const ventana = window as unknown as Record<string, unknown>
+  if (typeof ventana.ResizeObserver !== 'function') {
+    ventana.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    globalThis.ResizeObserver = ventana.ResizeObserver as typeof ResizeObserver
+  }
+
   if (typeof ventana.matchMedia !== 'function') {
     ventana.matchMedia = (query: string) => ({
       matches: false,
