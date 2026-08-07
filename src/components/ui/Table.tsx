@@ -15,7 +15,15 @@ import { cn } from './cn'
 export function TableWrap({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div
-      className={cn('w-full overflow-x-auto rounded-lg border border-line bg-surface', className)}
+      className={cn(
+        // `min-w-0` no sobra: dentro de un contenedor flex o grid el ancho
+        // minimo por omision es el del contenido, asi que una tabla ancha
+        // empuja al padre y termina desplazando la PAGINA entera en vez de
+        // desplazarse ella. Es lo que hacia que /usuarios se fuera al costado
+        // en un telefono.
+        'w-full min-w-0 max-w-full overflow-x-auto rounded-lg border border-line bg-surface',
+        className,
+      )}
     >
       {children}
     </div>

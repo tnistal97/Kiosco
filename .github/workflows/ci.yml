@@ -179,14 +179,109 @@ jobs:
       - name: El service worker no debe cachear rutas privadas
         run: |
           if [ ! -f public/sw.js ]; then
-            echo "next-pwa no genero public/sw.js"
+            echo "Serwist no genero public/sw.js"
             exit 1
           fi
           if ! grep -q 'NetworkOnly' public/sw.js; then
-            echo "El service worker no declara NetworkOnly para las rutas privadas."
+            echo "El service worker no declara NetworkOnly para lo que no esta permitido."
             exit 1
           fi
           echo "Service worker correcto."
+
+      # La comprobacion fina: se leen las entradas del manifiesto de precarga
+      # y ninguna puede ser una pantalla ni un endpoint. El `grep` de arriba
+      # solo dice que la palabra esta; esto dice que la politica se cumple.
+      - name: Ninguna ruta privada precargada
+        run: npx vitest run tests/unit/pwa-cache.test.ts
+
+      - name: Guardar el service worker construido
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-worker
+          path: public/sw.js
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Extremo a extremo y PWA.
+  #
+  # Corren contra la construccion de produccion y una base efimera, con un
+  # navegador de verdad. Es el unico trabajo que comprueba que las piezas
+  # encajen: el escaner con el dialogo, el ticket con el F5, la anulacion con
+  # la caja.
+  # ---------------------------------------------------------------------------
+  extremo-a-extremo:
+    name: Extremo a extremo y PWA
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: kiosco_ci
+          POSTGRES_PASSWORD: kiosco_ci
+          POSTGRES_DB: kiosco_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Las E2E escriben: van contra una base propia, no contra la de la suite.
+      DATABASE_URL: postgresql://kiosco_ci:kiosco_ci@127.0.0.1:5432/kiosco_dev?schema=public
+      E2E_DATABASE_URL: postgresql://kiosco_ci:kiosco_ci@127.0.0.1:5432/kiosco_dev?schema=public
+      PWA_CHECK_URL: http://127.0.0.1:3100
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar el cliente de Prisma
+        run: npx prisma generate
+
+      - name: Instalar el navegador
+        run: npx playwright install --with-deps chromium
+
+      - name: Aplicar la cadena de migraciones
+        run: npx prisma migrate deploy
+
+      - name: Construir
+        run: npm run build
+
+      - name: Pruebas de extremo a extremo
+        run: npx playwright test
+
+      # La PWA se comprueba contra el servidor de produccion ya construido:
+      # manifiesto, iconos, registro, pantalla sin conexion y --lo que
+      # importa-- que despues de recorrer las pantallas privadas no quede
+      # ninguna respuesta guardada en disco.
+      - name: Levantar el servidor de produccion
+        run: |
+          npx next start -p 3100 &
+          npx wait-on http://127.0.0.1:3100/login --timeout 90000
+
+      - name: Comprobar la PWA
+        run: npm run pwa:check
+
+      - name: Guardar el informe de extremo a extremo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
 
   # ---------------------------------------------------------------------------
   # Auditoría de dependencias.

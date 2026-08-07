@@ -137,7 +137,19 @@ export function ListaGrupos({
 
 export function Marca({ compacta = false, nombre }: { compacta?: boolean; nombre: string }) {
   return (
-    <Link href="/" className="flex min-w-0 items-center gap-2.5" aria-label={`${nombre} — inicio`}>
+    <Link
+      href="/"
+      // Es un enlace de verdad --lleva al inicio-- y en un telefono se toca
+      // con el dedo. El cuadrado de color mide 32 px por estetica; el area
+      // sensible mide 44 de alto Y de ancho. Sin `min-w-touch` en la version
+      // compacta el area quedaba en 32 de ancho, que es lo que medía la
+      // prueba de objetivos tactiles.
+      className={cn(
+        'flex min-h-touch items-center justify-center gap-2.5',
+        compacta ? 'min-w-touch' : 'min-w-0 justify-start',
+      )}
+      aria-label={`${nombre} — inicio`}
+    >
       <span
         aria-hidden="true"
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-bold text-ink-on-solid"

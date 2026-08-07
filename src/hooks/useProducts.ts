@@ -46,6 +46,13 @@ export async function buscarProductosPorIds(ids: number[]): Promise<Product[]> {
 
 export interface UseProductsOptions {
   /**
+   * Filtros con los que arranca la pantalla.
+   *
+   * La caja pasa `estado: 'activos'`: un producto dado de baja no tiene por
+   * que aparecer entre los resultados de una venta.
+   */
+  filtrosIniciales?: FiltrosProductos
+  /**
    * La busqueda y la paginacion las resuelve el servidor.
    *
    * La caja y la pantalla de productos lo usan. Con el catalogo completo en
@@ -69,14 +76,14 @@ export interface FiltrosProductos {
 }
 
 export function useProducts(options: UseProductsOptions = {}) {
-  const { enServidor = false, pageSize = PAGE_SIZE_MAX } = options
+  const { enServidor = false, pageSize = PAGE_SIZE_MAX, filtrosIniciales } = options
   const tamanoPagina = Math.min(pageSize, PAGE_SIZE_MAX)
 
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [page, setPage] = useState<number>(1)
-  const [filtros, setFiltros] = useState<FiltrosProductos>({})
+  const [filtros, setFiltros] = useState<FiltrosProductos>(filtrosIniciales ?? {})
   const [total, setTotal] = useState<number>(0)
   const [totalPages, setTotalPages] = useState<number>(1)
   const [isLoading, setIsLoading] = useState<boolean>(true)
@@ -147,8 +154,16 @@ export function useProducts(options: UseProductsOptions = {}) {
     async (codigo: string, opciones: { soloActivos?: boolean } = {}): Promise<Product | null> => {
       const q = codigo.trim()
       if (!q) return null
-      const params = new URLSearchParams({ q, pageSize: '20' })
-      if (opciones.soloActivos === false) params.set('estado', 'todos')
+
+      // Por omision, SOLO activos. El servidor devuelve todos si no se le
+      // dice nada, y confiar en ese valor por omision hacia que la caja
+      // pudiera vender un producto dado de baja: lo encontro la prueba de
+      // extremo a extremo del escaneo.
+      const params = new URLSearchParams({
+        q,
+        pageSize: '20',
+        estado: opciones.soloActivos === false ? 'todos' : 'activos',
+      })
       const pagina = await apiRequest(`/api/products?${params.toString()}`, {
         parse: parsePaginaProductos,
       })

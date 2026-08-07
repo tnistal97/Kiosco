@@ -137,7 +137,43 @@ export function MatrizPermisos({ roles }: { roles: RolDTO[] }) {
         )}
       </div>
 
-      <TableWrap className="rounded-none border-x-0 border-b-0">
+      {/*
+        En movil, una lista por rol.
+
+        Una matriz de nueve columnas no se arregla con desplazamiento lateral:
+        a 375 px hay que arrastrar de a un rol por vez sin ver el nombre del
+        permiso, que es justo lo que se necesita comparar. Ademas, las celdas
+        fijas con `position: sticky` dentro del contenedor desplazable hacian
+        que la PAGINA entera se corriera al costado.
+      */}
+      <div className="flex flex-col gap-3 p-4 md:hidden">
+        {detalle.map((r) => {
+          const suyos = AREAS.flatMap((a) =>
+            a.permisos.filter((p) => r.permissions.includes(p.clave)),
+          )
+          return (
+            <div key={r.id} className="rounded-lg border border-line bg-sunken p-3">
+              <p className="text-sm font-semibold text-ink">{rolLegible(r.name)}</p>
+              {suyos.length === 0 ? (
+                <p className="mt-1 text-xs text-warning">Sin ningún permiso.</p>
+              ) : (
+                <ul className="mt-2 flex flex-col gap-1">
+                  {suyos.map((p) => (
+                    <li key={p.clave} className="flex gap-2 text-xs text-ink-muted">
+                      <span aria-hidden="true" className="text-success">
+                        ✓
+                      </span>
+                      {p.que}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <TableWrap className="hidden rounded-none border-x-0 border-b-0 md:block">
         <Table caption="Matriz de permisos por rol">
           <THead>
             <TR>

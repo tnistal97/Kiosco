@@ -36,7 +36,13 @@ export default function VentaPage() {
   const hayCapa = useHayCapaAbierta()
 
   const { products, searchTerm, setSearchTerm, buscarPorCodigo, isLoading, error, fetchProducts } =
-    useProducts({ enServidor: true, pageSize: RESULTADOS_VISIBLES })
+    useProducts({
+      enServidor: true,
+      pageSize: RESULTADOS_VISIBLES,
+      // Un producto dado de baja no se vende, asi que tampoco aparece entre
+      // los resultados de la caja.
+      filtrosIniciales: { estado: 'activos' },
+    })
 
   const items = useCartStore((s) => s.items)
   const agregar = useCartStore((s) => s.add)

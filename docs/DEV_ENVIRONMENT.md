@@ -93,7 +93,7 @@ el usuario necesita permiso para crear bases:
 npm run format:check   # Prettier
 npm run lint           # ESLint, sin asistentes
 npm run typecheck      # tsc --noEmit
-npm test               # 354 pruebas
+npm test               # 533 pruebas
 npm run test:coverage  # con informe en coverage/
 npm run build          # construcción
 npm audit              # tiene que decir 0
@@ -127,3 +127,71 @@ Conviene incorporar un seed así al repositorio (`prisma/seed.dev.ts`) para que 
 - `test.js`, que borraba productos y stock sin ninguna guarda de entorno, se
   eliminó en la Fase 0. Si reaparece algo parecido, tiene que llevar la misma
   comprobación que `tests/setup.ts`.
+
+## Datos ficticios para trabajar
+
+`npm run seed` deja lo mínimo para arrancar. Para ver las pantallas con
+volumen suficiente como para que se noten los problemas de diseño —una tabla
+con un solo producto no revela nada— está el otro:
+
+```bash
+DATABASE_URL='postgresql://kiosco_dev:kiosco_dev@127.0.0.1:5433/kiosco_dev?schema=public'   npm run seed:demo
+```
+
+Crea dos sucursales, 43 productos con stock variado (incluidos agotados, con
+stock bajo y uno dado de baja), doce ventas —una anulada—, movimientos de
+caja, arqueos y bitácora. Diez usuarios, **uno por rol**, todos con la clave
+`Demo1234!`:
+
+| Usuario      | Rol         | Para probar                                   |
+| ------------ | ----------- | --------------------------------------------- |
+| `admin`      | Administrador | Todo                                        |
+| `duenio`     | Dueño       | Igual que admin, por ahora                    |
+| `encargado`  | Encargado   | Cambia precios, anula, arquea                 |
+| `supervisor` | Supervisor  | Anula sin ser administrador                   |
+| `cajero`     | Cajero      | Vende y nada más                              |
+| `repositor`  | Repositor   | Solo stock: no vende ni edita fichas          |
+| `compras`    | Compras     | Edita fichas pero **no precios**              |
+| `auditor`    | Auditor     | Solo lectura, incluida la bitácora            |
+| `exempleado` | Cajero      | Dado de baja: no puede entrar                 |
+| `norte`      | Encargado   | Otra sucursal: para probar el aislamiento     |
+
+El seed **se niega a correr** si la base no termina en `_dev`. Es la misma
+guarda que usa la suite de pruebas.
+
+## Pruebas de extremo a extremo
+
+Corren contra la construcción de producción, con un navegador de verdad y la
+base de desarrollo. **Escriben**: registran ventas, anulan y ajustan stock.
+
+```bash
+npx playwright install chromium   # una sola vez
+npm run build
+npm run e2e
+```
+
+`npm run e2e:ui` abre el modo interactivo de Playwright, que es lo más rápido
+para entender por qué falla una.
+
+## Comprobación de la PWA
+
+```bash
+npm run build
+npx next start -p 3100
+npm run pwa:check
+```
+
+Verifica el manifiesto, los iconos, el registro del service worker, la
+pantalla de sin conexión y —lo que importa— que después de recorrer las diez
+pantallas privadas con la sesión abierta no quede **ninguna** respuesta
+privada guardada en disco.
+
+## Capturas y mediciones
+
+```bash
+npm run dev
+npm run screenshots -- after    # docs/screenshots/phase2-after/
+npm run ui:metrics -- after     # docs/metrics/phase2-after.json
+```
+
+Las dos se niegan a apuntar a otra cosa que no sea `localhost`.

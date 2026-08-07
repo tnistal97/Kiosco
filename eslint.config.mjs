@@ -32,6 +32,11 @@ export default tseslint.config(
       'next-env.d.ts',
       'prisma/client/**',
       'generated/**',
+      // Resultados de las pruebas de extremo a extremo: capturas, trazas y
+      // el informe HTML que genera Playwright.
+      'test-results/**',
+      'playwright-report/**',
+      'blob-report/**',
       // Service worker generado por Serwist en cada construccion. El fuente
       // que si se revisa es src/app/sw.ts.
       'public/sw.js',

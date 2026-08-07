@@ -26,8 +26,11 @@ export function AyudaAtajos() {
   return (
     <>
       <div className="flex justify-end">
+        {/* `sm` y no `xs`: es un boton que se toca, y en la caja tambien se
+            usa desde una tablet. `xs` mide 32 px y queda por debajo del
+            minimo tactil. */}
         <Button
-          size="xs"
+          size="sm"
           variant="ghost"
           onClick={() => {
             setAbierto(true)

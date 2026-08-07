@@ -250,8 +250,19 @@ export const useCartStore = create<CartState>((set, get) => ({
   usarSucursal(branchId) {
     const actual = get().branchId
     if (actual === branchId) return
-    // Cambio de sucursal: el ticket anterior no vale aca. Los precios y el
-    // stock son de otra sucursal.
+
+    if (actual === null) {
+      // Primera vez en esta pestania. NO es un cambio de sucursal: es el
+      // arranque, y el ticket guardado todavia no se leyo. Borrarlo aca
+      // dejaba sin efecto la restauracion entera --lo detecto la prueba de
+      // extremo a extremo del F5--. De si el ticket guardado corresponde a
+      // esta sucursal se ocupa `hidratar`.
+      set({ branchId })
+      return
+    }
+
+    // Cambio de sucursal de verdad: el ticket anterior no vale aca, porque
+    // los precios y el stock son de otra sucursal.
     set({ branchId, items: [] })
     olvidarTicketGuardado()
   },

@@ -24,7 +24,16 @@ export function Card({
 }) {
   return (
     <Tag
-      className={cn('rounded-lg border border-line bg-surface', padded && 'p-4 sm:p-5', className)}
+      className={cn(
+        // `min-w-0`: dentro de un contenedor flex el ancho minimo por omision
+        // es el del contenido. Una tarjeta con una tabla ancha adentro crecia
+        // hasta el ancho de la tabla y arrastraba la PAGINA al costado, aunque
+        // la tabla ya tuviera su propio `overflow-x-auto`. Lo detecto la
+        // prueba de /usuarios a 375 px, con la matriz de permisos.
+        'min-w-0 rounded-lg border border-line bg-surface',
+        padded && 'p-4 sm:p-5',
+        className,
+      )}
     >
       {children}
     </Tag>

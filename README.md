@@ -97,7 +97,7 @@ Definidas en `.env.example`. Ninguna trae valores reales.
 | `npm run format`             | Prettier sobre todo el proyecto      |
 | `npm run format:check`       | Prettier en modo comprobación        |
 | `npm run typecheck`          | `tsc --noEmit`                       |
-| `npm test`                   | Las 354 pruebas                      |
+| `npm test`                   | Las 533 pruebas                      |
 | `npm run test:coverage`      | Pruebas con informe de cobertura     |
 | `npm run test:unit`          | Solo unitarias                       |
 | `npm run test:integration`   | Solo de integración                  |

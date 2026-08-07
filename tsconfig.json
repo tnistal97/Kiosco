@@ -1,10 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    // `webworker` para `src/app/sw.ts`, que corre en un service worker y usa
-    // `ServiceWorkerGlobalScope`, `caches` y `ExtendableEvent`. No colisiona
-    // con `dom`: los tipos que comparten son compatibles.
-    "lib": ["dom", "dom.iterable", "esnext", "webworker"],
+    // `webworker` NO va aca. `src/app/sw.ts` lo pide con una referencia
+    // triple-slash propia; declararlo global cambia el tipo de cosas del DOM
+    // en todo el proyecto --`Element.textContent` deja de ser nulable-- y
+    // apaga comprobaciones que si hacen falta.
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
     "noEmit": true,

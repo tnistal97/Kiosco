@@ -155,9 +155,18 @@
     font-family: var(--font-sans);
     font-size: 16px;
     line-height: 1.5;
-    /* Sin scroll horizontal, nunca. Una tabla ancha se desplaza dentro de su
-     * propio contenedor, no arrastra la pantalla entera. */
-    overflow-x: hidden;
+
+    /*
+     * Sin scroll horizontal, nunca. Una tabla ancha se desplaza dentro de su
+     * propio contenedor; no arrastra la pantalla entera.
+     *
+     * `clip` y no `hidden`: `hidden` esconde la barra pero deja que la pagina
+     * se siga desplazando por programa, y con eso alcanza para que un gesto
+     * en el telefono corra la pantalla y saque de vista la navegacion. `clip`
+     * lo impide de verdad. A diferencia de `hidden`, tampoco fuerza el otro
+     * eje a `auto`, asi que el desplazamiento vertical sigue igual.
+     */
+    overflow-x: clip;
   }
 
   body {
@@ -165,7 +174,7 @@
     color: var(--color-ink);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   /* Foco visible siempre, y con la misma forma en todos lados. Nada de

@@ -1,21 +1,28 @@
 # Estrategia de calidad
 
-> **Estado: implementado en la Fase 1.** Lo que sigue era el plan; las tablas
-> de esta sección muestran lo que quedó hecho. Las secciones 4 a 10 conservan
-> el diseño original, que se siguió sin cambios salvo donde se indica.
+> **Estado: implementado en la Fase 1 y ampliado en la Fase 2.** Lo que sigue
+> era el plan; las tablas de esta sección muestran lo que quedó hecho. Las
+> secciones 4 a 10 conservan el diseño original, que se siguió sin cambios
+> salvo donde se indica.
 
 ## Dónde se estaba y dónde se está
 
-|             | Antes de la Fase 0                         | Ahora                                                                    |
-| ----------- | ------------------------------------------ | ------------------------------------------------------------------------ |
-| Tests       | 0 archivos                                 | **354**, en seis categorías                                              |
-| Framework   | Ninguno                                    | Vitest 4, con cobertura y umbrales                                       |
-| ESLint      | El script existía; la configuración **no** | Configuración plana, con información de tipos. **0 errores**             |
-| Prettier    | No instalado                               | Configurado para ts, tsx, js, json, md, css y prisma                     |
-| TypeScript  | `strict: true`, evadido por 35 `: any`     | `strict` + 4 opciones más. **0 `any` en `src/`**                         |
-| CI          | Ninguna                                    | GitHub Actions: formato, lint, tipos, migraciones, pruebas, build, audit |
-| `npm audit` | 25 avisos, **1 crítico**                   | **0**                                                                    |
-| Cobertura   | —                                          | 84,1 % líneas · 82,0 % sentencias · 85,4 % funciones · 61,8 % ramas      |
+|                  | Antes de la Fase 0                         | Fase 1                                                | Fase 2                                                              |
+| ---------------- | ------------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------- |
+| Pruebas          | 0 archivos                                 | 354, en seis categorías                               | **533** en vitest + **40** de extremo a extremo                     |
+| Framework        | Ninguno                                    | Vitest 4                                              | Vitest 4 + jsdom + Testing Library + **Playwright**                 |
+| ESLint           | El script existía; la configuración **no** | Configuración plana, con tipos. 0 errores             | Igual. 0 errores                                                    |
+| Prettier         | No instalado                               | ts, tsx, js, json, md, css y prisma                   | Igual                                                               |
+| TypeScript       | `strict: true`, evadido por 35 `: any`     | `strict` + 4 opciones. 0 `any` en `src/`              | Igual                                                               |
+| CI               | Ninguna                                    | Formato, lint, tipos, migraciones, pruebas, build     | **+ extremo a extremo y comprobación de la PWA**                    |
+| `npm audit`      | 25 avisos, **1 crítico**                   | 0, con 14 `overrides`                                 | **0, con 2 `overrides`**                                            |
+| Alcance medido   | —                                          | Solo servidor                                         | Servidor **+ componentes, store y hooks**                           |
+| Cobertura        | —                                          | 84,1 L · 82,0 S · 85,4 F · 61,8 R (solo servidor)     | **81,6 L · 78,7 S · 80,4 F · 69,5 R** (alcance más amplio)          |
+
+Los tres primeros números de cobertura bajan y el cuarto sube, y las dos cosas
+son la misma: el alcance pasó de "solo servidor" a "servidor más las piezas de
+interfaz que tienen pruebas". Los umbrales **subieron**: de 75/75/50/73 a
+78/76/63/75.
 
 ### Opciones de TypeScript, una por una
 

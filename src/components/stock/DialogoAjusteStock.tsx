@@ -9,9 +9,18 @@ import type { Product } from '@/hooks/useProducts'
  * Ajuste de inventario.
  *
  * Dos formas de escribirlo porque en el mostrador se piensa de las dos
- * maneras: "entraron 12" y "quedan 30". Al servidor siempre va el total, que
- * es lo unico que no depende de que nadie mas haya tocado el stock mientras
- * se llenaba el formulario.
+ * maneras: "entraron 12" y "quedan 30". Cada una va por su verbo:
+ *
+ *   PATCH /api/stock/:id   delta      suma o resta
+ *   PUT   /api/stock/:id   quantity   fija el total (recuento)
+ *
+ * No es lo mismo. "Entraron 12" sobre un stock que otro acaba de tocar sigue
+ * siendo correcto; "quedan 30" pisa lo que haya. Mandar siempre el total
+ * convertiria una entrada de mercaderia en un recuento a ciegas.
+ *
+ * Va contra `/api/stock`, que exige `stock.adjust`, y no contra
+ * `/api/products/:id`, que exige `products.update`: un repositor tiene el
+ * primero y no el segundo, y con el endpoint equivocado no podia ajustar nada.
  *
  * El motivo es obligatorio, y esa es la razon de que este dialogo exista: el
  * ajuste dejo de ser un campo escondido en la ficha del producto que se
@@ -74,9 +83,14 @@ export function DialogoAjusteStock({
     setEnviando(true)
     setError(null)
     try {
-      await apiRequest(`/api/products/${producto.id}`, {
-        method: 'PUT',
-        body: { totalStock: nuevoTotal, stockReason: motivo.trim() },
+      const cuerpo =
+        modo === 'delta'
+          ? { delta: Math.trunc(n), reason: motivo.trim() }
+          : { quantity: nuevoTotal, reason: motivo.trim() }
+
+      await apiRequest(`/api/stock/${producto.id}`, {
+        method: modo === 'delta' ? 'PATCH' : 'PUT',
+        body: cuerpo,
         parse: () => null,
       })
       onAjustado()
