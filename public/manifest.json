@@ -1,21 +1,49 @@
 {
-  "name": "Kiosco Argentino",
-  "short_name": "Kiosco",
-  "description": "Escanea y consulta productos argentinos",
+  "id": "/",
+  "name": "Almacén — gestión",
+  "short_name": "Almacén",
+  "description": "Punto de venta, caja y stock del almacén",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#0a0a0a",
+  "orientation": "any",
+  "background_color": "#0c1117",
+  "theme_color": "#0c1117",
+  "lang": "es-AR",
+  "dir": "ltr",
+  "categories": ["business", "productivity"],
   "icons": [
     {
       "src": "/icon-192x192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icon-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Venta",
+      "short_name": "Venta",
+      "description": "Abrir la caja registradora",
+      "url": "/venta"
+    },
+    {
+      "name": "Caja",
+      "short_name": "Caja",
+      "description": "Movimientos y arqueo",
+      "url": "/caja"
     }
   ]
 }

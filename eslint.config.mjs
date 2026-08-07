@@ -32,11 +32,10 @@ export default tseslint.config(
       'next-env.d.ts',
       'prisma/client/**',
       'generated/**',
-      // Generados por next-pwa en cada build.
+      // Service worker generado por Serwist en cada construccion. El fuente
+      // que si se revisa es src/app/sw.ts.
       'public/sw.js',
       'public/sw.js.map',
-      'public/workbox-*.js',
-      'public/fallback-*.js',
     ],
   },
 

@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    // `webworker` para `src/app/sw.ts`, que corre en un service worker y usa
+    // `ServiceWorkerGlobalScope`, `caches` y `ExtendableEvent`. No colisiona
+    // con `dom`: los tipos que comparten son compatibles.
+    "lib": ["dom", "dom.iterable", "esnext", "webworker"],
     "allowJs": true,
     "skipLibCheck": true,
     "noEmit": true,

@@ -1,23 +1,70 @@
 /**
  * Que puede guardar el service worker y que no.
  *
- * next-pwa cachea por defecto las peticiones same-origin. Eso incluye
- * /api/cash, /api/users y /api/sales. Consecuencia concreta: despues de que
- * un cajero cierra sesion, alguien con el mismo equipo y sin conexion puede
- * seguir viendo en pantalla la ultima respuesta guardada en disco.
+ * **Es una lista blanca, no una lista negra.** Se guarda lo que esta
+ * explicitamente permitido y todo lo demas va a la red. Con una lista negra,
+ * cada pantalla nueva nacia cacheada hasta que alguien se acordara de
+ * agregarla, y agregarla se olvida: la Fase 2 renombro casi todas las rutas
+ * --`/admin/*` dejo de existir-- y la lista vieja habria dejado a
+ * `/auditoria`, `/usuarios` y `/ventas` guardandose en disco sin que nadie lo
+ * notara.
  *
- * La politica vive aca, en un unico modulo, para que next.config.ts y los
- * tests miren exactamente la misma lista.
+ * El problema concreto que evita: despues de que un cajero cierra sesion,
+ * alguien con el mismo equipo y sin conexion podia seguir viendo en pantalla
+ * la ultima respuesta guardada.
+ *
+ * La politica vive en un unico modulo para que la configuracion del service
+ * worker y los tests miren exactamente la misma lista.
  */
 
 /**
- * Rutas que el service worker no debe guardar nunca.
+ * Lo unico que se puede guardar.
  *
- * - /api/*      toda respuesta de la API es especifica de la sesion
- * - /login      no tiene sentido servirla desde cache
- * - /admin/*    pantallas con informacion administrativa
+ * Todo publico y todo estatico: nada aca depende de quien haya iniciado
+ * sesion.
+ *
+ * - `/_next/static/`      bundles y CSS con hash en el nombre
+ * - `/icon-192x192.png`   iconos de la aplicacion
+ * - `/manifest.json`      manifiesto de la PWA
+ * - `/offline`            pantalla publica de "sin conexion"
+ * - `/favicon.ico`, `/robots.txt`
  */
-export const PWA_EXCLUDE_PATTERNS: RegExp[] = [/^\/api\//, /^\/login\/?$/, /^\/admin\//]
+export const PWA_ALLOW_PATTERNS: RegExp[] = [
+  /^\/_next\/static\//,
+  /^\/icon-\d+x\d+\.png$/,
+  /^\/icons\//,
+  /^\/manifest\.json$/,
+  /^\/offline\/?$/,
+  /^\/favicon\.ico$/,
+  /^\/robots\.txt$/,
+]
+
+/**
+ * Rutas que nunca se guardan, aunque alguien agregue un patron permisivo.
+ *
+ * Redundante con la lista blanca a proposito: es la barrera que queda si
+ * mañana alguien afloja `PWA_ALLOW_PATTERNS`. Las pruebas comprueban las dos.
+ */
+export const PWA_DENY_PATTERNS: RegExp[] = [
+  /^\/api\//,
+  /^\/login\/?$/,
+  /^\/venta\/?$/,
+  /^\/ventas\b/,
+  /^\/caja\/?$/,
+  /^\/productos\b/,
+  /^\/stock\b/,
+  /^\/auditoria\b/,
+  /^\/usuarios\b/,
+  /^\/sucursales\b/,
+  /^\/configuracion\b/,
+  // Rutas de la version anterior. Se conservan por si queda un service
+  // worker viejo instalado en algun equipo.
+  /^\/admin\//,
+  /^\/control\//,
+]
+
+/** Ruta de la pantalla publica que se muestra sin conexion. */
+export const PWA_OFFLINE_PATH = '/offline'
 
 /** true si la ruta puede guardarse en el cache del navegador. */
 export function shouldCacheRequest(pathnameOrUrl: string): boolean {
@@ -28,21 +75,6 @@ export function shouldCacheRequest(pathnameOrUrl: string): boolean {
     ? new URL(pathnameOrUrl).pathname
     : (pathnameOrUrl.split('?')[0] ?? pathnameOrUrl)
 
-  return !PWA_EXCLUDE_PATTERNS.some((patron) => patron.test(pathname))
+  if (PWA_DENY_PATTERNS.some((p) => p.test(pathname))) return false
+  return PWA_ALLOW_PATTERNS.some((p) => p.test(pathname))
 }
-
-/**
- * Forma que espera next-pwa en su opcion `publicExcludes`/`buildExcludes` no
- * sirve para esto: esas filtran archivos estaticos, no peticiones en tiempo
- * de ejecucion. Lo que corresponde es `runtimeCaching` con un handler
- * NetworkOnly, mas la lista de exclusion del navigation fallback.
- */
-export const PWA_RUNTIME_CACHING = [
-  {
-    urlPattern: ({ url }: { url: URL }) => !shouldCacheRequest(url.pathname),
-    handler: 'NetworkOnly' as const,
-    options: {
-      cacheName: 'sin-cache-datos-privados',
-    },
-  },
-]

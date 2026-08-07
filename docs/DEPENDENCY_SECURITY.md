@@ -1,7 +1,9 @@
 # Seguridad de dependencias
 
-> Estado al cierre de la Fase 1: **`npm audit` → 0 vulnerabilidades**.
-> Al inicio: 19 (15 altas, 2 moderadas, 2 bajas).
+> Estado al cierre de la Fase 2: **`npm audit` → 0 vulnerabilidades, con 2
+> overrides**.
+> Al cierre de la Fase 1: 0 vulnerabilidades, con **14** overrides.
+> Al inicio de la Fase 1: 19 (15 altas, 2 moderadas, 2 bajas).
 > Al inicio de la Fase 0: 25, con una **crítica**.
 
 ## Qué NO se hizo, y por qué
@@ -133,48 +135,78 @@ caja se usa desde una máquina fija con conexión. La única ventaja real es el
 ícono en la pantalla de inicio. Es la opción más barata si el modo sin
 conexión no entra en el plan.
 
-**No se hizo ahora** porque la Fase 1 es de consolidación, no de cambios de
+**No se hizo en la Fase 1** porque era de consolidación, no de cambios de
 infraestructura, y porque los overrides dejaron `npm audit` limpio: la
 urgencia bajó de "hay una cadena con RCE" a "hay una dependencia sin
-mantenimiento". Lo segundo se resuelve con calma.
+mantenimiento".
 
-## Dependencias que se eliminaron
+## Fase 2: `next-pwa` fuera, Serwist adentro
 
-De la Fase 0, para que quede el registro completo:
+Se tomó la opción 1. El cambio, completo:
 
-| Paquete               | Motivo                                                                                                                                                   |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `next-auth`           | Única vulnerabilidad **crítica**. Cero usos en el código                                                                                                 |
-| `jsonwebtoken`        | Reemplazado por `jose`, que funciona en Edge                                                                                                             |
-| `@types/jsonwebtoken` | Sobra al sacar el anterior                                                                                                                               |
-| `@faker-js/faker`     | Solo lo usaba un artefacto compilado obsoleto                                                                                                            |
-| `lucide-react`        | Cero usos                                                                                                                                                |
-| `react-icons`         | Cero usos                                                                                                                                                |
-| `ts-node`             | Cero usos                                                                                                                                                |
-| `@types/next-pwa`     | Declaraba `next@13.5.11` como dependencia **real**, arrastrando un Next 13 completo a `node_modules`. Reemplazado por una declaración local de 20 líneas |
-| `dotenv`              | Nunca llegó a usarse                                                                                                                                     |
+| Antes                                       | Ahora                              |
+| ------------------------------------------- | ---------------------------------- |
+| `next-pwa` 5.6.0 (última publicación: 2022) | `@serwist/next` 9.5.12 + `serwist` |
+| Workbox 6, con su propio webpack y rollup   | Sin cadena de compilación aparte   |
+| Configuración dentro de `next.config.ts`    | `src/app/sw.ts`, TypeScript real   |
+| **14 overrides**                            | **2 overrides**                    |
 
-Y dos que estaban en el lugar equivocado: `@prisma/client` y `bcrypt` estaban
-en `devDependencies` pero se usan en tiempo de ejecución. Con
-`npm ci --omit=dev` la aplicación no arrancaba.
+Los doce overrides que desaparecieron eran todos de la cadena de `next-pwa`:
+`rollup`, `picomatch`, `brace-expansion` (las dos ramas), `minimatch`,
+`lodash`, `fast-uri`, `ajv`, `serialize-javascript`, `@babel/core`,
+`@babel/plugin-transform-modules-systemjs` y `webpack`. Se quitaron todos, se
+corrió `npm install` y `npm audit`, y se volvieron a poner solo los dos que
+seguían haciendo falta.
 
-## Cómo mantener esto
+Los que quedan **no tienen nada que ver con la PWA**: son dos copias que
+`next` trae adentro.
 
-```bash
-npm audit          # tiene que decir 0
-npm outdated       # informativo
-```
+| Override                       | Aviso                                                                           | Dónde está                 | Por qué sigue                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------- |
+| `postcss@<=8.5.22` → `^8.5.26` | XSS por `</style>`, y tres avisos de lectura de archivos vía `sourceMappingURL` | La copia anidada en `next` | `next` no la actualizó todavía                                             |
+| `sharp@<0.35.0` → `^0.35.3`    | Vulnerabilidades heredadas de libvips                                           | Traído por `next`          | Igual. Además el proyecto no usa `next/image`, así que sharp no se ejecuta |
 
-El paso de CI corre `npm audit` y **falla** ante cualquier vulnerabilidad
-crítica o alta. Las moderadas y bajas se informan sin cortar la construcción:
-cortar por una vulnerabilidad baja en una herramienta de compilación
-entrenaría a todo el mundo a ignorar el paso.
+La única "corrección" que ofrece `npm audit` para las dos es
+`npm install next@16.3.0`, un cambio de versión mayor. No se hizo: la Fase 2
+es de interfaz, y actualizar el framework en el mismo lote haría imposible
+saber qué rompió qué.
 
-Al agregar un override nuevo:
+### Lo que se ganó, además de los overrides
 
-1. Usar selector con rango, nunca el nombre pelado.
-2. Anotarlo en la tabla de arriba con su aviso y su riesgo.
-3. Correr build **y** comprobar que el service worker se regeneró.
-4. Revisarlos cada tanto: un override deja de hacer falta cuando el paquete
-   que lo necesitaba se actualiza, y uno olvidado congela una versión sin
-   motivo.
+- **La política de caché pasó a lista blanca.** Antes era una lista de
+  exclusiones, y la Fase 2 renombró casi todas las rutas: `/admin/*` dejó de
+  existir, así que `/auditoria`, `/usuarios` y `/ventas` habrían quedado
+  guardándose en disco sin que nadie lo notara. Ahora una pantalla nueva nace
+  fuera del caché y hay que permitirla a propósito.
+- **Pantalla pública de sin conexión**, que no muestra ningún dato del
+  comercio.
+- **Limpieza al iniciar y al cerrar sesión** de cualquier caché que hubiera
+  dejado la versión anterior.
+
+### Verificación
+
+`npm run pwa:check` levanta la construcción de producción en un navegador de
+verdad y comprueba, en este orden: manifiesto e iconos, que la pantalla de sin
+conexión sea pública y esté vacía de datos, que el service worker se registre,
+que **después de recorrer las diez pantallas privadas con la sesión abierta no
+quede ni una respuesta privada en el caché**, y que sin red se muestre la
+pantalla de sin conexión y no el catálogo.
+
+Encontró dos cosas que la revisión a ojo no habría visto:
+
+1. `/offline` **no estaba precargada**. El manifiesto que arma Serwist solo
+   lleva `public/` y `_next/static`; una ruta de la aplicación no entra sola.
+   El fallback apuntaba a algo que no estaba en el caché, y sin red el
+   navegador mostraba su propio error. Se corrigió con
+   `additionalPrecacheEntries`.
+2. Ocho archivos del andamio de Next (`next.svg`, `vercel.svg`, `test1.webp`…)
+   se estaban precargando. No los usaba nadie; se borraron.
+
+| Comprobación        | Resultado                       |
+| ------------------- | ------------------------------- |
+| `tsc --noEmit`      | 0 errores                       |
+| `eslint .`          | 0 errores                       |
+| `vitest run`        | 393 / 393                       |
+| `next build`        | Compila, `ƒ Middleware 39.4 kB` |
+| `npm run pwa:check` | 18 / 18 comprobaciones          |
+| `npm audit`         | 0 vulnerabilidades              |

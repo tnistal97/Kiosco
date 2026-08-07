@@ -26,8 +26,14 @@ import { REQUEST_ID_HEADER, requestIdDe } from '@/server/http/requestId'
  * navegacion a /admin.
  */
 
-/** Rutas accesibles sin sesion. */
-const PUBLIC_PATHS = new Set(['/login', '/api/auth/login', '/api/auth/logout'])
+/**
+ * Rutas accesibles sin sesion.
+ *
+ * `/offline` es la pantalla que muestra el service worker cuando no hay red.
+ * Tiene que ser publica: se llega a ella justamente cuando no se puede
+ * comprobar nada contra el servidor. No contiene ningun dato del comercio.
+ */
+const PUBLIC_PATHS = new Set(['/login', '/offline', '/api/auth/login', '/api/auth/logout'])
 
 /** Prefijos de recursos que no pasan por la comprobacion. */
 const PUBLIC_PREFIXES = ['/_next/', '/icons/', '/screenshots/']
@@ -37,17 +43,15 @@ const PUBLIC_FILES = new Set([
   '/favicon.ico',
   '/manifest.json',
   '/sw.js',
-  '/workbox-sw.js',
   '/robots.txt',
+  '/icon-192x192.png',
+  '/icon-512x512.png',
 ])
 
 function esPublica(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true
   if (PUBLIC_FILES.has(pathname)) return true
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) return true
-
-  // Los archivos generados de Workbox llevan un hash en el nombre.
-  if (/^\/workbox-[0-9a-f]+\.js$/.test(pathname)) return true
 
   return false
 }

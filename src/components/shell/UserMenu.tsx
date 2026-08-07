@@ -32,6 +32,22 @@ export function rolLegible(rol: string): string {
 }
 
 /**
+ * Le pide al service worker que borre todo lo que tenga guardado.
+ *
+ * La politica ya impide guardar respuestas privadas, asi que en teoria no hay
+ * nada que borrar. Se hace igual: es la red de seguridad para un equipo que
+ * tenga instalado un service worker viejo, de antes de la Fase 2, que si las
+ * guardaba.
+ *
+ * No espera respuesta ni bloquea el cierre de sesion: si el navegador no
+ * soporta service workers, no pasa nada.
+ */
+function limpiarCacheDelNavegador(): void {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+  navigator.serviceWorker.controller?.postMessage({ type: 'KIOSCO_LIMPIAR_CACHE' })
+}
+
+/**
  * Menu del usuario.
  *
  * Es donde vive "cerrar sesion", que antes era un boton rojo permanente al
@@ -55,6 +71,7 @@ export function UserMenu({ session }: { session: SesionCliente }) {
     // haber desaparecido igual. Lo que no puede pasar es quedarse con el
     // ticket de otro.
     vaciarCarrito()
+    limpiarCacheDelNavegador()
 
     try {
       await apiRequest('/api/auth/logout', { method: 'POST', parse: () => null })

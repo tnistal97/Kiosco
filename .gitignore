@@ -91,3 +91,7 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 /.playwright/
+
+# service worker generado por el build
+/public/sw.js
+/public/sw.js.map
