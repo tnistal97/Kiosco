@@ -108,7 +108,11 @@ test.describe('Ajustar stock', () => {
 
     // La primera entrada de la lista es la mas reciente: la que se acaba de
     // hacer. Se abre y tiene que traer el motivo escrito.
-    await page.getByRole('button', { expanded: false }).first().click()
+    //
+    // Se ancla en la lista y no en `getByRole('button', { expanded: false })`
+    // suelto: el disparador del menu de usuario tambien declara `aria-expanded`
+    // --desde que dejo de ser un `div` sin rol-- y viene antes en el arbol.
+    await page.locator('li button[aria-expanded]').first().click()
     // Aparece dos veces: como motivo de la entrada y dentro del visor de
     // cambios. Con que este, alcanza.
     await expect(page.getByText('Rotura de mercadería').first()).toBeVisible()

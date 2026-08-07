@@ -75,7 +75,7 @@ function PeticionCopiable({
       <dd className="flex items-center gap-1">
         <code className="font-mono text-ink-muted">{requestId}</code>
         <Tooltip label="Copiar el identificador">
-          <Button size="xs" variant="ghost" onClick={() => void onCopiar(requestId)}>
+          <Button size="sm" variant="ghost" onClick={() => void onCopiar(requestId)}>
             Copiar
           </Button>
         </Tooltip>

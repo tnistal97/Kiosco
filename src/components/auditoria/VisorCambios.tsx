@@ -134,7 +134,7 @@ export function VisorCambios({
 
       {cambiadas.length > 0 && cambiadas.length < claves.length && (
         <Button
-          size="xs"
+          size="sm"
           variant="ghost"
           className="self-start"
           onClick={() => {

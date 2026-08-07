@@ -16,14 +16,20 @@ import { cn } from './cn'
  *   ghost      acciones de fila y de barra: sin fondo hasta que se apunta.
  *   danger     destruye o anula. Nunca al lado de una accion comun.
  *
- * Todos los tamanios llegan a 44 px de alto salvo `xs`, que mide 32 y esta
- * reservado a controles SECUNDARIOS dentro de un detalle ya abierto --copiar
- * un identificador, ver mas campos--. Nunca para la accion principal de una
- * fila ni para nada que se toque con el dedo: eso va en `sm` o mas grande, y
- * la prueba de extremo a extremo a 375 px lo comprueba.
+ * TODOS los tamanios llegan a 44 px de alto. Sin excepciones.
+ *
+ * Hubo una: `xs` media 32 px y estaba reservada a controles secundarios dentro
+ * de un detalle ya abierto --copiar un identificador, ver mas campos--. Ocho
+ * botones quedaban por debajo del minimo y la excusa era que "no se tocan con
+ * el dedo". No hay forma de saber eso: un detalle abierto en una tablet se
+ * toca igual que cualquier otra cosa. El tamanio se elimino en vez de
+ * documentarse mejor, y esos dos usos pasaron a `sm`.
+ *
+ * Lo unico que distingue ahora a un control secundario es la variante --`ghost`
+ * no tiene fondo hasta que se apunta-- y no su tamanio.
  */
 export type ButtonVariant = 'primary' | 'confirm' | 'secondary' | 'ghost' | 'danger'
-export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg'
+export type ButtonSize = 'sm' | 'md' | 'lg'
 
 const VARIANTES: Record<ButtonVariant, string> = {
   primary:
@@ -38,7 +44,6 @@ const VARIANTES: Record<ButtonVariant, string> = {
 }
 
 const TAMANIOS: Record<ButtonSize, string> = {
-  xs: 'h-8 px-2.5 text-xs gap-1.5 rounded-sm',
   sm: 'h-touch px-3 text-sm gap-2 rounded-md',
   md: 'h-touch px-4 text-sm gap-2 rounded-md',
   lg: 'h-control-lg px-6 text-base gap-2.5 rounded-lg',
@@ -109,7 +114,6 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   ref,
 ) {
   const cuadrado: Record<ButtonSize, string> = {
-    xs: 'h-8 w-8 p-0 rounded-sm',
     sm: 'h-touch w-touch p-0 rounded-md',
     md: 'h-touch w-touch p-0 rounded-md',
     lg: 'h-control-lg w-control-lg p-0 rounded-lg',

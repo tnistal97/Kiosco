@@ -34,7 +34,11 @@
   /* --- Texto ------------------------------------------------------------ */
   --color-ink: #eef4f9;
   --color-ink-muted: #9aabbb;
-  --color-ink-faint: #6d7f8f;
+  /* El tono mas apagado que llega a 4.5:1 sobre `raised`, que es el fondo mas
+   * claro de la aplicacion y por lo tanto el peor caso. El valor anterior
+   * --#6d7f8f-- daba 4.24 y axe lo marcaba en las siete pantallas: los titulos
+   * de grupo de la barra lateral y la linea secundaria de cada fila. */
+  --color-ink-faint: #7e909f;
   /* Sobre fondos de color solido (botones primarios, badges llenos). */
   --color-ink-on-solid: #06111c;
 
@@ -116,7 +120,11 @@
 
   --color-ink: #0e1822;
   --color-ink-muted: #55677a;
-  --color-ink-faint: #7a8b9c;
+  /* Mismo criterio que en oscuro, con el peor caso invertido: aca el fondo
+   * problematico es el mas OSCURO, `sunken`. El valor anterior --#7a8b9c--
+   * daba 3.5:1 y no lo habia detectado nadie, porque las pruebas corrian solo
+   * en tema oscuro. Ahora corren en los dos. */
+  --color-ink-faint: #5b6b7d;
   --color-ink-on-solid: #ffffff;
 
   --color-money: #08131d;

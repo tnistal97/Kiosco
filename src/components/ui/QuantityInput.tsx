@@ -106,6 +106,19 @@ export function QuantityInput({
         pattern="[0-9]*"
         value={texto}
         disabled={disabled}
+        /**
+         * `spinbutton` es el rol que corresponde: un numero que se sube y se
+         * baja de a un paso, con un minimo y un maximo.
+         *
+         * Sin el, `aria-valuenow` y compania eran atributos ilegales sobre un
+         * `textbox` --axe lo marcaba como falta critica-- y encima no se
+         * anunciaban. El campo diria "1" y no "1, minimo 1, maximo 23".
+         *
+         * El rol se declara a mano en vez de usar `type="number"` porque las
+         * flechitas nativas, en una pantalla tactil de mostrador, se tocan
+         * solas. Las flechas del teclado si funcionan, mas abajo.
+         */
+        role="spinbutton"
         aria-valuenow={value}
         aria-valuemin={min}
         aria-valuemax={max}

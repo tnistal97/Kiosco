@@ -71,7 +71,10 @@ export function EstadoCaja() {
   return (
     <Link
       href="/caja"
-      className="hidden items-center gap-2 rounded-md border border-line px-2.5 py-1 transition-colors hover:border-line-strong hover:bg-raised sm:flex"
+      // `min-h-touch`: es un enlace, no una etiqueta. Medía 30 px de alto y
+      // quedaba por debajo del minimo tactil en la cabecera de todas las
+      // pantallas.
+      className="hidden min-h-touch items-center gap-2 rounded-md border border-line px-2.5 transition-colors hover:border-line-strong hover:bg-raised sm:flex"
       title="Saldo acumulado en efectivo de la sucursal"
     >
       <span className="text-xs text-ink-muted">Caja</span>

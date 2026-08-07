@@ -2,7 +2,7 @@
 
 import { Menu, MenuButton, MenuItem, MenuItems, MenuSeparator } from '@headlessui/react'
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { cn } from './cn'
 
 /**
@@ -14,6 +14,20 @@ import { cn } from './cn'
  *
  * Cada item llega a 44 px de alto: el menu de usuario y el de acciones de
  * fila se usan tambien con el dedo.
+ *
+ * `as={Fragment}` y no `as="div"`
+ * ------------------------------
+ * Con `as="div"`, Headless UI envolvia el disparador en un `<div>` propio y le
+ * colgaba `aria-haspopup` y `aria-expanded`. Un `div` sin rol no admite
+ * `aria-expanded`: axe lo marca como falta critica de `aria-allowed-attr`, y
+ * con razon --un lector de pantalla anuncia el estado de algo que no dice ser
+ * un control--. Ademas quedaba un boton dentro de un contenedor que capturaba
+ * el click.
+ *
+ * Con `Fragment`, esos atributos se fusionan sobre el elemento que se le pasa.
+ * Todos los disparadores de la aplicacion son `<button>`, que si los admite.
+ * Por eso `trigger` tiene que seguir siendo un unico elemento capaz de recibir
+ * `ref` y props: un `Button`, un `IconButton` o un `<button>` propio.
  */
 export function DropdownMenu({
   trigger,
@@ -28,7 +42,7 @@ export function DropdownMenu({
 }) {
   return (
     <Menu as="div" className={cn('relative', className)}>
-      <MenuButton as="div">{trigger}</MenuButton>
+      <MenuButton as={Fragment}>{trigger}</MenuButton>
       <MenuItems
         transition
         anchor={{ to: align === 'end' ? 'bottom end' : 'bottom start', gap: 6 }}
