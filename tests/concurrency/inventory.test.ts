@@ -17,7 +17,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { seedFixture, prisma, stockOf, ponerStock, type Fixture } from '../helpers/db'
+import { Prisma } from '@prisma/client'
+import { seedFixture, prisma, stockOf, ponerStock, type Fixture, num } from '../helpers/db'
 import { call, sessionCookie } from '../helpers/http'
 
 let fx: Fixture
@@ -76,23 +77,23 @@ async function exigirCadenaContinua(): Promise<number> {
 
   const ultimo = movimientos[movimientos.length - 1]
   expect(
-    ultimo?.resultingQuantity,
+    num(ultimo?.resultingQuantity),
     'el saldo no coincide con el ultimo movimiento del libro: alguien escribio stock sin registrarlo',
   ).toBe(saldo)
 
   // Y la cadena, eslabon por eslabon.
   for (let i = 1; i < movimientos.length; i++) {
     expect(
-      movimientos[i]?.previousQuantity,
+      num(movimientos[i]?.previousQuantity),
       `el movimiento ${String(movimientos[i]?.id)} arranca en ${String(movimientos[i]?.previousQuantity)}, ` +
         `pero el anterior termino en ${String(movimientos[i - 1]?.resultingQuantity)}: ` +
         'dos operaciones leyeron el mismo saldo',
-    ).toBe(movimientos[i - 1]?.resultingQuantity)
+    ).toBe(num(movimientos[i - 1]?.resultingQuantity))
   }
 
   // Y la suma, que es la propiedad global.
-  const suma = movimientos.reduce((acc, m) => acc + m.quantity, 0)
-  expect(suma, 'la suma del libro no da el saldo').toBe(saldo)
+  const suma = movimientos.reduce((acc, m) => acc.plus(m.quantity), new Prisma.Decimal(0))
+  expect(suma.toFixed(3), 'la suma del libro no da el saldo').toBe(saldo.toFixed(3))
 
   return saldo
 }

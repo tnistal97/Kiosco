@@ -6,6 +6,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 import bcrypt from 'bcrypt'
 import { knownRoles } from '@/server/authz/permissions'
 import type { Monto } from '@/lib/money'
@@ -23,9 +24,12 @@ const TABLES = [
   'CashRegisterMovement',
   'CashCount',
   'CashShift',
-  // TRUNCATE no dispara disparadores de fila, asi que el de inmutabilidad de
-  // StockMovement no impide vaciar la base entre pruebas. Es la unica puerta.
+  // TRUNCATE no dispara disparadores de fila, asi que los disparadores de
+  // inmutabilidad de StockMovement y ProductCostHistory no impiden vaciar la
+  // base entre pruebas. Es la unica puerta.
   'StockMovement',
+  'ProductCostHistory',
+  'ProductBarcode',
   'BranchStock',
   'Product',
   'User',
@@ -56,6 +60,8 @@ export interface Fixture {
    * sin convertir a numero en el medio --que es justo donde se colaban los
    * centavos fantasma que la Fase 3 vino a eliminar--.
    */
+  /** Producto POR PESO: `saleUnit = KG`, $9.800/kg, 5,000 kg de saldo. */
+  productoPeso: { id: number; name: string; price: Monto; barcode: string }
   productoA: { id: number; name: string; price: Monto; barcode: string }
   /** Producto de la sucursal B. Un usuario de A no debe poder tocarlo. */
   productoB: { id: number; name: string; price: Monto; barcode: string }
@@ -145,22 +151,46 @@ export async function seedFixture(): Promise<Fixture> {
 
   const category = await prisma.category.create({ data: { name: 'Almacen' } })
 
+  // Los codigos van en `ProductBarcode`, no en `Product.barcode`: esa columna
+  // quedo congelada en la Fase 3B y nadie la lee. Ver docs/PHASE3_BARCODES.md.
   const productoA = await prisma.product.create({
     data: {
       name: 'Fernet Branca 750ml',
-      barcode: '7790895000119',
       price: 12500,
       categoryId: category.id,
       branchId: branchA.id,
+      barcodes: { create: { code: '7790895000119', isPrimary: true } },
     },
   })
   const productoB = await prisma.product.create({
     data: {
       name: 'Yerba Playadito 1kg',
-      barcode: '7792798000029',
       price: 4800,
       categoryId: category.id,
       branchId: branchB.id,
+      barcodes: { create: { code: '7792798000029', isPrimary: true } },
+    },
+  })
+
+  /**
+   * Producto POR PESO, en la sucursal A.
+   *
+   * Existe en la fixture y no en cada prueba porque desde la Fase 3B la mitad
+   * de los escenarios interesantes son fraccionados, y armarlo a mano en cada
+   * archivo repetiria la unidad, el precio por kilo y el saldo inicial.
+   *
+   * $9.800 el kilo y 5,000 kg de saldo: los numeros del ejemplo del pedido.
+   */
+  const productoPeso = await prisma.product.create({
+    data: {
+      name: 'Queso cremoso',
+      price: 9800,
+      categoryId: category.id,
+      branchId: branchA.id,
+      saleUnit: 'KG',
+      purchaseUnit: 'KG',
+      unitsPerPurchaseUnit: 1,
+      barcodes: { create: { code: '2000000000015', isPrimary: true } },
     },
   })
 
@@ -168,6 +198,7 @@ export async function seedFixture(): Promise<Fixture> {
     data: [
       { branchId: branchA.id, productId: productoA.id, quantity: 10 },
       { branchId: branchB.id, productId: productoB.id, quantity: 10 },
+      { branchId: branchA.id, productId: productoPeso.id, quantity: 5 },
     ],
   })
 
@@ -200,6 +231,16 @@ export async function seedFixture(): Promise<Fixture> {
         userId: cajeroB.id,
         reason: 'Saldo de partida de la fixture',
       },
+      {
+        branchId: branchA.id,
+        productId: productoPeso.id,
+        type: 'INITIAL',
+        quantity: 5,
+        previousQuantity: 0,
+        resultingQuantity: 5,
+        userId: admin.id,
+        reason: 'Saldo de partida de la fixture',
+      },
     ],
   })
 
@@ -214,13 +255,19 @@ export async function seedFixture(): Promise<Fixture> {
       id: productoA.id,
       name: productoA.name,
       price: aMonto(productoA.price),
-      barcode: productoA.barcode ?? '',
+      barcode: '7790895000119',
     },
     productoB: {
       id: productoB.id,
       name: productoB.name,
       price: aMonto(productoB.price),
-      barcode: productoB.barcode ?? '',
+      barcode: '7792798000029',
+    },
+    productoPeso: {
+      id: productoPeso.id,
+      name: productoPeso.name,
+      price: aMonto(productoPeso.price),
+      barcode: '2000000000015',
     },
     categoryId: category.id,
     porRol,
@@ -258,23 +305,24 @@ export async function expectedOfShift(branchId: number): Promise<Monto> {
 export async function ponerStock(
   branchId: number,
   productId: number,
-  cantidad: number,
+  cantidad: number | string,
   userId: number,
 ): Promise<void> {
   const actual = await prisma.branchStock.findUnique({
     where: { branchId_productId: { branchId, productId } },
     select: { quantity: true },
   })
-  const antes = actual?.quantity ?? 0
-  const delta = cantidad - antes
+  const antes = actual?.quantity ?? new Prisma.Decimal(0)
+  const objetivo = new Prisma.Decimal(cantidad)
+  const delta = objetivo.minus(antes)
 
   await prisma.branchStock.upsert({
     where: { branchId_productId: { branchId, productId } },
-    update: { quantity: cantidad },
-    create: { branchId, productId, quantity: cantidad },
+    update: { quantity: objetivo },
+    create: { branchId, productId, quantity: objetivo },
   })
 
-  if (delta === 0) return
+  if (delta.isZero()) return
 
   await prisma.stockMovement.create({
     data: {
@@ -283,19 +331,61 @@ export async function ponerStock(
       type: 'MANUAL_ADJUSTMENT',
       quantity: delta,
       previousQuantity: antes,
-      resultingQuantity: cantidad,
+      resultingQuantity: objetivo,
       userId,
       reason: 'Preparacion del escenario de prueba',
     },
   })
 }
 
-/** Stock actual de un producto en una sucursal. */
+/**
+ * Stock actual de un producto, como NUMERO.
+ *
+ * Sigue devolviendo `number` a proposito: las pruebas comparan contra literales
+ * --`expect(await stockOf(...)).toBe(8)`-- y devolver un `Decimal` obligaria a
+ * escribir `.toString()` en doscientas aserciones sin ganar nada. La precision
+ * que importa la comprueban `stockExacto` y `descuadresDelLibro`.
+ */
 export async function stockOf(branchId: number, productId: number): Promise<number> {
   const row = await prisma.branchStock.findUnique({
     where: { branchId_productId: { branchId, productId } },
   })
-  return row?.quantity ?? 0
+  return row === null ? 0 : row.quantity.toNumber()
+}
+
+/**
+ * Una cantidad de la base, como numero, para compararla contra un literal.
+ *
+ * Existe SOLO para las aserciones. `expect(m.quantity).toBe(-2)` falla desde
+ * que las cantidades son `Decimal`, y el mensaje de vitest dice "expected -2 to
+ * be -2", que no ayuda a nadie. Escribir `expect(num(m.quantity)).toBe(-2)` deja
+ * la prueba legible sin aflojar nada: la exactitud decimal la comprueban
+ * `exactamente`, `stockExacto` y `descuadresDelLibro`, que trabajan con cadenas.
+ *
+ * NO se usa en codigo de produccion: ahi la regla es que una cantidad no se
+ * convierte a numero, y hay una regla de ESLint que lo hace cumplir.
+ */
+export function num(d: Prisma.Decimal | number | null | undefined): number {
+  if (d === null || d === undefined) return 0
+  return typeof d === 'number' ? d : d.toNumber()
+}
+
+/** La misma cantidad como cadena con tres decimales. Para lo que si importa. */
+export function exactamente(d: Prisma.Decimal | null | undefined): string {
+  return (d ?? new Prisma.Decimal(0)).toFixed(3)
+}
+
+/**
+ * Stock actual como CADENA decimal, con su escala.
+ *
+ * Para lo que `stockOf` no puede comprobar: que 0,425 sea exactamente 0,425 y
+ * no 0,42500000000000004. Es la version que usan las pruebas de venta por peso.
+ */
+export async function stockExacto(branchId: number, productId: number): Promise<string> {
+  const row = await prisma.branchStock.findUnique({
+    where: { branchId_productId: { branchId, productId } },
+  })
+  return row === null ? '0.000' : row.quantity.toFixed(3)
 }
 
 /** Saldo de caja de la sucursal, como cadena decimal. */
@@ -319,8 +409,9 @@ export async function cashOf(branchId: number): Promise<Monto> {
 export interface Descuadre {
   branchId: number
   productId: number
-  saldo: number
-  libro: number
+  /** Cadena con tres decimales, para que el mensaje del fallo se pueda leer. */
+  saldo: string
+  libro: string
 }
 
 export async function descuadresDelLibro(): Promise<Descuadre[]> {
@@ -332,17 +423,29 @@ export async function descuadresDelLibro(): Promise<Descuadre[]> {
     }),
   ])
 
-  const libroPorClave = new Map<string, number>()
+  // La comparacion se hace en CADENA con escala fija, no con `===` sobre
+  // numeros ni con identidad de objetos `Decimal`. Dos `Decimal` con el mismo
+  // valor son objetos distintos, y pasarlos por `Number` reintroduciria
+  // exactamente el error de punto flotante que el libro no tolera.
+  const libroPorClave = new Map<string, string>()
   for (const m of movimientos) {
-    libroPorClave.set(`${m.branchId}:${m.productId}`, m._sum.quantity ?? 0)
+    libroPorClave.set(
+      `${m.branchId}:${m.productId}`,
+      (m._sum.quantity ?? new Prisma.Decimal(0)).toFixed(3),
+    )
   }
 
   const descuadres: Descuadre[] = []
 
   for (const s of stocks) {
-    const libro = libroPorClave.get(`${s.branchId}:${s.productId}`) ?? 0
-    if (libro !== s.quantity) {
-      descuadres.push({ branchId: s.branchId, productId: s.productId, saldo: s.quantity, libro })
+    const libro = libroPorClave.get(`${s.branchId}:${s.productId}`) ?? '0.000'
+    if (libro !== s.quantity.toFixed(3)) {
+      descuadres.push({
+        branchId: s.branchId,
+        productId: s.productId,
+        saldo: s.quantity.toFixed(3),
+        libro,
+      })
     }
     libroPorClave.delete(`${s.branchId}:${s.productId}`)
   }
@@ -350,9 +453,9 @@ export async function descuadresDelLibro(): Promise<Descuadre[]> {
   // Lo que quedo en el mapa son movimientos de productos SIN fila de stock.
   // Solo cuadran si suman cero; si no, hay un movimiento huerfano.
   for (const [clave, libro] of libroPorClave) {
-    if (libro === 0) continue
+    if (libro === '0.000') continue
     const [branchId, productId] = clave.split(':').map(Number)
-    descuadres.push({ branchId: branchId ?? 0, productId: productId ?? 0, saldo: 0, libro })
+    descuadres.push({ branchId: branchId ?? 0, productId: productId ?? 0, saldo: '0.000', libro })
   }
 
   return descuadres

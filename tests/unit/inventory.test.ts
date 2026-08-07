@@ -24,48 +24,62 @@ import {
   esTipoValido,
   etiquetaDeTipo,
 } from '@/modules/inventory/movement-types'
-import { MINIMO_SUGERIDO, estadoDeStock, tieneMinimo } from '@/modules/inventory/minimum'
+import { minimoSugerido, estadoDeStock, tieneMinimo } from '@/modules/inventory/minimum'
 import { enlaceDeReferencia, textoDeReferencia } from '@/modules/inventory/referencias'
 
 const RAIZ = process.cwd()
 
 describe('Estado de reposicion', () => {
   it('sin unidades es OUT, aunque no haya minimo', () => {
-    expect(estadoDeStock(0, 0)).toBe('OUT')
-    expect(estadoDeStock(0, 10)).toBe('OUT')
-    expect(estadoDeStock(-1, 5), 'un saldo negativo no deberia existir, pero no es OK').toBe('OUT')
+    expect(estadoDeStock('0.000', '0.000')).toBe('OUT')
+    expect(estadoDeStock('0.000', '10.000')).toBe('OUT')
+    expect(estadoDeStock('-1.000', '5.000'), 'un saldo negativo no deberia existir, pero no es OK').toBe('OUT') // prettier-ignore
   })
 
   it('con minimo cero nunca esta bajo minimo', () => {
     // Es la propiedad que hace honesta a la migracion: el catalogo existente
     // arranca en cero y NO empieza a gritar faltantes que nadie configuro.
-    for (const cantidad of [1, 2, 5, 10, 100, 10_000]) {
-      expect(estadoDeStock(cantidad, 0), `${String(cantidad)} unidades sin minimo`).toBe('OK')
+    for (const cantidad of ['1.000', '2.000', '5.000', '10.000', '100.000', '10000.000']) {
+      expect(estadoDeStock(cantidad, '0.000'), `${cantidad} unidades sin minimo`).toBe('OK')
     }
   })
 
   it('LOW incluye el borde: llegar al minimo ya es llegar', () => {
-    expect(estadoDeStock(7, 6)).toBe('OK')
-    expect(estadoDeStock(6, 6), 'justo en el minimo ya hay que reponer').toBe('LOW')
-    expect(estadoDeStock(1, 6)).toBe('LOW')
-    expect(estadoDeStock(0, 6)).toBe('OUT')
+    expect(estadoDeStock('7.000', '6.000')).toBe('OK')
+    expect(estadoDeStock('6.000', '6.000'), 'justo en el minimo ya hay que reponer').toBe('LOW')
+    expect(estadoDeStock('1.000', '6.000')).toBe('LOW')
+    expect(estadoDeStock('0.000', '6.000')).toBe('OUT')
+  })
+
+  it('el borde tambien se respeta con fracciones', () => {
+    // La razon de que la comparacion sea entera: `0.1 + 0.2 <= 0.3` en punto
+    // flotante da FALSO, y un producto que llego justo a su minimo no
+    // apareceria en la lista de faltantes.
+    expect(estadoDeStock('0.300', '0.300')).toBe('LOW')
+    expect(estadoDeStock('0.301', '0.300')).toBe('OK')
+    expect(estadoDeStock('3.499', '3.500')).toBe('LOW')
+    expect(estadoDeStock('3.501', '3.500')).toBe('OK')
   })
 
   it('OUT y LOW son estados distintos, no grados del mismo', () => {
     // Un agotado no se puede vender; uno bajo minimo si. Mezclarlos en la
     // pantalla haria que el aviso urgente se confunda con el preventivo.
-    expect(estadoDeStock(0, 6)).not.toBe(estadoDeStock(1, 6))
+    expect(estadoDeStock('0.000', '6.000')).not.toBe(estadoDeStock('1.000', '6.000'))
   })
 
   it('cero es "sin minimo configurado", no "minimo cero"', () => {
-    expect(tieneMinimo(0)).toBe(false)
-    expect(tieneMinimo(1)).toBe(true)
+    expect(tieneMinimo('0.000')).toBe(false)
+    expect(tieneMinimo('1.000')).toBe(true)
+    expect(tieneMinimo('0.001'), 'un gramo de minimo es un minimo').toBe(true)
   })
 
   it('el sugerido es una propuesta del formulario, no un umbral', () => {
-    expect(MINIMO_SUGERIDO).toBeGreaterThan(0)
-    // Y no se aplica solo: un producto con minimo cero sigue en OK.
-    expect(estadoDeStock(MINIMO_SUGERIDO - 1, 0)).toBe('OK')
+    // Y depende de la unidad: diez unidades es una fila del estante, diez
+    // kilos de queso es medio mostrador.
+    expect(minimoSugerido('UNIT')).toBe('10.000')
+    expect(minimoSugerido('KG')).toBe('1.000')
+    // No se aplica solo: un producto con minimo cero sigue en OK.
+    expect(estadoDeStock('9.000', '0.000')).toBe('OK')
   })
 })
 

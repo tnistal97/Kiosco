@@ -247,13 +247,13 @@ describe('El buscador no interfiere con otros campos', () => {
 
 describe('Cantidad con el teclado', () => {
   function ConCantidad() {
-    const [valor, setValor] = useState(3)
+    const [valor, setValor] = useState('3.000')
     const editando = useRef(false)
     return (
       <div>
         <QuantityInput
           value={valor}
-          max={10}
+          max="10.000"
           onChange={setValor}
           onEditingChange={(e) => {
             editando.current = e

@@ -128,6 +128,10 @@ describe('La cadena oficial', () => {
       '20260807110000_phase3_cash_shifts',
       '20260807120000_phase3_sale_payments',
       '20260807130000_phase3_stock_ledger',
+      '20260807140000_phase3_fractional_quantities',
+      '20260807150000_phase3_product_units',
+      '20260807160000_phase3_product_costs',
+      '20260807170000_phase3_product_barcodes',
     ])
   })
 
@@ -521,9 +525,9 @@ describe('Servidor existente', () => {
     const inicial = filas[0]
     expect(inicial?.name).toBe('Yerba con residuo')
     expect(inicial?.type).toBe('INITIAL')
-    expect(inicial?.quantity).toBe('37')
-    expect(inicial?.previousQuantity).toBe('0')
-    expect(inicial?.resultingQuantity).toBe('37')
+    expect(inicial?.quantity).toBe('37.000')
+    expect(inicial?.previousQuantity).toBe('0.000')
+    expect(inicial?.resultingQuantity).toBe('37.000')
 
     // La fecha es la de LA MIGRACION, no una fecha historica inventada. Y el
     // motivo lo dice con todas las letras, para que dentro de dos anios nadie
@@ -602,7 +606,11 @@ describe('Servidor con stock negativo', () => {
         .filter((e) => e.isDirectory())
         .map((e) => e.name)
         .sort()
-        .filter((n) => n !== '20260807130000_phase3_stock_ledger')) {
+        // Todas las ANTERIORES al libro, no "todas menos el libro": las de la
+        // Fase 3B vienen despues y hablan de tablas que el libro todavia no
+        // creo. Los nombres empiezan con la fecha, asi que el orden alfabetico
+        // es el orden de aplicacion.
+        .filter((n) => n < '20260807130000_phase3_stock_ledger')) {
         await cliente.query(readFileSync(path.join(MIGRACIONES, carpeta, 'migration.sql'), 'utf8'))
       }
 

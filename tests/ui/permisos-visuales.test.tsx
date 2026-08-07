@@ -49,8 +49,11 @@ const PRODUCTO: ProductoDTO = {
   isActive: true,
   category: { id: 1, name: 'Almacen' },
   supplier: null,
-  totalStock: 24,
-  minimumStock: 6,
+  saleUnit: 'UNIT',
+  purchaseUnit: 'UNIT',
+  unitsPerPurchaseUnit: '1.000',
+  totalStock: '24.000',
+  minimumStock: '6.000',
   estado: 'OK',
 }
 
@@ -103,19 +106,44 @@ describe('Precio en la ficha del producto', () => {
     expect(screen.queryByLabelText(/en venta/i)).toBeNull()
   })
 
-  it('sin stock.adjust las unidades se muestran pero no se editan', async () => {
-    // El cajero ve el catalogo pero no ajusta inventario.
+  it('el stock actual se muestra, y NADIE lo edita desde la ficha', async () => {
+    // Cambio de la Fase 3B: el stock dejo de ser un campo del formulario.
+    // Mover inventario es una operacion con motivo, tipo y fila en el libro, y
+    // se hace con el boton "Ajustar" de la pantalla de stock. Ni siquiera el
+    // administrador tiene aca un campo para escribirlo.
+    for (const sesion of [SESION_CAJERO, SESION_ADMIN]) {
+      const { unmount } = abrirFicha(sesion)
+      await screen.findByRole('dialog')
+
+      expect(screen.queryByLabelText(/^stock actual/i)).toBeNull()
+      expect(screen.getByText('24 u.')).toBeInTheDocument()
+      expect(screen.getByText(/se mueve con el botón/i)).toBeInTheDocument()
+
+      unmount()
+    }
+  })
+})
+
+describe('Costo en la ficha del producto', () => {
+  it('SIN products.cost.view no hay costo ni margen en pantalla', async () => {
+    // El cajero no tiene el permiso. Y el servidor tampoco le manda el dato:
+    // esta prueba cubre la mitad visual, `tests/authorization` la otra.
     abrirFicha(SESION_CAJERO)
     await screen.findByRole('dialog')
 
-    expect(screen.queryByLabelText(/^unidades/i)).toBeNull()
-    expect(screen.getByText('24')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/^costo/i)).toBeNull()
+    expect(screen.queryByText(/^margen$/i)).toBeNull()
+    expect(screen.getByText(/products\.cost\.view/)).toBeInTheDocument()
   })
 
-  it('con stock.adjust el ajuste exige motivo', async () => {
+  it('con el permiso aparecen costo, ganancia, margen y markup', async () => {
     abrirFicha(SESION_ADMIN)
     await screen.findByRole('dialog')
-    expect(screen.getByLabelText(/^unidades/i)).toBeInstanceOf(HTMLInputElement)
+
+    expect(screen.getByLabelText(/^costo/i)).toBeInstanceOf(HTMLInputElement)
+    expect(screen.getByText('Ganancia')).toBeInTheDocument()
+    expect(screen.getByText('Margen')).toBeInTheDocument()
+    expect(screen.getByText('Markup')).toBeInTheDocument()
   })
 })
 

@@ -26,19 +26,43 @@ describe('Cantidades', () => {
     expect(esValido(quantitySchema, 250)).toBe(true)
   })
 
+  it('acepta fracciones de hasta tres decimales, en numero o en cadena', () => {
+    // Cambio de la Fase 3B: 0,425 kg de queso es una linea de ticket valida.
+    // La cadena es la forma preferida --un numero de JSON es un `double`-- y el
+    // numero se sigue aceptando para no romper clientes anteriores.
+    for (const valor of ['0.425', '1.5', '0.001', 0.425, 1.5]) {
+      expect(esValido(quantitySchema, valor), `${String(valor)} deberia ser valido`).toBe(true)
+    }
+  })
+
+  it('normaliza a cadena con tres decimales', () => {
+    // Lo que sale del esquema tiene SIEMPRE la misma forma, venga como venga:
+    // asi el servicio lo pasa a `Decimal` sin volver a tocarlo.
+    expect(quantitySchema.parse(2)).toBe('2.000')
+    expect(quantitySchema.parse('0.425')).toBe('0.425')
+    expect(quantitySchema.parse('1.5')).toBe('1.500')
+  })
+
+  it('lo que el esquema NO comprueba es si la fraccion vale para su unidad', () => {
+    // `1.235` es una cantidad bien formada; que no exista para un producto que
+    // se vende por unidad lo decide el servicio, que es quien conoce el
+    // producto. Ver `motivoDeCantidadInvalida`.
+    expect(esValido(quantitySchema, '1.235')).toBe(true)
+  })
+
   const rechazados: Array<[string, unknown]> = [
     ['cero', 0],
     ['negativo', -1],
-    ['decimal', 1.5],
+    ['cuatro decimales', '0.4251'],
     ['NaN', Number.NaN],
     ['Infinity', Number.POSITIVE_INFINITY],
     ['-Infinity', Number.NEGATIVE_INFINITY],
-    ['cadena numerica', '5'],
     ['cadena', 'dos'],
+    ['cadena vacia', ''],
     ['null', null],
     ['undefined', undefined],
     ['objeto', {}],
-    ['fuera de rango', 100_001],
+    ['fuera de rango', 1_000_001],
   ]
 
   for (const [nombre, valor] of rechazados) {

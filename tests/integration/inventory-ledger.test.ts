@@ -21,6 +21,7 @@ import {
   descuadresDelLibro,
   movimientosDe,
   type Fixture,
+  num,
 } from '../helpers/db'
 import { call, errorDe, sessionCookie } from '../helpers/http'
 
@@ -131,9 +132,9 @@ describe('INITIAL — el saldo de partida', () => {
     const movimientos = await movimientosDe(fx.branchA.id, res.body.id)
     expect(movimientos).toHaveLength(1)
     expect(movimientos[0]?.type).toBe('INITIAL')
-    expect(movimientos[0]?.quantity).toBe(20)
-    expect(movimientos[0]?.previousQuantity).toBe(0)
-    expect(movimientos[0]?.resultingQuantity).toBe(20)
+    expect(num(movimientos[0]?.quantity)).toBe(20)
+    expect(num(movimientos[0]?.previousQuantity)).toBe(0)
+    expect(num(movimientos[0]?.resultingQuantity)).toBe(20)
 
     await exigirLibroCuadrado()
   })
@@ -189,9 +190,9 @@ describe('SALE — la venta deja su rastro por producto', () => {
 
     const mov = movimientos[1]
     expect(mov?.type).toBe('SALE')
-    expect(mov?.quantity).toBe(-2)
-    expect(mov?.previousQuantity).toBe(10)
-    expect(mov?.resultingQuantity).toBe(8)
+    expect(num(mov?.quantity)).toBe(-2)
+    expect(num(mov?.previousQuantity)).toBe(10)
+    expect(num(mov?.resultingQuantity)).toBe(8)
     expect(mov?.referenceType).toBe('Sale')
     expect(mov?.referenceId).toBe(venta.body.id)
     expect(mov?.userId, 'el movimiento lleva a quien vendio, no al dueño').toBe(fx.cajero.id)
@@ -229,7 +230,10 @@ describe('SALE — la venta deja su rastro por producto', () => {
       orderBy: { productId: 'asc' },
     })
     expect(deLaVenta).toHaveLength(2)
-    expect(deLaVenta.map((m) => m.quantity).sort((a, b) => a - b)).toEqual([-4, -1])
+    expect(
+      deLaVenta.map((m) => m.quantity.toFixed(3)).sort(),
+      'la venta descuenta la cantidad exacta de cada linea',
+    ).toEqual(['-1.000', '-4.000'])
 
     await exigirLibroCuadrado()
   })
@@ -264,12 +268,12 @@ describe('SALE_CANCEL — la anulacion agrega, no borra', () => {
     const inverso = movimientos[2]
 
     expect(original?.type, 'el SALE original NO se toca').toBe('SALE')
-    expect(original?.quantity).toBe(-2)
+    expect(num(original?.quantity)).toBe(-2)
 
     expect(inverso?.type).toBe('SALE_CANCEL')
-    expect(inverso?.quantity).toBe(2)
-    expect(inverso?.previousQuantity).toBe(8)
-    expect(inverso?.resultingQuantity).toBe(10)
+    expect(num(inverso?.quantity)).toBe(2)
+    expect(num(inverso?.previousQuantity)).toBe(8)
+    expect(num(inverso?.resultingQuantity)).toBe(10)
     expect(inverso?.referenceType).toBe('Sale')
     expect(inverso?.referenceId, 'queda atada a la misma venta').toBe(venta.body.id)
     expect(inverso?.reason).toBe('Se arrepintio')
@@ -287,7 +291,7 @@ describe('SALE_CANCEL — la anulacion agrega, no borra', () => {
       where: { referenceType: 'Sale', referenceId: venta.body.id },
       _sum: { quantity: true },
     })
-    expect(suma._sum.quantity, 'una venta anulada no movio stock, netamente').toBe(0)
+    expect(num(suma._sum.quantity), 'una venta anulada no movio stock, netamente').toBe(0)
   })
 
   it('una segunda anulacion no devuelve el stock dos veces', async () => {
@@ -319,9 +323,9 @@ describe('Ajustes: el tipo es el dato', () => {
       const mov = movimientos[1]
 
       expect(mov?.type).toBe(caso.tipo)
-      expect(mov?.quantity).toBe(caso.delta)
-      expect(mov?.previousQuantity).toBe(10)
-      expect(mov?.resultingQuantity).toBe(caso.queda)
+      expect(num(mov?.quantity)).toBe(caso.delta)
+      expect(num(mov?.previousQuantity)).toBe(10)
+      expect(num(mov?.resultingQuantity)).toBe(caso.queda)
       expect(mov?.reason).toBe(caso.motivo)
 
       expect(await stockOf(fx.branchA.id, fx.productoA.id)).toBe(caso.queda)
@@ -389,9 +393,9 @@ describe('El recuento se convierte en delta', () => {
 
     const mov = (await movimientosDe(fx.branchA.id, fx.productoA.id))[1]
     expect(mov?.type).toBe('MANUAL_ADJUSTMENT')
-    expect(mov?.quantity, 'se guarda COMO se llego, no solo a donde').toBe(20)
-    expect(mov?.previousQuantity).toBe(10)
-    expect(mov?.resultingQuantity).toBe(30)
+    expect(num(mov?.quantity), 'se guarda COMO se llego, no solo a donde').toBe(20)
+    expect(num(mov?.previousQuantity)).toBe(10)
+    expect(num(mov?.resultingQuantity)).toBe(30)
 
     await exigirLibroCuadrado()
   })
@@ -457,7 +461,7 @@ describe('Un movimiento no se edita y no se borra', () => {
     ).rejects.toThrow(/inmutables/i)
 
     const sigue = await prisma.stockMovement.findUnique({ where: { id } })
-    expect(sigue?.quantity).toBe(-1)
+    expect(num(sigue?.quantity)).toBe(-1)
   })
 
   it('la base rechaza una fila cuyos tres numeros no concuerdan', async () => {
@@ -523,7 +527,7 @@ describe('Reconstruccion del stock', () => {
       where: { branchId: fx.branchA.id, productId: fx.productoA.id },
       _sum: { quantity: true },
     })
-    expect(suma._sum.quantity).toBe(13)
+    expect(num(suma._sum.quantity)).toBe(13)
     expect(await stockOf(fx.branchA.id, fx.productoA.id)).toBe(13)
 
     await exigirLibroCuadrado()
@@ -539,9 +543,9 @@ describe('Reconstruccion del stock', () => {
     const movimientos = await movimientosDe(fx.branchA.id, fx.productoA.id)
     for (let i = 1; i < movimientos.length; i++) {
       expect(
-        movimientos[i]?.previousQuantity,
+        num(movimientos[i]?.previousQuantity),
         `El movimiento ${String(movimientos[i]?.id)} arranca en un saldo que nadie dejo`,
-      ).toBe(movimientos[i - 1]?.resultingQuantity)
+      ).toBe(num(movimientos[i - 1]?.resultingQuantity))
     }
   })
 })
@@ -608,7 +612,8 @@ describe('Historial: filtros, paginacion y permisos', () => {
 
     const res = await historial(`?referenceType=Sale&referenceId=${String(venta.body.id)}`)
     expect(res.body.pagination.total).toBe(1)
-    expect(res.body.data[0]?.quantity).toBe(-2)
+    // La API devuelve las cantidades como cadena decimal, igual que el dinero.
+    expect(res.body.data[0]?.quantity).toBe('-2.000')
   })
 
   it('busca por nombre de producto', async () => {
@@ -627,8 +632,9 @@ describe('Historial: filtros, paginacion y permisos', () => {
 
     const res = await historial('?pageSize=3')
     expect(res.body.data).toHaveLength(3)
-    expect(res.body.pagination.total).toBe(9) // 8 ajustes + INITIAL
-    expect(res.body.pagination.totalPages).toBe(3)
+    // 8 ajustes + los dos INITIAL de la sucursal A (el fernet y el queso).
+    expect(res.body.pagination.total).toBe(10)
+    expect(res.body.pagination.totalPages).toBe(4)
 
     const segunda = await historial('?pageSize=3&page=2')
     expect(segunda.body.data).toHaveLength(3)
@@ -661,14 +667,16 @@ describe('Stock minimo y alertas', () => {
     const res = await reposicion()
     expect(res.body.bajoMinimo).toBe(0)
     expect(res.body.agotados).toBe(0)
-    expect(res.body.sinMinimo, 'hay que poder decir que nadie configuro minimos').toBe(1)
+    // Dos: el fernet y el queso por peso. Ninguno tiene minimo configurado.
+    expect(res.body.sinMinimo, 'hay que poder decir que nadie configuro minimos').toBe(2)
   })
 
   it('con minimo 6 y diez unidades sigue estando bien', async () => {
     await prisma.product.update({ where: { id: fx.productoA.id }, data: { minimumStock: 6 } })
     const res = await reposicion()
     expect(res.body.bajoMinimo).toBe(0)
-    expect(res.body.sinMinimo).toBe(0)
+    // El queso sigue sin minimo: se le puso solo al fernet.
+    expect(res.body.sinMinimo).toBe(1)
   })
 
   it('con minimo 6, vender cinco lo pone bajo minimo', async () => {
@@ -698,7 +706,7 @@ describe('Stock minimo y alertas', () => {
 
     const res = await reposicion()
     expect(res.body.agotados).toBe(0)
-    expect(res.body.sinMinimo).toBe(0)
+    expect(res.body.sinMinimo, 'el queso sigue activo y sin minimo').toBe(1)
   })
 
   it('el filtro de bajo minimo del catalogo usa el minimo del producto', async () => {
@@ -727,13 +735,13 @@ describe('Stock minimo y alertas', () => {
     await prisma.product.update({ where: { id: fx.productoA.id }, data: { minimumStock: 6 } })
     await vender(5)
 
-    const res = await call<{ data: Array<{ estado: string; minimumStock: number }> }>(
+    const res = await call<{ data: Array<{ estado: string; minimumStock: string }> }>(
       GET,
       `/api/products?ids=${String(fx.productoA.id)}`,
       { cookie: await sessionCookie(fx.admin) },
     )
     expect(res.body.data[0]?.estado).toBe('LOW')
-    expect(res.body.data[0]?.minimumStock).toBe(6)
+    expect(res.body.data[0]?.minimumStock).toBe('6.000')
 
     // Y sin tocar nada mas, subir el minimo cambia el estado: si estuviera
     // guardado en la base, seguiria diciendo lo de antes.

@@ -19,7 +19,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DialogoCobro, type PagoParaEnviar } from '@/components/venta/DialogoCobro'
 import type { CartLine } from '@/store/cart'
-import { multiplicarMonto, sumarMontos } from '@/lib/money'
+import { sumarMontos } from '@/lib/money'
+import { precioPorCantidad } from '@/lib/cantidad'
 
 const LINEAS: CartLine[] = [
   {
@@ -27,22 +28,24 @@ const LINEAS: CartLine[] = [
     name: 'Yerba mate 1 kg',
     barcode: '7790001000011',
     price: '4850.00',
-    stock: 24,
-    quantity: 2,
+    stock: '24.000',
+    quantity: '2.000',
+    saleUnit: 'UNIT' as const,
   },
   {
     productId: 2,
     name: 'Leche entera 1 L',
     barcode: '7790003000017',
     price: '1690.00',
-    stock: 30,
-    quantity: 1,
+    stock: '30.000',
+    quantity: '1.000',
+    saleUnit: 'UNIT' as const,
   },
 ]
 
 // El total se arma con los mismos helpers que usa la caja: si la cuenta
 // del navegador cambiara, esta prueba se entera.
-const TOTAL = sumarMontos(multiplicarMonto('4850.00', 2), '1690.00')
+const TOTAL = sumarMontos(precioPorCantidad('4850.00', '2.000'), '1690.00')
 
 function abrirCobro(onCobrar: (pagos: PagoParaEnviar[]) => Promise<number>) {
   return render(

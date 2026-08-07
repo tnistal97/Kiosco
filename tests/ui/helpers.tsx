@@ -21,6 +21,8 @@ export const SESION_ADMIN: SesionCliente = {
     'products.create',
     'products.update',
     'products.price.update',
+    'products.cost.view',
+    'products.cost.update',
     'products.delete',
     'stock.view',
     'stock.adjust',

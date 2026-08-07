@@ -163,7 +163,7 @@ describe('La suma de los pagos es el total', () => {
     const stock = await prisma.branchStock.findUniqueOrThrow({
       where: { branchId_productId: { branchId: fx.branchA.id, productId: fx.productoA.id } },
     })
-    expect(stock.quantity).toBe(10)
+    expect(stock.quantity.toFixed(3)).toBe('10.000')
     expect(await cashOf(fx.branchA.id)).toBe('0.00')
     expect(await prisma.sale.count()).toBe(0)
   })

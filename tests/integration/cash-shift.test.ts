@@ -172,7 +172,7 @@ describe('Sin caja abierta', () => {
     const despues = await prisma.branchStock.findUniqueOrThrow({
       where: { branchId_productId: { branchId: fx.branchA.id, productId: fx.productoA.id } },
     })
-    expect(despues.quantity).toBe(antes.quantity)
+    expect(despues.quantity.toFixed(3)).toBe(antes.quantity.toFixed(3))
   })
 
   it('el saldo no es cero: es "no hay caja"', async () => {

@@ -168,7 +168,7 @@ describe('Los listados no crecen con la cantidad de datos', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.data).toHaveLength(25)
-    expect(res.body.pagination.total).toBe(61) // 60 + el del fixture
+    expect(res.body.pagination.total).toBe(62) // 60 + los dos de la sucursal A en el fixture
   })
 
   it('el tope de pagina no se puede superar pidiendolo', async () => {

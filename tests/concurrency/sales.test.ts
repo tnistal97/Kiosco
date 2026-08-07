@@ -91,7 +91,7 @@ describe('Caso 9 — ventas simultaneas', () => {
 
     // Coherencia final: unidades vendidas + stock restante = stock inicial.
     const vendidas = await prisma.saleItem.aggregate({ _sum: { quantity: true } })
-    expect((vendidas._sum.quantity ?? 0) + stock).toBe(5)
+    expect((vendidas._sum.quantity?.toNumber() ?? 0) + stock).toBe(5)
   })
 
   it('la caja refleja exactamente la suma de los movimientos', async () => {

@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   useCartStore,
   totalDelTicket,
-  unidadesDelTicket,
+  articulosDelTicket,
   olvidarTicketGuardado,
   type ProductoParaTicket,
 } from '@/store/cart'
@@ -26,15 +26,17 @@ const YERBA: ProductoParaTicket = {
   name: 'Yerba mate 1 kg',
   barcode: '7790001000011',
   price: '4850.00',
-  totalStock: 24,
+  totalStock: '24.000',
+  saleUnit: 'UNIT',
 }
 
 const ULTIMO: ProductoParaTicket = {
   id: 2,
-  name: 'Queso cremoso x kg',
+  name: 'Fernet 750 ml',
   barcode: '7790003000048',
   price: '9800.00',
-  totalStock: 1,
+  totalStock: '1.000',
+  saleUnit: 'UNIT',
 }
 
 const AGOTADO: ProductoParaTicket = {
@@ -42,7 +44,18 @@ const AGOTADO: ProductoParaTicket = {
   name: 'Helado 1 L',
   barcode: '7790008000036',
   price: '6800.00',
-  totalStock: 0,
+  totalStock: '0.000',
+  saleUnit: 'UNIT',
+}
+
+/** Producto por peso: $9.800 el kilo y 5 kilos de saldo. */
+const QUESO: ProductoParaTicket = {
+  id: 4,
+  name: 'Queso cremoso',
+  barcode: '2000000000015',
+  price: '9800.00',
+  totalStock: '5.000',
+  saleUnit: 'KG',
 }
 
 const CLAVE = 'kiosco:ticket'
@@ -61,7 +74,7 @@ describe('Reglas de cantidad', () => {
     estado().usarSucursal(1)
     expect(estado().add(YERBA)).toBe('agregado')
     expect(estado().items).toHaveLength(1)
-    expect(estado().items[0]?.quantity).toBe(1)
+    expect(estado().items[0]?.quantity).toBe('1.000')
   })
 
   it('sumar el mismo producto acumula en la misma linea', () => {
@@ -69,7 +82,7 @@ describe('Reglas de cantidad', () => {
     estado().add(YERBA)
     expect(estado().add(YERBA)).toBe('sumado')
     expect(estado().items).toHaveLength(1)
-    expect(estado().items[0]?.quantity).toBe(2)
+    expect(estado().items[0]?.quantity).toBe('2.000')
   })
 
   it('nunca acepta un producto agotado', () => {
@@ -82,48 +95,91 @@ describe('Reglas de cantidad', () => {
     estado().usarSucursal(1)
     estado().add(ULTIMO)
     expect(estado().add(ULTIMO)).toBe('tope-de-stock')
-    expect(estado().items[0]?.quantity).toBe(1)
+    expect(estado().items[0]?.quantity).toBe('1.000')
   })
 
   it('nunca acepta cantidad cero ni negativa', () => {
     estado().usarSucursal(1)
     estado().add(YERBA)
 
-    estado().setQuantity(YERBA.id, 0)
-    expect(estado().items[0]?.quantity).toBe(1)
+    estado().setQuantity(YERBA.id, '0.000')
+    expect(estado().items[0]?.quantity).toBe('1.000')
 
-    estado().setQuantity(YERBA.id, -5)
-    expect(estado().items[0]?.quantity).toBe(1)
+    estado().setQuantity(YERBA.id, '-5.000')
+    expect(estado().items[0]?.quantity).toBe('1.000')
   })
 
-  it('las cantidades son enteras', () => {
+  it('en un producto por unidad, las cantidades son enteras', () => {
     estado().usarSucursal(1)
     estado().add(YERBA)
-    estado().setQuantity(YERBA.id, 3.7)
-    expect(estado().items[0]?.quantity).toBe(3)
+    estado().setQuantity(YERBA.id, '3.700')
+    expect(estado().items[0]?.quantity, 'se redondea al paso de la unidad').toBe('4.000')
+  })
+
+  it('en un producto por peso, la fraccion se conserva exacta', () => {
+    estado().usarSucursal(1)
+    expect(estado().add(QUESO, '0.425')).toBe('agregado')
+    expect(estado().items[0]?.quantity).toBe('0.425')
+
+    // 0,425 + 0,1 en punto flotante da 0,5250000000000001.
+    estado().setQuantity(QUESO.id, '0.525')
+    expect(estado().items[0]?.quantity).toBe('0.525')
   })
 
   it('recorta la cantidad al stock', () => {
     estado().usarSucursal(1)
     estado().add(YERBA)
-    estado().setQuantity(YERBA.id, 999)
+    estado().setQuantity(YERBA.id, '999.000')
     expect(estado().items[0]?.quantity).toBe(YERBA.totalStock)
+
+    estado().add(QUESO, '0.500')
+    estado().setQuantity(QUESO.id, '99.000')
+    expect(estado().items[1]?.quantity).toBe('5.000')
   })
 
-  it('el total y las unidades salen de las lineas', () => {
+  it('el total sale de las lineas, sin basura decimal', () => {
     estado().usarSucursal(1)
-    estado().add(YERBA, 2)
+    estado().add(YERBA, '2.000')
     estado().add(ULTIMO)
 
     expect(totalDelTicket(estado().items)).toBe('19500.00')
-    expect(unidadesDelTicket(estado().items)).toBe(3)
+    expect(articulosDelTicket(estado().items)).toBe(2)
+  })
+
+  it('el subtotal por peso da el numero del mostrador', () => {
+    // $9.800/kg × 0,425 kg = $4.165,00. En punto flotante, `9800 * 0.425` da
+    // 4164.999999999999 y el ticket mostraria un centavo menos que el que
+    // despues cobra el servidor.
+    estado().usarSucursal(1)
+    estado().add(QUESO, '0.425')
+    expect(totalDelTicket(estado().items)).toBe('4165.00')
+  })
+
+  it.each([
+    ['0.100', '980.00'],
+    ['0.200', '1960.00'],
+    ['0.333', '3263.40'],
+    ['0.425', '4165.00'],
+    ['1.999', '19590.20'],
+  ])('%s kg de queso son %s', (peso, esperado) => {
+    estado().usarSucursal(1)
+    estado().add(QUESO, peso)
+    expect(totalDelTicket(estado().items)).toBe(esperado)
+  })
+
+  it('los articulos se cuentan por linea, no sumando cantidades', () => {
+    // Sumar 2 gaseosas con 0,425 kg de queso daria 2,425 de nada.
+    estado().usarSucursal(1)
+    estado().add(YERBA, '2.000')
+    estado().add(QUESO, '0.425')
+    expect(articulosDelTicket(estado().items)).toBe(2)
   })
 })
 
 describe('Lo que se guarda en el navegador', () => {
   it('guarda solo producto, cantidad, sucursal y momento', () => {
     estado().usarSucursal(7)
-    estado().add(YERBA, 2)
+    estado().add(YERBA, '2.000')
 
     const crudo = window.localStorage.getItem(CLAVE)
     expect(crudo).not.toBeNull()
@@ -154,13 +210,13 @@ describe('Lo que se guarda en el navegador', () => {
 describe('Restauracion', () => {
   it('devuelve las lineas guardadas para volver a consultarlas', () => {
     estado().usarSucursal(1)
-    estado().add(YERBA, 3)
+    estado().add(YERBA, '3.000')
 
     // Otra pestania, o la misma despues de un F5.
     useCartStore.setState({ items: [], branchId: null, hidratado: false })
 
     const lineas = estado().hidratar(1)
-    expect(lineas).toEqual([{ p: YERBA.id, q: 3 }])
+    expect(lineas).toEqual([{ p: YERBA.id, q: '3.000' }])
     // Se devuelven identificadores y cantidades: precio y stock los trae el
     // servidor. El ticket sigue vacio hasta que respondan.
     expect(estado().items).toHaveLength(0)
@@ -191,7 +247,7 @@ describe('Restauracion', () => {
   it('descarta un ticket manipulado a mano', () => {
     window.localStorage.setItem(
       CLAVE,
-      '{"v":1,"branchId":1,"ts":' + Date.now() + ',"lines":"nada"}',
+      '{"v":2,"branchId":1,"ts":' + Date.now() + ',"lines":"nada"}',
     )
     expect(estado().hidratar(1)).toEqual([])
 
@@ -201,13 +257,13 @@ describe('Restauracion', () => {
 
   it('sincronizar aplica el precio y el stock que dijo el servidor', () => {
     estado().usarSucursal(1)
-    estado().add(YERBA, 5)
+    estado().add(YERBA, '5.000')
 
     // El precio subio y quedan menos unidades de las que tenia el ticket.
-    estado().sincronizar([{ ...YERBA, price: '5200.00', totalStock: 2 }])
+    estado().sincronizar([{ ...YERBA, price: '5200.00', totalStock: '2.000' }])
 
     expect(estado().items[0]?.price).toBe('5200.00')
-    expect(estado().items[0]?.quantity).toBe(2)
+    expect(estado().items[0]?.quantity).toBe('2.000')
   })
 
   it('sincronizar saca los productos que el servidor ya no devuelve', () => {
@@ -226,7 +282,7 @@ describe('Restauracion', () => {
     estado().usarSucursal(1)
     estado().add(YERBA)
 
-    estado().sincronizar([{ ...YERBA, totalStock: 0 }])
+    estado().sincronizar([{ ...YERBA, totalStock: '0.000' }])
 
     expect(estado().items).toHaveLength(0)
   })
@@ -248,19 +304,19 @@ describe('Cambio de sucursal y cierre de sesion', () => {
     // es el arranque. Borrar ahi dejaba sin efecto toda la restauracion, y
     // el ticket no sobrevivia a un F5.
     estado().usarSucursal(1)
-    estado().add(YERBA, 2)
+    estado().add(YERBA, '2.000')
 
     // Otra pestania, o la misma despues de recargar: el store arranca limpio.
     useCartStore.setState({ items: [], branchId: null, hidratado: false })
     estado().usarSucursal(1)
 
     expect(window.localStorage.getItem(CLAVE)).not.toBeNull()
-    expect(estado().hidratar(1)).toEqual([{ p: YERBA.id, q: 2 }])
+    expect(estado().hidratar(1)).toEqual([{ p: YERBA.id, q: '2.000' }])
   })
 
   it('el ticket no sobrevive a un cierre de sesion', () => {
     estado().usarSucursal(1)
-    estado().add(YERBA, 4)
+    estado().add(YERBA, '4.000')
 
     // Es lo que hace el menu de usuario al salir.
     estado().clear()

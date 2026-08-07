@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { seedFixture, prisma, type Fixture, type TestUser } from '../helpers/db'
+import { seedFixture, prisma, type Fixture, type TestUser, num } from '../helpers/db'
 import { call, sessionCookie, type RouteHandler } from '../helpers/http'
 
 let fx: Fixture
@@ -153,20 +153,25 @@ describe('Eventos que deben quedar registrados', () => {
     expect(log?.branchId).toBe(fx.branchA.id)
 
     const cambios = log?.changes as {
-      before?: { quantity?: number }
-      after?: { quantity?: number; delta?: number; tipo?: string }
+      before?: { quantity?: string }
+      after?: { quantity?: string; delta?: string; tipo?: string; unidad?: string }
     }
-    expect(cambios.before?.quantity).toBe(10)
-    expect(cambios.after?.quantity).toBe(15)
-    expect(cambios.after?.delta, 'el snapshot dice cuanto se movio, no solo el resultado').toBe(5)
+    // Las cantidades entran en la bitacora como CADENA, igual que los
+    // importes: un `Decimal` serializado a JSON pierde la escala y un `number`
+    // reintroduciria el error de punto flotante en una fila que existe
+    // justamente para ser prueba documental.
+    expect(cambios.before?.quantity).toBe('10.000')
+    expect(cambios.after?.quantity).toBe('15.000')
+    expect(cambios.after?.delta, 'el snapshot dice cuanto se movio, no solo el resultado').toBe('5.000') // prettier-ignore
+    expect(cambios.after?.unidad, 'sin la unidad, un 5 no dice si son kilos').toBe('UNIT')
     expect(cambios.after?.tipo).toBe('MANUAL_ADJUSTMENT')
 
     // El `recordId` apunta al movimiento, que es inmutable: desde la bitacora
     // se llega a la fila del libro y no al reves.
     const movimiento = await prisma.stockMovement.findUnique({ where: { id: log?.recordId ?? 0 } })
-    expect(movimiento?.quantity).toBe(5)
-    expect(movimiento?.previousQuantity).toBe(10)
-    expect(movimiento?.resultingQuantity).toBe(15)
+    expect(num(movimiento?.quantity)).toBe(5)
+    expect(num(movimiento?.previousQuantity)).toBe(10)
+    expect(num(movimiento?.resultingQuantity)).toBe(15)
   })
 
   it('venta', async () => {
