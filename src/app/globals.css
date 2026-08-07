@@ -1,27 +1,267 @@
 @import 'tailwindcss';
 
+/*
+ * Sistema visual del almacen.
+ *
+ * Un solo lugar donde viven los colores, los radios, las sombras y los
+ * tamanios. Ninguna pantalla define su propia paleta: si un componente
+ * necesita un color que no esta aca, falta un token, no falta un hex.
+ *
+ * El tema oscuro es el predeterminado, no una variante. Es el que se usa ocho
+ * horas por dia detras de un mostrador, muchas veces con poca luz.
+ *
+ * Cuatro tonos y nada mas: azul para lo interactivo y lo informativo, verde
+ * para confirmar y para lo que entra, ambar para advertir, rojo para lo que
+ * destruye y para lo que sale. Un quinto color tendria que ganarse el lugar.
+ */
+
+@theme {
+  /* --- Superficies ------------------------------------------------------ */
+  /* bg      el fondo de la aplicacion
+   * surface paneles y tarjetas
+   * raised  lo que se apoya sobre un panel (filas, celdas de encabezado)
+   * sunken  campos de formulario y zonas hundidas */
+  --color-bg: #0c1117;
+  --color-surface: #131a22;
+  --color-raised: #1a232d;
+  --color-sunken: #0f151c;
+  --color-overlay: #060a0e;
+
+  /* --- Bordes ----------------------------------------------------------- */
+  --color-line: #26313d;
+  --color-line-strong: #384857;
+
+  /* --- Texto ------------------------------------------------------------ */
+  --color-ink: #eef4f9;
+  --color-ink-muted: #9aabbb;
+  --color-ink-faint: #6d7f8f;
+  /* Sobre fondos de color solido (botones primarios, badges llenos). */
+  --color-ink-on-solid: #06111c;
+
+  /* --- Dinero ----------------------------------------------------------- */
+  /* El maximo contraste disponible: es la cifra que hay que leer de un
+   * vistazo desde el otro lado del mostrador. */
+  --color-money: #ffffff;
+
+  /* --- Semanticos ------------------------------------------------------- */
+  --color-primary: #4a90ff;
+  --color-primary-hover: #2f7cf6;
+  --color-primary-quiet: #16283f;
+
+  --color-success: #3ddc84;
+  --color-success-hover: #2bc470;
+  --color-success-quiet: #0f2a1d;
+
+  --color-warning: #ffb020;
+  --color-warning-hover: #e89a10;
+  --color-warning-quiet: #2e2210;
+
+  --color-danger: #ff5c5c;
+  --color-danger-hover: #ef4444;
+  --color-danger-quiet: #2e1618;
+
+  /* Informativo comparte tono con lo interactivo a proposito: son la misma
+   * idea --"mira esto"-- y dos azules distintos serian ruido. */
+  --color-info: var(--color-primary);
+  --color-info-quiet: var(--color-primary-quiet);
+
+  --color-focus: #8fbcff;
+
+  /* --- Radios ----------------------------------------------------------- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* --- Sombras ---------------------------------------------------------- */
+  /* Solo dos, y solo para lo que de verdad flota: menus y dialogos. Un panel
+   * quieto se separa con color, no con sombra. */
+  --shadow-pop: 0 8px 24px -8px rgb(0 0 0 / 0.65);
+  --shadow-modal: 0 24px 64px -16px rgb(0 0 0 / 0.75);
+
+  /* --- Tamanios --------------------------------------------------------- */
+  /* 44 px es el minimo tactil. Los controles de la caja son mas grandes
+   * porque se usan a toda velocidad. */
+  --spacing-touch: 44px;
+  --spacing-control: 44px;
+  --spacing-control-lg: 56px;
+  --spacing-sidebar: 236px;
+  --spacing-sidebar-tight: 68px;
+  --spacing-ticket: 400px;
+
+  /* --- Tipografia ------------------------------------------------------- */
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', Consolas, monospace;
+}
+
+/*
+ * Tema claro: opcional y explicito.
+ *
+ * No sigue a `prefers-color-scheme`. Que la aplicacion cambie de aspecto
+ * porque el sistema operativo cambio de humor no ayuda a nadie en un
+ * mostrador; se elige, y queda elegido.
+ */
+:root[data-theme='light'] {
+  --color-bg: #eef1f5;
+  --color-surface: #ffffff;
+  --color-raised: #f5f8fb;
+  --color-sunken: #e9edf2;
+  --color-overlay: #1d2733;
+
+  --color-line: #d5dde6;
+  --color-line-strong: #b3c0cd;
+
+  --color-ink: #0e1822;
+  --color-ink-muted: #55677a;
+  --color-ink-faint: #7a8b9c;
+  --color-ink-on-solid: #ffffff;
+
+  --color-money: #08131d;
+
+  --color-primary: #1c62d6;
+  --color-primary-hover: #144ead;
+  --color-primary-quiet: #e2ecfd;
+
+  --color-success: #10804a;
+  --color-success-hover: #0b6a3c;
+  --color-success-quiet: #dff5e9;
+
+  --color-warning: #96620a;
+  --color-warning-hover: #7c5008;
+  --color-warning-quiet: #fdf0d8;
+
+  --color-danger: #c62828;
+  --color-danger-hover: #a71f1f;
+  --color-danger-quiet: #fce3e3;
+
+  --color-focus: #1c62d6;
+
+  --shadow-pop: 0 8px 24px -10px rgb(15 30 45 / 0.22);
+  --shadow-modal: 0 24px 64px -20px rgb(15 30 45 / 0.3);
+}
+
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
+  :root[data-theme='light'] {
+    color-scheme: light;
+  }
+
   html {
-    font-family: theme('fontFamily.sans'); /* default Tailwind sans font (Inter) */
+    font-family: var(--font-sans);
     font-size: 16px;
     line-height: 1.5;
+    /* Sin scroll horizontal, nunca. Una tabla ancha se desplaza dentro de su
+     * propio contenedor, no arrastra la pantalla entera. */
+    overflow-x: hidden;
   }
 
   body {
-    background-color: #ffffff;
-    color: #111827;
+    background-color: var(--color-bg);
+    color: var(--color-ink);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  /* Foco visible siempre, y con la misma forma en todos lados. Nada de
+   * `outline: none`: sin foco visible el teclado deja de servir. */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Los numeros de dinero no deben bailar al cambiar de valor. */
+  table,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::placeholder {
+    color: var(--color-ink-faint);
+  }
+
+  /* Barras de desplazamiento discretas dentro de paneles oscuros. */
+  * {
+    scrollbar-color: var(--color-line-strong) transparent;
+    scrollbar-width: thin;
   }
 }
 
-@keyframes slide-in {
+@layer utilities {
+  /* Cifra de dinero: mismo tratamiento en toda la aplicacion. */
+  .money {
+    color: var(--color-money);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+    font-weight: 600;
+  }
+
+  /* Deja de mostrarse salvo para lectores de pantalla. */
+  .sr-only-focusable:not(:focus):not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}
+
+@keyframes kc-fade-in {
   from {
     opacity: 0;
-    transform: translateY(1rem);
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes kc-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes kc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/*
+ * Quien pidio menos movimiento recibe menos movimiento.
+ *
+ * No se apaga la animacion del todo: una transicion de 1 ms conserva los
+ * eventos `transitionend` de los que dependen algunos componentes.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

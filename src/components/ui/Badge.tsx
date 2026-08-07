@@ -1,0 +1,111 @@
+'use client'
+
+import type { ReactNode } from 'react'
+import { cn } from './cn'
+
+/**
+ * Etiquetas de estado.
+ *
+ * Regla de la fase: **nunca solo color**. Cada estado trae ademas una forma
+ * --un punto, una barra, un icono-- y su texto. Una venta anulada tiene que
+ * distinguirse en una impresion en blanco y negro.
+ */
+
+export type BadgeTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger'
+
+const TONOS: Record<BadgeTone, string> = {
+  neutral: 'bg-raised text-ink-muted border-line',
+  primary: 'bg-primary-quiet text-primary border-primary/40',
+  success: 'bg-success-quiet text-success border-success/40',
+  warning: 'bg-warning-quiet text-warning border-warning/40',
+  danger: 'bg-danger-quiet text-danger border-danger/40',
+}
+
+export function Badge({
+  tone = 'neutral',
+  children,
+  className,
+}: {
+  tone?: BadgeTone
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap',
+        TONOS[tone],
+        className,
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
+/**
+ * Estado con marca de forma.
+ *
+ * El glifo va antes del texto y no es decorativo: es la parte que sobrevive
+ * a la ausencia de color.
+ */
+export function StatusBadge({
+  tone = 'neutral',
+  glyph,
+  children,
+  className,
+}: {
+  tone?: BadgeTone
+  /** Simbolo que acompania al texto. Por omision, un punto. */
+  glyph?: ReactNode
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <Badge tone={tone} className={className}>
+      <span aria-hidden="true" className="text-[0.7rem] leading-none">
+        {glyph ?? '●'}
+      </span>
+      {children}
+    </Badge>
+  )
+}
+
+/** Estados de venta. Un solo lugar decide como se ve cada uno. */
+export function SaleStatusBadge({ status }: { status: string }) {
+  if (status === 'canceled') {
+    return (
+      <StatusBadge tone="danger" glyph="✕">
+        Anulada
+      </StatusBadge>
+    )
+  }
+  return (
+    <StatusBadge tone="success" glyph="✓">
+      Vigente
+    </StatusBadge>
+  )
+}
+
+/** Estados de stock, con el mismo criterio en catalogo y en caja. */
+export function StockBadge({ quantity, critical = 10 }: { quantity: number; critical?: number }) {
+  if (quantity <= 0) {
+    return (
+      <StatusBadge tone="danger" glyph="✕">
+        Agotado
+      </StatusBadge>
+    )
+  }
+  if (quantity <= critical) {
+    return (
+      <StatusBadge tone="warning" glyph="▲">
+        Quedan {quantity}
+      </StatusBadge>
+    )
+  }
+  return (
+    <StatusBadge tone="neutral" glyph="●">
+      {quantity} en stock
+    </StatusBadge>
+  )
+}
