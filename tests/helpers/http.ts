@@ -32,7 +32,7 @@ export type RouteHandler = (
  */
 export type InvocacionReal = (
   req: NextRequest,
-  args?: { params: Promise<Record<string, string | string[] | undefined>> },
+  args?: { params?: Promise<Record<string, string | string[] | undefined>> },
 ) => Promise<Response>
 
 export interface CallOptions {
@@ -76,12 +76,12 @@ export async function call<T = unknown>(
 ): Promise<CallResult<T>> {
   const req = buildRequest(path, options)
 
-  // Sin `params` declarados se llama al handler tal como lo hace Next con una
-  // ruta estatica: con el segundo argumento ausente.
+  // Sin `params` declarados se llama al handler como lo hace Next con una
+  // ruta estatica: con un segundo argumento que no trae `params`.
   const invocar = route as InvocacionReal
   const res = await invocar(
     req,
-    options.params === undefined ? undefined : { params: Promise.resolve(options.params) },
+    options.params === undefined ? {} : { params: Promise.resolve(options.params) },
   )
   const text = await res.text()
 

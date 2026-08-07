@@ -41,21 +41,34 @@ function pedido(path: string, cookie?: string): NextRequest {
   return new NextRequest(new URL(path, 'http://localhost:3000'), { method: 'GET', headers })
 }
 
-describe('Rutas sin segmento dinamico: Next no pasa `params`', () => {
-  it('GET /api/products responde sin el segundo argumento', async () => {
+describe('Rutas sin segmento dinamico: `params` no viene', () => {
+  /*
+   * Las dos formas hay que probarlas por separado.
+   *
+   * Next pasa un segundo argumento que NO trae `params` --no pasa
+   * `undefined`--, asi que un valor por omision en la firma del handler no
+   * alcanza: nunca se aplica. Esa distincion volvio a romper la API una vez
+   * despues de estar arreglada, y por eso estan las dos.
+   */
+  it('GET /api/products con un segundo argumento sin `params`', async () => {
     const route = await handlerDe('@/app/api/products/route', 'GET')
-    // Exactamente como lo llama Next: un solo argumento.
+    const res = await route(pedido('/api/products', await sessionCookie(fx.admin)), {})
+    expect(res.status).toBe(200)
+  })
+
+  it('GET /api/products sin segundo argumento', async () => {
+    const route = await handlerDe('@/app/api/products/route', 'GET')
     const res = await route(pedido('/api/products', await sessionCookie(fx.admin)))
     expect(res.status).toBe(200)
   })
 
-  it('GET /api/cash/balance responde sin el segundo argumento', async () => {
+  it('GET /api/cash/balance con un segundo argumento sin `params`', async () => {
     const route = await handlerDe('@/app/api/cash/balance/route', 'GET')
-    const res = await route(pedido('/api/cash/balance', await sessionCookie(fx.admin)))
+    const res = await route(pedido('/api/cash/balance', await sessionCookie(fx.admin)), {})
     expect(res.status).toBe(200)
   })
 
-  it('POST /api/auth/login responde sin el segundo argumento', async () => {
+  it('POST /api/auth/login con un segundo argumento sin `params`', async () => {
     const route = await handlerDe('@/app/api/auth/login/route', 'POST')
     const { __resetLoginAttempts } = await import('@/server/auth/loginAttempts')
     __resetLoginAttempts()
@@ -65,7 +78,7 @@ describe('Rutas sin segmento dinamico: Next no pasa `params`', () => {
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({ username: fx.admin.username, password: fx.admin.password }),
     })
-    const res = await route(req)
+    const res = await route(req, {})
     expect(res.status).toBe(200)
   })
 
@@ -73,7 +86,7 @@ describe('Rutas sin segmento dinamico: Next no pasa `params`', () => {
     // La comprobacion negativa: si `normalizarParams` volviera a romperse,
     // la respuesta seria 500 y esta prueba lo diria.
     const route = await handlerDe('@/app/api/branches/route', 'GET')
-    const res = await route(pedido('/api/branches', await sessionCookie(fx.admin)))
+    const res = await route(pedido('/api/branches', await sessionCookie(fx.admin)), {})
     expect(res.status).not.toBe(500)
   })
 })

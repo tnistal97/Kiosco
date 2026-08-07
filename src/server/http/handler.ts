@@ -55,33 +55,37 @@ export interface RouteContext<A extends AuthMode, TBody, TQuery> {
  * Forma exacta que exige el verificador de tipos de rutas de Next 15: el
  * segundo argumento es obligatorio y `params` es una promesa.
  *
- * El tipo miente sobre la ejecucion, y hay que saberlo: Next solo pasa ese
- * argumento a las rutas con segmento dinamico. A las demas --que son casi
- * todas-- las llama con un unico argumento. Declararlo opcional haria que el
- * verificador de rutas rechace el build, asi que el que se defiende es el
- * handler, con un valor por omision.
+ * **El tipo miente sobre la ejecucion.** A una ruta sin segmento dinamico
+ * --que son casi todas-- Next le pasa un segundo argumento que NO tiene
+ * `params`. Declararlo opcional haria que el verificador de rutas rechace el
+ * build, asi que el que se defiende es el handler.
+ *
+ * Confiar en el tipo y escribir `await args.params` sin mas dejo toda la API
+ * respondiendo 500 en el navegador con las 354 pruebas en verde, porque el
+ * ayudante de tests construia siempre un `params` vacio: probaba una forma de
+ * llamada que en ejecucion no ocurre nunca.
+ *
+ * Las tres formas reales estan fijadas en tests/integration/route-args.test.ts.
  */
 export type NextRouteArgs = {
   params: Promise<Record<string, string | string[] | undefined>>
 }
 type NextRouteHandler = (req: NextRequest, args: NextRouteArgs) => Promise<Response>
 
-/**
- * Lo que recibe una ruta sin segmento dinamico.
- *
- * Confiar en el tipo, y hacer `await args.params` sin mas, dejaba toda la API
- * respondiendo 500 en el navegador con las pruebas en verde: el ayudante de
- * tests construia siempre un `params` vacio, es decir, probaba una forma de
- * llamada que en ejecucion no ocurre nunca.
- */
+/** Valor por omision para cuando Next no pasa el segundo argumento. */
 const SIN_PARAMETROS: NextRouteArgs = { params: Promise.resolve({}) }
 
-/** Rutas catch-all pueden traer arrays; ninguna del proyecto lo hace hoy. */
+/**
+ * Rutas catch-all pueden traer arrays; ninguna del proyecto lo hace hoy.
+ *
+ * Acepta `undefined` porque es lo que devuelve `await args.params` cuando el
+ * objeto llega sin esa propiedad, que es el caso normal.
+ */
 function normalizarParams(
-  crudos: Record<string, string | string[] | undefined>,
+  crudos: Record<string, string | string[] | undefined> | undefined,
 ): Record<string, string | undefined> {
   const salida: Record<string, string | undefined> = {}
-  for (const [clave, valor] of Object.entries(crudos)) {
+  for (const [clave, valor] of Object.entries(crudos ?? {})) {
     salida[clave] = Array.isArray(valor) ? valor[0] : valor
   }
   return salida
