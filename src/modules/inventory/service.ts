@@ -20,7 +20,23 @@ import { audit as escribirAuditoria } from '@/server/audit/audit'
 import { conflict, invalid, notFound } from '@/server/http/errors'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
 import type { Session } from '@/server/auth/session'
-import { STOCK_MAX } from '@/modules/products/schemas'
+import type { TextoCantidad } from '@/lib/cantidad'
+import {
+  CANTIDAD_MAX,
+  aTextoCantidad,
+  absolutoCantidad,
+  esCeroCantidad,
+  esNegativaCantidad,
+  esPositivaCantidad,
+  sumaCantidadODefecto,
+  type Cantidad,
+} from '@/server/cantidad'
+import {
+  formatearCantidadConUnidad,
+  motivoDeCantidadInvalida,
+  unidadDeVentaODefecto,
+  type UnidadDeVenta,
+} from '@/modules/products/units'
 import { SIGNO_DE_TIPO, esTipoValido, etiquetaDeTipo, type TipoMovimiento } from './movement-types'
 import type { Referencia } from './referencias'
 import type { ConsultarMovimientosQuery } from './schemas'
@@ -33,7 +49,16 @@ export interface EntradaMovimiento {
   productId: number
   type: TipoMovimiento
   /** Delta CON SIGNO. Una venta de 2 unidades manda -2. */
-  quantity: number
+  quantity: Cantidad
+  /**
+   * Unidad de venta del producto. OBLIGATORIA.
+   *
+   * Es lo que permite comprobar aca --en la unica puerta-- que `1.235` no
+   * llegue al libro de un producto que se vende por unidad. Se pide en vez de
+   * leerla porque todos los que llaman ya tienen el producto cargado: exigirla
+   * no cuesta ninguna consulta y el compilador garantiza que nadie la saltee.
+   */
+  saleUnit: UnidadDeVenta
   userId: number
   reason?: string | null
   referenceType?: Referencia | null
@@ -50,8 +75,8 @@ export interface EntradaMovimiento {
 
 export interface ResultadoMovimiento {
   movementId: number
-  previousQuantity: number
-  resultingQuantity: number
+  previousQuantity: Cantidad
+  resultingQuantity: Cantidad
 }
 
 /** Nombre para el mensaje de error. Se lee solo cuando algo falla. */
@@ -61,36 +86,51 @@ async function nombreDe(tx: TxClient, productId: number): Promise<string> {
 }
 
 /**
- * Comprueba el tipo y el signo antes de tocar la base.
+ * Cuanto se pidio, con su unidad, para el mensaje de stock insuficiente.
  *
- * La base es la garantia --tiene la misma tabla en una restriccion CHECK--;
- * esto es el mensaje legible. Sin esto el usuario recibiria el texto crudo de
- * PostgreSQL, que menciona el nombre de la restriccion y de la tabla.
+ * En valor absoluto: quien lee "se pidieron -0,425 kg" tiene que traducir el
+ * signo antes de entender la frase.
  */
-function validarTipoYSigno(type: TipoMovimiento, quantity: number): void {
+function pedido(quantity: Cantidad, unidad: UnidadDeVenta): string {
+  return formatearCantidadConUnidad(aTextoCantidad(absolutoCantidad(quantity)), unidad)
+}
+
+/**
+ * Comprueba el tipo, el signo y el fraccionamiento antes de tocar la base.
+ *
+ * La base es la garantia --tiene la misma tabla de signos en una restriccion
+ * CHECK--; esto es el mensaje legible. Sin esto el usuario recibiria el texto
+ * crudo de PostgreSQL, que menciona el nombre de la restriccion y de la tabla.
+ *
+ * El fraccionamiento, en cambio, SOLO se puede comprobar aca: la unidad vive
+ * en `Product` y la cantidad en `StockMovement`, y un CHECK no puede mirar mas
+ * alla de su fila.
+ */
+function validarMovimiento(type: TipoMovimiento, quantity: Cantidad, unidad: UnidadDeVenta): void {
   if (!esTipoValido(type)) {
     throw invalid(`Tipo de movimiento desconocido: ${String(type)}`)
   }
 
-  if (!Number.isInteger(quantity)) {
-    throw invalid('La cantidad de un movimiento tiene que ser un numero entero')
-  }
-
-  if (quantity === 0) {
+  if (esCeroCantidad(quantity)) {
     throw invalid('Un movimiento de cero unidades no registra nada')
   }
 
-  if (Math.abs(quantity) > STOCK_MAX) {
-    throw invalid(`La cantidad excede el maximo permitido (${STOCK_MAX})`)
+  if (absolutoCantidad(quantity).greaterThan(CANTIDAD_MAX)) {
+    throw invalid(`La cantidad excede el maximo permitido (${CANTIDAD_MAX})`)
   }
 
   const signo = SIGNO_DE_TIPO[type]
-  if (signo === 'entra' && quantity < 0) {
+  if (signo === 'entra' && esNegativaCantidad(quantity)) {
     throw invalid(`Un movimiento de tipo "${etiquetaDeTipo(type)}" no puede restar unidades`)
   }
-  if (signo === 'sale' && quantity > 0) {
+  if (signo === 'sale' && esPositivaCantidad(quantity)) {
     throw invalid(`Un movimiento de tipo "${etiquetaDeTipo(type)}" no puede sumar unidades`)
   }
+
+  // Sobre el valor absoluto: el signo ya se comprobo arriba, y la politica de
+  // la unidad habla de cuanto se mueve, no de en que direccion.
+  const motivo = motivoDeCantidadInvalida(unidad, aTextoCantidad(absolutoCantidad(quantity)))
+  if (motivo !== null) throw invalid(motivo)
 }
 
 /**
@@ -116,9 +156,15 @@ export async function applyStockMovement(
   tx: TxClient,
   entrada: EntradaMovimiento,
 ): Promise<ResultadoMovimiento> {
-  const { branchId, productId, type, quantity, userId } = entrada
+  const { branchId, productId, type, quantity, saleUnit, userId } = entrada
 
-  validarTipoYSigno(type, quantity)
+  validarMovimiento(type, quantity, saleUnit)
+
+  // El delta viaja a PostgreSQL como CADENA canonica con un cast explicito, no
+  // como objeto ni como numero. Una cadena `"0.425"` con `::numeric` no puede
+  // perder nada por el camino; un `number` de JavaScript ya la habria perdido
+  // antes de salir.
+  const delta: TextoCantidad = aTextoCantidad(quantity)
 
   // 1) La fila de stock tiene que existir para poder actualizarla.
   //
@@ -150,26 +196,32 @@ export async function applyStockMovement(
   //    `RETURNING` sobre un UPDATE devuelve la fila NUEVA, de modo que
   //    `"quantity" - delta` es exactamente el saldo anterior.
   //
-  //    El `::integer` no es adorno: Prisma manda el parametro como `int8`, y
-  //    PostgreSQL promueve `int4 - int8` a `bigint`. Sin el cast, `previo`
-  //    vuelve como BigInt y `resultante` como number --dos tipos distintos
-  //    para dos columnas que significan lo mismo--. El rango ya esta acotado
-  //    por la validacion de arriba, asi que el cast no puede desbordar.
+  //    Los casts SI son necesarios, y son los que NO pierden nada:
+  //
+  //      `${delta}::numeric`   la cadena llega sin tipo declarado y PostgreSQL
+  //                            no sabe con que sumarla. El cast se lo dice.
+  //      `::numeric(14,3)`     es el tipo propio de la columna. Los dos
+  //                            operandos ya tienen tres decimales, asi que su
+  //                            resta tambien; el cast solo fija la escala para
+  //                            que vuelva con la forma canonica.
+  //
+  //    Hasta la Fase 3B esto decia `::integer`, que hoy truncaria el decimal.
+  //    Ver docs/PHASE3_QUANTITY_MIGRATION.md.
   //
   //    La union con `Product` repite la comprobacion de sucursal: la fila de
   //    stock podria existir de antes, y sin esto un id de otra sucursal la
   //    moveria.
-  const filas = await tx.$queryRaw<Array<{ previo: number; resultante: number }>>`
+  const filas = await tx.$queryRaw<Array<{ previo: Cantidad; resultante: Cantidad }>>`
     UPDATE "BranchStock" bs
-       SET "quantity" = bs."quantity" + ${quantity}
+       SET "quantity" = bs."quantity" + ${delta}::numeric
       FROM "Product" p
      WHERE p."id" = bs."productId"
        AND p."branchId" = ${branchId}
        AND bs."branchId" = ${branchId}
        AND bs."productId" = ${productId}
-       AND bs."quantity" + ${quantity} >= 0
-    RETURNING (bs."quantity" - ${quantity})::integer AS previo,
-              bs."quantity"::integer               AS resultante
+       AND bs."quantity" + ${delta}::numeric >= 0
+    RETURNING (bs."quantity" - ${delta}::numeric)::numeric(14,3) AS previo,
+              bs."quantity"::numeric(14,3)                       AS resultante
   `
 
   const saldos = filas[0]
@@ -191,14 +243,16 @@ export async function applyStockMovement(
       if (!delaSucursal) throw notFound('Producto no encontrado')
 
       throw conflict(
-        `No hay stock de "${await nombreDe(tx, productId)}": se pidieron ${Math.abs(quantity)} y hay 0`,
+        `No hay stock de "${await nombreDe(tx, productId)}": se pidieron ` +
+          `${pedido(quantity, saleUnit)} y hay ${formatearCantidadConUnidad('0.000', saleUnit)}`,
         { code: 'INSUFFICIENT_STOCK' },
       )
     }
 
     throw conflict(
-      `Stock insuficiente de "${await nombreDe(tx, productId)}": ` +
-        `se pidieron ${Math.abs(quantity)} y hay ${actual.quantity}`,
+      `Stock insuficiente de "${await nombreDe(tx, productId)}": se pidieron ` +
+        `${pedido(quantity, saleUnit)} y hay ` +
+        `${formatearCantidadConUnidad(aTextoCantidad(actual.quantity), saleUnit)}`,
       { code: 'INSUFFICIENT_STOCK' },
     )
   }
@@ -223,6 +277,10 @@ export async function applyStockMovement(
   })
 
   if (entrada.audit) {
+    // Las cantidades entran en la bitacora como CADENA, igual que los
+    // importes. Un `Decimal` serializado a JSON pierde la escala --`0.25` en
+    // vez de `"0.250"`-- y un `number` reintroduciria el error de punto
+    // flotante en una fila que existe justamente para ser prueba documental.
     await escribirAuditoria(tx, {
       userId,
       branchId,
@@ -230,12 +288,13 @@ export async function applyStockMovement(
       recordId: movimiento.id,
       action: 'create',
       reason: entrada.reason ?? null,
-      before: { quantity: saldos.previo },
+      before: { quantity: aTextoCantidad(saldos.previo) },
       after: {
         tipo: type,
         productId,
-        delta: quantity,
-        quantity: saldos.resultante,
+        delta,
+        unidad: saleUnit,
+        quantity: aTextoCantidad(saldos.resultante),
         motivo: entrada.reason ?? null,
         branchId,
       },
@@ -356,13 +415,17 @@ export interface MovimientoListado {
   type: string
   /** Nombre para mostrar. El codigo crudo no llega a la pantalla. */
   typeLabel: string
-  quantity: number
-  previousQuantity: number
-  resultingQuantity: number
+  quantity: TextoCantidad
+  previousQuantity: TextoCantidad
+  resultingQuantity: TextoCantidad
   referenceType: string | null
   referenceId: number | null
   reason: string | null
-  product: { id: number; name: string; barcode: string | null }
+  /**
+   * El producto con SU unidad de venta. Sin ella la fila no se puede leer: un
+   * `-0.250` no dice si se vendieron 250 gramos o un cuarto de unidad.
+   */
+  product: { id: number; name: string; barcode: string | null; saleUnit: UnidadDeVenta }
   user: { id: number; name: string }
   branch: { id: number; name: string }
 }
@@ -377,7 +440,16 @@ const CAMPOS_MOVIMIENTO = {
   referenceType: true,
   referenceId: true,
   reason: true,
-  product: { select: { id: true, name: true, barcode: true } },
+  product: {
+    select: {
+      id: true,
+      name: true,
+      saleUnit: true,
+      // El principal, para poder mostrarlo junto al nombre. Los alternativos
+      // no hacen falta en un historial.
+      barcodes: { where: { isPrimary: true }, select: { code: true }, take: 1 },
+    },
+  },
   user: { select: { id: true, name: true } },
   branch: { select: { id: true, name: true } },
 } as const
@@ -416,7 +488,9 @@ export async function consultarMovimientos(
           product: {
             OR: [
               { name: { contains: query.q, mode: 'insensitive' as const } },
-              { barcode: { contains: query.q, mode: 'insensitive' as const } },
+              // Cualquiera de sus codigos, no solo el principal: quien pega un
+              // codigo alternativo en el buscador espera encontrar el producto.
+              { barcodes: { some: { code: { contains: query.q, mode: 'insensitive' as const } } } },
             ],
           },
         }
@@ -436,7 +510,19 @@ export async function consultarMovimientos(
     }),
   ])
 
-  const data = movimientos.map((m) => ({ ...m, typeLabel: etiquetaDeTipo(m.type) }))
+  const data = movimientos.map(({ product, ...m }) => ({
+    ...m,
+    typeLabel: etiquetaDeTipo(m.type),
+    quantity: aTextoCantidad(m.quantity),
+    previousQuantity: aTextoCantidad(m.previousQuantity),
+    resultingQuantity: aTextoCantidad(m.resultingQuantity),
+    product: {
+      id: product.id,
+      name: product.name,
+      barcode: product.barcodes[0]?.code ?? null,
+      saleUnit: unidadDeVentaODefecto(product.saleUnit),
+    },
+  }))
 
   return paginado(data, total, query)
 }
@@ -448,10 +534,10 @@ export async function consultarMovimientos(
  * ser identico a `BranchStock.quantity`. La usan las pruebas y esta disponible
  * para cuando haga falta explicarle a alguien de donde salio un numero.
  */
-export async function reconstruirStock(branchId: number, productId: number): Promise<number> {
+export async function reconstruirStock(branchId: number, productId: number): Promise<Cantidad> {
   const suma = await prisma.stockMovement.aggregate({
     where: { branchId, productId },
     _sum: { quantity: true },
   })
-  return suma._sum.quantity ?? 0
+  return sumaCantidadODefecto(suma._sum.quantity)
 }

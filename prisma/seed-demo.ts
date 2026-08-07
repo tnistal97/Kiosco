@@ -14,7 +14,7 @@
  * Se niega a correr si la base no termina en `_dev`. Es la misma guarda que
  * usan los tests: impide vaciar por accidente algo que no sea descartable.
  */
-import { PrismaClient } from '@prisma/client'
+import { Prisma, PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
 
 const prisma = new PrismaClient()
@@ -64,13 +64,16 @@ async function moverStock(m: {
     where: { branchId_productId: { branchId: m.branchId, productId: m.productId } },
     select: { quantity: true },
   })
-  const antes = actual?.quantity ?? 0
-  const despues = antes + m.delta
+  // Desde la Fase 3B las cantidades son `Decimal`. La aritmetica se hace con
+  // `Decimal` y no convirtiendo a number: es exactamente la regla que el resto
+  // del sistema hace cumplir con una regla de ESLint.
+  const antes = actual?.quantity ?? new Prisma.Decimal(0)
+  const despues = antes.plus(m.delta)
 
-  if (despues < 0) {
+  if (despues.isNegative()) {
     throw new Error(
-      `El seed dejaria el producto ${String(m.productId)} en ${String(despues)}: ` +
-        `hay ${String(antes)} y el movimiento pide ${String(m.delta)}. ` +
+      `El seed dejaria el producto ${String(m.productId)} en ${despues.toString()}: ` +
+        `hay ${antes.toString()} y el movimiento pide ${String(m.delta)}. ` +
         'Revisá el stock declarado en PRODUCTOS o las líneas de VENTAS.',
     )
   }

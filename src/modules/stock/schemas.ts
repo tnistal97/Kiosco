@@ -8,17 +8,24 @@
  */
 
 import { z } from 'zod'
-import { shortText } from '@/server/http/validate'
-import { STOCK_MAX } from '@/modules/products/schemas'
+import { deltaSchema, quantityOrZeroSchema, shortText } from '@/server/http/validate'
+import { aMilesimas } from '@/lib/cantidad'
 import { SIGNO_DE_TIPO, TIPOS_DE_AJUSTE, etiquetaDeTipo } from '@/modules/inventory/movement-types'
 
 /** Motivo del ajuste. Obligatorio, con contenido real (shortText recorta). */
 export const motivoSchema = shortText(200)
 
-/** PUT: fija la cantidad exacta. Es el recuento de inventario. */
+/**
+ * PUT: fija la cantidad exacta. Es el recuento de inventario.
+ *
+ * Admite decimales desde la Fase 3B --"quedan 3,250 kg de queso"-- y admite
+ * cero, que en un recuento significa "no quedo nada". Que la cantidad tenga
+ * sentido para SU unidad lo comprueba el servicio, que es quien conoce el
+ * producto.
+ */
 export const ajusteAbsolutoSchema = z
   .object({
-    quantity: z.number().int().min(0).max(STOCK_MAX),
+    quantity: quantityOrZeroSchema,
     reason: motivoSchema,
   })
   .strict()
@@ -38,11 +45,7 @@ export const ajusteAbsolutoSchema = z
  */
 export const ajusteRelativoSchema = z
   .object({
-    delta: z
-      .number()
-      .int('El ajuste debe ser un numero entero')
-      .refine((n) => n !== 0, 'El ajuste no puede ser cero')
-      .refine((n) => Math.abs(n) <= STOCK_MAX, 'Ajuste fuera de rango'),
+    delta: deltaSchema,
     /**
      * Por omision, ajuste generico. Obligar a clasificar cada correccion de
      * carga como perdida seria mentir, y una etiqueta que se pone porque hay
@@ -54,14 +57,15 @@ export const ajusteRelativoSchema = z
   .strict()
   .superRefine((v, ctx) => {
     const signo = SIGNO_DE_TIPO[v.type]
-    if (signo === 'sale' && v.delta > 0) {
+    const milesimas = aMilesimas(v.delta)
+    if (signo === 'sale' && milesimas > 0) {
       ctx.addIssue({
         code: 'custom',
         path: ['delta'],
         message: `Un movimiento de tipo "${etiquetaDeTipo(v.type)}" resta unidades: mandá un número negativo`,
       })
     }
-    if (signo === 'entra' && v.delta < 0) {
+    if (signo === 'entra' && milesimas < 0) {
       ctx.addIssue({
         code: 'custom',
         path: ['delta'],

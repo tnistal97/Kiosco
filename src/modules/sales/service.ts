@@ -27,6 +27,19 @@ import {
   sumar,
   type Dinero,
 } from '@/server/money'
+import type { TextoCantidad } from '@/lib/cantidad'
+import {
+  aTextoCantidad,
+  cantidad as aCantidad,
+  negarCantidad,
+  sumarCantidades,
+  type Cantidad,
+} from '@/server/cantidad'
+import {
+  motivoDeCantidadInvalida,
+  unidadDeVentaODefecto,
+  type UnidadDeVenta,
+} from '@/modules/products/units'
 import { esEfectivo, etiquetaDeMedio, normalizarMedio, type MedioDePago } from './payment-methods'
 import type { PagoInput } from './schemas'
 import { turnoAbiertoDe, turnoParaOperar } from '@/modules/cash/service.turnos'
@@ -34,7 +47,7 @@ import { applyStockMovement } from '@/modules/inventory/service'
 
 export interface SaleLineInput {
   productId: number
-  quantity: number
+  quantity: TextoCantidad
 }
 
 /** Un pago ya resuelto: con su importe y su vuelto calculados por el servidor. */
@@ -106,6 +119,7 @@ interface Catalogado {
   id: number
   name: string
   price: Dinero
+  saleUnit: string
 }
 
 export interface CreateSaleInput {
@@ -130,7 +144,9 @@ export interface CreatedSale {
   items: Array<{
     productId: number
     name: string
-    quantity: number
+    quantity: TextoCantidad
+    /** La unidad en la que se vendio. Sin ella, `0.425` no dice nada. */
+    saleUnit: UnidadDeVenta
     price: Monto
     subtotal: Monto
   }>
@@ -155,10 +171,12 @@ export interface CreatedSale {
  * Importa: con dos lineas de 8 unidades y 10 en stock, comprobar linea por
  * linea da "hay stock" dos veces y el resultado final es -6.
  */
-function consolidar(items: SaleLineInput[]): SaleLineInput[] {
-  const porProducto = new Map<number, number>()
+function consolidar(items: SaleLineInput[]): Array<{ productId: number; quantity: Cantidad }> {
+  const porProducto = new Map<number, Cantidad>()
   for (const item of items) {
-    porProducto.set(item.productId, (porProducto.get(item.productId) ?? 0) + item.quantity)
+    const acumulado = porProducto.get(item.productId)
+    const cantidad = aCantidad(item.quantity)
+    porProducto.set(item.productId, acumulado ? sumarCantidades(acumulado, cantidad) : cantidad)
   }
   return (
     [...porProducto.entries()]
@@ -187,14 +205,14 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
       //    sesion. Un producto de otra sucursal simplemente no aparece.
       const productos = await tx.product.findMany({
         where: { id: { in: lineas.map((l) => l.productId) }, branchId },
-        select: { id: true, name: true, price: true },
+        select: { id: true, name: true, price: true, saleUnit: true },
       })
 
       // Cada linea se empareja con su producto una sola vez. A partir de aca
       // el flujo trabaja con pares ya resueltos, sin volver a consultar el
       // mapa y sin tener que afirmar que el resultado no es nulo.
       const porId = new Map(productos.map((p) => [p.id, p]))
-      const pedido: Array<{ productId: number; quantity: number; producto: Catalogado }> = []
+      const pedido: Array<{ productId: number; quantity: Cantidad; producto: Catalogado }> = []
       const faltantes: number[] = []
 
       for (const linea of lineas) {
@@ -209,6 +227,23 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         })
       }
 
+      // 1 bis) La cantidad tiene que tener sentido para la unidad del producto.
+      //
+      //    `1.235` unidades no existe. Se comprueba DESPUES de emparejar
+      //    porque hasta aca no se sabia en que unidad se vende cada linea, y
+      //    ANTES de tocar el stock para que el rechazo no deje nada a medias.
+      //
+      //    `applyStockMovement` vuelve a comprobarlo --es la unica puerta y no
+      //    confia en quien la llama--; esto adelanta el mensaje al usuario con
+      //    el nombre del producto adentro.
+      for (const linea of pedido) {
+        const unidad = unidadDeVentaODefecto(linea.producto.saleUnit)
+        const motivo = motivoDeCantidadInvalida(unidad, aTextoCantidad(linea.quantity))
+        if (motivo !== null) {
+          throw invalid(`${linea.producto.name}: ${motivo}`, { code: 'INVALID_QUANTITY_FOR_UNIT' })
+        }
+      }
+
       // 2) Precios y total, siempre desde la base y siempre en Decimal.
       //
       //    El subtotal se redondea a dos decimales porque es una linea del
@@ -216,10 +251,16 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
       //    subtotales ya redondeados: asi el ticket cierra con lo que muestra,
       //    linea por linea. Sumar exacto y redondear al final daria un total
       //    que no coincide con la suma de lo que el cliente ve.
+      //
+      //    La multiplicacion es `Decimal × Decimal`: precio por cantidad, los
+      //    dos exactos. Con 0,425 kg a $9.800 el subtotal da $4.165,00 y no
+      //    $4.164,999999, que es lo que devolveria la misma cuenta en punto
+      //    flotante.
       const itemsConPrecio = pedido.map(({ producto, quantity }) => ({
         productId: producto.id,
         name: producto.name,
         quantity,
+        saleUnit: unidadDeVentaODefecto(producto.saleUnit),
         price: producto.price,
         subtotal: redondearPesos(multiplicar(producto.price, quantity)),
       }))
@@ -282,7 +323,8 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
           branchId,
           productId: linea.productId,
           type: 'SALE',
-          quantity: -linea.quantity,
+          quantity: negarCantidad(linea.quantity),
+          saleUnit: unidadDeVentaODefecto(linea.producto.saleUnit),
           userId: session.userId,
           referenceType: 'Sale',
           referenceId: venta.id,
@@ -332,7 +374,8 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
       const itemsParaMostrar = itemsConPrecio.map((i) => ({
         productId: i.productId,
         name: i.name,
-        quantity: i.quantity,
+        quantity: aTextoCantidad(i.quantity),
+        saleUnit: i.saleUnit,
         price: aMonto(i.price),
         subtotal: aMonto(i.subtotal),
       }))
@@ -438,7 +481,12 @@ export async function cancelSale(
       //   Anulacion venta #123 +2   36 → 38
       const items = await tx.saleItem.findMany({
         where: { saleId },
-        select: { productId: true, quantity: true, price: true },
+        select: {
+          productId: true,
+          quantity: true,
+          price: true,
+          product: { select: { saleUnit: true } },
+        },
       })
 
       for (const item of [...items].sort((a, b) => a.productId - b.productId)) {
@@ -446,7 +494,10 @@ export async function cancelSale(
           branchId: venta.branchId,
           productId: item.productId,
           type: 'SALE_CANCEL',
+          // La cantidad EXACTA que se vendio, leida de la linea. Restaurar
+          // 0,425 kg devuelve 0,425 kg: sin recalcular y sin redondear.
           quantity: item.quantity,
+          saleUnit: unidadDeVentaODefecto(item.product.saleUnit),
           userId: session.userId,
           reason: motivo,
           referenceType: 'Sale',
@@ -508,7 +559,8 @@ export async function cancelSale(
           status: 'completed',
           items: items.map((i) => ({
             productId: i.productId,
-            quantity: i.quantity,
+            quantity: aTextoCantidad(i.quantity),
+            unidad: unidadDeVentaODefecto(i.product.saleUnit),
             price: aMonto(i.price),
           })),
           vendedorId: venta.userId,

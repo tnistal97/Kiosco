@@ -19,6 +19,9 @@ import type { Session } from '@/server/auth/session'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
 import type { ArqueoInput, ListarMovimientosQuery, MovimientoManualInput } from './schemas'
 import type { Monto } from '@/lib/money'
+import type { TextoCantidad } from '@/lib/cantidad'
+import { aTextoCantidad } from '@/server/cantidad'
+import { unidadDeVentaODefecto, type UnidadDeVenta } from '@/modules/products/units'
 import {
   aMonto,
   dinero,
@@ -50,7 +53,7 @@ const CAMPOS_MOVIMIENTO = {
           id: true,
           quantity: true,
           price: true,
-          product: { select: { id: true, name: true } },
+          product: { select: { id: true, name: true, saleUnit: true } },
         },
       },
     },
@@ -68,7 +71,8 @@ export interface MovimientoListado {
   saleStatus: string | null
   saleItems: Array<{
     id: number
-    quantity: number
+    quantity: TextoCantidad
+    saleUnit: UnidadDeVenta
     price: Monto
     product: { id: number; name: string }
   }> | null
@@ -113,7 +117,14 @@ export async function listarMovimientos(
     ...mov,
     amount: aMonto(amount),
     saleStatus: sale?.status ?? null,
-    saleItems: sale?.items.map((i) => ({ ...i, price: aMonto(i.price) })) ?? null,
+    saleItems:
+      sale?.items.map(({ product, ...i }) => ({
+        ...i,
+        quantity: aTextoCantidad(i.quantity),
+        saleUnit: unidadDeVentaODefecto(product.saleUnit),
+        price: aMonto(i.price),
+        product: { id: product.id, name: product.name },
+      })) ?? null,
   }))
 
   return paginado(data, total, query)

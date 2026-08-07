@@ -9,27 +9,113 @@
 import { z } from 'zod'
 import { invalid } from '@/server/http/errors'
 import { monto, type Monto } from '@/lib/money'
+import { cantidad, CANTIDAD_MAX, type TextoCantidad } from '@/lib/cantidad'
 import { MEDIOS_DE_PAGO, normalizarMedio } from '@/modules/sales/payment-methods'
 
 /** Entero positivo, tambien desde string (parametros de ruta y query). */
 export const idSchema = z.coerce.number().int().positive().max(2_147_483_647)
 
 /**
- * Cantidad de unidades vendidas o ajustadas.
+ * Cantidad de mercaderia vendida, ajustada o contada.
  *
- * `z.coerce.number()` rechaza NaN e Infinity por si mismo, pero lo dejamos
- * explicito porque es justamente lo que hoy pasa sin control: `Number(body.qty)`
- * con "abc" da NaN, y NaN sobrevive hasta el UPDATE.
+ * Decimal desde la Fase 3B: 0,425 kg de queso es una linea de ticket valida.
+ * Acepta cadena o numero y SIEMPRE devuelve una cadena canonica --`"0.425"`--
+ * para que el servicio la pase a `Decimal` sin volver a tocarla, igual que
+ * `amountSchema` con el dinero.
  *
- * Entero por ahora. Cuando se agregue venta por peso (kg, g, l), este es el
- * unico lugar que cambia a decimal con precision fija.
+ * Lo que comprueba aca es LA FORMA: positiva, hasta tres decimales, dentro de
+ * rango. Lo que NO puede comprobar aca es si esa cantidad es valida para SU
+ * unidad --que `1.235` no vale para un producto que se vende por unidad--,
+ * porque para eso hay que conocer el producto. Esa mitad la hace el servicio
+ * con `motivoDeCantidadInvalida`, y tiene sus pruebas.
  */
 export const quantitySchema = z
-  .number()
-  .int('La cantidad debe ser un numero entero')
-  .positive('La cantidad debe ser mayor que cero')
-  .max(100_000, 'Cantidad fuera de rango')
-  .finite()
+  .union([z.string(), z.number()])
+  .superRefine((valor, ctx) => {
+    if (typeof valor === 'number' && !Number.isFinite(valor)) {
+      ctx.addIssue({ code: 'custom', message: 'Cantidad invalida' })
+      return
+    }
+    const texto = typeof valor === 'number' ? valor.toString() : valor.trim()
+    if (!/^\d+(\.\d{1,3})?$/.test(texto)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: /^-/.test(texto)
+          ? 'La cantidad no puede ser negativa'
+          : 'La cantidad debe ser un numero con tres decimales como maximo',
+      })
+      return
+    }
+    if (Number(texto) <= 0) {
+      ctx.addIssue({ code: 'custom', message: 'La cantidad debe ser mayor que cero' })
+      return
+    }
+    if (Number(texto) > CANTIDAD_MAX) {
+      ctx.addIssue({ code: 'custom', message: 'Cantidad fuera de rango' })
+    }
+  })
+  .transform((valor): TextoCantidad => cantidad(valor))
+
+/**
+ * Igual que `quantitySchema` pero admitiendo cero.
+ *
+ * Para el stock inicial de un producto y para el minimo de reposicion, donde
+ * el cero es una respuesta valida --y en el minimo significa algo concreto:
+ * "sin minimo configurado"--.
+ */
+export const quantityOrZeroSchema = z
+  .union([z.string(), z.number()])
+  .superRefine((valor, ctx) => {
+    if (typeof valor === 'number' && !Number.isFinite(valor)) {
+      ctx.addIssue({ code: 'custom', message: 'Cantidad invalida' })
+      return
+    }
+    const texto = typeof valor === 'number' ? valor.toString() : valor.trim()
+    if (!/^\d+(\.\d{1,3})?$/.test(texto)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: /^-/.test(texto)
+          ? 'La cantidad no puede ser negativa'
+          : 'La cantidad debe ser un numero con tres decimales como maximo',
+      })
+      return
+    }
+    if (Number(texto) > CANTIDAD_MAX) {
+      ctx.addIssue({ code: 'custom', message: 'Cantidad fuera de rango' })
+    }
+  })
+  .transform((valor): TextoCantidad => cantidad(valor))
+
+/**
+ * Delta de un ajuste: puede ser negativo, no puede ser cero.
+ *
+ * "Entraron 12", "se rompieron 3". El cero se rechaza porque un movimiento de
+ * cero unidades no registra nada.
+ */
+export const deltaSchema = z
+  .union([z.string(), z.number()])
+  .superRefine((valor, ctx) => {
+    if (typeof valor === 'number' && !Number.isFinite(valor)) {
+      ctx.addIssue({ code: 'custom', message: 'Cantidad invalida' })
+      return
+    }
+    const texto = typeof valor === 'number' ? valor.toString() : valor.trim()
+    if (!/^-?\d+(\.\d{1,3})?$/.test(texto)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'La cantidad debe ser un numero con tres decimales como maximo',
+      })
+      return
+    }
+    if (Number(texto) === 0) {
+      ctx.addIssue({ code: 'custom', message: 'Un movimiento de cero unidades no registra nada' })
+      return
+    }
+    if (Math.abs(Number(texto)) > CANTIDAD_MAX) {
+      ctx.addIssue({ code: 'custom', message: 'Cantidad fuera de rango' })
+    }
+  })
+  .transform((valor): TextoCantidad => cantidad(valor))
 
 /**
  * Importe de dinero. Positivo, con dos decimales como maximo.
@@ -68,6 +154,39 @@ export const amountSchema = z
     }
   })
   .transform((valor): Monto => monto(valor))
+
+/**
+ * Costo unitario. Como `amountSchema` pero con hasta CUATRO decimales.
+ *
+ * El costo se deriva de una division --una caja de 8 a $12.345 da $1.543,125
+ * por unidad-- y por eso se guarda con mas resolucion que un precio. Ver
+ * docs/PHASE3_MONEY_MIGRATION.md.
+ *
+ * Devuelve la cadena canonica con la escala que se tipeo; el servicio la pasa
+ * a `Decimal` sin volver a tocarla.
+ */
+export const costSchema = z
+  .union([z.string(), z.number()])
+  .superRefine((valor, ctx) => {
+    if (typeof valor === 'number' && !Number.isFinite(valor)) {
+      ctx.addIssue({ code: 'custom', message: 'Costo invalido' })
+      return
+    }
+    const texto = typeof valor === 'number' ? valor.toString() : valor.trim()
+    if (!/^\d+(\.\d{1,4})?$/.test(texto)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: /^-/.test(texto)
+          ? 'El costo no puede ser negativo'
+          : 'El costo debe ser un numero con cuatro decimales como maximo',
+      })
+      return
+    }
+    if (Number(texto) > 1_000_000_000) {
+      ctx.addIssue({ code: 'custom', message: 'Costo fuera de rango' })
+    }
+  })
+  .transform((valor): string => (typeof valor === 'number' ? valor.toString() : valor.trim()))
 
 /** Texto corto obligatorio con longitud maxima. */
 export const shortText = (max = 200) => z.string().trim().min(1).max(max)

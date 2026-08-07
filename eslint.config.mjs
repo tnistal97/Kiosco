@@ -45,6 +45,39 @@ const PROHIBIDO_DINERO_NUMERO = [
 ]
 
 /**
+ * Una cantidad tampoco se vuelve numero.
+ *
+ * Mismo argumento que el dinero, y con una consecuencia peor: el libro de
+ * inventario tiene una restriccion en PostgreSQL que exige
+ *
+ *   resultingQuantity = previousQuantity + quantity
+ *
+ * En punto flotante `0.1 + 0.2` da `0.30000000000000004`. Eso no produce un
+ * numero feo: produce una fila que la base RECHAZA, y con ella una venta que no
+ * se puede registrar. La regla del `.toNumber()` ya la cubre PROHIBIDO_DINERO;
+ * esto agrega la otra puerta, que es envolver la columna en `Number(...)`.
+ *
+ * Ver docs/PHASE3_QUANTITY_MIGRATION.md.
+ */
+const PROHIBIDO_CANTIDAD_NUMERO = [
+  {
+    selector:
+      "CallExpression[callee.name='Number'] > MemberExpression" +
+      '[property.name=/^(quantity|previousQuantity|resultingQuantity|minimumStock|totalStock|unitsPerPurchaseUnit)$/]',
+    message:
+      'Una cantidad no se convierte a number: la aritmetica del inventario se hace con Decimal ' +
+      '(servidor) o con milesimas enteras (navegador). Usa los helpers de @/server/cantidad ' +
+      'o de @/lib/cantidad.',
+  },
+  {
+    selector:
+      'CallExpression[callee.name=/^(parseFloat|parseInt)$/] > MemberExpression' +
+      '[property.name=/^(quantity|previousQuantity|resultingQuantity|minimumStock|totalStock)$/]',
+    message: 'Una cantidad no se parsea a number. Ver @/lib/cantidad.',
+  },
+]
+
+/**
  * El stock no se escribe: se mueve.
  *
  * Desde la Fase 3A el stock es el saldo de un libro, no un numero suelto:
@@ -264,9 +297,10 @@ export default tseslint.config(
   // porque las dos fronteras tienen excepciones distintas:
   //
   //   1. todo src/                        → stock
-  //   2. modules, server y api            → stock + dinero
-  //   3. src/server/money.ts              → stock          (cruza el dinero)
-  //   4. modules/inventory/service.ts     → dinero         (cruza el stock)
+  //   2. modules, server y api            → stock + dinero + cantidad
+  //   3. src/server/money.ts              → stock + cantidad   (cruza el dinero)
+  //   4. src/server/cantidad.ts           → stock + dinero     (cruza la cantidad)
+  //   5. modules/inventory/service.ts     → dinero + cantidad  (cruza el stock)
   //
   // Sin este cuidado, agregar la segunda frontera habria apagado la primera en
   // silencio: los tests seguirian pasando y la regla no protegeria nada.
@@ -277,16 +311,31 @@ export default tseslint.config(
   {
     files: ['src/modules/**/*.ts', 'src/server/**/*.ts', 'src/app/api/**/*.ts'],
     rules: {
-      'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK, ...PROHIBIDO_DINERO_NUMERO],
+      'no-restricted-syntax': [
+        'error',
+        ...PROHIBIDO_ESCRIBIR_STOCK,
+        ...PROHIBIDO_DINERO_NUMERO,
+        ...PROHIBIDO_CANTIDAD_NUMERO,
+      ],
     },
   },
   {
     files: ['src/server/money.ts'],
-    rules: { 'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK] },
+    rules: {
+      'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK, ...PROHIBIDO_CANTIDAD_NUMERO],
+    },
+  },
+  {
+    files: ['src/server/cantidad.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK, ...PROHIBIDO_DINERO_NUMERO],
+    },
   },
   {
     files: ['src/modules/inventory/service.ts'],
-    rules: { 'no-restricted-syntax': ['error', ...PROHIBIDO_DINERO_NUMERO] },
+    rules: {
+      'no-restricted-syntax': ['error', ...PROHIBIDO_DINERO_NUMERO, ...PROHIBIDO_CANTIDAD_NUMERO],
+    },
   },
 
   // ------------------------------------------------------------------- tests

@@ -132,6 +132,7 @@ model User {
   sessionVersion Int @default(0)
 
   logs             AuditLog[]
+  costChanges      ProductCostHistory[]
   sales            Sale[]                 @relation("SaleCreatedBy")
   canceledSales    Sale[]                 @relation("SaleCanceledBy")
   stockChecks      StockCheck[]
@@ -152,15 +153,63 @@ model Category {
 }
 
 model Product {
-  id          Int     @id @default(autoincrement())
-  name        String
-  barcode     String? @unique
+  id   Int    @id @default(autoincrement())
+  name String
+
+  /// CONGELADA desde la Fase 3B. No se lee y no se escribe.
+  ///
+  /// Los codigos de barras viven en `ProductBarcode`, que permite varios por
+  /// producto. Esta columna conserva su valor y su indice unico por una sola
+  /// razon: la regla 2 de docs/DATABASE_MIGRATION_STRATEGY.md exige al menos un
+  /// despliegue entre dejar de usar una columna y borrarla. Se borra en la Fase
+  /// 3C. Ver docs/PHASE3_BARCODES.md.
+  barcode String? @unique
+
   description String?
   supplierId  Int?
   categoryId  Int
 
-  /// Precio de venta. Dos decimales: es lo que se cobra.
+  /// Precio de venta, POR UNIDAD DE VENTA. Dos decimales: es lo que se cobra.
+  /// Un producto con `saleUnit = KG` a `9800.00` vale $9.800 el kilo.
   price Decimal @db.Decimal(14, 2)
+
+  /// Cuanto cuesta comprarlo. NULL significa "no sabemos".
+  ///
+  /// Nulo y no cero, y sobre todo no igual al precio: un margen de cero
+  /// inventado se ve exactamente igual que un margen de cero real, y alguien
+  /// va a tomar una decision de precios mirandolo. Todo el catalogo migrado
+  /// arranca en NULL.
+  ///
+  /// Cuatro decimales porque el costo se DERIVA de una division: una caja de 8
+  /// a $12.345 da $1.543,125 por unidad. Ver docs/PHASE3_MONEY_MIGRATION.md.
+  ///
+  /// Solo sale hacia la API para quien tenga `products.cost.view`. El endpoint
+  /// que usa la caja NUNCA lo incluye.
+  cost Decimal? @db.Decimal(14, 4)
+
+  /// Unidad en la que se VENDE: UNIT | KG | G | L | ML.
+  ///
+  /// Es la unidad de `price`, de `minimumStock`, de `BranchStock.quantity`, de
+  /// `SaleItem.quantity` y de todo el libro de movimientos del producto. Por
+  /// eso NO SE PUEDE CAMBIAR cuando el producto ya tiene historial: hay un
+  /// disparador en la base que lo impide, porque cambiarla reescribiria en
+  /// silencio el significado de todo su pasado.
+  saleUnit String @default("UNIT")
+
+  /// Unidad en la que se COMPRA: las cinco de venta mas PACK y BOX.
+  ///
+  /// PACK y BOX existen solo de este lado. Como unidad de venta no aportan
+  /// nada --un six-pack que se vende entero se vende por unidad, y la unidad es
+  /// el six-pack--; como unidad de compra son el unico modo de que
+  /// `unitsPerPurchaseUnit` se pueda leer.
+  purchaseUnit String @default("UNIT")
+
+  /// Cuantas unidades de venta trae una unidad de compra. Una caja de 8: `8`.
+  ///
+  /// Preparado para la Fase 3C, que es donde se usa de verdad. Decimal porque
+  /// tambien es una cantidad: "una caja trae 12,5 kg" es tan valido como "una
+  /// caja trae 8 unidades".
+  unitsPerPurchaseUnit Decimal @default(1) @db.Decimal(14, 3)
 
   /// Sin uso. Quedo de una migracion de mayo de 2025 y no se borra: quitar
   /// una columna en una migracion que corre en el servidor es exactamente lo
@@ -173,26 +222,107 @@ model Product {
   /// falsearia los reportes de meses anteriores.
   isActive Boolean @default(true)
 
-  /// Unidades por debajo de las cuales hay que reponer.
+  /// Cantidad por debajo de la cual hay que reponer, EN LA UNIDAD DE VENTA.
   ///
   /// Cero significa SIN MINIMO CONFIGURADO, y con cero el estado `LOW` no se
   /// cumple nunca: `quantity > 0 && quantity <= 0` es imposible. Es el valor
   /// que la migracion le pone a todo el catalogo existente, a proposito: el
   /// sistema no sabe cuantos fideos quiere tener este almacen y no lo inventa.
   ///
+  /// `Decimal(14,3)` desde la Fase 3B: el minimo de un producto por peso son
+  /// 3,5 kg, no 3 ni 4. Tiene que estar en el mismo tipo y en la misma unidad
+  /// que el stock, que es la unica forma de que `stock <= minimo` signifique
+  /// algo.
+  ///
   /// El estado (OK / LOW / OUT) NO se guarda: se calcula al leer. Ver
   /// docs/INVENTORY_LEDGER.md.
-  minimumStock Int @default(0)
+  minimumStock Decimal @default(0) @db.Decimal(14, 3)
 
-  stocks    BranchStock[]
-  saleItems SaleItem[]
-  movements StockMovement[]
-  category  Category        @relation(fields: [categoryId], references: [id])
-  supplier  Supplier?       @relation(fields: [supplierId], references: [id])
-  branch    Branch          @relation(fields: [branchId], references: [id])
+  stocks      BranchStock[]
+  saleItems   SaleItem[]
+  movements   StockMovement[]
+  barcodes    ProductBarcode[]
+  costHistory ProductCostHistory[]
+  category    Category             @relation(fields: [categoryId], references: [id])
+  supplier    Supplier?            @relation(fields: [supplierId], references: [id])
+  branch      Branch               @relation(fields: [branchId], references: [id])
 
   /// La caja busca por sucursal y por estado en cada tecla.
   @@index([branchId, isActive])
+}
+
+/// Codigos de barras de un producto. Uno principal y los alternativos.
+///
+/// Un producto puede tener varios: el mismo yogur cambia de codigo entre
+/// partidas, y el proveedor a veces manda el pack con un codigo distinto al de
+/// la unidad. Con un solo codigo, el lector no encuentra la mitad de la
+/// mercaderia y el cajero termina buscando por nombre.
+///
+/// Dos reglas, las dos en la base: un codigo apunta a UN producto en todo el
+/// sistema, y un producto tiene UN codigo principal (indice unico parcial).
+model ProductBarcode {
+  id        Int @id @default(autoincrement())
+  productId Int
+
+  /// El codigo tal cual lo devuelve el lector. Se recorta y nada mas: pasarlo
+  /// a mayusculas reescribiria codigos existentes, y para un lector dos
+  /// codigos que difieren en mayusculas son dos codigos distintos.
+  code String
+
+  /// El que se muestra en la ficha y en los listados. Uno solo por producto.
+  isPrimary Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  /// CASCADE, a diferencia del libro y del historial de costos: un codigo de
+  /// barras no es historia, es un atributo. Sin el producto no significa nada,
+  /// y conservarlo impediria borrar un producto cargado por error.
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([code], map: "ProductBarcode_code_key")
+  @@index([productId])
+}
+
+/// Cada cambio de costo de un producto. Inmutable.
+///
+/// Mismo criterio que `StockMovement`: hay un disparador en la base que impide
+/// editar y borrar. Un historial de costos editable no sirve para explicar por
+/// que subio un precio.
+///
+/// El ALTA de un producto con costo NO escribe fila aca. Un historial registra
+/// CAMBIOS --por eso tiene `previousCost`, que en un alta no habria que
+/// poner--, y el costo con el que nace un producto ya queda en la bitacora de
+/// su creacion.
+model ProductCostHistory {
+  id        Int @id @default(autoincrement())
+  productId Int
+
+  /// NULL cuando el producto no tenia costo cargado, que es de donde parte
+  /// todo el catalogo migrado.
+  previousCost Decimal? @db.Decimal(14, 4)
+  newCost      Decimal  @db.Decimal(14, 4)
+
+  /// Preparados para la Fase 3C, cuando una recepcion de mercaderia pueda
+  /// cambiar el costo sola. En esta fase son siempre NULL: no hay compras.
+  ///
+  /// `purchaseId` no tiene clave foranea porque la tabla `Purchase` todavia no
+  /// existe. Se agrega en la 3C, cuando haya a que apuntar.
+  supplierId Int?
+  purchaseId Int?
+
+  userId Int
+
+  /// Obligatorio. Un cambio de costo sin motivo no se puede auditar despues.
+  reason String
+
+  createdAt DateTime @default(now())
+
+  product  Product   @relation(fields: [productId], references: [id])
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  user     User      @relation(fields: [userId], references: [id])
+
+  @@index([productId, createdAt])
+  @@index([userId])
 }
 
 /// Libro de movimientos de stock. Inmutable.
@@ -225,13 +355,19 @@ model StockMovement {
   ///
   /// Firmado y no absoluto para que `SUM(quantity)` sea la reconstruccion del
   /// stock sin que la consulta tenga que conocer la tabla de signos.
-  quantity Int
+  ///
+  /// `Decimal(14,3)` desde la Fase 3B. En `Float` la restriccion de abajo
+  /// --que los tres numeros concuerden-- fallaria sola: `0.1 + 0.2` no da
+  /// `0.3` en binario, y un ajuste de 100 g sobre 200 g seria una fila que
+  /// PostgreSQL rechaza. Ver docs/PHASE3_QUANTITY_MIGRATION.md.
+  quantity Decimal @db.Decimal(14, 3)
 
-  /// Saldo antes y despues. Redundantes --el tercero se deduce de los otros
-  /// dos-- y guardados igual: asi una fila del historial se lee sin recorrer
-  /// las anteriores. La base obliga a que los tres numeros concuerden.
-  previousQuantity  Int
-  resultingQuantity Int
+  /// Saldo antes y despues, en la unidad de venta del producto. Redundantes
+  /// --el tercero se deduce de los otros dos-- y guardados igual: asi una fila
+  /// del historial se lee sin recorrer las anteriores. La base obliga a que los
+  /// tres numeros concuerden.
+  previousQuantity  Decimal @db.Decimal(14, 3)
+  resultingQuantity Decimal @db.Decimal(14, 3)
 
   /// De donde vino: 'Sale' + id de la venta, 'BranchStock' + id del ajuste.
   /// No es clave foranea --apunta a tablas distintas segun el tipo-- y por eso
@@ -268,7 +404,14 @@ model BranchStock {
   id        Int @id @default(autoincrement())
   branchId  Int
   productId Int
-  quantity  Int
+
+  /// Saldo materializado del libro, EN LA UNIDAD DE VENTA del producto.
+  ///
+  /// `Decimal(14,3)` desde la Fase 3B: 3,500 en un producto por kilo son tres
+  /// kilos y medio. La unidad NO esta aca sino en `Product.saleUnit`, y por eso
+  /// esa columna no se puede cambiar una vez que el producto tiene historial:
+  /// cambiarla reescribiria el significado de todo su pasado en silencio.
+  quantity Decimal @db.Decimal(14, 3)
 
   branch  Branch       @relation(fields: [branchId], references: [id])
   product Product      @relation(fields: [productId], references: [id])
@@ -290,10 +433,11 @@ model StockCheck {
 }
 
 model Supplier {
-  id       Int       @id @default(autoincrement())
-  name     String    @unique
-  contact  String?
-  products Product[]
+  id          Int                  @id @default(autoincrement())
+  name        String               @unique
+  contact     String?
+  products    Product[]
+  costChanges ProductCostHistory[]
 }
 
 model Sale {
@@ -334,7 +478,10 @@ model SaleItem {
   id        Int @id @default(autoincrement())
   saleId    Int
   productId Int
-  quantity  Int
+
+  /// Cantidad vendida, en la unidad de venta del producto. `Decimal(14,3)`
+  /// desde la Fase 3B: 0,425 kg de queso es una linea de ticket valida.
+  quantity Decimal @db.Decimal(14, 3)
 
   /// Precio congelado en el momento de vender. Cambiar el precio del producto
   /// no reescribe las ventas de ayer.

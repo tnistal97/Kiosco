@@ -13,7 +13,10 @@ import type { Session } from '@/server/auth/session'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
 import { MAX_DIAS_REPORTE, type ReporteVentasQuery } from './schemas'
 import type { Monto } from '@/lib/money'
+import type { TextoCantidad } from '@/lib/cantidad'
 import { aMonto, multiplicar, redondearPesos, sumar, type Dinero } from '@/server/money'
+import { aTextoCantidad, type Cantidad } from '@/server/cantidad'
+import { unidadDeVentaODefecto, type UnidadDeVenta } from '@/modules/products/units'
 
 export interface VentaDelReporte {
   id: number
@@ -27,7 +30,9 @@ export interface VentaDelReporte {
   canceledBy: { id: number; name: string } | null
   items: Array<{
     id: number
-    quantity: number
+    quantity: TextoCantidad
+    /** La unidad en la que se vendio. Sin ella `0.425` no se puede leer. */
+    saleUnit: UnidadDeVenta
     price: Monto
     product: { id: number; name: string }
   }>
@@ -47,7 +52,7 @@ export interface TotalesDelReporte {
  * no al reves: es como se arma el ticket, y el reporte tiene que dar lo mismo
  * que el papel que se llevo el cliente.
  */
-function totalDeLineas(lineas: Array<{ price: Dinero; quantity: number }>): Dinero {
+function totalDeLineas(lineas: Array<{ price: Dinero; quantity: Cantidad }>): Dinero {
   return sumar(...lineas.map((l) => redondearPesos(multiplicar(l.price, l.quantity))))
 }
 
@@ -106,7 +111,7 @@ export async function reporteDeVentas(
             id: true,
             quantity: true,
             price: true,
-            product: { select: { id: true, name: true } },
+            product: { select: { id: true, name: true, saleUnit: true } },
           },
         },
         // El medio de pago sale del movimiento vinculado por `saleId`. Antes
@@ -134,7 +139,13 @@ export async function reporteDeVentas(
     ...venta,
     date: venta.date.toISOString(),
     paymentMethod: cashMovements[0]?.paymentMethod ?? null,
-    items: items.map((i) => ({ ...i, price: aMonto(i.price) })),
+    items: items.map(({ product, ...i }) => ({
+      ...i,
+      quantity: aTextoCantidad(i.quantity),
+      saleUnit: unidadDeVentaODefecto(product.saleUnit),
+      price: aMonto(i.price),
+      product: { id: product.id, name: product.name },
+    })),
     total: aMonto(totalDeLineas(items)),
   }))
 

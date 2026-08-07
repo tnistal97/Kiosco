@@ -95,7 +95,7 @@ async function main() {
 
   console.log('✅ Seed listo.')
   console.log('👤 Usuario: lautaro / 🔑 Lkiosco123')
-  console.log(`🧪 Producto: ${product.name} (stock: ${stock.quantity})`)
+  console.log(`🧪 Producto: ${product.name} (stock: ${stock.quantity.toString()})`)
 }
 
 main()
