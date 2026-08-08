@@ -23,6 +23,7 @@ import { parsePaginaProductos } from '@/modules/products/dto'
 import { parsePaginaVentas, type VentaDTO } from '@/modules/sales/dto'
 import { parseArqueos, parseSaldo, type ArqueoDTO } from '@/modules/cash/dto'
 import { parseReposicion, type ReposicionDTO } from '@/modules/inventory/dto'
+import { parseResumenCompras, type ResumenComprasDTO } from '@/modules/purchases/dto'
 import type { Product } from '@/hooks/useProducts'
 
 /** YYYY-MM-DD de hoy, en hora local. */
@@ -40,6 +41,7 @@ interface Panel {
   ultimasVentas: VentaDTO[]
   bajos: Product[]
   reposicion: ReposicionDTO
+  compras: ResumenComprasDTO
   ultimoArqueo: ArqueoDTO | null
 }
 
@@ -52,6 +54,7 @@ const VACIO: Panel = {
   ultimasVentas: [],
   bajos: [],
   reposicion: { agotados: 0, bajoMinimo: 0, sinMinimo: 0 },
+  compras: { pendientes: 0, parciales: 0, borradores: 0 },
   ultimoArqueo: null,
 }
 
@@ -76,6 +79,7 @@ export default function InicioPage() {
   const verVentas = puede('sales.view')
   const verReportes = puede('reports.view')
   const verStock = puede('stock.view')
+  const verCompras = puede('purchases.view')
   const vender = puede('sales.create')
 
   const cargar = useCallback(async () => {
@@ -140,10 +144,23 @@ export default function InicioPage() {
       )
     }
 
+    if (verCompras) {
+      // Los tres numeros de compras, contados por el servidor. El importe
+      // pendiente viene solo si ademas se pueden ver costos, y de eso decide
+      // el servicio: la pantalla no tiene que volver a preguntarlo.
+      tareas.push(
+        apiRequest('/api/purchases/summary', { parse: parseResumenCompras })
+          .then((r) => {
+            salida.compras = r
+          })
+          .catch(() => undefined),
+      )
+    }
+
     await Promise.all(tareas)
     setDatos(salida)
     setCargando(false)
-  }, [verCaja, verReportes, verStock])
+  }, [verCaja, verReportes, verStock, verCompras])
 
   useEffect(() => {
     void cargar()
@@ -233,6 +250,27 @@ export default function InicioPage() {
                     ? 'warning'
                     : 'success'
               }
+            />
+          )}
+
+          {verCompras && (
+            <MetricCard
+              href="/compras"
+              label="Esperando mercadería"
+              value={datos.compras.pendientes + datos.compras.parciales}
+              detail={
+                /*
+                  El detalle nombra las PARCIALES aparte porque son el numero
+                  accionable: una orden pedida y todavia sin entregar es lo
+                  normal; una a medio entregar hace una semana, no.
+                */
+                datos.compras.parciales > 0
+                  ? `${String(datos.compras.parciales)} a medio recibir`
+                  : datos.compras.borradores > 0
+                    ? `${String(datos.compras.borradores)} borrador(es) sin confirmar`
+                    : 'Nada a medio recibir'
+              }
+              tone={datos.compras.parciales > 0 ? 'warning' : 'neutral'}
             />
           )}
         </div>

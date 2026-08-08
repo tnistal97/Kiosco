@@ -10,8 +10,8 @@ import type { Permission } from '@/server/authz/permissions'
  * Auditoria para que descubra a los golpes que no puede entrar es una forma
  * lenta de decirle que no.
  *
- * No hay entradas para modulos que todavia no existen. Compras, proveedores y
- * clientes llegan en fases siguientes; hasta entonces no hay boton.
+ * No hay entradas para modulos que todavia no existen. Clientes y cuenta
+ * corriente llegan en fases siguientes; hasta entonces no hay boton.
  */
 
 export interface EntradaNav {
@@ -50,6 +50,18 @@ export const NAVEGACION: GrupoNav[] = [
         href: '/stock/movimientos',
         label: 'Movimientos',
         permission: 'inventory.movements.view',
+      },
+    ],
+  },
+  {
+    title: 'Compras',
+    items: [
+      { href: '/compras', label: 'Órdenes', permission: 'purchases.view', matchPrefix: true },
+      {
+        href: '/proveedores',
+        label: 'Proveedores',
+        permission: 'suppliers.view',
+        matchPrefix: true,
       },
     ],
   },

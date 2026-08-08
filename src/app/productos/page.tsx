@@ -72,7 +72,10 @@ export default function ProductosPage() {
   const [borrando, setBorrando] = useState<Product | null>(null)
 
   useEffect(() => {
-    apiRequest('/api/suppliers', { parse: parseProveedores })
+    // Solo los ACTIVOS y hasta cien: es la lista del selector de la ficha, y
+    // un proveedor dado de baja no se puede elegir. El endpoint esta paginado
+    // desde la Fase 3C, asi que sin `pageSize` llegarian veinticinco.
+    apiRequest('/api/suppliers?activos=true&pageSize=100', { parse: parseProveedores })
       .then(setProveedores)
       // Sin proveedores la ficha sigue sirviendo: es un campo opcional.
       .catch(() => {
