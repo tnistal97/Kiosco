@@ -66,6 +66,24 @@ export type ErrorCode =
   | 'DIFFERENCE_NEEDS_AUTHORIZATION'
   // Pagos de una venta.
   | 'PAYMENTS_DO_NOT_MATCH_TOTAL'
+  // Proveedores y compras. Ver docs/PURCHASE_FLOW.md.
+  /** Tiene ordenes o productos asociados: se desactiva, no se borra. */
+  | 'SUPPLIER_HAS_HISTORY'
+  /** Esta dado de baja: no se le puede comprar. */
+  | 'SUPPLIER_INACTIVE'
+  | 'DUPLICATE_SUPPLIER'
+  /** Su estado no admite el cambio que se pidio. */
+  | 'ORDER_NOT_EDITABLE'
+  | 'ORDER_NOT_RECEIVABLE'
+  | 'ORDER_NOT_CANCELLABLE'
+  /** Se intento recibir mas de lo que quedaba pendiente. */
+  | 'OVER_RECEIPT'
+  /**
+   * La conversion de unidad de compra a unidad de venta da una cantidad que
+   * esa unidad no admite: 3 packs de 2,5 en un producto por unidad son 7,5
+   * unidades, y media unidad no existe.
+   */
+  | 'INVALID_PURCHASE_CONVERSION'
 
 /** Forma exacta del cuerpo de error. Compartida con el cliente. */
 export interface ApiErrorBody {

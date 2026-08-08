@@ -112,6 +112,15 @@ type SemillaProducto = {
   stock: number
   /** Unidad de venta. Por omision UNIT, que es como se vende casi todo. */
   unidad?: 'UNIT' | 'KG' | 'G' | 'L' | 'ML'
+  /**
+   * Como se COMPRA, cuando no coincide con como se vende.
+   *
+   * La gaseosa es el ejemplo del circuito de compras: entra por caja de ocho y
+   * sale de a botellas. Sin al menos un producto asi, la conversion de la Fase
+   * 3C no se puede ver funcionando en la base de demostracion.
+   */
+  unidadCompra?: 'UNIT' | 'KG' | 'G' | 'L' | 'ML' | 'PACK' | 'BOX'
+  porUnidadDeCompra?: number
   descripcion?: string
   /** Dado de baja: no aparece en la caja, si en el catalogo y en el historial. */
   inactivo?: boolean
@@ -128,11 +137,38 @@ const CATEGORIAS = [
   'Congelados',
 ]
 
+/**
+ * Proveedores de demostracion.
+ *
+ * `contact` quedo congelada en la Fase 3C: el texto libre se repartio entre
+ * `contactName`, `phone` y `email`. Uno queda a proposito con el nombre solo y
+ * nada mas --que es lo que de verdad se sabe de la mitad de los proveedores de
+ * un almacen-- y otro dado de baja, para que la pantalla muestre los dos
+ * estados sin tener que tocar nada. Ver docs/SUPPLIER_MODEL.md.
+ */
 const PROVEEDORES = [
-  { name: 'Distribuidora del Norte', contact: 'pedidos@dist-norte.example' },
-  { name: 'Bebidas Andinas', contact: 'ventas@andinas.example' },
-  { name: 'Lacteos La Pradera', contact: 'contacto@lapradera.example' },
-  { name: 'Mayorista Central', contact: 'mayorista@central.example' },
+  {
+    name: 'Distribuidora del Norte',
+    legalName: 'Distribuidora del Norte S.R.L.',
+    taxId: '30-71234567-4',
+    contactName: 'Marisa',
+    phone: '11-4567-8900',
+    email: 'pedidos@dist-norte.example',
+  },
+  {
+    name: 'Bebidas Andinas',
+    taxId: '30-70987654-1',
+    contactName: 'Julio',
+    phone: '11-4321-7788',
+    email: 'ventas@andinas.example',
+  },
+  { name: 'Lacteos La Pradera', contactName: 'Don Alberto', phone: '11-6789-1234' },
+  {
+    name: 'Mayorista Central',
+    email: 'mayorista@central.example',
+    notes: 'Pasa los martes. No entrega los feriados.',
+  },
+  { name: 'Fiambres del Oeste', phone: '11-2233-4455', isActive: false },
 ]
 
 const PRODUCTOS: SemillaProducto[] = [
@@ -151,7 +187,7 @@ const PRODUCTOS: SemillaProducto[] = [
   { nombre: 'Sal fina 500 g', barcode: '7790001000127', categoria: 'Almacen', proveedor: 'Mayorista Central', precio: 690, costo: 410, stock: 48 }, // prettier-ignore
 
   // Bebidas
-  { nombre: 'Gaseosa cola 2.25 L', barcode: '7790002000014', categoria: 'Bebidas', proveedor: 'Bebidas Andinas', precio: 3450, costo: 2500, stock: 36 }, // prettier-ignore
+  { nombre: 'Gaseosa cola 2.25 L', barcode: '7790002000014', categoria: 'Bebidas', proveedor: 'Bebidas Andinas', precio: 3450, costo: 2500, stock: 36, unidadCompra: 'BOX', porUnidadDeCompra: 8, descripcion: 'Se compra por caja de 8 y se vende por botella' }, // prettier-ignore
   { nombre: 'Gaseosa lima limon 1.5 L', barcode: '7790002000021', categoria: 'Bebidas', proveedor: 'Bebidas Andinas', precio: 2490, costo: 1750, stock: 22 }, // prettier-ignore
   { nombre: 'Agua mineral sin gas 2 L', barcode: '7790002000038', categoria: 'Bebidas', proveedor: 'Bebidas Andinas', precio: 1490, costo: 950, stock: 44 }, // prettier-ignore
   { nombre: 'Cerveza rubia lata 473 ml', barcode: '7790002000045', categoria: 'Bebidas', proveedor: 'Bebidas Andinas', precio: 2190, costo: 1560, stock: 60 }, // prettier-ignore
@@ -278,6 +314,13 @@ async function main() {
   // (ON DELETE CASCADE), pero se limpian igual por claridad del orden.
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "ProductCostHistory" CASCADE')
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "ProductBarcode" CASCADE')
+  // Las recepciones tambien son inmutables por disparador: mismo trato.
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "PurchaseReceiptItem" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "PurchaseReceipt" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "PurchaseOrderItem" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "PurchaseOrder" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "ProductSupplier" CASCADE')
+  await prisma.$executeRawUnsafe('ALTER SEQUENCE "PurchaseOrder_numero_seq" RESTART WITH 1')
 
   await prisma.stockCheck.deleteMany()
   await prisma.saleItem.deleteMany()
@@ -400,7 +443,8 @@ async function main() {
         // significaba nada.
         cost: p.costo,
         saleUnit: p.unidad ?? 'UNIT',
-        purchaseUnit: p.unidad ?? 'UNIT',
+        purchaseUnit: p.unidadCompra ?? p.unidad ?? 'UNIT',
+        unitsPerPurchaseUnit: p.porUnidadDeCompra ?? 1,
         // Los codigos viven en `ProductBarcode`: `Product.barcode` quedo
         // congelada. Ver docs/PHASE3_BARCODES.md.
         barcodes: {
@@ -410,7 +454,11 @@ async function main() {
           ],
         },
         categoryId: categorias.get(p.categoria) ?? 0,
-        supplierId: proveedores.get(p.proveedor) ?? null,
+        // El proveedor vive en `ProductSupplier` desde la Fase 3C:
+        // `Product.supplierId` quedo congelada. Ver docs/SUPPLIER_MODEL.md.
+        suppliers: {
+          create: [{ supplierId: proveedores.get(p.proveedor) ?? 0, isPreferred: true }],
+        },
         branchId: sucursal.id,
         isActive: p.inactivo !== true,
         // Minimo de reposicion, inventado como todo lo demas de este archivo.

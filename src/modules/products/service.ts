@@ -25,7 +25,14 @@ import type {
 } from './schemas'
 import type { Monto } from '@/lib/money'
 import type { TextoCantidad } from '@/lib/cantidad'
-import { aMonto, aMontoCosto, dinero, iguales, type Dinero } from '@/server/money'
+import {
+  aMonto,
+  aMontoCosto,
+  aMontoCostoOpcional,
+  dinero,
+  iguales,
+  type Dinero,
+} from '@/server/money'
 import {
   aTextoCantidad,
   cantidad as aCantidad,
@@ -92,14 +99,23 @@ export function puedeVerCosto(session: Session): boolean {
  * respuesta de la API.
  */
 function paraBitacora(
-  fila: { price: Dinero; cost: Dinero | null; minimumStock: Cantidad },
+  fila: {
+    price: Dinero
+    cost: Dinero | null
+    minimumStock: Cantidad
+    suppliers?: Array<{ supplier: { id: number; name: string } }>
+  },
   session: Session,
 ): Record<string, unknown> {
-  const { price, cost, minimumStock, ...resto } = fila
+  // `suppliers` sale de la fila y entra como un solo id: la bitacora registra
+  // QUE cambio, y el objeto anidado del proveedor principal ocuparia tres
+  // lineas para decir un numero.
+  const { price, cost, minimumStock, suppliers, ...resto } = fila
   return {
     ...resto,
     price: aMonto(price),
     minimumStock: aTextoCantidad(minimumStock),
+    ...(suppliers === undefined ? {} : { supplierId: suppliers[0]?.supplier.id ?? null }),
     ...(puedeVerCosto(session) ? { cost: cost === null ? null : aMontoCosto(cost) } : {}),
   }
 }
@@ -124,7 +140,20 @@ const CAMPOS_PRODUCTO = {
   unitsPerPurchaseUnit: true,
   minimumStock: true,
   category: { select: { id: true, name: true } },
-  supplier: { select: { id: true, name: true } },
+  /**
+   * El proveedor PRINCIPAL, desde `ProductSupplier`.
+   *
+   * Ya no sale de `Product.supplierId`, que quedo congelada en la Fase 3C:
+   * ataba un producto a un unico proveedor para siempre. El campo `supplier`
+   * de la API no cambio --sigue siendo el principal, con el mismo nombre y en
+   * el mismo lugar-- y los alternativos viajan solo en el detalle.
+   * Ver docs/SUPPLIER_MODEL.md.
+   */
+  suppliers: {
+    where: { isPreferred: true },
+    select: { supplier: { select: { id: true, name: true } } },
+    take: 1,
+  },
 } as const
 
 /** Fila cruda tal como sale de Prisma con `CAMPOS_PRODUCTO`. */
@@ -140,7 +169,7 @@ type FilaProducto = {
   unitsPerPurchaseUnit: Cantidad
   minimumStock: Cantidad
   category: { id: number; name: string }
-  supplier: { id: number; name: string } | null
+  suppliers: Array<{ supplier: { id: number; name: string } }>
 }
 
 /**
@@ -168,7 +197,7 @@ function aProductoListado(
     price,
     isActive: fila.isActive,
     category: fila.category,
-    supplier: fila.supplier,
+    supplier: fila.suppliers[0]?.supplier ?? null,
     saleUnit: unidadDeVentaODefecto(fila.saleUnit),
     purchaseUnit: unidadDeCompraODefecto(fila.purchaseUnit),
     unitsPerPurchaseUnit: aTextoCantidad(fila.unitsPerPurchaseUnit),
@@ -192,6 +221,17 @@ function aProductoListado(
 async function productoDeLaSucursal(session: Session, id: number) {
   const producto = await prisma.product.findFirst({
     where: { id, branchId: session.branchId },
+    // El proveedor principal viene con el producto para que la bitacora pueda
+    // registrar el ANTES de un cambio de proveedor. Sin esto, `before` diria
+    // que no habia proveedor y `after` diria cual quedo, que es exactamente la
+    // clase de entrada que hace desconfiar de toda la bitacora.
+    include: {
+      suppliers: {
+        where: { isPreferred: true },
+        select: { supplier: { select: { id: true, name: true } } },
+        take: 1,
+      },
+    },
   })
   if (!producto) throw notFound('Producto no encontrado')
   return producto
@@ -281,6 +321,77 @@ async function sincronizarCodigos(
   if (deseados.size > 0) {
     await tx.productBarcode.createMany({
       data: [...deseados.entries()].map(([code, isPrimary]) => ({ productId, code, isPrimary })),
+    })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Proveedores del producto
+// ---------------------------------------------------------------------------
+
+/**
+ * Deja como PRINCIPAL al proveedor indicado.
+ *
+ * Reemplaza a la asignacion de `Product.supplierId`, que quedo congelada. La
+ * diferencia que importa: cambiar de proveedor principal NO borra el vinculo
+ * anterior, lo degrada a alternativo. "Este mes le compre a otro" no significa
+ * "nunca mas le compro al de antes", y perder ese vinculo perderia tambien su
+ * `supplierCode` y su ultimo costo.
+ *
+ * `null` quita el principal sin tocar los alternativos: el producto queda sin
+ * proveedor de cabecera, que es un estado valido --y el unico que tiene todo
+ * el catalogo que nunca lo cargo--.
+ *
+ * Ver docs/SUPPLIER_MODEL.md.
+ */
+async function fijarProveedorPrincipal(
+  tx: TxClient,
+  productId: number,
+  supplierId: number | null,
+): Promise<void> {
+  const actuales = await tx.productSupplier.findMany({
+    where: { productId },
+    select: { id: true, supplierId: true, isPreferred: true },
+  })
+
+  const principalActual = actuales.find((v) => v.isPreferred) ?? null
+  if (principalActual?.supplierId === supplierId) return
+
+  if (supplierId !== null) {
+    const proveedor = await tx.supplier.findUnique({
+      where: { id: supplierId },
+      select: { id: true, name: true, isActive: true },
+    })
+    if (!proveedor) throw invalid('El proveedor indicado no existe')
+    if (!proveedor.isActive) {
+      throw conflict(
+        `"${proveedor.name}" está dado de baja: no se puede poner como proveedor principal.`,
+        { code: 'SUPPLIER_INACTIVE' },
+      )
+    }
+  }
+
+  // Primero se baja el que estaba, DESPUES se sube el nuevo. El indice unico
+  // parcial de "un solo principal por producto" rechaza cualquier instante en
+  // que haya dos, aunque sea dentro de la misma transaccion.
+  if (principalActual !== null) {
+    await tx.productSupplier.update({
+      where: { id: principalActual.id },
+      data: { isPreferred: false },
+    })
+  }
+
+  if (supplierId === null) return
+
+  const yaVinculado = actuales.find((v) => v.supplierId === supplierId)
+  if (yaVinculado) {
+    await tx.productSupplier.update({
+      where: { id: yaVinculado.id },
+      data: { isPreferred: true },
+    })
+  } else {
+    await tx.productSupplier.create({
+      data: { productId, supplierId, isPreferred: true },
     })
   }
 }
@@ -389,9 +500,26 @@ export async function listarProductos(
   return paginado(data, total, query)
 }
 
+export interface ProveedorDelProducto {
+  supplierId: number
+  name: string
+  isActive: boolean
+  supplierCode: string | null
+  isPreferred: boolean
+  /** Solo para quien tenga `products.cost.view`. Ausente si no. */
+  lastCost?: string | null
+}
+
 export interface ProductoDetallado extends ProductoListado {
   /** Todos los codigos menos el principal. */
   alternateBarcodes: string[]
+  /**
+   * Todos los proveedores, principal primero.
+   *
+   * Solo en el detalle. El listado devuelve hasta cien productos por peticion y
+   * no los necesita: le alcanza con `supplier`, que es el principal.
+   */
+  suppliers: ProveedorDelProducto[]
 }
 
 export async function obtenerProducto(
@@ -408,12 +536,38 @@ export async function obtenerProducto(
   })
   if (!producto) throw notFound('Producto no encontrado')
 
+  // La lista completa se pide aparte: `CAMPOS_PRODUCTO` trae solo el principal
+  // --es lo unico que necesita el listado-- y ampliar ese select para el
+  // detalle traeria todos los proveedores en cada fila de la pantalla de
+  // productos.
+  const vinculos = await prisma.productSupplier.findMany({
+    where: { productId: id },
+    select: {
+      supplierId: true,
+      supplierCode: true,
+      lastCost: true,
+      isPreferred: true,
+      supplier: { select: { name: true, isActive: true } },
+    },
+    orderBy: [{ isPreferred: 'desc' }, { supplier: { name: 'asc' } }],
+  })
+
   const { barcodes, stocks, ...fila } = producto
 
   return {
     ...aProductoListado(fila, stocks[0]?.quantity ?? null, session),
     barcode: barcodes.find((b) => b.isPrimary)?.code ?? null,
     alternateBarcodes: barcodes.filter((b) => !b.isPrimary).map((b) => b.code),
+    suppliers: vinculos.map((v) => ({
+      supplierId: v.supplierId,
+      name: v.supplier.name,
+      isActive: v.supplier.isActive,
+      supplierCode: v.supplierCode,
+      isPreferred: v.isPreferred,
+      // Mismo criterio que el costo del producto: la clave NO ESTA cuando no
+      // se puede ver, en vez de viajar un null que se confunda con "no hay".
+      ...(puedeVerCosto(session) ? { lastCost: aMontoCostoOpcional(v.lastCost) } : {}),
+    })),
   }
 }
 
@@ -508,7 +662,6 @@ export async function crearProducto(session: Session, input: CrearProductoInput)
         price: input.price,
         cost: input.cost ?? null,
         categoryId: input.categoryId,
-        supplierId: input.supplierId ?? null,
         saleUnit: input.saleUnit,
         purchaseUnit: input.purchaseUnit,
         unitsPerPurchaseUnit: input.unitsPerPurchaseUnit,
@@ -520,6 +673,17 @@ export async function crearProducto(session: Session, input: CrearProductoInput)
     })
 
     await sincronizarCodigos(tx, producto.id, input.barcode, input.alternateBarcodes)
+    await fijarProveedorPrincipal(tx, producto.id, input.supplierId ?? null)
+
+    // El producto recien creado todavia no tenia vinculo con su proveedor
+    // cuando se leyo, un par de lineas mas arriba. Sin esto la respuesta del
+    // alta diria que no tiene proveedor y la pantalla lo mostraria vacio hasta
+    // la proxima recarga.
+    producto.suppliers = await tx.productSupplier.findMany({
+      where: { productId: producto.id, isPreferred: true },
+      select: { supplier: { select: { id: true, name: true } } },
+      take: 1,
+    })
 
     // El stock inicial entra por el libro, como todo lo demas: un producto que
     // nace con 20 unidades tiene un movimiento INITIAL de +20, y la suma de su
@@ -660,7 +824,6 @@ export async function editarProducto(session: Session, id: number, input: Editar
         ...(input.price !== undefined ? { price: input.price } : {}),
         ...(input.cost !== undefined ? { cost: input.cost } : {}),
         ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
-        ...(input.supplierId !== undefined ? { supplierId: input.supplierId } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         ...(input.saleUnit !== undefined ? { saleUnit: input.saleUnit } : {}),
         ...(input.purchaseUnit !== undefined ? { purchaseUnit: input.purchaseUnit } : {}),
@@ -676,6 +839,12 @@ export async function editarProducto(session: Session, id: number, input: Editar
       await sincronizarCodigos(tx, id, input.barcode, input.alternateBarcodes)
     }
 
+    // `undefined` es "no tocar" y `null` es "quitarle el proveedor principal".
+    // El vinculo anterior no se borra: se degrada a alternativo.
+    if (input.supplierId !== undefined) {
+      await fijarProveedorPrincipal(tx, id, input.supplierId)
+    }
+
     // El cambio de costo deja fila en el historial, que es inmutable. El
     // motivo lo exige el esquema.
     if (cambiaCosto) {
@@ -687,6 +856,17 @@ export async function editarProducto(session: Session, id: number, input: Editar
           userId: session.userId,
           reason: input.costReason ?? 'Cambio de costo desde la ficha del producto',
         },
+      })
+    }
+
+    // El proveedor se relee DESPUES de sincronizarlo. `despues` salio del
+    // `update`, que corrio antes, asi que traeria el proveedor viejo y la
+    // bitacora registraria que no cambio.
+    if (input.supplierId !== undefined) {
+      despues.suppliers = await tx.productSupplier.findMany({
+        where: { productId: id, isPreferred: true },
+        select: { supplier: { select: { id: true, name: true } } },
+        take: 1,
       })
     }
 

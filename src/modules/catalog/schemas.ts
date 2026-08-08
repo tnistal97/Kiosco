@@ -1,11 +1,13 @@
 /**
- * Validacion de entrada de los catalogos auxiliares: sucursales, categorias
- * y proveedores.
+ * Validacion de entrada de los catalogos auxiliares: sucursales y categorias.
  *
  * Van juntos a proposito. Son CRUD sin reglas de negocio propias, y separarlos
- * en tres modulos de un archivo cada uno seria ceremonia sin utilidad. Cuando
+ * en dos modulos de un archivo cada uno seria ceremonia sin utilidad.
+ *
+ * PROVEEDORES YA NO ESTA ACA. Este archivo decia, desde la Fase 1: "cuando
  * proveedores crezca --con condiciones de compra, listas de precios y cuenta
- * corriente-- se muda a su propio modulo.
+ * corriente-- se muda a su propio modulo". Con ordenes de compra y
+ * recepciones, creció: vive en `@/modules/suppliers/schemas`.
  */
 
 import { z } from 'zod'
@@ -38,16 +40,6 @@ export const editarSucursalSchema = z
 
 export const crearCategoriaSchema = z.object({ name: shortText(80) }).strict()
 
-// -------------------------------------------------------------- proveedores
-
-export const crearProveedorSchema = z
-  .object({
-    name: shortText(120),
-    contact: optionalText(200),
-  })
-  .strict()
-
 export type CrearSucursalInput = z.infer<typeof crearSucursalSchema>
 export type EditarSucursalInput = z.infer<typeof editarSucursalSchema>
 export type CrearCategoriaInput = z.infer<typeof crearCategoriaSchema>
-export type CrearProveedorInput = z.infer<typeof crearProveedorSchema>

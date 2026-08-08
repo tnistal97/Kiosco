@@ -105,6 +105,30 @@ export const PERMISSIONS = [
   'branches.manage',
   'suppliers.view',
   'suppliers.manage',
+  // Compras. Ver docs/PURCHASE_FLOW.md.
+  'purchases.view',
+  'purchases.create',
+  'purchases.update',
+  /**
+   * Dar entrada a la mercaderia.
+   *
+   * NO lo tiene el repositor, y es la decision menos obvia del reparto.
+   * Recibir cambia el costo del producto, que es informacion financiera; el
+   * repositor no tiene `products.cost.view` justamente para no verla. Darle
+   * este permiso le dejaria fijarla sin poder leerla, que es lo peor de los
+   * dos mundos. El dia que el almacen quiera que descargue el camion, lo que
+   * hace falta es una recepcion "a ciegas" que no toque el costo, y eso es una
+   * funcion nueva y no un permiso mas.
+   *
+   * Recibir a un costo DISTINTO del pedido exige ademas
+   * `products.cost.update`. No se creo un `purchases.cost.override` para eso:
+   * quien tiene `products.cost.update` puede cambiar el costo desde la ficha
+   * del producto de todos modos, asi que un tercer permiso que solo sirve
+   * acompanado del segundo no impide nada. La separacion util --recibir sin
+   * poder tocar el costo-- ya se consigue con los dos que existen.
+   */
+  'purchases.receive',
+  'purchases.cancel',
 ] as const
 
 export type Permission = (typeof PERMISSIONS)[number]
@@ -166,7 +190,15 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'cash.shift.close.other',
     'cash.shift.authorize',
     'reports.view',
+    // Administra proveedores y compra: es quien recibe la lista de precios y
+    // quien decide a quien comprarle. Ver docs/SUPPLIER_MODEL.md.
     'suppliers.view',
+    'suppliers.manage',
+    'purchases.view',
+    'purchases.create',
+    'purchases.update',
+    'purchases.receive',
+    'purchases.cancel',
     'branches.view',
   ],
 
@@ -225,6 +257,11 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'inventory.movements.view',
     'suppliers.view',
     'suppliers.manage',
+    'purchases.view',
+    'purchases.create',
+    'purchases.update',
+    'purchases.receive',
+    'purchases.cancel',
     'reports.view',
   ],
 
@@ -245,6 +282,7 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'users.view',
     'branches.view',
     'suppliers.view',
+    'purchases.view',
   ],
 }
 

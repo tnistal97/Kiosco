@@ -15,18 +15,26 @@
  * esquema de la consulta y la pantalla que arma el enlace.
  */
 
-export const REFERENCIAS = ['Sale', 'BranchStock', 'Product'] as const
+export const REFERENCIAS = ['Sale', 'BranchStock', 'Product', 'PurchaseReceipt'] as const
 
 export type Referencia = (typeof REFERENCIAS)[number]
 
 /**
  * A donde lleva el enlace del historial, o null si no lleva a ningun lado.
  *
- * Solo la venta tiene pantalla propia. Un ajuste referencia su fila de stock,
- * que no es una pantalla: el movimiento ya cuenta todo lo que hay que saber.
+ * La venta y la recepcion tienen pantalla propia. Un ajuste referencia su fila
+ * de stock, que no es una pantalla: el movimiento ya cuenta todo lo que hay
+ * que saber.
+ *
+ * Una entrada de mercaderia apunta a la RECEPCION y no a la orden: una orden
+ * puede tener varias entregas, y con la orden como referencia el enlace no
+ * llevaria a la que movio estas unidades. La pantalla de la recepcion vive
+ * dentro del detalle de su orden, y el ancla la abre desplegada.
  */
 export function enlaceDeReferencia(tipo: string | null, id: number | null): string | null {
-  if (tipo === 'Sale' && id !== null) return `/ventas?venta=${String(id)}`
+  if (id === null) return null
+  if (tipo === 'Sale') return `/ventas?venta=${String(id)}`
+  if (tipo === 'PurchaseReceipt') return `/compras/recepcion/${String(id)}`
   return null
 }
 
@@ -35,5 +43,6 @@ export function textoDeReferencia(tipo: string | null, id: number | null): strin
   if (tipo === null || id === null) return '—'
   if (tipo === 'Sale') return `Venta #${String(id)}`
   if (tipo === 'Product') return `Producto #${String(id)}`
+  if (tipo === 'PurchaseReceipt') return `Recepción #${String(id)}`
   return `Ajuste #${String(id)}`
 }

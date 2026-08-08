@@ -38,7 +38,8 @@ async function main() {
   // Category + Supplier
   const category = await prisma.category.create({ data: { name: 'General' } })
   const supplier = await prisma.supplier.create({
-    data: { name: 'Default Supplier', contact: 'default@supplier.com' },
+    // `contact` quedo congelada en la Fase 3C. Ver docs/SUPPLIER_MODEL.md.
+    data: { name: 'Default Supplier', email: 'default@supplier.com' },
   })
 
   // User: lautaro / Lkiosco123
@@ -54,16 +55,18 @@ async function main() {
   })
 
   // Product + stock + audit
+  // Los codigos viven en `ProductBarcode` y el proveedor en `ProductSupplier`.
+  // `Product.barcode` se borro en la Fase 3C y `Product.supplierId` quedo
+  // congelada. Ver docs/PHASE3_BARCODES.md y docs/SUPPLIER_MODEL.md.
   const product = await prisma.product.create({
     data: {
       name: 'Producto de Prueba',
-      barcode: '1234567890123',
       description: 'Producto creado por seed minimalista',
       price: 100,
-      value: 50,
       categoryId: category.id,
-      supplierId: supplier.id,
       branchId: branch.id,
+      barcodes: { create: [{ code: '1234567890123', isPrimary: true }] },
+      suppliers: { create: [{ supplierId: supplier.id, isPreferred: true }] },
     },
   })
 

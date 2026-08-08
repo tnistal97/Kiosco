@@ -20,10 +20,12 @@ export const TIPOS_MOVIMIENTO = [
   'BREAKAGE',
   'INTERNAL_USE',
   /**
-   * Reservado para la Fase 3C. Figura en el catalogo y en la restriccion de la
-   * base, pero NADA lo emite todavia: no hay compras ni recepcion. Esta aca
-   * para que darle entrada a la mercaderia no obligue a alterar una
-   * restriccion sobre una tabla que para entonces va a tener volumen.
+   * Entrada de mercaderia. Lo emite la recepcion de una orden de compra, y
+   * NADA MAS: no figura entre los tipos de ajuste manual, para que nadie
+   * pueda inventar una entrada sin la compra que la respalda.
+   *
+   * Su referencia apunta a la RECEPCION, no a la orden: una orden puede tener
+   * varias entregas. Ver docs/PURCHASE_RECEIVING.md.
    */
   'PURCHASE_RECEIPT',
 ] as const
@@ -61,10 +63,11 @@ export const SIGNO_DE_TIPO: Record<TipoMovimiento, 'entra' | 'sale' | 'ambos'> =
 /**
  * Tipos que un ajuste manual puede declarar.
  *
- * Subconjunto a proposito: `SALE` y `SALE_CANCEL` los emite la venta, `INITIAL`
- * la migracion y `PURCHASE_RECEIPT` no existe todavia. Si esta lista aceptara
- * cualquier tipo, cualquiera podria escribir una venta falsa desde la pantalla
- * de ajustes.
+ * Subconjunto a proposito: `SALE` y `SALE_CANCEL` los emite la venta,
+ * `INITIAL` la migracion y `PURCHASE_RECEIPT` la recepcion de una compra. Si
+ * esta lista aceptara cualquier tipo, cualquiera podria escribir una venta
+ * falsa --o una entrada de mercaderia sin compra-- desde la pantalla de
+ * ajustes.
  */
 export const TIPOS_DE_AJUSTE = [
   'MANUAL_ADJUSTMENT',

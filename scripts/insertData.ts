@@ -23,7 +23,9 @@ async function main() {
     update: {},
     create: {
       name: 'Distribuidora Sur',
-      contact: 'contacto@sur.com',
+      // `contact` quedo congelada en la Fase 3C. Ver docs/SUPPLIER_MODEL.md.
+      contactName: 'Ventas',
+      email: 'contacto@sur.com',
     },
   })
 
@@ -35,21 +37,34 @@ async function main() {
     },
   })
 
-  const product = await prisma.product.upsert({
-    where: {
-      barcode: '1234567890123', // ESTE CAMPO ES @unique en tu modelo
-    },
-    update: {},
-    create: {
-      name: 'Chicle Bazooka',
-      barcode: '1234567890123',
-      description: 'Chicle clásico',
-      price: 50,
-      categoryId: category.id,
-      supplierId: supplier.id,
-      branchId: branch.id,
-    },
+  // Los codigos de barras viven en `ProductBarcode` desde la Fase 3B, y
+  // `Product.barcode` se borro en la 3C. El upsert ya no puede buscar por el
+  // codigo --no es una clave de `Product`--, asi que se resuelve en dos pasos:
+  // buscar el codigo y, si no esta, crear el producto con el.
+  // Ver docs/PHASE3_BARCODES.md.
+  const CODIGO = '1234567890123'
+
+  const existente = await prisma.productBarcode.findUnique({
+    where: { code: CODIGO },
+    select: { productId: true },
   })
+
+  const product =
+    existente === null
+      ? await prisma.product.create({
+          data: {
+            name: 'Chicle Bazooka',
+            description: 'Chicle clásico',
+            price: 50,
+            categoryId: category.id,
+            branchId: branch.id,
+            barcodes: { create: [{ code: CODIGO, isPrimary: true }] },
+            // El vinculo con el proveedor vive en `ProductSupplier` desde la
+            // Fase 3C. Ver docs/SUPPLIER_MODEL.md.
+            suppliers: { create: [{ supplierId: supplier.id, isPreferred: true }] },
+          },
+        })
+      : { id: existente.productId }
 
   await prisma.branchStock.upsert({
     where: {
