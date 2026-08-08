@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { seedFixture, prisma, type Fixture, type TestUser } from '../helpers/db'
+import { seedFixture, prisma, type Fixture, type TestUser, hoyLocal } from '../helpers/db'
 import { call, sessionCookie, errorDe, type RouteHandler } from '../helpers/http'
 import { knownRoles, permissionsForRole, type Permission } from '@/server/authz/permissions'
 
@@ -165,7 +165,7 @@ const CASOS: Caso[] = [
     nombre: 'ver el reporte de ventas',
     permiso: 'reports.view',
     ejecutar: (u) => {
-      const hoy = new Date().toISOString().slice(0, 10)
+      const hoy = hoyLocal()
       return invocar(
         '@/app/api/admin/sales/route',
         'GET',

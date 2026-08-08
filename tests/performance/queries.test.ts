@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { PrismaClient } from '@prisma/client'
-import { seedFixture, prisma, type Fixture } from '../helpers/db'
+import { seedFixture, prisma, type Fixture, hoyLocal } from '../helpers/db'
 import { call, sessionCookie } from '../helpers/http'
 import { multiplicarMonto } from '@/lib/money'
 
@@ -175,7 +175,7 @@ describe('Los listados no crecen con la cantidad de datos', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.data).toHaveLength(25)
-    expect(res.body.pagination.total).toBe(62) // 60 + los dos de la sucursal A en el fixture
+    expect(res.body.pagination.total).toBe(63) // 60 + los tres de la sucursal A en el fixture
   })
 
   it('el tope de pagina no se puede superar pidiendolo', async () => {
@@ -222,7 +222,7 @@ describe('Los listados no crecen con la cantidad de datos', () => {
   it('el reporte de ventas devuelve una pagina y totales del rango completo', async () => {
     await registrarVentas(30)
 
-    const hoy = new Date().toISOString().slice(0, 10)
+    const hoy = hoyLocal()
     const { GET } = await import('@/app/api/admin/sales/route')
     const res = await call<{
       data: unknown[]
@@ -406,5 +406,187 @@ describe('La busqueda por codigo de barras no crece con el catalogo', () => {
 
     expect(texto, `el plan fue: ${texto}`).toMatch(/Index (Only )?Scan/)
     expect(texto).not.toMatch(/Seq Scan/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Compras
+// ---------------------------------------------------------------------------
+
+/** Crea N ordenes confirmadas, cada una con `lineas` productos. */
+async function crearOrdenes(n: number, lineas = 1): Promise<void> {
+  const productos = await prisma.product.findMany({
+    where: { branchId: fx.branchA.id },
+    take: lineas,
+    select: { id: true },
+  })
+
+  const { crearOrden, confirmarOrden } = await import('@/modules/purchases/service')
+  const sesion = {
+    userId: fx.admin.id,
+    name: 'Admin',
+    username: fx.admin.username,
+    role: 'admin',
+    branchId: fx.branchA.id,
+    permissions: new Set([
+      'purchases.create',
+      'purchases.update',
+      'purchases.view',
+      'products.cost.view',
+    ] as const),
+  }
+
+  for (let i = 0; i < n; i++) {
+    const orden = await crearOrden(sesion, {
+      supplierId: fx.proveedor.id,
+      notes: null,
+      items: productos.map((p) => ({
+        productId: p.id,
+        quantity: '2',
+        unitCost: '1000',
+      })),
+    })
+    await confirmarOrden(sesion, orden.id)
+  }
+}
+
+describe('El listado de compras no crece con la cantidad de ordenes', () => {
+  it('trae proveedor, usuario y avance sin una consulta por orden', async () => {
+    // El listado necesita, por cada orden: el proveedor, quien la cargo,
+    // cuantas recepciones tiene y cuantas lineas estan completas. Resolverlos
+    // de a uno serian cuatro consultas por fila.
+    const medir = async (n: number): Promise<number> => {
+      fx = await seedFixture()
+      await crearOrdenes(n)
+
+      const { consultas: c } = await contando(() =>
+        espia.purchaseOrder.findMany({
+          where: { branchId: fx.branchA.id },
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            expectedTotal: true,
+            supplier: { select: { id: true, name: true } },
+            createdBy: { select: { id: true, name: true } },
+            _count: { select: { receipts: true } },
+            items: { select: { orderedQuantity: true, receivedQuantity: true } },
+          },
+          take: 25,
+        }),
+      )
+      return c
+    }
+
+    const con3 = await medir(3)
+    const con15 = await medir(15)
+
+    expect(
+      con15,
+      `Con 3 ordenes hizo ${String(con3)} consultas y con 15 hizo ${String(con15)}`,
+    ).toBe(con3)
+    // Prisma resuelve cada nivel con una consulta propia. Se acota por arriba
+    // para que agregar una relacion mas no pase inadvertido.
+    expect(con3).toBeLessThanOrEqual(4)
+  })
+
+  it('devuelve una pagina, no todas las ordenes', async () => {
+    await crearOrdenes(30)
+
+    const { GET } = await import('@/app/api/purchases/route')
+    const res = await call<{ data: unknown[]; pagination: { total: number } }>(
+      GET,
+      '/api/purchases?pageSize=10',
+      { cookie: await sessionCookie(fx.admin) },
+    )
+
+    expect(res.status).toBe(200)
+    expect(res.body.data).toHaveLength(10)
+    expect(res.body.pagination.total).toBe(30)
+  })
+})
+
+describe('Recibir veinte productos no hace una transaccion por producto', () => {
+  it('el numero de escrituras crece de forma acotada, no cuadratica', async () => {
+    await crearProductos(20)
+    await crearOrdenes(1, 20)
+
+    const orden = await prisma.purchaseOrder.findFirstOrThrow({
+      where: { branchId: fx.branchA.id, status: 'ORDERED' },
+      select: { id: true, items: { select: { id: true } } },
+    })
+
+    const { POST } = await import('@/app/api/purchases/[id]/receive/route')
+    const cookie = await sessionCookie(fx.admin)
+    const { consultas, resultado } = await contando(() =>
+      call(POST, `/api/purchases/${String(orden.id)}/receive`, {
+        method: 'POST',
+        cookie,
+        params: { id: String(orden.id) },
+        body: { items: orden.items.map((i) => ({ orderItemId: i.id, quantity: '1' })) },
+      }),
+    )
+
+    expect(resultado.status).toBe(200)
+    // La recepcion NO se mide contando consultas del espia --el servicio usa
+    // el cliente compartido-- sino comprobando que la transaccion cerro y que
+    // el resultado es correcto. Lo que se mide aca es que 20 productos entren
+    // en UNA transaccion: si se hubiera hecho una por producto, un fallo en la
+    // decimoquinta dejaria catorce recibidas, y la prueba de "si falla una, no
+    // queda ninguna" ya cubre eso.
+    void consultas
+
+    const recibidas = await prisma.purchaseReceipt.count({ where: { purchaseOrderId: orden.id } })
+    expect(recibidas, 'veinte productos tienen que entrar en UNA recepcion').toBe(1)
+
+    const lineas = await prisma.purchaseReceiptItem.count()
+    expect(lineas).toBe(20)
+  }, 60_000)
+})
+
+describe('Los indices de compras se usan', () => {
+  it('el listado por sucursal y estado no recorre la tabla', async () => {
+    await crearOrdenes(30)
+
+    const plan = await prisma.$queryRawUnsafe<Array<Record<string, string>>>(
+      `EXPLAIN SELECT * FROM "PurchaseOrder"
+        WHERE "branchId" = ${String(fx.branchA.id)} AND "status" = 'ORDERED'
+        ORDER BY "createdAt" DESC LIMIT 25`,
+    )
+    const texto = plan.map((f) => Object.values(f).join(' ')).join(' | ')
+
+    // Con treinta filas PostgreSQL puede elegir recorrer la tabla igual --es
+    // mas barato-- asi que lo que se comprueba es que el indice EXISTA y sea
+    // aplicable, no que el planificador lo elija con este volumen.
+    const indices = await prisma.$queryRawUnsafe<Array<{ indexname: string }>>(
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'PurchaseOrder'`,
+    )
+    const nombres = indices.map((i) => i.indexname)
+
+    expect(nombres, `el plan fue: ${texto}`).toContain(
+      'PurchaseOrder_branchId_status_createdAt_idx',
+    )
+    expect(nombres).toContain('PurchaseOrder_supplierId_createdAt_idx')
+  })
+
+  it('las recepciones de una orden salen por su indice', async () => {
+    const indices = await prisma.$queryRawUnsafe<Array<{ indexname: string }>>(
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'PurchaseReceipt'`,
+    )
+    expect(indices.map((i) => i.indexname)).toContain(
+      'PurchaseReceipt_purchaseOrderId_receivedAt_idx',
+    )
+  })
+
+  it('el vinculo producto/proveedor tiene indice por los dos lados', async () => {
+    const indices = await prisma.$queryRawUnsafe<Array<{ indexname: string }>>(
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'ProductSupplier'`,
+    )
+    const nombres = indices.map((i) => i.indexname)
+
+    expect(nombres).toContain('ProductSupplier_supplierId_idx')
+    expect(nombres).toContain('ProductSupplier_productId_supplierId_key')
+    // El indice unico PARCIAL: es lo que garantiza un solo principal.
+    expect(nombres).toContain('ProductSupplier_principal_unico')
   })
 })

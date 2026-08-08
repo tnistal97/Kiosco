@@ -166,6 +166,107 @@ test.describe('accesibilidad automatizada', () => {
     expect(detalle(violations)).toBe('sin faltas')
   })
 
+  test('/proveedores no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/proveedores')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+    await expect(page.getByRole('table')).toBeVisible()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('la ficha de un proveedor no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/proveedores')
+    await page.getByRole('link', { name: 'Bebidas Andinas' }).click()
+    await page.getByRole('heading', { name: 'Bebidas Andinas' }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el diálogo de alta de proveedor no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/proveedores')
+    await page.getByRole('button', { name: 'Nuevo proveedor' }).click()
+    await page.getByRole('heading', { name: 'Nuevo proveedor' }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('/compras no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/compras')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('/compras/nueva no tiene faltas, con una línea cargada', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/compras/nueva')
+    await page.getByRole('heading', { name: 'Nueva compra' }).waitFor()
+
+    // Con el formulario vacio no se auditan ni la tabla de lineas ni el total,
+    // que es la parte que mas cambia de estado.
+    await page
+      .getByRole('combobox', { name: 'A quién se le compra' })
+      .selectOption({ label: 'Bebidas Andinas' })
+    await page.getByRole('searchbox', { name: /Buscar productos/i }).fill('Gaseosa cola')
+    await page.getByRole('button', { name: /Gaseosa cola 2\.25 L/ }).click()
+    await page.getByRole('textbox', { name: /Costo por unidad de compra/i }).fill('8800')
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el detalle de una compra con recepciones no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/compras')
+
+    // La orden con recepciones la deja `compras.spec.ts`. Si todavia no
+    // existe, la pantalla igual se audita: lo que se busca son faltas de
+    // accesibilidad, no datos.
+    const primera = page.getByRole('link', { name: /OC-/ }).first()
+    if ((await primera.count()) > 0) {
+      await primera.click()
+      await page.getByRole('heading', { name: /OC-/ }).waitFor()
+    }
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el diálogo de recepción no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/compras/nueva')
+
+    await page
+      .getByRole('combobox', { name: 'A quién se le compra' })
+      .selectOption({ label: 'Mayorista Central' })
+    await page.getByRole('searchbox', { name: /Buscar productos/i }).fill('Atun al natural')
+    await page.getByRole('button', { name: /Atun al natural/ }).click()
+    await page.getByRole('textbox', { name: /Costo por unidad de compra/i }).fill('1990')
+    await page.getByRole('button', { name: 'Confirmar orden' }).click()
+    await page.waitForURL(/\/compras\/\d+$/)
+
+    await page.getByRole('button', { name: 'Recibir mercadería' }).click()
+    await page.getByRole('heading', { name: /Recibir mercadería/ }).waitFor()
+    // El panel entra con una transicion de opacidad. Analizarlo antes de que
+    // termine hace que axe mida los colores MEZCLADOS con lo que hay detras y
+    // marque como falta de contraste hasta el titulo y los botones. Se espera
+    // a que el control de mas abajo este visible y se deja asentar la
+    // animacion.
+    await expect(page.getByRole('button', { name: 'Confirmar recepción' })).toBeVisible()
+    await page.waitForTimeout(500)
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
   /**
    * El tema claro tambien se audita.
    *

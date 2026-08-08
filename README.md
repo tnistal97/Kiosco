@@ -21,8 +21,12 @@ códigos de barras por cámara y por lector USB.
 - **Pagos** — uno o varios por venta, con vuelto. Solo el efectivo mueve el
   cajón: $20.000 por transferencia más $10.000 en efectivo suben la caja
   $10.000.
-- **Productos y stock** — catálogo con categorías y proveedores, mínimo de
-  reposición por producto y alertas de agotado y bajo mínimo.
+- **Productos y stock** — catálogo con categorías y proveedores, venta por
+  unidad, por peso y por volumen, varios códigos de barras por producto,
+  mínimo de reposición y alertas de agotado y bajo mínimo.
+- **Compras** — proveedores, órdenes de compra con estados, y recepción total
+  o parcial. Lo que llega entra al stock convertido a la unidad de venta —5
+  cajas de 8 son 40 botellas— y actualiza el costo del producto.
 - **Libro de inventario** — cada venta, anulación y ajuste deja un movimiento
   con el saldo anterior y el resultante. No se edita ni se borra: los errores
   se corrigen con otro movimiento.
@@ -175,6 +179,11 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 | [INVENTORY_LEDGER.md](docs/INVENTORY_LEDGER.md)                       | Cómo se mueve el stock y por qué no se edita    |
 | [CASH_SHIFT_MODEL.md](docs/CASH_SHIFT_MODEL.md)                       | Turnos de caja: qué se deriva y qué se guarda   |
 | [PHASE3_MONEY_MIGRATION.md](docs/PHASE3_MONEY_MIGRATION.md)           | Por qué el dinero es Decimal y cómo se migró    |
+| [PHASE3_QUANTITY_MIGRATION.md](docs/PHASE3_QUANTITY_MIGRATION.md)     | Por qué las cantidades son Decimal y qué unidad |
+| [PHASE3_BARCODES.md](docs/PHASE3_BARCODES.md)                         | Varios códigos por producto, y cómo se migró    |
+| [SUPPLIER_MODEL.md](docs/SUPPLIER_MODEL.md)                           | Qué sabe el sistema de un proveedor, y qué no   |
+| [PURCHASE_FLOW.md](docs/PURCHASE_FLOW.md)                             | Orden de compra: estados, numeración, unidades  |
+| [PURCHASE_RECEIVING.md](docs/PURCHASE_RECEIVING.md)                   | Recepción, política de costo e inmutabilidad    |
 | [DATABASE_MIGRATION_STRATEGY.md](docs/DATABASE_MIGRATION_STRATEGY.md) | Cómo aplicar migraciones sin romper el servidor |
 | [DEPENDENCY_SECURITY.md](docs/DEPENDENCY_SECURITY.md)                 | Qué avisos hubo y cómo se cerraron              |
 | [PHASE0_DECISIONS.md](docs/PHASE0_DECISIONS.md)                       | Qué quedó a medio camino a propósito, y por qué |

@@ -7,27 +7,37 @@
 
 ## Dónde se estaba y dónde se está
 
-|                | Antes de la Fase 0                         | Fase 1                                            | Fase 2                                                 | Fase 3A                                                |
-| -------------- | ------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------ |
-| Pruebas        | 0 archivos                                 | 354, en seis categorías                           | 533 en vitest + 40 de extremo a extremo                | **735** en vitest + **63** de extremo a extremo        |
-| Framework      | Ninguno                                    | Vitest 4                                          | Vitest 4 + jsdom + Testing Library + **Playwright**    | **+ axe-core** sobre once pantallas                    |
-| ESLint         | El script existía; la configuración **no** | Configuración plana, con tipos. 0 errores         | Igual. 0 errores                                       | **+ dos fronteras propias**: dinero y stock. 0 errores |
-| Prettier       | No instalado                               | ts, tsx, js, json, md, css y prisma               | Igual                                                  | Igual                                                  |
-| TypeScript     | `strict: true`, evadido por 35 `: any`     | `strict` + 4 opciones. 0 `any` en `src/`          | Igual                                                  | Igual                                                  |
-| CI             | Ninguna                                    | Formato, lint, tipos, migraciones, pruebas, build | **+ extremo a extremo y comprobación de la PWA**       | Igual                                                  |
-| `npm audit`    | 25 avisos, **1 crítico**                   | 0, con 14 `overrides`                             | **0, con 2 `overrides`**                               | 0                                                      |
-| Alcance medido | —                                          | Solo servidor                                     | Servidor **+ componentes, store y hooks**              | Igual                                                  |
-| Cobertura      | —                                          | 84,1 L · 82,0 S · 85,4 F · 61,8 R (solo servidor) | 81,6 L · 78,7 S · 80,4 F · 69,5 R (alcance más amplio) | **84,0 L · 80,9 S · 82,9 F · 72,5 R**                  |
+|                | Antes de la Fase 0                         | Fase 1                                            | Fase 2                                                 | Fase 3A                                                | Fase 3C                                              |
+| -------------- | ------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------ | ---------------------------------------------------- |
+| Pruebas        | 0 archivos                                 | 354, en seis categorías                           | 533 en vitest + 40 de extremo a extremo                | **735** en vitest + **63** de extremo a extremo        | **949** en vitest + **100** de extremo a extremo     |
+| Framework      | Ninguno                                    | Vitest 4                                          | Vitest 4 + jsdom + Testing Library + **Playwright**    | **+ axe-core** sobre once pantallas                    | **+ axe-core sobre diecisiete pantallas y diálogos** |
+| ESLint         | El script existía; la configuración **no** | Configuración plana, con tipos. 0 errores         | Igual. 0 errores                                       | **+ dos fronteras propias**: dinero y stock. 0 errores | **+ una tercera**: las cantidades. 0 errores         |
+| Prettier       | No instalado                               | ts, tsx, js, json, md, css y prisma               | Igual                                                  | Igual                                                  | Igual                                                |
+| TypeScript     | `strict: true`, evadido por 35 `: any`     | `strict` + 4 opciones. 0 `any` en `src/`          | Igual                                                  | Igual                                                  | Igual                                                |
+| CI             | Ninguna                                    | Formato, lint, tipos, migraciones, pruebas, build | **+ extremo a extremo y comprobación de la PWA**       | Igual                                                  | Igual                                                |
+| `npm audit`    | 25 avisos, **1 crítico**                   | 0, con 14 `overrides`                             | **0, con 2 `overrides`**                               | 0                                                      | 0                                                    |
+| Alcance medido | —                                          | Solo servidor                                     | Servidor **+ componentes, store y hooks**              | Igual                                                  | Igual                                                |
+| Cobertura      | —                                          | 84,1 L · 82,0 S · 85,4 F · 61,8 R (solo servidor) | 81,6 L · 78,7 S · 80,4 F · 69,5 R (alcance más amplio) | **84,0 L · 80,9 S · 82,9 F · 72,5 R**                  | **81,3 L · 78,5 S · 80,5 F · 67,6 R**                |
 
-### Las dos fronteras que ESLint hace cumplir
+> **La cobertura baja tres décimas y no es una regresión.** La Fase 3C agrega
+> unas mil líneas de servidor —compras, recepción, proveedores— y sus pruebas
+> cubren los caminos que importan, no cada rama de cada DTO. Los cuatro
+> números siguen por encima de los umbrales, que son la alarma.
 
-No son reglas de estilo: son las dos invariantes que sostienen el sistema, y
-las dos se rompen sin que nada falle.
+### Las tres fronteras que ESLint hace cumplir
 
-| Frontera                             | Qué prohíbe                                                    | Único lugar autorizado             |
-| ------------------------------------ | -------------------------------------------------------------- | ---------------------------------- |
-| **El dinero no se vuelve `number`**  | `.toNumber()` sobre un importe, en servicios, servidor y rutas | `src/server/money.ts`              |
-| **El stock no se escribe: se mueve** | Escrituras de Prisma y SQL crudo sobre `BranchStock`           | `src/modules/inventory/service.ts` |
+No son reglas de estilo: son las invariantes que sostienen el sistema, y las
+tres se rompen sin que nada falle.
+
+| Frontera                               | Qué prohíbe                                                    | Único lugar autorizado             |
+| -------------------------------------- | -------------------------------------------------------------- | ---------------------------------- |
+| **El dinero no se vuelve `number`**    | `.toNumber()` sobre un importe, en servicios, servidor y rutas | `src/server/money.ts`              |
+| **Una cantidad no se vuelve `number`** | Lo mismo sobre las cantidades de mercadería                    | `src/server/cantidad.ts`           |
+| **El stock no se escribe: se mueve**   | Escrituras de Prisma y SQL crudo sobre `BranchStock`           | `src/modules/inventory/service.ts` |
+
+La tercera es la que hace que **la recepción de mercadería no pueda tocar el
+stock por su cuenta**: llama a `applyStockMovement` como todo lo demás, y por
+eso el libro y el saldo no se pueden separar.
 
 La segunda tiene además una prueba que recorre `src/` archivo por archivo
 (`tests/unit/inventory.test.ts`). La regla avisa al escribir; la prueba avisa

@@ -110,17 +110,27 @@ describe('Tipos de movimiento', () => {
     expect(esTipoDeAjuste('PURCHASE_RECEIPT')).toBe(false)
   })
 
-  it('PURCHASE_RECEIPT existe reservado, pero nada lo emite todavia', () => {
+  it('PURCHASE_RECEIPT lo emite la recepcion de compras, y NADIE mas', () => {
     expect(esTipoValido('PURCHASE_RECEIPT')).toBe(true)
 
     const emisores = archivosDe('src/modules')
       .filter((f) => f.endsWith('.ts'))
       .filter((f) => leer(f).includes("type: 'PURCHASE_RECEIPT'"))
 
+    // Desde la Fase 3C hay exactamente UN emisor. Que sea uno solo es lo que
+    // garantiza que toda entrada de mercaderia tenga una compra que la
+    // respalde: si otro modulo pudiera emitirlo, habria unidades entrando al
+    // deposito sin remito.
     expect(
       emisores,
-      'la recepcion de compras es Fase 3C: el tipo esta reservado, nadie deberia emitirlo',
-    ).toEqual([])
+      'la entrada de mercaderia sale de la recepcion de una compra, de ningun otro lado',
+    ).toEqual(['src/modules/purchases/service.ts'])
+  })
+
+  it('PURCHASE_RECEIPT no figura entre los tipos de ajuste manual', () => {
+    // Si estuviera, cualquiera con `stock.adjust` podria escribir una entrada
+    // de mercaderia desde la pantalla de ajustes, sin orden y sin proveedor.
+    expect(TIPOS_DE_AJUSTE as readonly string[]).not.toContain('PURCHASE_RECEIPT')
   })
 
   it('el catalogo de TypeScript y la restriccion de PostgreSQL dicen lo mismo', () => {

@@ -632,8 +632,9 @@ describe('Historial: filtros, paginacion y permisos', () => {
 
     const res = await historial('?pageSize=3')
     expect(res.body.data).toHaveLength(3)
-    // 8 ajustes + los dos INITIAL de la sucursal A (el fernet y el queso).
-    expect(res.body.pagination.total).toBe(10)
+    // 8 ajustes + los tres INITIAL de la sucursal A: el fernet, el queso por
+    // peso y la gaseosa que se compra por caja.
+    expect(res.body.pagination.total).toBe(11)
     expect(res.body.pagination.totalPages).toBe(4)
 
     const segunda = await historial('?pageSize=3&page=2')
@@ -667,16 +668,17 @@ describe('Stock minimo y alertas', () => {
     const res = await reposicion()
     expect(res.body.bajoMinimo).toBe(0)
     expect(res.body.agotados).toBe(0)
-    // Dos: el fernet y el queso por peso. Ninguno tiene minimo configurado.
-    expect(res.body.sinMinimo, 'hay que poder decir que nadie configuro minimos').toBe(2)
+    // Tres: el fernet, el queso por peso y la gaseosa por caja. Ninguno tiene
+    // minimo configurado.
+    expect(res.body.sinMinimo, 'hay que poder decir que nadie configuro minimos').toBe(3)
   })
 
   it('con minimo 6 y diez unidades sigue estando bien', async () => {
     await prisma.product.update({ where: { id: fx.productoA.id }, data: { minimumStock: 6 } })
     const res = await reposicion()
     expect(res.body.bajoMinimo).toBe(0)
-    // El queso sigue sin minimo: se le puso solo al fernet.
-    expect(res.body.sinMinimo).toBe(1)
+    // El queso y la gaseosa siguen sin minimo: se le puso solo al fernet.
+    expect(res.body.sinMinimo).toBe(2)
   })
 
   it('con minimo 6, vender cinco lo pone bajo minimo', async () => {
@@ -706,7 +708,7 @@ describe('Stock minimo y alertas', () => {
 
     const res = await reposicion()
     expect(res.body.agotados).toBe(0)
-    expect(res.body.sinMinimo, 'el queso sigue activo y sin minimo').toBe(1)
+    expect(res.body.sinMinimo, 'el queso y la gaseosa siguen activos y sin minimo').toBe(2)
   })
 
   it('el filtro de bajo minimo del catalogo usa el minimo del producto', async () => {

@@ -13,7 +13,7 @@ import { PRODUCTOS, entrar, escanear } from './ayudantes'
  * rutas y 164 objetivos tactiles por debajo de 44 px, el mas chico de 20.
  */
 
-const RUTAS = ['/', '/venta', '/caja', '/ventas', '/productos', '/stock', '/auditoria', '/usuarios'] // prettier-ignore
+const RUTAS = ['/', '/venta', '/caja', '/ventas', '/productos', '/stock', '/auditoria', '/usuarios', '/compras', '/compras/nueva', '/proveedores'] // prettier-ignore
 
 /**
  * true si la PAGINA se desplaza al costado.

@@ -170,12 +170,77 @@ describe('Proteccion de la anulacion', () => {
   })
 })
 
+/**
+ * El dia de HOY en la hora del local, no en UTC.
+ *
+ * `toISOString().slice(0,10)` da el dia UTC, que en Argentina cambia a las
+ * 21:00. Una prueba escrita asi pasa de dia a las nueve de la noche y busca
+ * las ventas de manana. Es el mismo error que tenia el reporte hasta la Fase
+ * 3C, y por eso las pruebas no lo detectaban: usaban su misma convencion.
+ */
+function hoyLocal(): string {
+  const d = new Date()
+  return `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+describe('El dia del reporte es el dia del LOCAL, no el de UTC', () => {
+  it('una venta de las once de la noche cuenta en el dia en que se hizo', async () => {
+    const saleId = await venderDosUnidades()
+
+    // Se la fecha a las 23:30 de HOY, hora local. En UTC eso ya es manana --en
+    // Argentina son las 02:30-- y con el rango en UTC la venta desaparecia del
+    // dia: un almacen que cierra a las 22 perdia de vista su ultima hora.
+    const alCierre = new Date()
+    alCierre.setHours(23, 30, 0, 0)
+    await prisma.sale.update({ where: { id: saleId }, data: { date: alCierre } })
+
+    const { GET } = await import('@/app/api/admin/sales/route')
+    const hoy = hoyLocal()
+    const res = await call<{ data: Array<{ id: number }>; totales: { ventas: number } }>(
+      GET,
+      `/api/admin/sales?start=${hoy}&end=${hoy}`,
+      { cookie: await sessionCookie(fx.admin) },
+    )
+
+    expect(res.status).toBe(200)
+    expect(
+      res.body.data.find((s) => s.id === saleId),
+      'la venta del cierre desaparecio del dia en que se hizo',
+    ).toBeDefined()
+  })
+
+  it('una venta de las 00:30 NO cuenta en el dia anterior', async () => {
+    const saleId = await venderDosUnidades()
+
+    const alaMadrugada = new Date()
+    alaMadrugada.setHours(0, 30, 0, 0)
+    await prisma.sale.update({ where: { id: saleId }, data: { date: alaMadrugada } })
+
+    const ayer = new Date()
+    ayer.setDate(ayer.getDate() - 1)
+    const dia = `${String(ayer.getFullYear())}-${String(ayer.getMonth() + 1).padStart(2, '0')}-${String(ayer.getDate()).padStart(2, '0')}`
+
+    const { GET } = await import('@/app/api/admin/sales/route')
+    const res = await call<{ data: Array<{ id: number }> }>(
+      GET,
+      `/api/admin/sales?start=${dia}&end=${dia}`,
+      { cookie: await sessionCookie(fx.admin) },
+    )
+
+    expect(res.status).toBe(200)
+    expect(
+      res.body.data.find((s) => s.id === saleId),
+      'una venta de la madrugada se colo en el dia anterior',
+    ).toBeUndefined()
+  })
+})
+
 describe('Una venta anulada sigue apareciendo en los reportes', () => {
   it('el reporte administrativo la incluye con su estado', async () => {
     const saleId = await venderDosUnidades()
     await anular(saleId, { reason: 'Anulada pero visible' })
 
-    const hoy = new Date().toISOString().slice(0, 10)
+    const hoy = hoyLocal()
     const { GET } = await import('@/app/api/admin/sales/route')
     const res = await call<{
       data: Array<{ id: number; status: string }>
@@ -192,7 +257,7 @@ describe('Una venta anulada sigue apareciendo en los reportes', () => {
 
   it('la venta anulada no suma a la recaudacion del reporte', async () => {
     const saleId = await venderDosUnidades()
-    const hoy = new Date().toISOString().slice(0, 10)
+    const hoy = hoyLocal()
     const { GET } = await import('@/app/api/admin/sales/route')
 
     const cookie = await sessionCookie(fx.admin)

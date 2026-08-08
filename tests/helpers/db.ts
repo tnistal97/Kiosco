@@ -25,11 +25,16 @@ const TABLES = [
   'CashCount',
   'CashShift',
   // TRUNCATE no dispara disparadores de fila, asi que los disparadores de
-  // inmutabilidad de StockMovement y ProductCostHistory no impiden vaciar la
-  // base entre pruebas. Es la unica puerta.
+  // inmutabilidad de StockMovement, ProductCostHistory y PurchaseReceipt no
+  // impiden vaciar la base entre pruebas. Es la unica puerta.
   'StockMovement',
   'ProductCostHistory',
   'ProductBarcode',
+  'PurchaseReceiptItem',
+  'PurchaseReceipt',
+  'PurchaseOrderItem',
+  'PurchaseOrder',
+  'ProductSupplier',
   'BranchStock',
   'Product',
   'User',
@@ -42,6 +47,11 @@ const TABLES = [
 export async function resetDb(): Promise<void> {
   const list = TABLES.map((t) => `"${t}"`).join(', ')
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`)
+
+  // La secuencia que numera las ordenes de compra NO es de ninguna tabla, asi
+  // que `RESTART IDENTITY` no la toca: los numeros seguirian creciendo entre
+  // pruebas y "la primera orden es la OC-00000001" seria cierto una sola vez.
+  await prisma.$executeRawUnsafe(`ALTER SEQUENCE "PurchaseOrder_numero_seq" RESTART WITH 1`)
 }
 
 export interface Fixture {
@@ -62,6 +72,19 @@ export interface Fixture {
    */
   /** Producto POR PESO: `saleUnit = KG`, $9.800/kg, 5,000 kg de saldo. */
   productoPeso: { id: number; name: string; price: Monto; barcode: string }
+  /**
+   * Producto que se COMPRA POR CAJA y se VENDE POR UNIDAD.
+   *
+   * Es el ejemplo del pedido, con sus numeros: `purchaseUnit = BOX`,
+   * `unitsPerPurchaseUnit = 8`, 100 unidades de saldo. Existe en la fixture
+   * porque es el caso que da sentido a toda la conversion de la Fase 3C, y
+   * armarlo a mano en cada archivo repetiria los tres numeros que importan.
+   */
+  productoCaja: { id: number; name: string; price: Monto; barcode: string }
+  /** Proveedor ACTIVO, sin historial. */
+  proveedor: { id: number; name: string }
+  /** Proveedor dado de baja: no se le puede comprar. */
+  proveedorInactivo: { id: number; name: string }
   productoA: { id: number; name: string; price: Monto; barcode: string }
   /** Producto de la sucursal B. Un usuario de A no debe poder tocarlo. */
   productoB: { id: number; name: string; price: Monto; barcode: string }
@@ -194,11 +217,43 @@ export async function seedFixture(): Promise<Fixture> {
     },
   })
 
+  const [proveedor, proveedorInactivo] = await Promise.all([
+    prisma.supplier.create({
+      data: {
+        name: 'Distribuidora del Sur',
+        taxId: '30-12345678-9',
+        phone: '11-4567-8900',
+        contactName: 'Pepe',
+      },
+    }),
+    prisma.supplier.create({ data: { name: 'Mayorista Cerrado', isActive: false } }),
+  ])
+
+  /**
+   * El producto del ejemplo del pedido: se compra por caja de 8 y se vende por
+   * unidad. Arranca con 100 unidades y con `Distribuidora del Sur` como
+   * proveedor principal.
+   */
+  const productoCaja = await prisma.product.create({
+    data: {
+      name: 'Gaseosa cola 2.25 L',
+      price: 3450,
+      categoryId: category.id,
+      branchId: branchA.id,
+      saleUnit: 'UNIT',
+      purchaseUnit: 'BOX',
+      unitsPerPurchaseUnit: 8,
+      barcodes: { create: { code: '7790002000014', isPrimary: true } },
+      suppliers: { create: { supplierId: proveedor.id, isPreferred: true } },
+    },
+  })
+
   await prisma.branchStock.createMany({
     data: [
       { branchId: branchA.id, productId: productoA.id, quantity: 10 },
       { branchId: branchB.id, productId: productoB.id, quantity: 10 },
       { branchId: branchA.id, productId: productoPeso.id, quantity: 5 },
+      { branchId: branchA.id, productId: productoCaja.id, quantity: 100 },
     ],
   })
 
@@ -241,6 +296,16 @@ export async function seedFixture(): Promise<Fixture> {
         userId: admin.id,
         reason: 'Saldo de partida de la fixture',
       },
+      {
+        branchId: branchA.id,
+        productId: productoCaja.id,
+        type: 'INITIAL',
+        quantity: 100,
+        previousQuantity: 0,
+        resultingQuantity: 100,
+        userId: admin.id,
+        reason: 'Saldo de partida de la fixture',
+      },
     ],
   })
 
@@ -269,6 +334,14 @@ export async function seedFixture(): Promise<Fixture> {
       price: aMonto(productoPeso.price),
       barcode: '2000000000015',
     },
+    productoCaja: {
+      id: productoCaja.id,
+      name: productoCaja.name,
+      price: aMonto(productoCaja.price),
+      barcode: '7790002000014',
+    },
+    proveedor: { id: proveedor.id, name: proveedor.name },
+    proveedorInactivo: { id: proveedorInactivo.id, name: proveedorInactivo.name },
     categoryId: category.id,
     porRol,
     turnoA: turnoA.id,
@@ -467,4 +540,22 @@ export async function movimientosDe(branchId: number, productId: number) {
     where: { branchId, productId },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   })
+}
+
+/**
+ * El dia de HOY en la hora del LOCAL, no en UTC.
+ *
+ * `new Date().toISOString().slice(0, 10)` da el dia UTC, que en Argentina
+ * cambia a las nueve de la noche: a partir de esa hora una prueba escrita asi
+ * pide el reporte de MANANA y no encuentra las ventas que acaba de hacer.
+ *
+ * Es la misma confusion que tenia el reporte hasta la Fase 3C --el rango se
+ * armaba con la `Z` final-- y el motivo de que las pruebas no la detectaran:
+ * usaban su misma convencion equivocada. Ver `reporteDeVentas`.
+ */
+export function hoyLocal(): string {
+  const d = new Date()
+  const mes = String(d.getMonth() + 1).padStart(2, '0')
+  const dia = String(d.getDate()).padStart(2, '0')
+  return `${String(d.getFullYear())}-${mes}-${dia}`
 }

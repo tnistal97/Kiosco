@@ -132,14 +132,40 @@ describe('La cadena oficial', () => {
       '20260807150000_phase3_product_units',
       '20260807160000_phase3_product_costs',
       '20260807170000_phase3_product_barcodes',
+      '20260808100000_phase3_suppliers',
+      '20260808110000_phase3_purchase_orders',
+      '20260808120000_phase3_purchase_receipts',
+      '20260808130000_phase3_purchase_cost_links',
+      '20260808140000_phase3_remove_legacy_barcode',
     ])
   })
 
-  it('ninguna migracion de la cadena borra datos', () => {
-    // Un DROP TABLE, un DROP COLUMN o un DELETE sin WHERE en una migracion
-    // que corre en el servidor destruye informacion sin vuelta atras. Los
-    // bloques DOWN estan comentados a proposito.
-    const PELIGROSAS = /^\s*(DROP\s+TABLE|DROP\s+COLUMN|TRUNCATE|DELETE\s+FROM)/im
+  /**
+   * Migraciones a las que SE LES PERMITE borrar, una por una y con su motivo.
+   *
+   * Una lista explicita y no una excepcion general: agregar una migracion
+   * destructiva obliga a escribir aca por que, que es exactamente la
+   * conversacion que tiene que ocurrir antes de borrar una columna en un
+   * servidor con datos.
+   */
+  const DESTRUCTIVAS_PERMITIDAS: Record<string, string> = {
+    '20260808140000_phase3_remove_legacy_barcode':
+      'Borra "Product"."barcode", congelada desde la Fase 3B. Cumplio el despliegue ' +
+      'que exige la regla 2, los codigos viven en "ProductBarcode" y la migracion ' +
+      'aborta si alguno no esta representado alli. Ver docs/PHASE3_BARCODES.md.',
+  }
+
+  it('ninguna migracion de la cadena borra datos sin permiso explicito', () => {
+    // Un DROP TABLE, un DROP COLUMN o un DELETE sin WHERE en una migracion que
+    // corre en el servidor destruye informacion sin vuelta atras. Los bloques
+    // DOWN estan comentados a proposito.
+    //
+    // La expresion NO esta anclada al principio de la linea, y esa es la
+    // correccion que trajo la Fase 3C: `^\s*DROP\s+COLUMN` no encuentra
+    // `ALTER TABLE "Product" DROP COLUMN "barcode"`, que es la unica forma en
+    // que PostgreSQL acepta esa sentencia. La guardia dejaba pasar
+    // exactamente el caso para el que existia.
+    const PELIGROSAS = /\b(DROP\s+TABLE|DROP\s+COLUMN|TRUNCATE\s+TABLE|DELETE\s+FROM)\b/i
 
     for (const carpeta of readdirSync(MIGRACIONES, { withFileTypes: true })) {
       if (!carpeta.isDirectory()) continue
@@ -149,10 +175,18 @@ describe('La cadena oficial', () => {
         .filter((l) => !l.trim().startsWith('--'))
         .join('\n')
 
+      const permitida = carpeta.name in DESTRUCTIVAS_PERMITIDAS
+      // Se comprueba la IGUALDAD entre "borra" y "tiene permiso para borrar",
+      // en una sola asercion. Asi tambien falla el caso inverso: una excepcion
+      // que dejo de hacer falta tiene que caducar, o la lista crece hasta no
+      // significar nada.
       expect(
         PELIGROSAS.test(activo),
-        `${carpeta.name} contiene una sentencia destructiva fuera de comentario`,
-      ).toBe(false)
+        permitida
+          ? `${carpeta.name} figura como destructiva permitida pero ya no borra nada: sacala de la lista`
+          : `${carpeta.name} contiene una sentencia destructiva fuera de comentario. ` +
+              'Si es deliberada, agregala a DESTRUCTIVAS_PERMITIDAS con su motivo.',
+      ).toBe(permitida)
     }
   })
 })
@@ -493,9 +527,17 @@ describe('Servidor existente', () => {
       // que de verdad hay en un servidor que llevo dos anios en Float, y lo
       // que la migracion tiene que dejar limpio.
       await cliente.query(`INSERT INTO "Category" (name) VALUES ('Almacen')`)
+      // Un proveedor de los de antes: nombre, un contacto en texto libre, y
+      // nada mas. Es lo que de verdad hay en el servidor.
       await cliente.query(
-        `INSERT INTO "Product" (name, price, "categoryId", "branchId")
-           SELECT 'Yerba con residuo', 4850.000000001, c.id, b.id FROM "Category" c, "Branch" b`,
+        `INSERT INTO "Supplier" (name, contact) VALUES ('Distribuidora Vieja', 'Pepe 11-4567-8900')`,
+      )
+      // Con codigo de barras Y con proveedor: son las dos columnas que la
+      // Fase 3C tiene que mudar sin perder nada.
+      await cliente.query(
+        `INSERT INTO "Product" (name, price, barcode, "categoryId", "branchId", "supplierId")
+           SELECT 'Yerba con residuo', 4850.000000001, '7790001000011', c.id, b.id, s.id
+             FROM "Category" c, "Branch" b, "Supplier" s`,
       )
       await cliente.query(
         `INSERT INTO "Product" (name, price, "categoryId", "branchId")
@@ -684,26 +726,61 @@ describe('Servidor existente', () => {
     }
   })
 
-  it('los codigos de barras se migran sin perder ninguno', async () => {
+  it('la columna "Product"."barcode" ya no existe', async () => {
+    const columnas = await consultar<{ column_name: string }>(
+      url,
+      `SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'Product' AND column_name = 'barcode'`,
+    )
+    expect(columnas, 'la columna congelada en la 3B tenia que morir en la 3C').toHaveLength(0)
+  })
+
+  it('el codigo de barras del servidor sobrevivio a que se borrara su columna', async () => {
+    // El producto historico entro con '7790001000011' en la columna vieja. La
+    // 3B lo copio a "ProductBarcode" y la 3C borro la columna: si la copia
+    // hubiera fallado, el codigo ya no estaria en ningun lado.
     const filas = await consultar<{ nombre: string; code: string; principal: boolean }>(
       url,
       `SELECT p.name AS nombre, pb.code, pb."isPrimary" AS principal
          FROM "Product" p
          JOIN "ProductBarcode" pb ON pb."productId" = p.id
-        WHERE p.barcode IS NOT NULL
         ORDER BY p.id`,
     )
 
-    const productosConCodigo = await consultar<{ total: string }>(
+    expect(filas).toHaveLength(1)
+    expect(filas[0]?.nombre).toBe('Yerba con residuo')
+    expect(filas[0]?.code).toBe('7790001000011')
+    expect(filas[0]?.principal, 'el codigo migrado tiene que quedar como principal').toBe(true)
+  })
+
+  it('el proveedor del producto se mudo a ProductSupplier como principal', async () => {
+    const filas = await consultar<{ producto: string; proveedor: string; principal: boolean }>(
       url,
-      `SELECT count(*)::text AS total FROM "Product"
-        WHERE barcode IS NOT NULL AND btrim(barcode) <> ''`,
+      `SELECT p.name AS producto, s.name AS proveedor, ps."isPreferred" AS principal
+         FROM "ProductSupplier" ps
+         JOIN "Product" p ON p.id = ps."productId"
+         JOIN "Supplier" s ON s.id = ps."supplierId"`,
     )
 
-    expect(filas).toHaveLength(Number(productosConCodigo[0]?.total ?? 0))
-    for (const f of filas) {
-      expect(f.principal, `${f.nombre} quedo con un codigo que no es el principal`).toBe(true)
-    }
+    expect(filas).toHaveLength(1)
+    expect(filas[0]?.producto).toBe('Yerba con residuo')
+    expect(filas[0]?.proveedor).toBe('Distribuidora Vieja')
+    expect(filas[0]?.principal).toBe(true)
+  })
+
+  it('el contacto en texto libre del proveedor no se perdio ni se interpreto', async () => {
+    // Se copia TAL CUAL a `contactName`. No se intenta partir "Pepe
+    // 11-4567-8900" en nombre y telefono: no hay forma confiable de saber cual
+    // es cual, y adivinar mal convertiria un telefono en el nombre de alguien.
+    const filas = await consultar<{ contacto: string; nombre: string; activo: boolean }>(
+      url,
+      `SELECT "contact" AS contacto, "contactName" AS nombre, "isActive" AS activo
+         FROM "Supplier" WHERE name = 'Distribuidora Vieja'`,
+    )
+
+    expect(filas[0]?.nombre).toBe('Pepe 11-4567-8900')
+    expect(filas[0]?.contacto, 'la columna vieja se congela, no se vacia').toBe('Pepe 11-4567-8900')
+    expect(filas[0]?.activo, 'los proveedores existentes quedan activos').toBe(true)
   })
 
   it('el catalogo existente queda en UNIT, sin costo y sin unidades inventadas', async () => {

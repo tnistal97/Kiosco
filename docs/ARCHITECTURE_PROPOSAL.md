@@ -85,18 +85,37 @@ Hoy no hay módulo de stock: hay un número mutable en `BranchStock.quantity` y 
 
 ## 3. Compras y proveedores
 
-Módulo inexistente. `Supplier` existe en el esquema con una API sin pantalla.
+> **Implementado en la Fase 3C.** Ver [PURCHASE_FLOW.md](PURCHASE_FLOW.md),
+> [PURCHASE_RECEIVING.md](PURCHASE_RECEIVING.md) y
+> [SUPPLIER_MODEL.md](SUPPLIER_MODEL.md).
 
-| Falta                                                       | Prioridad |
-| ----------------------------------------------------------- | --------- |
-| **Alta y edición de proveedores**                           | **MVP**   |
-| **Orden de compra** (productos, cantidades, costo esperado) | **MVP**   |
-| **Recepción total o parcial**, con actualización de costo   | **MVP**   |
-| **Aviso de variación de costo y su efecto sobre el margen** | **MVP**   |
-| Cuenta corriente del proveedor: deuda, pagos, comprobantes  | 2.ª etapa |
-| Historial de compras por proveedor                          | 2.ª etapa |
-| Comparación de precios entre proveedores                    | 2.ª etapa |
-| Sugerencia de reposición según mínimo y venta histórica     | 2.ª etapa |
+| Falta                                                       | Prioridad | Estado                                             |
+| ----------------------------------------------------------- | --------- | -------------------------------------------------- |
+| **Alta y edición de proveedores**                           | **MVP**   | **Hecho.** Sólo el nombre es obligatorio           |
+| **Orden de compra** (productos, cantidades, costo esperado) | **MVP**   | **Hecho.** Cinco estados, numeración por secuencia |
+| **Recepción total o parcial**, con actualización de costo   | **MVP**   | **Hecho.** Política _last received cost_           |
+| **Aviso de variación de costo y su efecto sobre el margen** | **MVP**   | **Hecho.** La diferencia queda visible y auditada  |
+| Cuenta corriente del proveedor: deuda, pagos, comprobantes  | 2.ª etapa | Pendiente                                          |
+| Historial de compras por proveedor                          | 2.ª etapa | **Hecho** en la ficha del proveedor                |
+| Comparación de precios entre proveedores                    | 2.ª etapa | Parcial: `ProductSupplier.lastCost` por proveedor  |
+| Sugerencia de reposición según mínimo y venta histórica     | 2.ª etapa | Parcial: borrador desde bajo mínimo, sin histórico |
+| Devolución a proveedor                                      | —         | Pendiente. Punto de extensión documentado          |
+
+### Lo que la Fase 3C decidió, y por qué
+
+**Orden y recepción son entidades distintas.** Una orden dice lo que se pidió;
+una recepción, lo que llegó. Casi nunca coinciden, y con las recepciones dentro
+de la orden el sistema podría decir _cuánto_ llegó pero no _cuándo llegó cada
+parte, a qué precio y quién la recibió_.
+
+**`unitCost` es por unidad de compra.** Una caja de 8 a $8.800 guarda `8800`, y
+lo que llega a `Product.cost` es `8800 ÷ 8 = 1100`. La conversión vive en un
+solo archivo y tiene dos implementaciones —enteros para el navegador, `Decimal`
+para el servidor— con una prueba que las compara sobre la misma tabla de casos.
+
+**El costo lo fija la última recepción**, no un promedio ponderado. Para un
+almacén el precio de venta se decide mirando a cuánto hay que _reponer_, no a
+cuánto costó lo que está en la góndola.
 
 ## 4. Ventas
 

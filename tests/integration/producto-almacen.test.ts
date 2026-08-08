@@ -243,9 +243,10 @@ describe('Cambio de costo', () => {
     expect(historial[0]?.newCost.toFixed(4)).toBe('8000.0000')
     expect(historial[0]?.reason).toBe('Lista de mayo')
     expect(historial[0]?.userId).toBe(fx.admin.id)
-    // Preparados para la Fase 3C, vacios en esta.
+    // Un cambio MANUAL desde la ficha no viene de ninguna compra: los dos
+    // vinculos quedan vacios. Los llena la recepcion de mercaderia.
     expect(historial[0]?.supplierId).toBeNull()
-    expect(historial[0]?.purchaseId).toBeNull()
+    expect(historial[0]?.receiptId).toBeNull()
   })
 
   it('el segundo cambio encadena con el primero', async () => {
