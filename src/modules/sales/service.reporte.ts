@@ -67,8 +67,24 @@ export async function reporteDeVentas(
   session: Session,
   query: ReporteVentasQuery,
 ): Promise<Paginated<VentaDelReporte> & { totales: TotalesDelReporte }> {
-  const desde = new Date(`${query.start}T00:00:00.000Z`)
-  const hasta = new Date(`${query.end}T23:59:59.999Z`)
+  // El rango se interpreta en la HORA DEL LOCAL, no en UTC.
+  //
+  // Sin la `Z` final, `new Date` parsea en la zona horaria del proceso, que es
+  // la del comercio. Con la `Z` --como estaba hasta la Fase 3C-- el dia iba de
+  // las 00:00 UTC a las 23:59 UTC, y en Argentina eso son las 21:00 del dia
+  // anterior a las 20:59 del dia pedido.
+  //
+  // La consecuencia era grave y silenciosa: **toda venta hecha despues de las
+  // 21:00 desaparecia del dia**. Un almacen que cierra a las 22 perdia de
+  // vista su ultima hora --de la pantalla de ventas, del reporte y del
+  // "recaudado hoy" del panel-- y volvia a aparecer al dia siguiente, como si
+  // se hubiera vendido manana.
+  //
+  // Lo encontro la suite de extremo a extremo de la Fase 3C, por correr
+  // pasadas las nueve de la noche. Antes de eso pasaba siempre, porque
+  // siempre se corria mas temprano.
+  const desde = new Date(`${query.start}T00:00:00.000`)
+  const hasta = new Date(`${query.end}T23:59:59.999`)
 
   if (Number.isNaN(desde.getTime()) || Number.isNaN(hasta.getTime())) {
     throw invalid('Fechas invalidas')
