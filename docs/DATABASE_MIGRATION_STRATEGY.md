@@ -52,11 +52,57 @@ esquema y esa información no se recupera después.
 | 7     | `20260807110000_phase3_cash_shifts`           | Fase 3. `CashShift`, dos índices únicos parciales, `shiftId` en movimientos y arqueos, turno `legacy` para lo anterior.              |
 | 8     | `20260807120000_phase3_sale_payments`         | Fase 3. `Sale.total`, `SalePayment`, un pago por venta histórica, vocabulario único de medios de pago.                               |
 | 9     | `20260807130000_phase3_stock_ledger`          | Fase 3A. `StockMovement` con disparador de inmutabilidad, `Product.minimumStock`, un `INITIAL` por saldo existente.                  |
+| 10    | `20260807140000_phase3_fractional_quantities` | Fase 3B. **No aditiva.** Seis columnas de `INTEGER` a `numeric(14,3)`. Ver PHASE3_QUANTITY_MIGRATION.md.                             |
+| 11    | `20260807150000_phase3_product_units`         | Fase 3B. `saleUnit`, `purchaseUnit`, `unitsPerPurchaseUnit` y el disparador que congela la unidad de venta.                          |
+| 12    | `20260807160000_phase3_product_costs`         | Fase 3B. `Product.cost` y `ProductCostHistory`, inmutable por disparador.                                                            |
+| 13    | `20260807170000_phase3_product_barcodes`      | Fase 3B. `ProductBarcode`, índice único parcial del principal, migración de los códigos existentes.                                  |
+| 14    | `20260808100000_phase3_suppliers`             | Fase 3C. Datos del proveedor, `ProductSupplier` y migración de `Product.supplierId`.                                                 |
+| 15    | `20260808110000_phase3_purchase_orders`       | Fase 3C. `PurchaseOrder`, `PurchaseOrderItem`, la secuencia de numeración y el `CHECK` que impide la sobre-recepción.                |
+| 16    | `20260808120000_phase3_purchase_receipts`     | Fase 3C. `PurchaseReceipt` y sus líneas, inmutables por disparador.                                                                  |
+| 17    | `20260808130000_phase3_purchase_cost_links`   | Fase 3C. `ProductCostHistory.purchaseId` → `receiptId`, con su clave foránea.                                                        |
+| 18    | `20260808140000_phase3_remove_legacy_barcode` | Fase 3C. **Destructiva.** Borra `Product.barcode`, congelada desde la 3B.                                                            |
 
-**Solo la sexta es no aditiva.** Todas las demás agregan y no tocan lo que ya
-había, así que el código anterior sigue funcionando sobre el esquema nuevo. La
-del dinero exige desplegar el código PRIMERO y la migración después; está
-explicado en `PHASE3_MONEY_MIGRATION.md` y no se repite acá.
+**Dos no son aditivas, y las dos están señaladas.** Todas las demás agregan y
+no tocan lo que ya había, así que el código anterior sigue funcionando sobre el
+esquema nuevo. La del dinero exige desplegar el código PRIMERO y la migración
+después; está explicado en `PHASE3_MONEY_MIGRATION.md` y no se repite acá.
+
+### La única destructiva, y por qué se le permitió
+
+`20260808140000_phase3_remove_legacy_barcode` borra una columna. Es la única de
+las dieciocho que lo hace, y sólo pudo hacerlo porque:
+
+1. la columna **dejó de usarse una fase antes** (regla 2, abajo);
+2. la migración **aborta** si algún código de barras vive únicamente ahí;
+3. figura en la lista `DESTRUCTIVAS_PERMITIDAS` de
+   [`tests/migrations/chain.test.ts`](../tests/migrations/chain.test.ts), con
+   su motivo escrito.
+
+La lista es explícita a propósito: agregar una migración destructiva obliga a
+escribir por qué, que es exactamente la conversación que tiene que ocurrir
+antes de borrar una columna en un servidor con datos.
+
+> **La guardia tenía un agujero, y esta migración lo encontró.** La expresión
+> que buscaba sentencias peligrosas estaba anclada al principio de la línea
+> (`^\s*DROP\s+COLUMN`), y PostgreSQL sólo acepta
+> `ALTER TABLE "Product" DROP COLUMN "barcode"` — que empieza con `ALTER`. La
+> prueba dejaba pasar precisamente el caso para el que existía. Se corrigió en
+> la Fase 3C.
+
+### Columnas congeladas
+
+Una columna que dejó de usarse pero todavía no se borró está marcada
+`/// CONGELADA` en `schema.prisma`. Hoy son tres:
+
+| Columna              | Reemplazo                       | Muere en                      |
+| -------------------- | ------------------------------- | ----------------------------- |
+| `Product.supplierId` | `ProductSupplier`               | Fase 3D                       |
+| `Supplier.contact`   | `contactName`, `phone`, `email` | Fase 3D                       |
+| `Product.value`      | ninguno: nunca significó nada   | sin fecha; no molesta a nadie |
+
+`tests/unit/columnas-muertas.test.ts` comprueba que no se escriban, y también
+que **toda columna marcada `CONGELADA` figure en esa prueba**: congelar una y
+olvidarse de anotarla dejaría el agujero que la prueba existe para tapar.
 
 ### Archivadas
 

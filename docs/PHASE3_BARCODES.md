@@ -65,20 +65,40 @@ No se borra en esta migración porque la regla 2 de
 > escribirse, se despliega, se comprueba, y recién después se borra la columna.
 > Entre las dos cosas tiene que haber al menos un despliegue.
 
-La columna existe hoy por una sola razón: que la versión anterior de la
-aplicación pueda volver a desplegarse. **Se borra en la Fase 3C**, en una
-migración de una línea, cuando este despliegue lleve tiempo confirmado.
+La columna existió por una sola razón: que la versión anterior de la aplicación
+pudiera volver a desplegarse.
 
-Mientras tanto no hay dos fuentes de verdad, porque sólo una se lee. Lo que hay
-es una columna muerta con fecha de defunción, igual que `Product.value`.
+## Se borró en la Fase 3C
 
-### Consecuencia que conviene tener presente
+`20260808140000_phase3_remove_legacy_barcode`. Cumplido el plazo, la columna y
+su índice ya no existen.
 
-Un producto creado **después** de esta fase tiene `Product.barcode = NULL` y sus
-códigos en `ProductBarcode`. Si se revirtiera el despliegue, el código anterior
-mostraría ese producto sin código de barras. Es una degradación describible y
-temporal; la alternativa --mantener las dos columnas sincronizadas-- sería
-exactamente la doble fuente de verdad que no queremos.
+Antes de borrarla se comprobaron dos cosas, y las dos siguen comprobándose:
+
+| Qué                                               | Dónde                                             |
+| ------------------------------------------------- | ------------------------------------------------- |
+| Ningún código vive únicamente en la columna vieja | La migración **aborta** con los nombres afectados |
+| Nadie la referencia desde el código               | `tests/unit/columnas-muertas.test.ts`             |
+
+**La prueba estática encontró algo.** `scripts/insertData.ts` seguía haciendo
+`upsert` por `barcode` — un resto de 2025 que una revisión a ojo había dado por
+muerto. Es exactamente el tipo de referencia que sobrevive a una lectura
+rápida, y el motivo de que la prueba se escribiera antes que la migración.
+
+Desde que la columna no está en el esquema, el cliente de Prisma no la declara:
+cualquier `barcode:` dentro de un `Product` es un error de `tsc --noEmit`, que
+corre en cada validación. Ésa es la garantía, y es más fuerte que cualquier
+búsqueda de texto.
+
+### Qué se pierde si hubiera que revertir
+
+La reversión **reconstruye** los datos desde `ProductBarcode` — el código
+principal de cada producto vuelve a la columna — pero **los alternativos no
+vuelven**: nunca estuvieron ahí, no cabían, y una versión de la aplicación
+anterior a la 3B no sabría que existen. Un producto con tres códigos volvería a
+tener uno.
+
+El `ROLLBACK` está escrito, comentado, al final de la migración.
 
 ## El campo `barcode` de la API no cambió
 

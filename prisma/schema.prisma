@@ -23,6 +23,8 @@ model Branch {
   auditLogs      AuditLog[]
   cashShifts     CashShift[]
   stockMovements StockMovement[]
+  purchaseOrders PurchaseOrder[]
+  receipts       PurchaseReceipt[]
 
   /// Efectivo acumulado desde que se instalo el sistema.
   ///
@@ -137,6 +139,9 @@ model User {
   canceledSales    Sale[]                 @relation("SaleCanceledBy")
   stockChecks      StockCheck[]
   stockMovements   StockMovement[]
+  ordersCreated    PurchaseOrder[]        @relation("PurchaseOrderCreatedBy")
+  ordersCancelled  PurchaseOrder[]        @relation("PurchaseOrderCancelledBy")
+  receipts         PurchaseReceipt[]
   cashMovements    CashRegisterMovement[] // ← relación inversa agregada
   shiftsOpened     CashShift[]            @relation("ShiftOpenedBy")
   shiftsClosed     CashShift[]            @relation("ShiftClosedBy")
@@ -156,18 +161,19 @@ model Product {
   id   Int    @id @default(autoincrement())
   name String
 
-  /// CONGELADA desde la Fase 3B. No se lee y no se escribe.
-  ///
-  /// Los codigos de barras viven en `ProductBarcode`, que permite varios por
-  /// producto. Esta columna conserva su valor y su indice unico por una sola
-  /// razon: la regla 2 de docs/DATABASE_MIGRATION_STRATEGY.md exige al menos un
-  /// despliegue entre dejar de usar una columna y borrarla. Se borra en la Fase
-  /// 3C. Ver docs/PHASE3_BARCODES.md.
-  barcode String? @unique
-
   description String?
-  supplierId  Int?
-  categoryId  Int
+
+  /// CONGELADA desde la Fase 3C. No se lee y no se escribe.
+  ///
+  /// Ataba un producto a un unico proveedor para siempre. Los vinculos viven
+  /// en `ProductSupplier`, que admite varios y marca cual es el principal.
+  /// Sobrevive un despliegue por la regla 2 de
+  /// docs/DATABASE_MIGRATION_STRATEGY.md --el mismo camino que recorrio
+  /// `barcode` entre la 3B y esta fase, donde se borro-- y se elimina en la
+  /// Fase 3D. Ver docs/SUPPLIER_MODEL.md.
+  supplierId Int?
+
+  categoryId Int
 
   /// Precio de venta, POR UNIDAD DE VENTA. Dos decimales: es lo que se cobra.
   /// Un producto con `saleUnit = KG` a `9800.00` vale $9.800 el kilo.
@@ -238,14 +244,18 @@ model Product {
   /// docs/INVENTORY_LEDGER.md.
   minimumStock Decimal @default(0) @db.Decimal(14, 3)
 
-  stocks      BranchStock[]
-  saleItems   SaleItem[]
-  movements   StockMovement[]
-  barcodes    ProductBarcode[]
-  costHistory ProductCostHistory[]
-  category    Category             @relation(fields: [categoryId], references: [id])
-  supplier    Supplier?            @relation(fields: [supplierId], references: [id])
-  branch      Branch               @relation(fields: [branchId], references: [id])
+  stocks       BranchStock[]
+  saleItems    SaleItem[]
+  movements    StockMovement[]
+  barcodes     ProductBarcode[]
+  costHistory  ProductCostHistory[]
+  suppliers    ProductSupplier[]
+  orderItems   PurchaseOrderItem[]
+  receiptItems PurchaseReceiptItem[]
+  category     Category              @relation(fields: [categoryId], references: [id])
+  /// Relacion CONGELADA. Existe para sostener la columna, no se usa.
+  supplier     Supplier?             @relation(fields: [supplierId], references: [id])
+  branch       Branch                @relation(fields: [branchId], references: [id])
 
   /// La caja busca por sucursal y por estado en cada tecla.
   @@index([branchId, isActive])
@@ -302,13 +312,17 @@ model ProductCostHistory {
   previousCost Decimal? @db.Decimal(14, 4)
   newCost      Decimal  @db.Decimal(14, 4)
 
-  /// Preparados para la Fase 3C, cuando una recepcion de mercaderia pueda
-  /// cambiar el costo sola. En esta fase son siempre NULL: no hay compras.
+  /// De donde vino el cambio, cuando vino de una compra.
   ///
-  /// `purchaseId` no tiene clave foranea porque la tabla `Purchase` todavia no
-  /// existe. Se agrega en la 3C, cuando haya a que apuntar.
+  /// `receiptId` apunta a la RECEPCION y no a la orden, y la diferencia es
+  /// semantica: el costo cambia cuando la mercaderia LLEGA, no cuando se pide.
+  /// Una orden confirmada a $1.025 que nunca llega no movio nada. Ademas, una
+  /// orden puede tener dos recepciones con costos distintos, y apuntar a la
+  /// orden no permitiria distinguirlas.
+  ///
+  /// Los dos siguen siendo NULL en un cambio manual desde la ficha.
   supplierId Int?
-  purchaseId Int?
+  receiptId  Int?
 
   userId Int
 
@@ -317,12 +331,14 @@ model ProductCostHistory {
 
   createdAt DateTime @default(now())
 
-  product  Product   @relation(fields: [productId], references: [id])
-  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  user     User      @relation(fields: [userId], references: [id])
+  product  Product          @relation(fields: [productId], references: [id])
+  supplier Supplier?        @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  receipt  PurchaseReceipt? @relation(fields: [receiptId], references: [id])
+  user     User             @relation(fields: [userId], references: [id])
 
   @@index([productId, createdAt])
   @@index([userId])
+  @@index([receiptId])
 }
 
 /// Libro de movimientos de stock. Inmutable.
@@ -344,7 +360,7 @@ model StockMovement {
   productId Int
 
   /// INITIAL | SALE | SALE_CANCEL | MANUAL_ADJUSTMENT | LOSS | BREAKAGE |
-  /// INTERNAL_USE | PURCHASE_RECEIPT (reservado, Fase 3C).
+  /// INTERNAL_USE | PURCHASE_RECEIPT.
   ///
   /// La base comprueba el tipo Y el signo que le corresponde: una venta que
   /// aumente el stock no es un error que haya que buscar, es una fila que
@@ -369,9 +385,13 @@ model StockMovement {
   previousQuantity  Decimal @db.Decimal(14, 3)
   resultingQuantity Decimal @db.Decimal(14, 3)
 
-  /// De donde vino: 'Sale' + id de la venta, 'BranchStock' + id del ajuste.
-  /// No es clave foranea --apunta a tablas distintas segun el tipo-- y por eso
-  /// solo la escribe el servidor.
+  /// De donde vino: 'Sale' + id de la venta, 'BranchStock' + id del ajuste,
+  /// 'PurchaseReceipt' + id de la recepcion. No es clave foranea --apunta a
+  /// tablas distintas segun el tipo-- y por eso solo la escribe el servidor.
+  ///
+  /// Una entrada de mercaderia apunta a la RECEPCION y no a la orden: una
+  /// orden puede tener varias entregas, y con la orden como referencia no se
+  /// sabria cual de ellas movio estas unidades.
   referenceType String?
   referenceId   Int?
 
@@ -432,12 +452,289 @@ model StockCheck {
   @@unique([stockId, userId, date])
 }
 
+/// Quien nos vende la mercaderia.
+///
+/// Lo UNICO obligatorio es el nombre. Un almacen de barrio muchas veces conoce
+/// "Distribuidora Pepe" y un telefono, y eso tiene que ser un proveedor
+/// valido: exigir CUIT, correo o direccion obligaria a inventarlos, y un CUIT
+/// inventado es peor que ningun CUIT porque parece un dato.
+///
+/// Ver docs/SUPPLIER_MODEL.md.
 model Supplier {
-  id          Int                  @id @default(autoincrement())
-  name        String               @unique
-  contact     String?
+  id Int @id @default(autoincrement())
+
+  /// Como se lo nombra. Unico en todo el sistema: los proveedores no son de
+  /// una sucursal, son del negocio.
+  name String @unique
+
+  /// Razon social, cuando difiere del nombre de fantasia.
+  legalName String?
+
+  /// Identificacion fiscal. En Argentina, el CUIT.
+  ///
+  /// NO se llama `cuit` a proposito: el modelo no se ata a un pais. Sirve para
+  /// un CUIT, un RUT o un NIF sin obligar a migrar. La pantalla si dice
+  /// "CUIT", que es como se llama para quien la usa.
+  ///
+  /// No se valida el digito verificador: este sistema todavia no emite nada
+  /// fiscal, y rechazar datos que no se usan para nada solo estorba.
+  taxId String?
+
+  phone       String?
+  /// Validado SI viene. Vacio es una respuesta valida.
+  email       String?
+  address     String?
+  contactName String?
+  notes       String?
+
+  /// CONGELADA desde la Fase 3C. No se lee y no se escribe.
+  ///
+  /// Era un texto libre donde convivian un nombre, un telefono o las dos
+  /// cosas. Su contenido se copio tal cual a `contactName` --sin interpretarlo,
+  /// porque no hay forma de saber cual de las dos era-- y la columna sobrevive
+  /// un despliegue por la regla 2 de docs/DATABASE_MIGRATION_STRATEGY.md. Se
+  /// borra en la Fase 3D.
+  contact String?
+
+  /// Un proveedor con actividad NO se borra: se desactiva. Uno desactivado no
+  /// se puede elegir para una compra nueva, pero sigue nombrado en las viejas.
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Relacion CONGELADA: la sostiene `Product.supplierId`, que ya no se usa.
   products    Product[]
   costChanges ProductCostHistory[]
+  catalogo    ProductSupplier[]
+  orders      PurchaseOrder[]
+
+  /// El listado filtra por activo y ordena por nombre.
+  @@index([isActive, name])
+}
+
+/// Que proveedores venden este producto, y a cual se le compra normalmente.
+///
+/// Reemplaza a `Product.supplierId`, que ataba un producto a un unico
+/// proveedor para siempre. La misma gaseosa se le compra a quien la tenga esa
+/// semana, y el sistema tiene que poder decirlo.
+///
+/// Dos reglas, las dos en la base: un proveedor aparece una vez por producto
+/// (unico compuesto) y un producto tiene UN proveedor principal (indice unico
+/// parcial sobre `isPreferred`, el mismo mecanismo que el codigo de barras
+/// principal).
+model ProductSupplier {
+  id         Int @id @default(autoincrement())
+  productId  Int
+  supplierId Int
+
+  /// El codigo con el que EL PROVEEDOR llama a este producto, que casi nunca
+  /// es el nuestro. Es lo que figura en su remito, y sin el cotejar una
+  /// factura es trabajo manual.
+  supplierCode String?
+
+  /// Ultimo costo pactado con ESTE proveedor, por UNIDAD DE COMPRA.
+  ///
+  /// No es historial: es un dato de referencia para armar la proxima orden, y
+  /// por eso se pisa en cada recepcion. El historial completo, inmutable y con
+  /// su recepcion asociada, vive en `ProductCostHistory`.
+  lastCost Decimal? @db.Decimal(14, 4)
+
+  /// El proveedor principal. Uno solo por producto.
+  isPreferred Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// CASCADE, igual que el codigo de barras: el vinculo es un atributo del
+  /// producto, no historia. Sin el producto no significa nada.
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// RESTRICT: un proveedor con productos asociados no se borra, se desactiva.
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+
+  @@unique([productId, supplierId])
+  @@index([supplierId])
+}
+
+/// Orden de compra: lo que se le PIDIO a un proveedor.
+///
+/// Lo que efectivamente llego vive en `PurchaseReceipt`, y son dos cosas
+/// distintas a proposito: el proveedor manda 3 cajas el lunes y 2 el miercoles,
+/// o manda 4 y avisa que el resto no lo consigue. Con las recepciones adentro
+/// de la orden, el sistema podria decir cuanto llego pero no cuando llego cada
+/// parte, ni a que precio, ni quien la recibio.
+///
+/// Ver docs/PURCHASE_FLOW.md.
+model PurchaseOrder {
+  id Int @id @default(autoincrement())
+
+  /// "OC-00000042". Lo genera el SERVIDOR con una secuencia de PostgreSQL.
+  ///
+  /// No con `count() + 1`: dos altas simultaneas leerian el mismo numero y el
+  /// indice unico rechazaria a una de las dos. `nextval()` es atomico y no
+  /// bloquea. Deja huecos --una orden descartada se lleva su numero-- y esta
+  /// bien: es una etiqueta para decir "la 42" por telefono, no un contador.
+  number String @unique
+
+  branchId   Int
+  supplierId Int
+
+  /// DRAFT | ORDERED | PARTIALLY_RECEIVED | RECEIVED | CANCELLED.
+  ///
+  /// Lo decide el SERVIDOR, siempre. Despues de cada recepcion se recalcula
+  /// comparando pedido contra recibido linea por linea; el navegador no lo
+  /// manda nunca. La base comprueba el valor con un CHECK.
+  status String @default("DRAFT")
+
+  createdById Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  /// Cuando se confirmo. Null mientras es borrador: un borrador no se pidio.
+  orderedAt DateTime?
+
+  cancelledAt   DateTime?
+  cancelledById Int?
+  cancelReason  String?
+
+  notes String?
+
+  /// Suma de los subtotales de las lineas. LO CALCULA EL SERVIDOR.
+  ///
+  /// No se acepta del cliente, igual que el total de una venta desde la Fase 0
+  /// y por el mismo motivo: lo que llega por la red lo escribe cualquiera.
+  expectedTotal Decimal @default(0) @db.Decimal(14, 2)
+
+  branch      Branch   @relation(fields: [branchId], references: [id])
+  supplier    Supplier @relation(fields: [supplierId], references: [id])
+  createdBy   User     @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
+  cancelledBy User?    @relation("PurchaseOrderCancelledBy", fields: [cancelledById], references: [id])
+
+  items    PurchaseOrderItem[]
+  receipts PurchaseReceipt[]
+
+  /// El listado: por sucursal, filtrando por estado, mas reciente primero.
+  @@index([branchId, status, createdAt])
+  /// "Que le compramos a este proveedor".
+  @@index([supplierId, createdAt])
+  @@index([createdById])
+}
+
+model PurchaseOrderItem {
+  id              Int @id @default(autoincrement())
+  purchaseOrderId Int
+  productId       Int
+
+  /// EN UNIDAD DE COMPRA. "5 cajas" son `5.000` con `purchaseUnit = BOX`.
+  orderedQuantity Decimal @db.Decimal(14, 3)
+
+  /// Cuanto se recibio ya, en la misma unidad. La base impide que supere lo
+  /// pedido con un CHECK, y el servicio suma con un UPDATE condicional para
+  /// que dos recepciones simultaneas no puedan pasarse entre las dos.
+  receivedQuantity Decimal @default(0) @db.Decimal(14, 3)
+
+  /// CONGELADAS al crear la linea, copiadas del producto.
+  ///
+  /// No se leen de `Product` al recibir, y esa es la unica forma de que la
+  /// conversion sea la pactada: si alguien cambia el producto de "caja de 8" a
+  /// "caja de 12" entre el pedido y la entrega, las 5 cajas que se pidieron
+  /// siguen siendo 40 unidades. Mismo principio que `SaleItem.price`.
+  purchaseUnit         String
+  unitsPerPurchaseUnit Decimal @db.Decimal(14, 3)
+
+  /// Costo por UNIDAD DE COMPRA. Una caja de 8 a $8.800 guarda `8800`.
+  ///
+  /// El costo que llega al producto es este dividido por
+  /// `unitsPerPurchaseUnit`. Guardar $8.800 como costo unitario del producto
+  /// daria un margen negativo del 700 % en una botella de $1.500.
+  unitCost Decimal @db.Decimal(14, 4)
+
+  /// orderedQuantity x unitCost. Lo calcula el servidor.
+  subtotal Decimal @db.Decimal(14, 2)
+
+  order   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product Product       @relation(fields: [productId], references: [id])
+
+  items PurchaseReceiptItem[]
+
+  /// Un producto no puede estar dos veces en la misma orden: serian dos
+  /// pendientes del mismo articulo y no habria forma de saber contra cual
+  /// imputar lo que llega.
+  @@unique([purchaseOrderId, productId])
+  @@index([productId])
+}
+
+/// Una entrega. Lo que efectivamente LLEGO, cuando y a que precio.
+///
+/// INMUTABLE, con disparador en la base. Movio stock y cambio un costo;
+/// editarla dejaria el libro de inventario contando una historia y la
+/// recepcion contando otra. Un error se corrige con un movimiento nuevo.
+///
+/// Ver docs/PURCHASE_RECEIVING.md.
+model PurchaseReceipt {
+  id              Int @id @default(autoincrement())
+  purchaseOrderId Int
+  branchId        Int
+
+  receivedById Int
+  receivedAt   DateTime @default(now())
+
+  notes String?
+
+  order      PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  branch     Branch        @relation(fields: [branchId], references: [id])
+  receivedBy User          @relation(fields: [receivedById], references: [id])
+
+  items       PurchaseReceiptItem[]
+  costChanges ProductCostHistory[]
+
+  /// Las recepciones de una orden, en orden. Es lo que muestra el detalle.
+  @@index([purchaseOrderId, receivedAt])
+  @@index([branchId, receivedAt])
+  @@index([receivedById])
+}
+
+model PurchaseReceiptItem {
+  id                  Int @id @default(autoincrement())
+  purchaseReceiptId   Int
+  purchaseOrderItemId Int
+  productId           Int
+
+  /// EN UNIDAD DE COMPRA. "3 cajas".
+  receivedQuantity Decimal @db.Decimal(14, 3)
+
+  /// Copiadas de la linea de la orden, que a su vez las congelo del producto.
+  purchaseUnit         String
+  unitsPerPurchaseUnit Decimal @db.Decimal(14, 3)
+
+  /// Costo por unidad de compra segun LA FACTURA. Puede diferir del pedido.
+  unitCost Decimal @db.Decimal(14, 4)
+
+  /// Costo por unidad de compra segun LA ORDEN.
+  ///
+  /// Se guarda aunque sea redundante --esta en la linea de la orden-- porque
+  /// la orden puede tener dos recepciones con costos distintos, y sin esto no
+  /// se podria decir cual de las dos vino con diferencia.
+  expectedUnitCost Decimal @db.Decimal(14, 4)
+
+  /// EN UNIDAD DE VENTA: receivedQuantity x unitsPerPurchaseUnit.
+  /// 3 cajas de 8 son `24.000` unidades. Es lo que entra al stock.
+  stockQuantity Decimal @db.Decimal(14, 3)
+
+  /// unitCost / unitsPerPurchaseUnit. Es lo que queda en `Product.cost`.
+  ///
+  /// Se guarda en vez de derivarse al leer porque derivarlo obligaria a
+  /// conocer el `unitsPerPurchaseUnit` del dia de la recepcion.
+  stockUnitCost Decimal @db.Decimal(14, 4)
+
+  receipt   PurchaseReceipt   @relation(fields: [purchaseReceiptId], references: [id])
+  orderItem PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id])
+  product   Product           @relation(fields: [productId], references: [id])
+
+  @@index([purchaseReceiptId])
+  @@index([purchaseOrderItemId])
+  @@index([productId])
 }
 
 model Sale {
