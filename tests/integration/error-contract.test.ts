@@ -304,8 +304,25 @@ describe('Sesiones revocadas y usuarios dados de baja', () => {
 
   it('un token con firma invalida se rechaza', async () => {
     const valido = await sessionCookie(fx.cajero)
-    // Se altera el ultimo caracter de la firma.
-    const alterado = valido.slice(0, -1) + (valido.endsWith('A') ? 'B' : 'A')
+
+    // Se altera el PRIMER caracter de la firma, no el ultimo.
+    //
+    // Y esa diferencia hacia la prueba INTERMITENTE. Una firma HMAC-SHA256 son
+    // 32 bytes, que en base64url ocupan 43 caracteres: 258 bits para 256, o
+    // sea DOS BITS DE RELLENO en el ultimo caracter. Cambiar 'A' por 'B'
+    // --que difieren justo en el bit mas bajo-- da una cadena distinta que
+    // decodifica a los MISMOS BYTES, asi que el token seguia siendo valido y
+    // la prueba fallaba cada tantas corridas, segun con que caracter terminara
+    // la firma de ese momento.
+    const [, token = ''] = valido.split('=')
+    const partes = token.split('.')
+    const firma = partes[2] ?? ''
+    expect(firma.length, 'el token no tiene la forma esperada').toBeGreaterThan(10)
+
+    // El primer caracter aporta seis bits significativos: cambiarlo cambia el
+    // primer byte de la firma, siempre.
+    const otra = (firma[0] === 'a' ? 'b' : 'a') + firma.slice(1)
+    const alterado = rawCookie([partes[0], partes[1], otra].join('.'))
 
     const res = await invocar('@/app/api/products/route', 'GET', '/api/products', {
       cookie: alterado,

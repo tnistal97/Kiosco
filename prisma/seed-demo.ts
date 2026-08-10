@@ -53,9 +53,11 @@ function haceDias(d: number): Date {
 async function moverStock(m: {
   branchId: number
   productId: number
-  type: 'SALE' | 'SALE_CANCEL'
+  type: 'SALE' | 'SALE_CANCEL' | 'PURCHASE_RECEIPT'
   delta: number
   userId: number
+  /** A que apunta: una venta o una RECEPCION. Nunca a la orden de compra. */
+  referenceType?: 'Sale' | 'PurchaseReceipt'
   referenceId: number
   reason?: string
   fecha: Date
@@ -91,7 +93,7 @@ async function moverStock(m: {
       quantity: m.delta,
       previousQuantity: antes,
       resultingQuantity: despues,
-      referenceType: 'Sale',
+      referenceType: m.referenceType ?? 'Sale',
       referenceId: m.referenceId,
       userId: m.userId,
       reason: m.reason ?? null,
@@ -422,6 +424,7 @@ async function main() {
   // como saldo inicial y despues descontaba las ventas, y por eso la mermelada
   // --declarada en 0 y con una venta de 1-- terminaba en -1.
   const vendidasPorProducto = new Map<number, number>()
+
   for (const v of VENTAS) {
     if (v.anulada) continue
     for (const [indice, cantidad] of v.lineas) {
@@ -431,7 +434,7 @@ async function main() {
 
   const adminId = usuarios.get('admin') ?? 0
 
-  const productos: Array<{ id: number; precio: number }> = []
+  const productos: Array<{ id: number; precio: number; costo: number }> = []
   for (const p of PRODUCTOS) {
     const creado = await prisma.product.create({
       data: {
@@ -494,7 +497,7 @@ async function main() {
       })
     }
 
-    productos.push({ id: creado.id, precio: p.precio })
+    productos.push({ id: creado.id, precio: p.precio, costo: p.costo })
   }
 
   let caja = 0
@@ -526,13 +529,233 @@ async function main() {
     },
   })
 
+  // -------------------------------------------------------------------------
+  // El circuito de compras, entero
+  //
+  // Una orden con dos lineas, recibida en DOS entregas: primero una parte, y
+  // dias despues el resto. Es el caso que da sentido a que la recepcion sea
+  // una entidad aparte de la orden, y el que hay que poder mirar en pantalla.
+  //
+  // Todo respeta las mismas invariantes que la aplicacion: el numero sale de
+  // la secuencia, el total lo calcula esta funcion linea por linea, el stock
+  // entra por el libro y el costo deja historial apuntando a la RECEPCION.
+  // -------------------------------------------------------------------------
+  const compradorId = usuarios.get('compras') ?? adminId
+  const proveedorCompra = proveedores.get('Distribuidora del Norte') ?? 0
+
+  /** El siguiente numero de la secuencia, igual que el servicio real. */
+  async function siguienteNumeroDeOrden(): Promise<string> {
+    const filas = await prisma.$queryRaw<Array<{ n: bigint }>>`
+      SELECT nextval('"PurchaseOrder_numero_seq"') AS n
+    `
+    return `OC-${String(filas[0]?.n ?? 1).padStart(8, '0')}`
+  }
+
+  // Dos productos del catalogo, con su costo actual como costo pedido.
+  const paraComprar = [0, 5]
+    .map((i) => productos[i])
+    .filter((x): x is { id: number; precio: number; costo: number } => x !== undefined)
+
+  if (paraComprar.length === 2) {
+    const lineasCompra = paraComprar.map((prod, i) => ({
+      productId: prod.id,
+      // Se piden 12 y 20 unidades. Compra por unidad: el factor es 1.
+      orderedQuantity: i === 0 ? 12 : 20,
+      unitCost: prod.costo,
+    }))
+    const totalOrden = lineasCompra.reduce(
+      (acc, l) => acc + Math.round(l.orderedQuantity * l.unitCost * 100) / 100,
+      0,
+    )
+
+    const orden = await prisma.purchaseOrder.create({
+      data: {
+        number: await siguienteNumeroDeOrden(),
+        branchId: sucursal.id,
+        supplierId: proveedorCompra,
+        createdById: compradorId,
+        status: 'PARTIALLY_RECEIVED',
+        createdAt: haceDias(6),
+        orderedAt: haceDias(6),
+        notes: 'Reposicion semanal.',
+        expectedTotal: totalOrden,
+        items: {
+          create: lineasCompra.map((l) => ({
+            productId: l.productId,
+            orderedQuantity: l.orderedQuantity,
+            // La primera linea llego entera; la segunda, a medias.
+            receivedQuantity: 0,
+            purchaseUnit: 'UNIT',
+            unitsPerPurchaseUnit: 1,
+            unitCost: l.unitCost,
+            subtotal: Math.round(l.orderedQuantity * l.unitCost * 100) / 100,
+          })),
+        },
+      },
+      include: { items: { orderBy: { id: 'asc' } } },
+    })
+
+    /**
+     * Una entrega: crea la recepcion, mueve el stock y actualiza el costo.
+     *
+     * Hace exactamente lo mismo que `recibirMercaderia`, en el mismo orden y
+     * con las mismas reglas. Si el seed se apartara, la reconciliacion lo
+     * marcaria --que es la unica forma de que un seed sirva para probar algo--.
+     */
+    async function recibir(
+      entregas: Array<{ itemId: number; productId: number; cantidad: number; costo: number }>,
+      cuando: Date,
+      nota: string,
+    ): Promise<void> {
+      const recepcion = await prisma.purchaseReceipt.create({
+        data: {
+          purchaseOrderId: orden.id,
+          branchId: sucursal.id,
+          receivedById: compradorId,
+          receivedAt: cuando,
+          notes: nota,
+        },
+      })
+
+      for (const e of entregas) {
+        await prisma.purchaseReceiptItem.create({
+          data: {
+            purchaseReceiptId: recepcion.id,
+            purchaseOrderItemId: e.itemId,
+            productId: e.productId,
+            receivedQuantity: e.cantidad,
+            purchaseUnit: 'UNIT',
+            unitsPerPurchaseUnit: 1,
+            unitCost: e.costo,
+            expectedUnitCost: e.costo,
+            stockQuantity: e.cantidad,
+            stockUnitCost: e.costo,
+          },
+        })
+
+        await prisma.purchaseOrderItem.update({
+          where: { id: e.itemId },
+          data: { receivedQuantity: { increment: e.cantidad } },
+        })
+
+        await moverStock({
+          branchId: sucursal.id,
+          productId: e.productId,
+          type: 'PURCHASE_RECEIPT',
+          delta: e.cantidad,
+          userId: compradorId,
+          referenceType: 'PurchaseReceipt',
+          referenceId: recepcion.id,
+          reason: `Recepcion de ${orden.number}`,
+          fecha: cuando,
+        })
+
+        // El costo, solo si cambio. Politica: ultima recepcion recibida.
+        const actual = await prisma.product.findUniqueOrThrow({
+          where: { id: e.productId },
+          select: { cost: true },
+        })
+        const nuevo = new Prisma.Decimal(e.costo)
+        if (actual.cost === null || !actual.cost.equals(nuevo)) {
+          await prisma.product.update({ where: { id: e.productId }, data: { cost: nuevo } })
+          await prisma.productCostHistory.create({
+            data: {
+              productId: e.productId,
+              previousCost: actual.cost,
+              newCost: nuevo,
+              supplierId: proveedorCompra,
+              receiptId: recepcion.id,
+              userId: compradorId,
+              reason: `Recepcion de ${orden.number}`,
+              createdAt: cuando,
+            },
+          })
+        }
+      }
+    }
+
+    const linea1 = orden.items[0]
+    const linea2 = orden.items[1]
+
+    if (linea1 && linea2) {
+      // Lunes: llega la primera linea entera y la mitad de la segunda.
+      const primero = paraComprar[0]
+      const segundo = paraComprar[1]
+      if (!primero || !segundo) throw new Error('faltan productos para la compra de demostracion')
+
+      await recibir(
+        [
+          { itemId: linea1.id, productId: linea1.productId, cantidad: 12, costo: primero.costo },
+          { itemId: linea2.id, productId: linea2.productId, cantidad: 10, costo: segundo.costo },
+        ],
+        haceDias(4),
+        'Vino el camion sin la mitad de la harina.',
+      )
+
+      // Jueves: llega el resto, y MAS CARO. La diferencia queda registrada y
+      // el costo del producto pasa a ser el nuevo.
+      const costoNuevo = Math.round(segundo.costo * 1.08 * 100) / 100
+      await recibir(
+        [{ itemId: linea2.id, productId: linea2.productId, cantidad: 10, costo: costoNuevo }],
+        haceDias(1),
+        'Completan lo que faltaba. Aumento del 8%.',
+      )
+
+      // El estado se DERIVA de lo recibido, igual que en el servicio.
+      await prisma.purchaseOrder.update({
+        where: { id: orden.id },
+        data: { status: 'RECEIVED' },
+      })
+    }
+  }
+
+  // Y una orden confirmada que todavia no llego: el panel tiene que mostrar
+  // "compras esperando mercaderia" con algo adentro.
+  const otroProducto = productos[2]
+  if (otroProducto) {
+    await prisma.purchaseOrder.create({
+      data: {
+        number: await siguienteNumeroDeOrden(),
+        branchId: sucursal.id,
+        supplierId: proveedores.get('Mayorista Central') ?? 0,
+        createdById: compradorId,
+        status: 'ORDERED',
+        createdAt: haceDias(2),
+        orderedAt: haceDias(2),
+        notes: 'Entrega prometida para el viernes.',
+        expectedTotal: Math.round(30 * otroProducto.costo * 100) / 100,
+        items: {
+          create: [
+            {
+              productId: otroProducto.id,
+              orderedQuantity: 30,
+              receivedQuantity: 0,
+              purchaseUnit: 'UNIT',
+              unitsPerPurchaseUnit: 1,
+              unitCost: otroProducto.costo,
+              subtotal: Math.round(30 * otroProducto.costo * 100) / 100,
+            },
+          ],
+        },
+      },
+    })
+  }
+
   for (const v of VENTAS) {
     const fecha = haceHoras(v.horas)
     const userId = usuarios.get(v.cajero) ?? adminId
     const lineas = v.lineas.map(([indice, cantidad]) => {
       const prod = productos[indice]
       if (!prod) throw new Error(`indice de producto invalido: ${indice}`)
-      return { productId: prod.id, quantity: cantidad, price: prod.precio }
+      // `costAtSale` se congela igual que el precio: sin el, la rentabilidad
+      // de estas ventas se recalcularia con el costo de hoy y cambiaria sola
+      // cada vez que llega mercaderia. Ver docs/REPORTING_MODEL.md.
+      return {
+        productId: prod.id,
+        quantity: cantidad,
+        price: prod.precio,
+        costAtSale: prod.costo,
+      }
     })
     const total = lineas.reduce((acc, l) => acc + l.price * l.quantity, 0)
 
@@ -680,8 +903,65 @@ async function main() {
   // al turno de una sola vez. En la aplicacion real el `shiftId` lo pone el
   // servicio en el momento de crear cada uno.
   await prisma.cashRegisterMovement.updateMany({
-    where: { branchId: sucursal.id },
+    where: { branchId: sucursal.id, shiftId: null },
     data: { shiftId: turno.id },
+  })
+
+  // -------------------------------------------------------------------------
+  // Un turno CERRADO, con su diferencia
+  //
+  // El turno abierto de arriba muestra la operacion del dia; este muestra como
+  // queda un cierre. `expectedAmount` NO se inventa: se deriva de sus propios
+  // movimientos, que es la invariante que comprueba `npm run integrity:check`.
+  // -------------------------------------------------------------------------
+  const APERTURA_CERRADO = 18_000
+  const VENTA_CERRADO = 34_500
+  const RETIRO_CERRADO = -12_000
+  const esperadoCerrado = APERTURA_CERRADO + VENTA_CERRADO + RETIRO_CERRADO
+  const CONTADO_CERRADO = esperadoCerrado - 850 // falto plata: pasa, y hay que verlo
+
+  const turnoCerrado = await prisma.cashShift.create({
+    data: {
+      branchId: sucursal.id,
+      openedById: usuarios.get('cajero') ?? adminId,
+      closedById: usuarios.get('encargado') ?? adminId,
+      openedAt: haceDias(5),
+      closedAt: haceDias(5 - 1),
+      openingAmount: APERTURA_CERRADO,
+      expectedAmount: esperadoCerrado,
+      countedAmount: CONTADO_CERRADO,
+      difference: CONTADO_CERRADO - esperadoCerrado,
+      status: 'closed',
+      openingNotes: 'Turno de la manana.',
+      closingNotes: 'Faltan $850. Se revisa el vuelto de la manana.',
+    },
+  })
+
+  // Los dos movimientos que sostienen ese esperado. Sin ellos la derivacion no
+  // daria, y la reconciliacion lo diria.
+  await prisma.cashRegisterMovement.createMany({
+    data: [
+      {
+        branchId: sucursal.id,
+        userId: usuarios.get('cajero') ?? adminId,
+        amount: VENTA_CERRADO,
+        paymentMethod: 'CASH',
+        description: 'Ventas del turno de la manana',
+        type: 'ingreso',
+        date: haceDias(5),
+        shiftId: turnoCerrado.id,
+      },
+      {
+        branchId: sucursal.id,
+        userId: usuarios.get('encargado') ?? adminId,
+        amount: RETIRO_CERRADO,
+        paymentMethod: 'CASH',
+        description: 'Retiro para deposito',
+        type: 'retiro',
+        date: haceDias(5),
+        shiftId: turnoCerrado.id,
+      },
+    ],
   })
 
   // Arqueos: uno cuadrado y uno con diferencia.

@@ -153,7 +153,16 @@ describe('Navegacion filtrada por permiso', () => {
     const titulos = grupos.map((g) => g.title)
     // "Catálogo" pasó a llamarse "Inventario" en la Fase 3A: el grupo dejó de
     // ser una lista de productos y pasó a incluir el libro de movimientos.
-    expect(titulos).toEqual([undefined, 'Operación', 'Inventario', 'Administración'])
+    // "Control" --reportes y auditoría-- se separó de "Administración" en la
+    // 3D: mirar el negocio y administrar el sistema son dos cosas.
+    expect(titulos).toEqual([
+      undefined,
+      'Operación',
+      'Inventario',
+      'Compras',
+      'Control',
+      'Administración',
+    ])
   })
 
   it('el cajero no ve el libro de movimientos', () => {

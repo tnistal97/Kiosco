@@ -166,6 +166,18 @@ test.describe('accesibilidad automatizada', () => {
     expect(detalle(violations)).toBe('sin faltas')
   })
 
+  test('/reportes no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/reportes')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+    // Se espera a que las seis secciones esten calculadas: analizar la
+    // pantalla mientras carga mide un esqueleto, no el reporte.
+    await page.getByRole('heading', { name: 'Rentabilidad' }).waitFor({ timeout: 20_000 })
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
   test('/proveedores no tiene faltas', async ({ page }) => {
     await entrar(page, 'duenio')
     await page.goto('/proveedores')

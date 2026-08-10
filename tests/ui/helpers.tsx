@@ -5,7 +5,16 @@
 import { render, type RenderOptions } from '@testing-library/react'
 import type { ReactElement, ReactNode } from 'react'
 import { SessionProvider, type SesionCliente } from '@/components/shell/SessionProvider'
+import { permissionsForRole } from '@/server/authz/permissions'
 
+/**
+ * El administrador, con los permisos QUE DE VERDAD TIENE.
+ *
+ * Se derivan del catalogo en vez de escribirse a mano: una lista literal se
+ * queda vieja en silencio, y la prueba "ve todas las secciones" pasa a
+ * comprobar que ve las secciones de hace tres fases. Paso exactamente eso: la
+ * lista no tenia ni compras ni proveedores.
+ */
 export const SESION_ADMIN: SesionCliente = {
   userId: 1,
   name: 'Ana Duarte',
@@ -13,28 +22,8 @@ export const SESION_ADMIN: SesionCliente = {
   role: 'admin',
   branchId: 1,
   branchName: 'Almacen Centro',
-  permissions: [
-    'sales.create',
-    'sales.view',
-    'sales.cancel',
-    'products.view',
-    'products.create',
-    'products.update',
-    'products.price.update',
-    'products.cost.view',
-    'products.cost.update',
-    'products.delete',
-    'stock.view',
-    'stock.adjust',
-    'cash.view',
-    'cash.movement.create',
-    'cash.count.create',
-    'reports.view',
-    'audit.view',
-    'users.view',
-    'users.manage',
-    'branches.view',
-  ],
+  timeZone: 'America/Argentina/Buenos_Aires',
+  permissions: [...permissionsForRole('admin')],
 }
 
 /** Tal como esta en el catalogo: sin `products.update`. */
@@ -44,6 +33,7 @@ export const SESION_REPOSITOR: SesionCliente = {
   username: 'repositor',
   role: 'repositor',
   branchId: 1,
+  timeZone: 'America/Argentina/Buenos_Aires',
   branchName: 'Almacen Centro',
   permissions: ['products.view', 'stock.view', 'stock.adjust'],
 }
@@ -61,6 +51,7 @@ export const SESION_COMPRAS: SesionCliente = {
   username: 'compras',
   role: 'compras',
   branchId: 1,
+  timeZone: 'America/Argentina/Buenos_Aires',
   branchName: 'Almacen Centro',
   permissions: [
     'products.view',
@@ -81,6 +72,7 @@ export const SESION_CAJERO: SesionCliente = {
   username: 'cajero',
   role: 'cajero',
   branchId: 1,
+  timeZone: 'America/Argentina/Buenos_Aires',
   branchName: 'Almacen Centro',
   permissions: [
     'sales.create',

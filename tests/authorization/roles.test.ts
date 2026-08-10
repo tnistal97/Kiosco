@@ -162,14 +162,57 @@ const CASOS: Caso[] = [
       }),
   },
   {
-    nombre: 'ver el reporte de ventas',
-    permiso: 'reports.view',
+    nombre: 'ver el historial de ventas',
+    // `sales.view` y no el permiso de reportes: la pantalla de ventas es el
+    // historial, y hasta la Fase 3D el cajero veia el enlace del menu y
+    // recibia un 403 al entrar. La RECAUDACION del rango si sigue protegida
+    // por `reports.sales.view`, y eso lo comprueba tests/integration.
+    permiso: 'sales.view',
     ejecutar: (u) => {
       const hoy = hoyLocal()
       return invocar(
         '@/app/api/admin/sales/route',
         'GET',
         `/api/admin/sales?start=${hoy}&end=${hoy}`,
+        u,
+      )
+    },
+  },
+  {
+    nombre: 'ver el reporte de rentabilidad',
+    permiso: 'reports.costs.view',
+    ejecutar: (u) => {
+      const hoy = hoyLocal()
+      return invocar(
+        '@/app/api/reports/rentabilidad/route',
+        'GET',
+        `/api/reports/rentabilidad?desde=${hoy}&hasta=${hoy}`,
+        u,
+      )
+    },
+  },
+  {
+    nombre: 'ver el reporte de caja',
+    permiso: 'reports.cash.view',
+    ejecutar: (u) => {
+      const hoy = hoyLocal()
+      return invocar(
+        '@/app/api/reports/caja/route',
+        'GET',
+        `/api/reports/caja?desde=${hoy}&hasta=${hoy}`,
+        u,
+      )
+    },
+  },
+  {
+    nombre: 'ver el reporte de compras',
+    permiso: 'reports.purchases.view',
+    ejecutar: (u) => {
+      const hoy = hoyLocal()
+      return invocar(
+        '@/app/api/reports/compras/route',
+        'GET',
+        `/api/reports/compras?desde=${hoy}&hasta=${hoy}`,
         u,
       )
     },
@@ -209,7 +252,12 @@ describe('El auditor no puede escribir nada', () => {
         'cash.view',
         'audit.view',
         'users.view',
-        'reports.view',
+        'sales.view',
+        'reports.sales.view',
+        'reports.costs.view',
+        'reports.inventory.view',
+        'reports.cash.view',
+        'reports.purchases.view',
       ].includes(c.permiso),
   )
 

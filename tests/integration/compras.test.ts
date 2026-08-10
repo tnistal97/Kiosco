@@ -203,11 +203,12 @@ describe('Proveedores', () => {
     expect(await prisma.supplier.findUnique({ where: { id: creado.body.id } })).toBeNull()
   })
 
-  it('la columna congelada Product.supplierId no se escribe', async () => {
-    // Es la unica forma exacta de comprobarlo: `tsc` no protege una columna
-    // que sigue existiendo --`supplierId: 3` compila perfecto-- y una busqueda
-    // de texto no distingue este uso de los tres legitimos que tiene el mismo
-    // nombre. Ver tests/unit/columnas-muertas.test.ts.
+  it('el proveedor de un producto vive en ProductSupplier y la API no cambio', async () => {
+    // El campo `supplierId` que recibe la API NO es la columna de `Product`:
+    // esa se borro en la Fase 3D. Es la entrada por la que se marca el
+    // proveedor PRINCIPAL, que se guarda en `ProductSupplier`. Que la forma de
+    // la API no haya cambiado es media prueba; la otra media es que el vinculo
+    // aparezca donde corresponde.
     const { POST } = await import('@/app/api/products/route')
     const creado = await call<{ id: number; supplier: { id: number } | null }>(
       POST,
@@ -229,13 +230,11 @@ describe('Proveedores', () => {
     // La API lo devuelve: el campo `supplier` no cambio de forma.
     expect(creado.body.supplier?.id).toBe(fx.proveedor.id)
 
-    const fila = await prisma.product.findUniqueOrThrow({
-      where: { id: creado.body.id },
-      select: { supplierId: true },
-    })
-    expect(fila.supplierId, 'la columna congelada volvio a escribirse').toBeNull()
-
-    // Y el vinculo esta donde tiene que estar.
+    // La columna ya no existe: la Fase 3D la borro. Que no vuelva lo garantiza
+    // ahora `tsc` --el cliente de Prisma no la declara-- mas la prueba de
+    // estructura de tests/migrations/chain.test.ts.
+    //
+    // El vinculo esta donde tiene que estar.
     const vinculo = await prisma.productSupplier.findFirstOrThrow({
       where: { productId: creado.body.id },
     })
@@ -508,7 +507,7 @@ describe('Recepcion de mercaderia', () => {
     })
     expect(historial).toHaveLength(1)
     expect(historial[0]?.previousCost, 'el producto no tenia costo cargado').toBeNull()
-    expect(historial[0]?.newCost.toFixed(4)).toBe('1100.0000')
+    expect(historial[0]?.newCost?.toFixed(4)).toBe('1100.0000')
     expect(historial[0]?.supplierId).toBe(fx.proveedor.id)
     // A la recepcion, no a la orden: el costo cambia cuando la mercaderia
     // llega, y una orden puede tener dos entregas con costos distintos.

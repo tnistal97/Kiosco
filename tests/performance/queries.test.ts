@@ -590,3 +590,91 @@ describe('Los indices de compras se usan', () => {
     expect(nombres).toContain('ProductSupplier_principal_unico')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Fase 3D: reportes y reconciliacion
+// ---------------------------------------------------------------------------
+
+describe('Los reportes agregan en la base, no en JavaScript', () => {
+  it('la respuesta de rentabilidad no crece con la cantidad de ventas', async () => {
+    // El caso que se corrigio en esta fase: el total del historial de ventas
+    // traia TODAS las lineas del rango y las sumaba con `Decimal.js`. Con un
+    // anio de un almacen que vende cien tickets por dia son decenas de miles
+    // de objetos construidos para devolver un numero.
+    //
+    // Se mide el TAMANIO de la respuesta, que es lo que delata que la
+    // agregacion se hizo en la base: un reporte que devuelve lo mismo con 2
+    // ventas que con 20 no esta trayendo las filas.
+    const medir = async (n: number): Promise<number> => {
+      fx = await seedFixture()
+      await registrarVentas(n)
+
+      const { GET } = await import('@/app/api/reports/rentabilidad/route')
+      const res = await call(
+        GET,
+        `/api/reports/rentabilidad?desde=${hoyLocal()}&hasta=${hoyLocal()}`,
+        {
+          cookie: await sessionCookie(fx.admin),
+        },
+      )
+      expect(res.status).toBe(200)
+      return res.text.length
+    }
+
+    const pocas = await medir(2)
+    const muchas = await medir(20)
+
+    // Solo cambia el ranking por producto, que esta acotado a 20 filas: el
+    // resumen es del mismo tamanio con dos ventas que con veinte.
+    expect(muchas, `la respuesta paso de ${String(pocas)} a ${String(muchas)} bytes`).toBeLessThan(
+      pocas * 2,
+    )
+  })
+
+  it('el reporte de ventas responde con el resumen, no con las ventas', async () => {
+    await registrarVentas(30)
+
+    const { GET } = await import('@/app/api/reports/ventas/route')
+    const res = await call<{ totales: { operaciones: number }; porDia: unknown[] }>(
+      GET,
+      `/api/reports/ventas?desde=${hoyLocal()}&hasta=${hoyLocal()}`,
+      { cookie: await sessionCookie(fx.admin) },
+    )
+
+    expect(res.status).toBe(200)
+    expect(res.body.totales.operaciones).toBe(30)
+    // Treinta ventas del mismo dia son UNA fila en el desglose diario.
+    expect(res.body.porDia).toHaveLength(1)
+  })
+
+  it('la reconciliacion completa no crece con la cantidad de ventas', async () => {
+    const medir = async (n: number): Promise<number> => {
+      fx = await seedFixture()
+      await registrarVentas(n)
+      const { comprobarIntegridad } = await import('@/modules/integrity/service')
+      const antes = Date.now()
+      await comprobarIntegridad()
+      return Date.now() - antes
+    }
+
+    // No se mide el numero de consultas --son SQL crudo y no pasan por el
+    // espia-- sino que el tiempo no se dispare: las nueve comprobaciones son
+    // agregados, no recorridos fila por fila.
+    const pocas = await medir(2)
+    const muchas = await medir(30)
+
+    expect(
+      muchas,
+      `la reconciliacion tardo ${String(muchas)} ms con 30 ventas y ${String(pocas)} ms con 2`,
+    ).toBeLessThan(Math.max(pocas * 4, 3_000))
+  })
+})
+
+describe('Los indices de la Fase 3D existen', () => {
+  it('SaleItem tiene indice por producto, que es como agrupa la rentabilidad', async () => {
+    const filas = await prisma.$queryRaw<Array<{ indexname: string }>>`
+      SELECT indexname FROM pg_indexes WHERE tablename = 'SaleItem'
+    `
+    expect(filas.map((f) => f.indexname)).toContain('SaleItem_productId_idx')
+  })
+})

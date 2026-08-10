@@ -23,7 +23,7 @@
 
 import { describe, it, expect, afterAll } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { Client } from 'pg'
 
@@ -137,6 +137,10 @@ describe('La cadena oficial', () => {
       '20260808120000_phase3_purchase_receipts',
       '20260808130000_phase3_purchase_cost_links',
       '20260808140000_phase3_remove_legacy_barcode',
+      '20260810100000_phase3d_branch_timezone',
+      '20260810110000_phase3d_sale_cost_snapshot',
+      '20260810120000_phase3d_cost_history_nullable',
+      '20260810130000_phase3d_drop_legacy_columns',
     ])
   })
 
@@ -148,45 +152,187 @@ describe('La cadena oficial', () => {
    * conversacion que tiene que ocurrir antes de borrar una columna en un
    * servidor con datos.
    */
-  const DESTRUCTIVAS_PERMITIDAS: Record<string, string> = {
-    '20260808140000_phase3_remove_legacy_barcode':
-      'Borra "Product"."barcode", congelada desde la Fase 3B. Cumplio el despliegue ' +
-      'que exige la regla 2, los codigos viven en "ProductBarcode" y la migracion ' +
-      'aborta si alguno no esta representado alli. Ver docs/PHASE3_BARCODES.md.',
+  interface Excepcion {
+    /** POR QUE se permite. Una frase que alguien pueda discutir. */
+    motivo: string
+    /** Que prueba comprueba que la migracion hace lo que dice. */
+    prueba: string
+    /** Donde esta escrito como respaldar y como RESTAURAR antes de aplicarla. */
+    respaldo: string
+  }
+
+  const DESTRUCTIVAS_PERMITIDAS: Record<string, Excepcion> = {
+    // Las dos conversiones de tipo de la Fase 3 las encontro la guardia
+    // reforzada de la 3D: son anteriores, legitimas y nunca habian estado
+    // marcadas. `ALTER COLUMN ... TYPE` puede TRUNCAR --numeric(14,4) a
+    // numeric(14,2) pierde centavos-- asi que entra en la lista y queda
+    // registrado por que estas dos no perdieron nada.
+    '20260807100000_phase3_decimal_money': {
+      motivo:
+        'Convierte el dinero de DOUBLE PRECISION a DECIMAL(14,2). Redondea con ' +
+        'ROUND(x::numeric, 2), que es lo que ya se mostraba en pantalla: el residuo ' +
+        'que se pierde es el error del punto flotante, no un dato. ' +
+        'Ver docs/PHASE3_MONEY_MIGRATION.md.',
+      prueba: 'limpia el residuo de punto flotante sin perder el valor',
+      respaldo: 'docs/PRODUCTION_MIGRATION_REHEARSAL.md',
+    },
+    '20260807140000_phase3_fractional_quantities': {
+      motivo:
+        'Convierte las cantidades de INTEGER a NUMERIC(14,3). Es una AMPLIACION: ' +
+        'todo entero cabe, y antes de esta fase no existia ninguna cantidad ' +
+        'fraccionada que se pudiera truncar. ' +
+        'Ver docs/PHASE3_QUANTITY_MIGRATION.md.',
+      prueba: 'las cantidades historicas no cambiaron de valor al volverse decimales',
+      respaldo: 'docs/PRODUCTION_MIGRATION_REHEARSAL.md',
+    },
+    '20260808140000_phase3_remove_legacy_barcode': {
+      motivo:
+        'Borra "Product"."barcode", congelada desde la Fase 3B. Cumplio el despliegue ' +
+        'que exige la regla 2, los codigos viven en "ProductBarcode" y la migracion ' +
+        'aborta si alguno no esta representado alli. Ver docs/PHASE3_BARCODES.md.',
+      prueba: 'la columna "Product"."barcode" ya no existe',
+      respaldo: 'docs/PRODUCTION_MIGRATION_REHEARSAL.md',
+    },
+    '20260810130000_phase3d_drop_legacy_columns': {
+      motivo:
+        'Borra "Product"."supplierId" y "Supplier"."contact", congeladas desde la ' +
+        'Fase 3C. Los vinculos viven en "ProductSupplier" y el contacto en ' +
+        '"contactName"; la migracion aborta si algun dato quedo sin migrar. ' +
+        'Ver docs/SUPPLIER_MODEL.md.',
+      prueba: 'las dos columnas congeladas de la Fase 3C ya no existen',
+      respaldo: 'docs/PRODUCTION_MIGRATION_REHEARSAL.md',
+    },
+  }
+
+  /**
+   * Las formas en que una migracion puede destruir datos.
+   *
+   * La lista crecio en la Fase 3D y cada linea tiene su historia:
+   *
+   *   DROP COLUMN / DROP TABLE   lo obvio.
+   *   TRUNCATE                   sin exigir la palabra TABLE: PostgreSQL la
+   *                              acepta opcional, y `TRUNCATE "Sale"` pasaba
+   *                              limpio por la version anterior de la guardia.
+   *   DELETE FROM                cualquiera. Sin WHERE es peor y tiene su
+   *                              propia prueba, que no admite excepcion.
+   *   ALTER COLUMN ... TYPE      cambiar el tipo puede TRUNCAR en silencio:
+   *                              un TEXT a VARCHAR(20) recorta, y
+   *                              numeric(14,4) a numeric(14,2) pierde
+   *                              centavos. No es "solo estructura".
+   *   DROP ... CASCADE           se lleva por delante lo que dependa, que por
+   *                              definicion es lo que no se esta mirando.
+   *   DROP SCHEMA / DATABASE     no hace falta explicarlo.
+   *
+   * Lo que NO esta, a proposito: `DROP INDEX` y `DROP CONSTRAINT` no borran
+   * datos. Marcarlos llenaria la lista de excepciones rutinarias y en dos
+   * fases nadie leeria los motivos.
+   */
+  const PELIGROSAS: Array<{ patron: RegExp; que: string }> = [
+    { patron: /\bDROP\s+COLUMN\b/i, que: 'borra una columna' },
+    { patron: /\bDROP\s+TABLE\b/i, que: 'borra una tabla' },
+    { patron: /\bTRUNCATE\b/i, que: 'vacia una tabla' },
+    { patron: /\bDELETE\s+FROM\b/i, que: 'borra filas' },
+    { patron: /\bALTER\s+COLUMN\s+"?\w+"?\s+TYPE\b/i, que: 'cambia un tipo (puede truncar)' },
+    { patron: /\bDROP\b[^;]*\bCASCADE\b/i, que: 'borra en cascada' },
+    { patron: /\bDROP\s+(SCHEMA|DATABASE)\b/i, que: 'borra un esquema entero' },
+  ]
+
+  /** El SQL sin comentarios: los bloques ROLLBACK estan comentados a proposito. */
+  function sqlActivo(carpeta: string): string {
+    const sql = readFileSync(path.join(MIGRACIONES, carpeta, 'migration.sql'), 'utf8')
+    return sql
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('--'))
+      .join('\n')
+  }
+
+  function carpetasDeMigracion(): string[] {
+    return readdirSync(MIGRACIONES, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort()
   }
 
   it('ninguna migracion de la cadena borra datos sin permiso explicito', () => {
-    // Un DROP TABLE, un DROP COLUMN o un DELETE sin WHERE en una migracion que
-    // corre en el servidor destruye informacion sin vuelta atras. Los bloques
-    // DOWN estan comentados a proposito.
-    //
     // La expresion NO esta anclada al principio de la linea, y esa es la
     // correccion que trajo la Fase 3C: `^\s*DROP\s+COLUMN` no encuentra
     // `ALTER TABLE "Product" DROP COLUMN "barcode"`, que es la unica forma en
     // que PostgreSQL acepta esa sentencia. La guardia dejaba pasar
     // exactamente el caso para el que existia.
-    const PELIGROSAS = /\b(DROP\s+TABLE|DROP\s+COLUMN|TRUNCATE\s+TABLE|DELETE\s+FROM)\b/i
+    for (const carpeta of carpetasDeMigracion()) {
+      const activo = sqlActivo(carpeta)
+      const encontradas = PELIGROSAS.filter((p) => p.patron.test(activo)).map((p) => p.que)
+      const permitida = carpeta in DESTRUCTIVAS_PERMITIDAS
 
-    for (const carpeta of readdirSync(MIGRACIONES, { withFileTypes: true })) {
-      if (!carpeta.isDirectory()) continue
-      const sql = readFileSync(path.join(MIGRACIONES, carpeta.name, 'migration.sql'), 'utf8')
-      const activo = sql
-        .split('\n')
-        .filter((l) => !l.trim().startsWith('--'))
-        .join('\n')
-
-      const permitida = carpeta.name in DESTRUCTIVAS_PERMITIDAS
       // Se comprueba la IGUALDAD entre "borra" y "tiene permiso para borrar",
       // en una sola asercion. Asi tambien falla el caso inverso: una excepcion
       // que dejo de hacer falta tiene que caducar, o la lista crece hasta no
       // significar nada.
       expect(
-        PELIGROSAS.test(activo),
+        encontradas.length > 0,
         permitida
-          ? `${carpeta.name} figura como destructiva permitida pero ya no borra nada: sacala de la lista`
-          : `${carpeta.name} contiene una sentencia destructiva fuera de comentario. ` +
-              'Si es deliberada, agregala a DESTRUCTIVAS_PERMITIDAS con su motivo.',
+          ? `${carpeta} figura como destructiva permitida pero ya no borra nada: sacala de la lista`
+          : `${carpeta} ${encontradas.join(', ')} fuera de comentario. ` +
+              'Si es deliberada, agregala a DESTRUCTIVAS_PERMITIDAS con su ficha completa.',
       ).toBe(permitida)
+    }
+  })
+
+  it('un DELETE sin WHERE nunca esta permitido, ni siquiera con excepcion', () => {
+    // Es la unica forma destructiva que NO admite excepcion. Un `DELETE FROM
+    // "Sale"` a secas no es una migracion: es un accidente escrito. Si de
+    // verdad hay que vaciar una tabla, el WHERE que la vacia entera deja
+    // constancia de que fue a proposito.
+    for (const carpeta of carpetasDeMigracion()) {
+      const sinWhere = /\bDELETE\s+FROM\s+"?\w+"?\s*(;|$)/im.test(sqlActivo(carpeta))
+      expect(sinWhere, `${carpeta} tiene un DELETE FROM sin WHERE`).toBe(false)
+    }
+  })
+
+  it('cada excepcion declara motivo, prueba y respaldo, y los tres existen', () => {
+    // La politica de docs/DATABASE_MIGRATION_STRATEGY.md pide cuatro cosas
+    // para permitir una migracion destructiva: marcada, documentada, probada y
+    // con respaldo. Las tres primeras se comprueban aca; la cuarta --que el
+    // respaldo se pueda RESTAURAR-- se ensaya con `npm run rehearsal`, que es
+    // la unica forma de saberlo de verdad.
+    const suite = readFileSync(path.join(ROOT, 'tests/migrations/chain.test.ts'), 'utf8')
+
+    for (const [carpeta, ficha] of Object.entries(DESTRUCTIVAS_PERMITIDAS)) {
+      expect(ficha.motivo.length, `${carpeta}: el motivo es demasiado corto`).toBeGreaterThan(40)
+
+      // La prueba nombrada tiene que existir de verdad. Sin esto, la ficha
+      // puede citar una prueba que nadie escribio.
+      expect(
+        suite.includes(ficha.prueba),
+        `${carpeta}: no existe la prueba "${ficha.prueba}"`,
+      ).toBe(true)
+
+      // Y el documento de respaldo tambien.
+      expect(
+        existsSync(path.join(ROOT, ficha.respaldo)),
+        `${carpeta}: no existe ${ficha.respaldo}`,
+      ).toBe(true)
+    }
+  })
+
+  it('ningun guion de mantenimiento borra ni actualiza en masa', () => {
+    // Los guiones de `scripts/` corren a mano contra la base real y no pasan
+    // por la revision que si tiene una migracion. `npm run integrity:check` es
+    // de SOLO LECTURA por diseño, y esta prueba es lo que lo mantiene asi.
+    //
+    // Los seeds quedan afuera: su trabajo es escribir, y el de demostracion
+    // tiene su propia guarda `_dev`.
+    const SEEDS = /seed/i
+    for (const archivo of readdirSync(path.join(ROOT, 'scripts'))) {
+      if (!/\.(ts|mjs|js)$/.test(archivo) || SEEDS.test(archivo)) continue
+      const contenido = readFileSync(path.join(ROOT, 'scripts', archivo), 'utf8')
+      const activo = contenido
+        .split('\n')
+        .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
+        .join('\n')
+
+      const enMasa = /\b(deleteMany|TRUNCATE|DROP\s+TABLE)\b/i.test(activo)
+      expect(enMasa, `scripts/${archivo} borra en masa`).toBe(false)
     }
   })
 })
@@ -769,18 +915,53 @@ describe('Servidor existente', () => {
   })
 
   it('el contacto en texto libre del proveedor no se perdio ni se interpreto', async () => {
-    // Se copia TAL CUAL a `contactName`. No se intenta partir "Pepe
+    // Se copio TAL CUAL a `contactName`. No se intento partir "Pepe
     // 11-4567-8900" en nombre y telefono: no hay forma confiable de saber cual
     // es cual, y adivinar mal convertiria un telefono en el nombre de alguien.
-    const filas = await consultar<{ contacto: string; nombre: string; activo: boolean }>(
+    //
+    // La columna vieja ya no existe --la borro la 3D-- asi que este es el
+    // unico lugar donde ese texto sigue vivo.
+    const filas = await consultar<{ nombre: string; activo: boolean }>(
       url,
-      `SELECT "contact" AS contacto, "contactName" AS nombre, "isActive" AS activo
+      `SELECT "contactName" AS nombre, "isActive" AS activo
          FROM "Supplier" WHERE name = 'Distribuidora Vieja'`,
     )
 
     expect(filas[0]?.nombre).toBe('Pepe 11-4567-8900')
-    expect(filas[0]?.contacto, 'la columna vieja se congela, no se vacia').toBe('Pepe 11-4567-8900')
     expect(filas[0]?.activo, 'los proveedores existentes quedan activos').toBe(true)
+  })
+
+  it('las dos columnas congeladas de la Fase 3C ya no existen', async () => {
+    const columnas = await consultar<{ tabla: string; columna: string }>(
+      url,
+      `SELECT table_name AS tabla, column_name AS columna
+         FROM information_schema.columns
+        WHERE (table_name = 'Product'  AND column_name = 'supplierId')
+           OR (table_name = 'Supplier' AND column_name = 'contact')`,
+    )
+    expect(columnas, 'lo congelado en la 3C tenia que morir en la 3D').toHaveLength(0)
+  })
+
+  it('la sucursal existente quedo con la zona horaria del pais', async () => {
+    // La migracion de la zona horaria es aditiva y con valor por omision: la
+    // sucursal que ya estaba no tiene por que quedar sin zona, y el valor por
+    // defecto es exactamente lo que el sistema venia suponiendo.
+    const filas = await consultar<{ zona: string }>(
+      url,
+      `SELECT "timeZone" AS zona FROM "Branch" ORDER BY id LIMIT 1`,
+    )
+    expect(filas[0]?.zona).toBe('America/Argentina/Buenos_Aires')
+  })
+
+  it('las ventas historicas quedan SIN costo congelado, no con el de hoy', async () => {
+    // `costAtSale` nulo es la unica respuesta honesta para una venta anterior
+    // a que la columna existiera. Rellenarla con `Product.cost` inventaria el
+    // numero que la columna existe para no inventar.
+    const filas = await consultar<{ total: string }>(
+      url,
+      `SELECT count(*)::text AS total FROM "SaleItem" WHERE "costAtSale" IS NOT NULL`,
+    )
+    expect(Number(filas[0]?.total ?? 0), 'la migracion invento un costo historico').toBe(0)
   })
 
   it('el catalogo existente queda en UNIT, sin costo y sin unidades inventadas', async () => {

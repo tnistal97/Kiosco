@@ -33,7 +33,10 @@ describe('Resolucion de permisos por rol', () => {
     expect(cajero.has('sales.cancel')).toBe(false)
     expect(cajero.has('products.delete')).toBe(false)
     expect(cajero.has('audit.view')).toBe(false)
-    expect(cajero.has('reports.view')).toBe(false)
+    // Ningun reporte: el cajero ve SUS ventas por `sales.view`, no la
+    // facturacion ni el margen del local.
+    expect(cajero.has('reports.sales.view')).toBe(false)
+    expect(cajero.has('reports.costs.view')).toBe(false)
   })
 
   /**
@@ -76,7 +79,17 @@ describe('Resolucion de permisos por rol', () => {
   it('el auditor ve todo pero no puede escribir nada', () => {
     const auditor = permissionsForRole('auditor')
     expect(auditor.has('audit.view')).toBe(true)
-    expect(auditor.has('reports.view')).toBe(true)
+    // Los cinco reportes: es el unico rol que los ve todos sin poder cambiar
+    // nada de lo que mira.
+    for (const r of [
+      'reports.sales.view',
+      'reports.costs.view',
+      'reports.inventory.view',
+      'reports.cash.view',
+      'reports.purchases.view',
+    ] as const) {
+      expect(auditor.has(r), `el auditor deberia poder ver ${r}`).toBe(true)
+    }
 
     for (const escritura of [
       'sales.create',
@@ -121,7 +134,7 @@ describe('Resolucion de permisos por rol', () => {
 
   it('los costos y la informacion administrativa no llegan al cajero', () => {
     const cajero = permissionsForRole('cajero')
-    expect(cajero.has('reports.view')).toBe(false)
+    expect(cajero.has('reports.costs.view')).toBe(false)
     expect(cajero.has('audit.view')).toBe(false)
     expect(cajero.has('branches.manage')).toBe(false)
   })

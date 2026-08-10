@@ -178,10 +178,18 @@ describe('Costo bajo concurrencia', () => {
     const primera = await ordenLista('2', '8000')
     const segunda = await ordenLista('2', '9600')
 
-    await Promise.all([
+    // Las dos tienen que SALIR BIEN. Sin esta asercion, un interbloqueo se ve
+    // igual que un exito: la de mas abajo pasaria con una sola recepcion
+    // aplicada. Paso exactamente eso en la Fase 3D, con un bloqueo demasiado
+    // fuerte en `registrarCambioDeCosto`.
+    const respuestas = await Promise.all([
       recibir(primera.orderId, primera.itemId, '1'),
       recibir(segunda.orderId, segunda.itemId, '1'),
     ])
+    expect(
+      respuestas.map((r) => r.status),
+      'las dos recepciones tienen que confirmar: una detras de la otra, no una sola',
+    ).toEqual([200, 200])
 
     const producto = await prisma.product.findUniqueOrThrow({
       where: { id: fx.productoCaja.id },
@@ -200,7 +208,7 @@ describe('Costo bajo concurrencia', () => {
     })
     expect(historial).toHaveLength(2)
     expect(
-      historial.at(-1)?.newCost.toFixed(4),
+      historial.at(-1)?.newCost?.toFixed(4),
       'el ultimo cambio del historial y el costo del producto tienen que coincidir',
     ).toBe(costoFinal)
   }, 30_000)
@@ -219,9 +227,9 @@ describe('Costo bajo concurrencia', () => {
     })
 
     expect(historial[0]?.previousCost, 'el producto no tenia costo').toBeNull()
-    expect(historial[0]?.newCost.toFixed(4)).toBe('1000.0000')
+    expect(historial[0]?.newCost?.toFixed(4)).toBe('1000.0000')
     expect(historial[1]?.previousCost?.toFixed(4)).toBe('1000.0000')
-    expect(historial[1]?.newCost.toFixed(4)).toBe('1200.0000')
+    expect(historial[1]?.newCost?.toFixed(4)).toBe('1200.0000')
   }, 30_000)
 })
 

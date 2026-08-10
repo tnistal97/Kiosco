@@ -42,9 +42,6 @@ function archivosDe(...carpetas: string[]): string[] {
   return salida.sort()
 }
 
-/** Todo el codigo que puede hablarle a Prisma. Sin migraciones ni pruebas. */
-const CODIGO = [...archivosDe('src', 'scripts'), 'prisma/seed.ts', 'prisma/seed-demo.ts']
-
 const leer = (f: string) => readFileSync(path.join(RAIZ, f), 'utf8')
 
 // ---------------------------------------------------------------------------
@@ -58,6 +55,27 @@ describe('Product.barcode ya no existe', () => {
       ESQUEMA.indexOf('model ProductBarcode'),
     )
     expect(/^\s*barcode\s+String/m.test(modelo), 'la columna volvio al esquema').toBe(false)
+  })
+
+  it('tampoco Product.supplierId ni Supplier.contact, borradas en la Fase 3D', () => {
+    // Las dos cumplieron el ciclo de la regla 2: la 3C dejo de usarlas, la 3D
+    // las borro. A partir de aca la garantia es de `tsc`, igual que con
+    // `barcode`: el cliente de Prisma no las declara.
+    const producto = ESQUEMA.slice(
+      ESQUEMA.indexOf('model Product {'),
+      ESQUEMA.indexOf('model ProductBarcode'),
+    )
+    const proveedor = ESQUEMA.slice(
+      ESQUEMA.indexOf('model Supplier {'),
+      ESQUEMA.indexOf('model ProductSupplier'),
+    )
+
+    expect(/^\s*supplierId\s+Int/m.test(producto), 'Product.supplierId volvio').toBe(false)
+    expect(/^\s*supplier\s+Supplier/m.test(producto), 'la relacion congelada volvio').toBe(false)
+    expect(/^\s*contact\s+String/m.test(proveedor), 'Supplier.contact volvio').toBe(false)
+    // Y lo que las reemplaza sigue en pie.
+    expect(producto).toContain('suppliers    ProductSupplier[]')
+    expect(proveedor).toContain('contactName String?')
   })
 
   it('quien la use no compila, y la unicidad se mudo a ProductBarcode', () => {
@@ -95,25 +113,9 @@ const CONGELADAS: Array<{
   donde: string[]
   muereEn: string
 }> = [
-  {
-    // Texto libre reemplazado por `contactName`, `phone` y `email`.
-    campo: 'Supplier.contact',
-    patron: /\bcontact:\s/,
-    donde: CODIGO,
-    muereEn: 'Fase 3D',
-  },
-  // `Product.supplierId` NO esta en esta lista, y conviene decir por que.
-  //
-  // Una busqueda de texto no sirve: `supplierId` es un campo legitimo de
-  // `ProductSupplier`, de `ProductCostHistory` y de `PurchaseOrder`, y aparece
-  // en los tres servicios con todo derecho. Cualquier expresion lo bastante
-  // laxa para encontrar el uso prohibido encuentra tambien los tres usos
-  // correctos, y una prueba que hay que silenciar deja de proteger.
-  //
-  // Se comprueba de la unica forma exacta que hay, que ademas es mas fuerte:
-  // creando y editando un producto de verdad y mirando que la columna quede
-  // NULL. Esta en tests/integration/compras.test.ts, "la columna congelada
-  // Product.supplierId no se escribe".
+  // `Supplier.contact` y `Product.supplierId` YA NO ESTAN: las borro la Fase
+  // 3D y pasaron al bloque de columnas borradas de mas arriba. Quien las
+  // escriba ahora no compila.
   {
     // Resto de una migracion de mayo de 2025. Nunca significo nada.
     campo: 'Product.value',
@@ -149,9 +151,8 @@ describe('Columnas congeladas: existen, pero nadie las toca', () => {
       .map((m) => m[1])
       .filter((n): n is string => n !== undefined)
 
-    // Del nombre del campo al `Modelo.campo` de la lista de arriba, mas las
-    // que se comprueban de otra forma y estan documentadas ahi mismo.
-    const cubiertos = new Set([...CONGELADAS.map((c) => c.campo.split('.')[1]), 'supplierId'])
+    // Del nombre del campo al `Modelo.campo` de la lista de arriba.
+    const cubiertos = new Set(CONGELADAS.map((c) => c.campo.split('.')[1]))
 
     for (const campo of marcadas) {
       expect(
@@ -166,11 +167,13 @@ describe('Columnas congeladas: existen, pero nadie las toca', () => {
   })
 })
 
-describe('La relacion congelada tampoco se lee', () => {
+describe('El proveedor del producto sale de la tabla nueva', () => {
   it('`supplier:` no aparece en el select del catalogo', () => {
-    // El proveedor del producto sale de `ProductSupplier`, no de la relacion
-    // directa. Un `supplier: { select: ... }` dentro de CAMPOS_PRODUCTO seria
-    // volver a la fuente vieja sin que nada lo avise.
+    // El proveedor del producto sale de `ProductSupplier`. Un
+    // `supplier: { select: ... }` dentro de CAMPOS_PRODUCTO ya ni siquiera
+    // compilaria --la relacion se borro con la columna-- pero la prueba se
+    // conserva: describe la intencion, y el dia que alguien agregue una
+    // relacion directa nueva con el mismo nombre queda dicho por que no.
     const servicio = leer('src/modules/products/service.ts')
     const campos = servicio.slice(
       servicio.indexOf('const CAMPOS_PRODUCTO'),

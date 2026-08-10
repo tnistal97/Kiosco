@@ -240,7 +240,7 @@ describe('Cambio de costo', () => {
     })
     expect(historial).toHaveLength(1)
     expect(historial[0]?.previousCost, 'el catalogo migrado parte de "no sabemos"').toBeNull()
-    expect(historial[0]?.newCost.toFixed(4)).toBe('8000.0000')
+    expect(historial[0]?.newCost?.toFixed(4)).toBe('8000.0000')
     expect(historial[0]?.reason).toBe('Lista de mayo')
     expect(historial[0]?.userId).toBe(fx.admin.id)
     // Un cambio MANUAL desde la ficha no viene de ninguna compra: los dos
@@ -259,7 +259,7 @@ describe('Cambio de costo', () => {
     })
     expect(historial).toHaveLength(2)
     expect(historial[1]?.previousCost?.toFixed(4)).toBe('8000.0000')
-    expect(historial[1]?.newCost.toFixed(4)).toBe('8600.0000')
+    expect(historial[1]?.newCost?.toFixed(4)).toBe('8600.0000')
   })
 
   it('un cambio que no cambia nada se rechaza', async () => {
