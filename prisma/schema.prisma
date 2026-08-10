@@ -50,6 +50,22 @@ model Branch {
   /// Cero significa sin umbral. Es un numero y una comprobacion, no un sistema
   /// de reglas: cuando haga falta algo mas se disenia entonces.
   cashDifferenceThreshold Decimal @default(0) @db.Decimal(14, 2)
+
+  /// La zona horaria DEL LOCAL. Identificador IANA, no un desfase.
+  ///
+  /// Es lo que define el DIA COMERCIAL: "las ventas de hoy" son las de un dia
+  /// que empieza y termina segun el reloj de este comercio, no segun el del
+  /// servidor ni el del navegador.
+  ///
+  /// IANA y no `UTC-3` porque una zona horaria es una REGLA y no un numero:
+  /// Argentina tuvo horario de verano entre 2007 y 2009, y una consulta sobre
+  /// diciembre de 2008 tiene que usar el desfase que regia ENTONCES. Un numero
+  /// fijo corre el dia entero una hora hacia atras en toda esa temporada.
+  ///
+  /// Hasta la Fase 3D esto lo decidia la zona del proceso, y antes de la 3C lo
+  /// decidia UTC: toda venta posterior a las 21:00 desaparecia del dia. Ver
+  /// docs/TIMEZONE_POLICY.md.
+  timeZone String @default("America/Argentina/Buenos_Aires")
 }
 
 /// Turno de caja: se abre contando el cajon y se cierra volviendolo a contar.
@@ -163,16 +179,6 @@ model Product {
 
   description String?
 
-  /// CONGELADA desde la Fase 3C. No se lee y no se escribe.
-  ///
-  /// Ataba un producto a un unico proveedor para siempre. Los vinculos viven
-  /// en `ProductSupplier`, que admite varios y marca cual es el principal.
-  /// Sobrevive un despliegue por la regla 2 de
-  /// docs/DATABASE_MIGRATION_STRATEGY.md --el mismo camino que recorrio
-  /// `barcode` entre la 3B y esta fase, donde se borro-- y se elimina en la
-  /// Fase 3D. Ver docs/SUPPLIER_MODEL.md.
-  supplierId Int?
-
   categoryId Int
 
   /// Precio de venta, POR UNIDAD DE VENTA. Dos decimales: es lo que se cobra.
@@ -217,9 +223,13 @@ model Product {
   /// caja trae 8 unidades".
   unitsPerPurchaseUnit Decimal @default(1) @db.Decimal(14, 3)
 
-  /// Sin uso. Quedo de una migracion de mayo de 2025 y no se borra: quitar
-  /// una columna en una migracion que corre en el servidor es exactamente lo
-  /// que docs/DATABASE_MIGRATION_STRATEGY.md prohibe. Deuda anotada.
+  /// CONGELADA. Sin uso desde siempre: quedo de una migracion de mayo de 2025
+  /// y nunca significo nada.
+  ///
+  /// No se borra en la Fase 3D junto con las otras dos porque no hay ningun
+  /// motivo para hacerlo: no confunde a nadie, no aparece en ninguna pantalla
+  /// y no sostiene ninguna relacion. Borrar una columna tiene un costo --una
+  /// migracion destructiva mas que revisar-- y esta no paga ninguno.
   value    Int?
   branchId Int
 
@@ -253,8 +263,6 @@ model Product {
   orderItems   PurchaseOrderItem[]
   receiptItems PurchaseReceiptItem[]
   category     Category              @relation(fields: [categoryId], references: [id])
-  /// Relacion CONGELADA. Existe para sostener la columna, no se usa.
-  supplier     Supplier?             @relation(fields: [supplierId], references: [id])
   branch       Branch                @relation(fields: [branchId], references: [id])
 
   /// La caja busca por sucursal y por estado en cada tecla.
@@ -310,7 +318,16 @@ model ProductCostHistory {
   /// NULL cuando el producto no tenia costo cargado, que es de donde parte
   /// todo el catalogo migrado.
   previousCost Decimal? @db.Decimal(14, 4)
-  newCost      Decimal  @db.Decimal(14, 4)
+
+  /// El costo que quedo. NULL significa QUE SE BORRO EL COSTO.
+  ///
+  /// Nulo desde la Fase 3D. Antes era obligatorio y borrar el costo guardaba
+  /// `0`, que es una afirmacion distinta y falsa: cero es "no me costo nada"
+  /// --margen del 100%-- y nulo es "no sabemos". La fila decia que el producto
+  /// habia pasado a costar cero cuando lo que habia pasado era que alguien lo
+  /// habia dejado sin cargar, y ademas rompia la invariante que comprueba la
+  /// reconciliacion: `Product.cost` quedaba NULL y el historial decia 0.
+  newCost Decimal? @db.Decimal(14, 4)
 
   /// De donde vino el cambio, cuando vino de una compra.
   ///
@@ -487,15 +504,6 @@ model Supplier {
   contactName String?
   notes       String?
 
-  /// CONGELADA desde la Fase 3C. No se lee y no se escribe.
-  ///
-  /// Era un texto libre donde convivian un nombre, un telefono o las dos
-  /// cosas. Su contenido se copio tal cual a `contactName` --sin interpretarlo,
-  /// porque no hay forma de saber cual de las dos era-- y la columna sobrevive
-  /// un despliegue por la regla 2 de docs/DATABASE_MIGRATION_STRATEGY.md. Se
-  /// borra en la Fase 3D.
-  contact String?
-
   /// Un proveedor con actividad NO se borra: se desactiva. Uno desactivado no
   /// se puede elegir para una compra nueva, pero sigue nombrado en las viejas.
   isActive Boolean @default(true)
@@ -503,8 +511,6 @@ model Supplier {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// Relacion CONGELADA: la sostiene `Product.supplierId`, que ya no se usa.
-  products    Product[]
   costChanges ProductCostHistory[]
   catalogo    ProductSupplier[]
   orders      PurchaseOrder[]
@@ -784,8 +790,27 @@ model SaleItem {
   /// no reescribe las ventas de ayer.
   price Decimal @db.Decimal(14, 2)
 
+  /// Cuanto COSTABA cuando se vendio. Congelado, igual que el precio.
+  ///
+  /// Sin esto, la rentabilidad historica se calcularia con el costo ACTUAL, y
+  /// eso la vuelve una cifra falsa: una Coca vendida el lunes a $1.500 con un
+  /// costo de $1.000 dejo $500. Si el viernes llega mercaderia a $1.300, la
+  /// ganancia del lunes NO puede pasar a $200 --el lunes ya paso--. El costo de
+  /// una venta es un hecho de esa venta, no del producto.
+  ///
+  /// NULL significa "no se sabia": el catalogo migrado arranca sin costo y hay
+  /// productos que nunca lo tuvieron. No se rellena con el costo de hoy, que
+  /// seria inventar el numero que este campo existe para no inventar. Los
+  /// informes de rentabilidad excluyen esas lineas y dicen cuantas fueron.
+  ///
+  /// Cuatro decimales, como `Product.cost`: se copia tal cual.
+  costAtSale Decimal? @db.Decimal(14, 4)
+
   sale    Sale    @relation(fields: [saleId], references: [id])
   product Product @relation(fields: [productId], references: [id])
+
+  /// La rentabilidad recorre las lineas de un rango de ventas.
+  @@index([productId])
 }
 
 /// Un pago de una venta. Una venta puede tener varios.
