@@ -25,11 +25,17 @@ export PGBIN="/c/Program Files/PostgreSQL/18/bin"
 export PGDATA="$HOME/.kiosco-dev-pgdata"
 
 "$PGBIN/initdb" -D "$PGDATA" -U postgres --auth=trust -E UTF8
-"$PGBIN/pg_ctl" -D "$PGDATA" -o "-p 5433 -c listen_addresses=127.0.0.1" -l "$PGDATA/pg.log" start
+"$PGBIN/pg_ctl" -D "$PGDATA" -o "-p 5433 -c listen_addresses=127.0.0.1" -l "$HOME/kiosco-pg.log" start
 "$PGBIN/psql" -h 127.0.0.1 -p 5433 -U postgres \
   -c "CREATE USER kiosco_dev WITH PASSWORD 'kiosco_dev';" \
   -c "CREATE DATABASE kiosco_dev OWNER kiosco_dev;"
 ```
+
+> **El archivo de registro va FUERA de `PGDATA`.** Con el log adentro, una
+> recuperación tras un apagado sucio se queda reintentando —"could not open file
+> ./pg.log: sharing violation"— porque el proceso que escribe el log lo tiene
+> abierto mientras el arranque recorre el directorio. Pasó, y cuesta media hora
+> de diagnóstico.
 
 Para detenerla:
 

@@ -308,3 +308,57 @@ base cuyo nombre no termine así.
 | Las seis archivadas aparecen como "not found locally"                | Aceptado, es informativo. Si molestara, se resuelve con `migrate resolve --applied` sobre una base nueva, pero no hace falta.                  |
 | No hay migración probada que quite `Product.branchId`                | Abierto, y a propósito: es la más riesgosa del plan y con una sucursal no aporta. Ver [PHASE0_DECISIONS.md](PHASE0_DECISIONS.md).              |
 | El dinero sigue en `Float`                                           | Abierto. Cambiar el tipo de columnas con datos es la migración de más riesgo pendiente. Conviene hacerla junto con la de cantidades decimales. |
+
+## Migraciones destructivas: la política
+
+Una migración que borra datos **puede** entrar en la cadena, pero sólo con las
+cuatro condiciones cumplidas y comprobadas por
+`tests/migrations/chain.test.ts`:
+
+1. **Marcada.** Figura en `DESTRUCTIVAS_PERMITIDAS` con su nombre exacto.
+2. **Documentada.** Un `motivo` de más de cuarenta caracteres que alguien pueda
+   discutir. "Limpieza" no es un motivo.
+3. **Probada.** Nombra una prueba que **existe**: la suite comprueba que el
+   texto citado aparezca de verdad entre sus pruebas.
+4. **Con respaldo.** Nombra el documento que explica cómo respaldar y —lo que
+   suele faltar— cómo **restaurar**. La suite comprueba que el archivo exista.
+
+La misma aserción falla al revés: una excepción que dejó de borrar algo tiene
+que salir de la lista, o en dos fases nadie leerá los motivos.
+
+### Qué cuenta como destructivo
+
+| Patrón                      | Por qué                                                                                                                 |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `DROP COLUMN`, `DROP TABLE` | Lo obvio                                                                                                                |
+| `TRUNCATE`                  | Sin exigir la palabra `TABLE`: PostgreSQL la acepta opcional, y `TRUNCATE "Sale"` pasaba limpio por la guardia anterior |
+| `DELETE FROM`               | Cualquiera. **Sin `WHERE` no admite excepción**, ni marcada                                                             |
+| `ALTER COLUMN … TYPE`       | Puede **truncar en silencio**: `TEXT` a `VARCHAR(20)` recorta; `numeric(14,4)` a `numeric(14,2)` pierde centavos        |
+| `DROP … CASCADE`            | Se lleva por delante lo que dependa, que por definición es lo que no se está mirando                                    |
+| `DROP SCHEMA/DATABASE`      | No hace falta explicarlo                                                                                                |
+
+**No** cuentan `DROP INDEX` ni `DROP CONSTRAINT`: no borran datos, y marcarlos
+llenaría la lista de excepciones rutinarias.
+
+La expresión **no está anclada al principio de la línea**. Ésa fue la corrección
+de la Fase 3C: `^\s*DROP\s+COLUMN` no encuentra
+`ALTER TABLE "Product" DROP COLUMN "barcode"`, que es la única forma en que
+PostgreSQL acepta esa sentencia. La guardia dejaba pasar exactamente el caso
+para el que existía.
+
+Al reforzarla en la 3D aparecieron **dos conversiones de tipo de la Fase 3** que
+nunca habían estado marcadas: el dinero a `DECIMAL(14,2)` y las cantidades a
+`NUMERIC(14,3)`. Las dos son legítimas y ahora tienen su ficha escrita.
+
+### Los guiones de `scripts/`
+
+Corren a mano contra la base real y no pasan por la revisión que sí tiene una
+migración. La suite comprueba que **ninguno** contenga `deleteMany`, `TRUNCATE`
+ni `DROP TABLE`. Es lo que mantiene `npm run integrity:check` de sólo lectura
+por construcción y no por buena voluntad. Los seeds quedan afuera: su trabajo es
+escribir, y el de demostración tiene su propia guarda `_dev`.
+
+### Antes de aplicar una en producción
+
+`npm run rehearsal`. Ver
+[PRODUCTION_MIGRATION_REHEARSAL.md](PRODUCTION_MIGRATION_REHEARSAL.md).

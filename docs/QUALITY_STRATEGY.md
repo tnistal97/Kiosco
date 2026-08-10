@@ -486,3 +486,40 @@ Para cualquier tarea que toque dinero, stock o permisos:
 | 8    | Playwright sobre los flujos de caja          | Fase 2                                     |
 | 9    | Reglas de ESLint a `error`                   | Fase 2                                     |
 | 10   | Tests de componentes de la nueva UI          | Fase 2 en adelante                         |
+
+## 11. Reconciliación: la prueba que no se puede escribir mal
+
+Toda la estrategia de arriba tiene un punto ciego conocido: **una prueba que
+llama a la misma función que escribió el dato no comprueba nada.** Comprueba que
+la función es igual a sí misma.
+
+`npm run integrity:check` cierra ese hueco por construcción:
+
+|                        | Escribe                    | Comprueba                                |
+| ---------------------- | -------------------------- | ---------------------------------------- |
+| Motor                  | `Decimal.js` en JavaScript | `SUM()` en PostgreSQL                    |
+| Código                 | `src/modules/*/service.ts` | SQL en `src/modules/integrity/checks.ts` |
+| Autor de la aritmética | La aplicación              | La base                                  |
+
+Si los dos caminos dieran lo mismo por estar equivocados igual, sería porque son
+el mismo camino. No lo son.
+
+### La segunda mitad de cada prueba
+
+Las pruebas de `tests/integration/reconciliacion.test.ts` no se conforman con
+"la base sana no reporta nada". **Rompen algo con SQL directo y exigen que la
+comprobación lo encuentre**, con la regla exacta y la diferencia exacta. Una
+comprobación que no falla cuando tiene que fallar es un adorno, y que pase no
+significa nada.
+
+Ahí también se documenta lo que **no** detecta: borrar el último movimiento de un
+producto y ajustar el saldo a mano queda invisible para las tres reglas del
+libro. Contra eso protege el disparador de inmutabilidad, no la reconciliación.
+Decirlo vale más que fingir lo contrario.
+
+### La cobertura de una guardia se comprueba al revés
+
+`tests/migrations/chain.test.ts` no sólo exige que ninguna migración borre sin
+permiso: exige que **toda excepción de la lista siga borrando algo**. Una
+excepción que dejó de hacer falta tiene que caducar, o la lista crece hasta no
+significar nada.

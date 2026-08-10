@@ -98,25 +98,29 @@ Definidas en `.env.example`. Ninguna trae valores reales.
 
 ## Comandos
 
-| Comando                      | Qué hace                             |
-| ---------------------------- | ------------------------------------ |
-| `npm run dev`                | Servidor de desarrollo               |
-| `npm run build`              | Construcción de producción           |
-| `npm start`                  | Servir la construcción               |
-| `npm run lint`               | ESLint. Sin asistentes, apto para CI |
-| `npm run lint:fix`           | ESLint corrigiendo lo corregible     |
-| `npm run format`             | Prettier sobre todo el proyecto      |
-| `npm run format:check`       | Prettier en modo comprobación        |
-| `npm run typecheck`          | `tsc --noEmit`                       |
-| `npm test`                   | Las 533 pruebas                      |
-| `npm run test:coverage`      | Pruebas con informe de cobertura     |
-| `npm run test:unit`          | Solo unitarias                       |
-| `npm run test:integration`   | Solo de integración                  |
-| `npm run test:authorization` | Solo de autorización                 |
-| `npm run test:concurrency`   | Solo de concurrencia                 |
-| `npm run test:migrations`    | Solo la cadena de migraciones        |
-| `npm run test:performance`   | Solo consultas y tamaño de respuesta |
-| `npm run seed`               | Datos de prueba                      |
+| Comando                      | Qué hace                                               |
+| ---------------------------- | ------------------------------------------------------ |
+| `npm run dev`                | Servidor de desarrollo                                 |
+| `npm run build`              | Construcción de producción                             |
+| `npm start`                  | Servir la construcción                                 |
+| `npm run lint`               | ESLint. Sin asistentes, apto para CI                   |
+| `npm run lint:fix`           | ESLint corrigiendo lo corregible                       |
+| `npm run format`             | Prettier sobre todo el proyecto                        |
+| `npm run format:check`       | Prettier en modo comprobación                          |
+| `npm run typecheck`          | `tsc --noEmit`                                         |
+| `npm test`                   | Toda la suite unitaria y de integración                |
+| `npm run test:coverage`      | Pruebas con informe de cobertura                       |
+| `npm run test:unit`          | Solo unitarias                                         |
+| `npm run test:integration`   | Solo de integración                                    |
+| `npm run test:authorization` | Solo de autorización                                   |
+| `npm run test:concurrency`   | Solo de concurrencia                                   |
+| `npm run test:migrations`    | Solo la cadena de migraciones                          |
+| `npm run test:performance`   | Solo consultas y tamaño de respuesta                   |
+| `npm run seed`               | Datos de prueba                                        |
+| `npm run seed:demo`          | Datos de demostración (solo bases `_dev`)              |
+| `npm run integrity:check`    | **Comprueba que el sistema cierre.** Solo lectura      |
+| `npm run reconcile`          | El mismo comando, con el otro nombre                   |
+| `npm run rehearsal`          | Ensayo de migración: respaldar, migrar y **restaurar** |
 
 Las pruebas **abortan** si `DATABASE_URL` no apunta a una base cuyo nombre
 termine en `_test`. Nunca corren contra desarrollo ni contra producción.
@@ -170,25 +174,31 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 
 ## Documentación
 
-| Documento                                                             | Para qué                                        |
-| --------------------------------------------------------------------- | ----------------------------------------------- |
-| [DEV_ENVIRONMENT.md](docs/DEV_ENVIRONMENT.md)                         | Levantar el entorno sin tocar producción        |
-| [ARCHITECTURE_PROPOSAL.md](docs/ARCHITECTURE_PROPOSAL.md)             | Hacia dónde va el esquema y por qué             |
-| [QUALITY_STRATEGY.md](docs/QUALITY_STRATEGY.md)                       | Herramientas, umbrales y decisiones de calidad  |
-| [PERMISSIONS_MATRIX.md](docs/PERMISSIONS_MATRIX.md)                   | Qué puede hacer cada rol y qué prueba lo cubre  |
-| [INVENTORY_LEDGER.md](docs/INVENTORY_LEDGER.md)                       | Cómo se mueve el stock y por qué no se edita    |
-| [CASH_SHIFT_MODEL.md](docs/CASH_SHIFT_MODEL.md)                       | Turnos de caja: qué se deriva y qué se guarda   |
-| [PHASE3_MONEY_MIGRATION.md](docs/PHASE3_MONEY_MIGRATION.md)           | Por qué el dinero es Decimal y cómo se migró    |
-| [PHASE3_QUANTITY_MIGRATION.md](docs/PHASE3_QUANTITY_MIGRATION.md)     | Por qué las cantidades son Decimal y qué unidad |
-| [PHASE3_BARCODES.md](docs/PHASE3_BARCODES.md)                         | Varios códigos por producto, y cómo se migró    |
-| [SUPPLIER_MODEL.md](docs/SUPPLIER_MODEL.md)                           | Qué sabe el sistema de un proveedor, y qué no   |
-| [PURCHASE_FLOW.md](docs/PURCHASE_FLOW.md)                             | Orden de compra: estados, numeración, unidades  |
-| [PURCHASE_RECEIVING.md](docs/PURCHASE_RECEIVING.md)                   | Recepción, política de costo e inmutabilidad    |
-| [DATABASE_MIGRATION_STRATEGY.md](docs/DATABASE_MIGRATION_STRATEGY.md) | Cómo aplicar migraciones sin romper el servidor |
-| [DEPENDENCY_SECURITY.md](docs/DEPENDENCY_SECURITY.md)                 | Qué avisos hubo y cómo se cerraron              |
-| [PHASE0_DECISIONS.md](docs/PHASE0_DECISIONS.md)                       | Qué quedó a medio camino a propósito, y por qué |
-| [SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md)                           | Las vulnerabilidades encontradas                |
-| [MASTER_ROADMAP.md](docs/MASTER_ROADMAP.md)                           | El plan por fases                               |
+| Documento                                                                   | Para qué                                             |
+| --------------------------------------------------------------------------- | ---------------------------------------------------- |
+| [DEV_ENVIRONMENT.md](docs/DEV_ENVIRONMENT.md)                               | Levantar el entorno sin tocar producción             |
+| [ARCHITECTURE_PROPOSAL.md](docs/ARCHITECTURE_PROPOSAL.md)                   | Hacia dónde va el esquema y por qué                  |
+| [QUALITY_STRATEGY.md](docs/QUALITY_STRATEGY.md)                             | Herramientas, umbrales y decisiones de calidad       |
+| [PERMISSIONS_MATRIX.md](docs/PERMISSIONS_MATRIX.md)                         | Qué puede hacer cada rol y qué prueba lo cubre       |
+| [INVENTORY_LEDGER.md](docs/INVENTORY_LEDGER.md)                             | Cómo se mueve el stock y por qué no se edita         |
+| [CASH_SHIFT_MODEL.md](docs/CASH_SHIFT_MODEL.md)                             | Turnos de caja: qué se deriva y qué se guarda        |
+| [PHASE3_ARCHITECTURE.md](docs/PHASE3_ARCHITECTURE.md)                       | **Índice de la Fase 3**: cómo encaja todo            |
+| [PHASE3_MONEY_MIGRATION.md](docs/PHASE3_MONEY_MIGRATION.md)                 | Por qué el dinero es Decimal y cómo se migró         |
+| [PHASE3_QUANTITY_MIGRATION.md](docs/PHASE3_QUANTITY_MIGRATION.md)           | Por qué las cantidades son Decimal y qué unidad      |
+| [PHASE3_BARCODES.md](docs/PHASE3_BARCODES.md)                               | Varios códigos por producto, y cómo se migró         |
+| [SUPPLIER_MODEL.md](docs/SUPPLIER_MODEL.md)                                 | Qué sabe el sistema de un proveedor, y qué no        |
+| [PURCHASE_FLOW.md](docs/PURCHASE_FLOW.md)                                   | Orden de compra: estados, numeración, unidades       |
+| [PURCHASE_RECEIVING.md](docs/PURCHASE_RECEIVING.md)                         | Recepción, política de costo e inmutabilidad         |
+| [TIMEZONE_POLICY.md](docs/TIMEZONE_POLICY.md)                               | El día comercial: por qué IANA y no `UTC-3`          |
+| [PHASE3_RECONCILIATION.md](docs/PHASE3_RECONCILIATION.md)                   | Las invariantes que demuestran que el sistema cierra |
+| [INTEGRITY_CHECK.md](docs/INTEGRITY_CHECK.md)                               | Cómo se corre y cómo se lee la comprobación          |
+| [REPORTING_MODEL.md](docs/REPORTING_MODEL.md)                               | Qué calcula cada reporte y con qué costo             |
+| [PRODUCTION_MIGRATION_REHEARSAL.md](docs/PRODUCTION_MIGRATION_REHEARSAL.md) | Respaldar **y restaurar** antes de migrar            |
+| [DATABASE_MIGRATION_STRATEGY.md](docs/DATABASE_MIGRATION_STRATEGY.md)       | Cómo aplicar migraciones sin romper el servidor      |
+| [DEPENDENCY_SECURITY.md](docs/DEPENDENCY_SECURITY.md)                       | Qué avisos hubo y cómo se cerraron                   |
+| [PHASE0_DECISIONS.md](docs/PHASE0_DECISIONS.md)                             | Qué quedó a medio camino a propósito, y por qué      |
+| [SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md)                                 | Las vulnerabilidades encontradas                     |
+| [MASTER_ROADMAP.md](docs/MASTER_ROADMAP.md)                                 | El plan por fases                                    |
 
 ## Despliegue
 

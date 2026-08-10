@@ -565,3 +565,46 @@ Para que quede explícito el alcance:
 - **No** se agrega una biblioteca de componentes externa: los componentes propios más Tailwind alcanzan.
 - **No** se cambia el gestor de paquetes ni el proceso de despliegue (PM2 + Nginx funciona).
 - **No** se adopta `next-auth`: la autenticación propia es correcta en su diseño, y `next-auth` es hoy la única vulnerabilidad crítica del proyecto **estando sin usar**.
+
+## Fase 3D: el sistema cierra
+
+Las fases 3A a 3C construyeron los circuitos: inventario trazable, producto con
+unidades y costo, compras con recepción. La 3D no agrega circuitos: **cierra los
+que hay** y demuestra que cierran.
+
+### Lo que se agregó al modelo
+
+| Cambio                                   | Por qué                                                                                                     |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `Branch.timeZone`                        | El día comercial deja de depender del reloj del servidor. Ver [TIMEZONE_POLICY.md](TIMEZONE_POLICY.md)      |
+| `SaleItem.costAtSale`                    | La rentabilidad histórica no se recalcula con el costo de hoy. Ver [REPORTING_MODEL.md](REPORTING_MODEL.md) |
+| `ProductCostHistory.newCost` nullable    | "Sin costo" deja de escribirse como cero                                                                    |
+| `Product.supplierId`, `Supplier.contact` | **Borradas.** Cumplieron el ciclo congelar → desplegar → borrar                                             |
+
+### Lo que se agregó al sistema
+
+**Reconciliación** (`src/modules/integrity/`): nueve invariantes comprobadas por
+SQL sobre las tablas, independientes del código que escribe. Sólo lectura.
+Ver [PHASE3_RECONCILIATION.md](PHASE3_RECONCILIATION.md).
+
+**Reportes** (`src/modules/reports/`): seis materias, cinco permisos, todo
+agregado en la base. Ver [REPORTING_MODEL.md](REPORTING_MODEL.md).
+
+**Ensayo de migración** (`scripts/rehearsal.ts`): respaldar, migrar, reconciliar
+y **restaurar en otra base**, comparando el resultado.
+Ver [PRODUCTION_MIGRATION_REHEARSAL.md](PRODUCTION_MIGRATION_REHEARSAL.md).
+
+### La regla que faltaba
+
+`Product.cost` es el `newCost` de la fila de `ProductCostHistory` con el **`id`
+más alto**. No "la última recepción" ni "el último cambio manual": **el último
+evento**. Es la única formulación que no deja un caso sin respuesta, y ahora
+está comprobada por `registrarCambioDeCosto`, que toma el bloqueo de la fila del
+producto para que el orden de `id` sea el orden real de escritura.
+
+### Qué queda para la Fase 4
+
+El circuito de dinero está cerrado hacia adentro: se sabe qué entró, qué salió y
+por qué. Lo que falta es hacia afuera —**clientes, fiado, cuenta corriente,
+deuda a proveedores**— y `PurchaseReceipt` ya es su ancla natural: una recepción
+es lo que genera un saldo a pagar.
