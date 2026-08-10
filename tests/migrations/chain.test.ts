@@ -141,6 +141,15 @@ describe('La cadena oficial', () => {
       '20260810110000_phase3d_sale_cost_snapshot',
       '20260810120000_phase3d_cost_history_nullable',
       '20260810130000_phase3d_drop_legacy_columns',
+      // Fase 4A — clientes y cuenta corriente. Separadas por dominio, en el
+      // orden en que se pueden aplicar: cada una solo referencia lo que las
+      // anteriores ya crearon.
+      '20260810140000_phase4_clients',
+      '20260810150000_phase4_sale_client',
+      '20260810160000_phase4_customer_payments',
+      '20260810170000_phase4_customer_accounts',
+      '20260810180000_phase4_cash_payment_link',
+      '20260810190000_phase4_sale_payment_account',
     ])
   })
 
@@ -226,6 +235,10 @@ describe('La cadena oficial', () => {
    * Lo que NO esta, a proposito: `DROP INDEX` y `DROP CONSTRAINT` no borran
    * datos. Marcarlos llenaria la lista de excepciones rutinarias y en dos
    * fases nadie leeria los motivos.
+   *
+   * `DROP CONSTRAINT` tiene igual su propia comprobacion, mas abajo y mas
+   * precisa: no borra datos, pero puede borrar una GARANTIA. Ver
+   * "una restriccion que se borra se vuelve a poner".
    */
   const PELIGROSAS: Array<{ patron: RegExp; que: string }> = [
     { patron: /\bDROP\s+COLUMN\b/i, que: 'borra una columna' },
@@ -275,6 +288,52 @@ describe('La cadena oficial', () => {
           : `${carpeta} ${encontradas.join(', ')} fuera de comentario. ` +
               'Si es deliberada, agregala a DESTRUCTIVAS_PERMITIDAS con su ficha completa.',
       ).toBe(permitida)
+    }
+  })
+
+  it('una restriccion que se borra se vuelve a poner en la misma migracion', () => {
+    // `DROP CONSTRAINT` no borra ni una fila, y por eso no esta en PELIGROSAS.
+    // Pero puede borrar algo peor de recuperar que un dato: una GARANTIA.
+    //
+    // El caso legitimo es AMPLIAR una lista blanca --la Fase 4A tuvo que
+    // agregar 'ACCOUNT' a los medios de pago-- y en PostgreSQL eso se escribe
+    // necesariamente como un DROP seguido de un ADD con el mismo nombre. El
+    // caso peligroso es el DROP suelto: la comprobacion desaparece, nada falla,
+    // los tests siguen pasando, y meses despues entra una fila que antes era
+    // imposible.
+    //
+    // La regla distingue los dos sin ruido: un DROP cuya restriccion se vuelve
+    // a declarar en la MISMA migracion es un reemplazo. Uno que no, es una
+    // renuncia, y una renuncia tiene que declararse.
+    //
+    // Se mira solo el SQL activo: los bloques ROLLBACK estan comentados y ahi
+    // los DROP son justamente lo que corresponde.
+    for (const carpeta of carpetasDeMigracion()) {
+      const activo = sqlActivo(carpeta)
+
+      const borradas = [...activo.matchAll(/\bDROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?"([^"]+)"/gi)]
+        .map((m) => m[1])
+        .filter((n): n is string => n !== undefined)
+
+      for (const nombre of borradas) {
+        // Una FK que se borra junto con su columna no hace falta reponerla: la
+        // columna entera se va, y ese caso ya lo cubre `DROP COLUMN` en
+        // PELIGROSAS, que exige la ficha completa.
+        const seVaLaColumnaEntera = /\bDROP\s+COLUMN\b/i.test(activo)
+
+        const repuesta = new RegExp(
+          `ADD\\s+CONSTRAINT\\s+"${nombre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`,
+          'i',
+        ).test(activo)
+
+        expect(
+          repuesta || seVaLaColumnaEntera,
+          `${carpeta} borra la restriccion "${nombre}" y no la vuelve a declarar. ` +
+            'Una restriccion que desaparece no rompe nada hoy: deja de impedir algo, ' +
+            'y eso no se nota hasta que entra la fila que antes era imposible. ' +
+            'Si de verdad hay que quitarla, hace falta la ficha de DESTRUCTIVAS_PERMITIDAS.',
+        ).toBe(true)
+      }
     }
   })
 

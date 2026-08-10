@@ -27,10 +27,19 @@ import { precioPorCantidad } from '@/lib/cantidad'
 import { formatearCantidadConUnidad } from '@/modules/products/units'
 import {
   MEDIOS_COBRABLES,
+  esCuenta,
   esEfectivo,
   etiquetaDeMedio,
   type MedioCobrable,
 } from '@/modules/sales/payment-methods'
+import { usePermiso } from '@/components/shell/SessionProvider'
+import { SelectorDeCliente } from './SelectorDeCliente'
+import { apiRequest } from '@/lib/api-client'
+import {
+  parseEstadoDeCredito,
+  type ClienteDTO,
+  type EstadoDeCreditoDTO,
+} from '@/modules/clients/dto'
 
 /**
  * Cobro, con pago combinado.
@@ -85,6 +94,17 @@ function nuevaLinea(clave: number, method: MedioCobrable = 'CASH'): LineaDePago 
   return { clave, method, importe: '', recibido: '' }
 }
 
+/** Lo que acompania a los pagos: a quien se le vende y si se autorizo el exceso. */
+export interface ExtraDeVenta {
+  clientId: number | null
+  autorizarExcesoDeCredito: boolean
+}
+
+/** Si el estado de credito consultado decia que no entraba. */
+function frenadoPorLimiteAlEnviar(credito: EstadoDeCreditoDTO | null): boolean {
+  return credito !== null && !credito.entra
+}
+
 export function DialogoCobro({
   abierto,
   onCerrar,
@@ -98,7 +118,7 @@ export function DialogoCobro({
   lineas: CartLine[]
   total: Monto
   /** Devuelve el numero de venta. Lanza si el servidor la rechaza. */
-  onCobrar: (pagos: PagoParaEnviar[]) => Promise<number>
+  onCobrar: (pagos: PagoParaEnviar[], extra: ExtraDeVenta) => Promise<number>
   /** Cierra el resultado y deja la caja lista para la proxima. */
   onNuevaVenta: () => void
 }) {
@@ -107,6 +127,11 @@ export function DialogoCobro({
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hecha, setHecha] = useState<VentaHecha | null>(null)
+
+  const [cliente, setCliente] = useState<ClienteDTO | null>(null)
+  const [credito, setCredito] = useState<EstadoDeCreditoDTO | null>(null)
+  const [autorizarExceso, setAutorizarExceso] = useState(false)
+  const puedeAutorizar = usePermiso('accounts.overrideLimit')
 
   const botonCobrar = useRef<HTMLButtonElement>(null)
 
@@ -119,6 +144,9 @@ export function DialogoCobro({
     setError(null)
     setHecha(null)
     setEnviando(false)
+    setCliente(null)
+    setCredito(null)
+    setAutorizarExceso(false)
   }, [abierto])
 
   /**
@@ -171,7 +199,48 @@ export function DialogoCobro({
   )
 
   const faltaEnAlgunEfectivo = vueltos.some((v) => v !== null && esNegativo(v))
-  const puedeCobrar = cuadra && !faltaEnAlgunEfectivo && !enviando
+
+  /** Cuanto de esta venta se esta fiando. Cero si no hay ninguna linea a cuenta. */
+  const aCuenta = useMemo(
+    () => sumarMontos(...resueltos.filter((p) => esCuenta(p.method)).map((p) => p.monto)),
+    [resueltos],
+  )
+  const hayFiado = esPositivo(aCuenta)
+
+  // El servidor calcula el estado de credito, y la pantalla lo muestra. No se
+  // replican las tres condiciones aca: replicarlas garantizaria que algun dia
+  // digan cosas distintas. Es una PREVISUALIZACION, no una reserva: la
+  // comprobacion que decide sigue estando dentro de la transaccion de la venta.
+  useEffect(() => {
+    if (!hayFiado || cliente === null) {
+      setCredito(null)
+      return
+    }
+    let vigente = true
+    void apiRequest(
+      `/api/clients/${String(cliente.id)}/credito?monto=${encodeURIComponent(aCuenta)}`,
+      { parse: parseEstadoDeCredito },
+    )
+      .then((e) => {
+        if (vigente) setCredito(e)
+      })
+      .catch(() => {
+        if (vigente) setCredito(null)
+      })
+    return () => {
+      vigente = false
+    }
+  }, [hayFiado, cliente, aCuenta])
+
+  // Fiar sin cliente no se puede: el servidor lo rechaza con
+  // ACCOUNT_SALE_NEEDS_CLIENT, y frenar el boton aca evita que el cajero lo
+  // descubra recien al confirmar, con el cliente enfrente.
+  const faltaCliente = hayFiado && cliente === null
+  // Y si se pasa del limite, hace falta que alguien lo autorice.
+  const frenadoPorLimite = credito !== null && !credito.entra && !autorizarExceso
+
+  const puedeCobrar =
+    cuadra && !faltaEnAlgunEfectivo && !faltaCliente && !frenadoPorLimite && !enviando
 
   function actualizar(clave: number, cambio: Partial<LineaDePago>) {
     setPagos((actuales) => actuales.map((p) => (p.clave === clave ? { ...p, ...cambio } : p)))
@@ -210,7 +279,13 @@ export function DialogoCobro({
           }
         })
 
-      const id = await onCobrar(aEnviar)
+      const id = await onCobrar(aEnviar, {
+        clientId: cliente?.id ?? null,
+        // Solo se manda cuando de verdad hizo falta: mandarlo siempre
+        // convertiria la autorizacion en un adorno, y el servidor la exige
+        // igual --pedirla sin el permiso es un 403--.
+        autorizarExcesoDeCredito: autorizarExceso && frenadoPorLimiteAlEnviar(credito),
+      })
       setHecha({
         id,
         total,
@@ -331,6 +406,126 @@ export function DialogoCobro({
             <Money amount={total} size="hero" />
           </div>
         </div>
+
+        {/*
+          El cliente. Va ARRIBA de los medios y no adentro: una venta puede
+          tener cliente sin tener fiado --queda asociada a su historial-- y el
+          fiado no es lo unico que lo justifica.
+
+          Cuando hay una linea `ACCOUNT`, el selector pasa a ser obligatorio y
+          se abre solo: una deuda sin deudor no se puede cobrar.
+        */}
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-ink">
+            Cliente {hayFiado && <span className="text-danger">*</span>}
+          </span>
+          <SelectorDeCliente
+            cliente={cliente}
+            obligatorio={hayFiado}
+            deshabilitado={enviando}
+            onElegir={(c) => {
+              setCliente(c)
+              setAutorizarExceso(false)
+            }}
+          />
+        </div>
+
+        {/*
+          Los cinco numeros del objetivo 23, mostrados ANTES de confirmar. Un
+          409 pelado obliga a quien atiende a adivinar por que no se pudo, con
+          el cliente enfrente.
+        */}
+        {credito !== null && (
+          <div
+            className={
+              credito.entra
+                ? 'rounded-lg border border-line bg-sunken p-3 text-sm'
+                : 'rounded-lg border border-danger bg-danger-quiet p-3 text-sm'
+            }
+          >
+            <div className="mb-1 font-medium text-ink">{credito.name}</div>
+            <dl className="flex flex-col gap-1">
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-muted">Saldo actual</dt>
+                <dd data-numeric="">
+                  <Money amount={credito.balance.replace('-', '')} size="sm" />
+                  {esNegativo(credito.balance) && ' a favor'}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-muted">Compra a cuenta</dt>
+                <dd data-numeric="">
+                  <Money amount={aCuenta} size="sm" />
+                </dd>
+              </div>
+              <div className="flex justify-between gap-3 border-t border-line pt-1 font-medium">
+                <dt className="text-ink-muted">Saldo resultante</dt>
+                <dd data-numeric="">
+                  <Money amount={credito.saldoResultante.replace('-', '')} size="sm" />
+                  {esNegativo(credito.saldoResultante) && ' a favor'}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-muted">Límite</dt>
+                <dd data-numeric="">
+                  {credito.creditLimit === null ? (
+                    <span className="text-ink-faint">Sin límite</span>
+                  ) : (
+                    <Money amount={credito.creditLimit} size="sm" />
+                  )}
+                </dd>
+              </div>
+              {credito.disponible !== null && (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-ink-muted">Disponible después</dt>
+                  <dd data-numeric="">
+                    <Money
+                      amount={
+                        credito.entra
+                          ? restarMontos(credito.disponible, aCuenta)
+                          : credito.disponible
+                      }
+                      size="sm"
+                    />
+                  </dd>
+                </div>
+              )}
+            </dl>
+
+            {!credito.entra && credito.motivo !== null && (
+              <p className="mt-2 font-medium text-danger">{credito.motivo}</p>
+            )}
+          </div>
+        )}
+
+        {/*
+          El override. NO es una casilla escondida: aparece solo cuando de
+          verdad se necesita, dice que va a quedar registrado, y solo la ve
+          quien tiene el permiso. Quien no lo tiene ve por que no se puede y a
+          quien pedirselo.
+        */}
+        {credito !== null && !credito.entra && puedeAutorizar && (
+          <Alert tone="warning" title="Se pasa del límite">
+            <label className="mt-1 flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={autorizarExceso}
+                disabled={enviando}
+                onChange={(e) => {
+                  setAutorizarExceso(e.target.checked)
+                }}
+              />
+              <span>
+                Autorizo esta venta por encima del límite. Va a quedar registrado con mi nombre.
+              </span>
+            </label>
+          </Alert>
+        )}
+        {credito !== null && !credito.entra && !puedeAutorizar && (
+          <Alert tone="danger" title="Se pasa del límite">
+            Hace falta que lo autorice un encargado.
+          </Alert>
+        )}
 
         <fieldset className="flex flex-col gap-3">
           <legend className="mb-1 text-sm font-medium text-ink">Cómo paga</legend>

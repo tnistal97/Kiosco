@@ -117,6 +117,44 @@ const PROHIBIDO_ESCRIBIR_STOCK = [
   },
 ]
 
+/**
+ * El saldo de un cliente tampoco se escribe: se mueve.
+ *
+ * Desde la Fase 4A la cuenta corriente es el saldo de un libro:
+ *
+ *   para todo cliente:  suma(CustomerAccountMovement.amount) == Client.balance
+ *
+ * Es la misma frontera que la del stock y protege algo mas delicado: alcanza un
+ * `update` suelto con `balance` adentro para bajarle la deuda a alguien sin
+ * dejar rastro. El saldo quedaria "bien" y el libro no lo explicaria, que es
+ * justo lo que un cliente reclama cuando dice "yo ya te pague".
+ *
+ * Editar el NOMBRE, el telefono o el limite de un cliente sigue permitido desde
+ * el servicio: lo unico cerrado es la columna del saldo.
+ *
+ * Ver docs/CUSTOMER_ACCOUNT_LEDGER.md. Unico lugar autorizado a escribirlo:
+ * `src/modules/clients/cuenta.ts`.
+ */
+const PROHIBIDO_ESCRIBIR_SALDO = [
+  {
+    // Cualquier `…client.<lo que sea>({ … balance … })`. El descendiente sin
+    // acotar es deliberado: `data: { balance: x }` esta un nivel mas adentro.
+    selector: "CallExpression[callee.object.property.name='client'] Property[key.name='balance']",
+    message:
+      'El saldo de un cliente no se escribe directamente. Usa applyAccountMovement() de ' +
+      '@/modules/clients/cuenta, que ademas deja la fila en el libro y comprueba el limite. ' +
+      'Ver docs/CUSTOMER_ACCOUNT_LEDGER.md.',
+  },
+  {
+    // Solo ESCRITURAS. Un SELECT sobre "Client" es legitimo desde cualquier
+    // lado; lo que no puede salir del modulo es la sentencia que mueve el saldo.
+    selector: 'TemplateElement[value.raw=/(UPDATE|DELETE\\s+FROM)\\s+"Client"/]',
+    message:
+      'SQL crudo que escribe sobre Client, fuera del libro de cuenta corriente. ' +
+      'Todo cambio de saldo pasa por applyAccountMovement().',
+  },
+]
+
 export default tseslint.config(
   // ---------------------------------------------------------------- ignorados
   {
@@ -288,25 +326,28 @@ export default tseslint.config(
     },
   },
 
-  // ------------------------------------- las dos fronteras que no se cruzan
+  // ------------------------------------ las tres fronteras que no se cruzan
   //
   // `no-restricted-syntax` es UNA regla: cuando dos bloques la configuran para
   // el mismo archivo, el segundo REEMPLAZA al primero en vez de sumarse. Por
   // eso los selectores se declaran arriba (PROHIBIDO_*) y cada bloque de aca
-  // abajo lista el conjunto COMPLETO que le corresponde. Cuatro bloques,
-  // porque las dos fronteras tienen excepciones distintas:
+  // abajo lista el conjunto COMPLETO que le corresponde. Seis bloques, porque
+  // cada frontera tiene su propia excepcion:
   //
-  //   1. todo src/                        → stock
-  //   2. modules, server y api            → stock + dinero + cantidad
-  //   3. src/server/money.ts              → stock + cantidad   (cruza el dinero)
-  //   4. src/server/cantidad.ts           → stock + dinero     (cruza la cantidad)
-  //   5. modules/inventory/service.ts     → dinero + cantidad  (cruza el stock)
+  //   1. todo src/                        → stock + saldo
+  //   2. modules, server y api            → los cuatro
+  //   3. src/server/money.ts              → todos menos dinero    (lo cruza)
+  //   4. src/server/cantidad.ts           → todos menos cantidad  (lo cruza)
+  //   5. modules/inventory/service.ts     → todos menos stock     (lo cruza)
+  //   6. modules/clients/cuenta.ts        → todos menos saldo     (lo cruza)
   //
-  // Sin este cuidado, agregar la segunda frontera habria apagado la primera en
-  // silencio: los tests seguirian pasando y la regla no protegeria nada.
+  // Sin este cuidado, agregar una frontera nueva apagaria las anteriores en
+  // silencio: los tests seguirian pasando y las reglas no protegerian nada.
   {
     files: ['src/**/*.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK] },
+    rules: {
+      'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK, ...PROHIBIDO_ESCRIBIR_SALDO],
+    },
   },
   {
     files: ['src/modules/**/*.ts', 'src/server/**/*.ts', 'src/app/api/**/*.ts'],
@@ -314,6 +355,7 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         ...PROHIBIDO_ESCRIBIR_STOCK,
+        ...PROHIBIDO_ESCRIBIR_SALDO,
         ...PROHIBIDO_DINERO_NUMERO,
         ...PROHIBIDO_CANTIDAD_NUMERO,
       ],
@@ -322,19 +364,45 @@ export default tseslint.config(
   {
     files: ['src/server/money.ts'],
     rules: {
-      'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK, ...PROHIBIDO_CANTIDAD_NUMERO],
+      'no-restricted-syntax': [
+        'error',
+        ...PROHIBIDO_ESCRIBIR_STOCK,
+        ...PROHIBIDO_ESCRIBIR_SALDO,
+        ...PROHIBIDO_CANTIDAD_NUMERO,
+      ],
     },
   },
   {
     files: ['src/server/cantidad.ts'],
     rules: {
-      'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK, ...PROHIBIDO_DINERO_NUMERO],
+      'no-restricted-syntax': [
+        'error',
+        ...PROHIBIDO_ESCRIBIR_STOCK,
+        ...PROHIBIDO_ESCRIBIR_SALDO,
+        ...PROHIBIDO_DINERO_NUMERO,
+      ],
     },
   },
   {
     files: ['src/modules/inventory/service.ts'],
     rules: {
-      'no-restricted-syntax': ['error', ...PROHIBIDO_DINERO_NUMERO, ...PROHIBIDO_CANTIDAD_NUMERO],
+      'no-restricted-syntax': [
+        'error',
+        ...PROHIBIDO_ESCRIBIR_SALDO,
+        ...PROHIBIDO_DINERO_NUMERO,
+        ...PROHIBIDO_CANTIDAD_NUMERO,
+      ],
+    },
+  },
+  {
+    files: ['src/modules/clients/cuenta.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...PROHIBIDO_ESCRIBIR_STOCK,
+        ...PROHIBIDO_DINERO_NUMERO,
+        ...PROHIBIDO_CANTIDAD_NUMERO,
+      ],
     },
   },
 

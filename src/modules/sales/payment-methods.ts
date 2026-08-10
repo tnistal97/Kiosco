@@ -24,14 +24,65 @@ export const MEDIOS_DE_PAGO = [
   'TRANSFER',
   'OTHER',
   'CARD',
+  /**
+   * A cuenta. La parte de la venta que NO se cobro. Fase 4A.
+   *
+   * Es un medio de pago en el sentido de que CUBRE parte del total --y por eso
+   * la invariante `suma(pagos) == total` sigue valiendo con fiado-- pero no es
+   * plata que entro. Va al libro del cliente y no al cajon.
+   *
+   * Ver docs/CUSTOMER_ACCOUNT_LEDGER.md.
+   */
+  'ACCOUNT',
 ] as const
 
 export type MedioDePago = (typeof MEDIOS_DE_PAGO)[number]
 
 /** Los que se pueden elegir al cobrar. `CARD` queda afuera a proposito. */
-export const MEDIOS_COBRABLES = ['CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'TRANSFER', 'OTHER'] as const
+export const MEDIOS_COBRABLES = [
+  'CASH',
+  'DEBIT_CARD',
+  'CREDIT_CARD',
+  'TRANSFER',
+  'OTHER',
+  'ACCOUNT',
+] as const
 
 export type MedioCobrable = (typeof MEDIOS_COBRABLES)[number]
+
+/**
+ * Los que pueden aparecer en un movimiento de caja.
+ *
+ * Todos menos `ACCOUNT`, y esa exclusion es una regla del sistema y no un
+ * detalle de validacion: un cargo a cuenta NO genera movimiento de caja porque
+ * no es plata que cambio de manos, es una promesa. Anotarlo en la caja --aunque
+ * fuera con importe que no suma al efectivo-- haria que el listado del turno
+ * mostrara dinero que nadie recibio.
+ *
+ * Cada linea de pago de una venta va a exactamente UNO de dos destinos: la caja
+ * o el libro del cliente. Y hay una reconciliacion por cada destino.
+ */
+export const MEDIOS_DE_CAJA = [
+  'CASH',
+  'DEBIT_CARD',
+  'CREDIT_CARD',
+  'TRANSFER',
+  'OTHER',
+  'CARD',
+] as const
+
+export type MedioDeCaja = (typeof MEDIOS_DE_CAJA)[number]
+
+/** Los que se pueden usar para cobrarle a un cliente lo que debe. */
+export const MEDIOS_DE_COBRANZA = [
+  'CASH',
+  'DEBIT_CARD',
+  'CREDIT_CARD',
+  'TRANSFER',
+  'OTHER',
+] as const
+
+export type MedioDeCobranza = (typeof MEDIOS_DE_COBRANZA)[number]
 
 const ETIQUETAS: Record<MedioDePago, string> = {
   CASH: 'Efectivo',
@@ -40,6 +91,7 @@ const ETIQUETAS: Record<MedioDePago, string> = {
   TRANSFER: 'Transferencia',
   OTHER: 'Otro',
   CARD: 'Tarjeta',
+  ACCOUNT: 'A cuenta',
 }
 
 /**
@@ -67,6 +119,21 @@ export const MEDIO_EFECTIVO = 'CASH' satisfies MedioDePago
  */
 export function esEfectivo(medio: string): boolean {
   return medio === MEDIO_EFECTIVO
+}
+
+/** El codigo del fiado. */
+export const MEDIO_CUENTA = 'ACCOUNT' satisfies MedioDePago
+
+/**
+ * Si el pago va al libro del cliente en vez de a la caja.
+ *
+ * La otra pregunta del modulo, y la contracara exacta de `esEfectivo`. Toda
+ * linea de pago va a uno de dos destinos y a uno solo: `esCuenta` decide si
+ * genera movimiento de cuenta corriente, y su negacion decide si genera
+ * movimiento de caja.
+ */
+export function esCuenta(medio: string): boolean {
+  return medio === MEDIO_CUENTA
 }
 
 export function esMedioValido(medio: string): medio is MedioDePago {

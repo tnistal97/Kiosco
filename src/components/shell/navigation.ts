@@ -47,6 +47,12 @@ export const NAVEGACION: GrupoNav[] = [
       { href: '/venta', label: 'Venta', permission: 'sales.create' },
       { href: '/caja', label: 'Caja', permission: 'cash.view' },
       { href: '/ventas', label: 'Ventas', permission: 'sales.view', matchPrefix: true },
+      // En Operacion y no en Control: el cajero busca a Juan para cobrarle, y
+      // eso pasa en el mostrador. `clients.view` y no `accounts.view` porque
+      // ese es el permiso que gobierna la pantalla a la que lleva el enlace: un
+      // enlace visible que responde 403 es peor que no tenerlo, y es
+      // exactamente el error que la Fase 3D encontro en "Ventas".
+      { href: '/clientes', label: 'Clientes', permission: 'clients.view', matchPrefix: true },
     ],
   },
   {

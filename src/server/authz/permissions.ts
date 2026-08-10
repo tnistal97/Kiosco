@@ -153,6 +153,49 @@ export const PERMISSIONS = [
    */
   'purchases.receive',
   'purchases.cancel',
+  // Clientes y cuenta corriente. Ver docs/CREDIT_POLICY.md.
+  //
+  // Separados en dos ejes que no son el mismo: QUIEN es el cliente (la ficha)
+  // y QUE le pasa a su plata (la cuenta). Un cajero necesita poder buscar a
+  // Juan y cobrarle; no necesita poder cambiarle el limite de credito.
+  'clients.view',
+  /** Alta, edicion y baja de la ficha. Incluye limite y fiado habilitado. */
+  'clients.manage',
+  /** Ver el saldo y el extracto de la cuenta corriente. */
+  'accounts.view',
+  /**
+   * Fiar: registrar una venta con una parte a cuenta.
+   *
+   * Es del mostrador y por eso lo tiene el cajero: fiarle a un cliente conocido
+   * es una operacion normal de un almacen de barrio, no una excepcion
+   * administrativa. Lo que el cajero NO puede es fiar por encima del limite ni
+   * corregir un saldo a mano, que son los dos permisos de abajo.
+   */
+  'accounts.charge',
+  /** Cobrar lo que el cliente debe. Tambien del mostrador. */
+  'accounts.payment',
+  /**
+   * Corregir un saldo con un ajuste manual.
+   *
+   * NO lo tiene el cajero, y es la separacion que da sentido a todo el modulo:
+   * quien cobra no puede bajarle la deuda a nadie sin que se note. Con este
+   * permiso se puede escribir un movimiento que no responde a ninguna venta ni
+   * a ningun cobro --por eso exige motivo obligatorio y queda auditado--.
+   */
+  'accounts.adjust',
+  /**
+   * Autorizar una venta a cuenta por encima del limite de credito.
+   *
+   * Existe, y no como una casilla escondida. El caso es real: el cliente de
+   * siempre esta $2.000 por encima del limite y el duenio dice "dale igual".
+   * Sin un mecanismo, eso termina siendo un limite que nadie configura porque
+   * estorba, y un limite que nadie configura no protege nada.
+   *
+   * Cuando se usa quedan las cinco cosas: quien autorizo (en la fila del libro,
+   * no solo en la bitacora), el motivo, el importe, el saldo anterior y el
+   * resultante.
+   */
+  'accounts.overrideLimit',
 ] as const
 
 export type Permission = (typeof PERMISSIONS)[number]
@@ -174,6 +217,14 @@ const PERFIL_CAJA: readonly Permission[] = [
   // Abre y cierra SU caja. No la de otro, y no autoriza su propio faltante.
   'cash.shift.open',
   'cash.shift.close',
+  // Fiar y cobrar son operaciones de mostrador. Ajustar un saldo a mano y
+  // pasarse del limite, no: esos dos quedan afuera a proposito, y esa es la
+  // separacion que hace que el modulo signifique algo. Quien cobra no puede
+  // bajarle la deuda a nadie sin que se note.
+  'clients.view',
+  'accounts.view',
+  'accounts.charge',
+  'accounts.payment',
 ]
 
 const ROLE_PRESETS: Record<string, readonly Permission[]> = {
@@ -229,6 +280,15 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'purchases.receive',
     'purchases.cancel',
     'branches.view',
+    // La cuenta corriente entera, incluido el ajuste y el override: es quien
+    // responde por el resultado del local, y por lo tanto por lo que se fia.
+    'clients.view',
+    'clients.manage',
+    'accounts.view',
+    'accounts.charge',
+    'accounts.payment',
+    'accounts.adjust',
+    'accounts.overrideLimit',
   ],
 
   /**
@@ -256,6 +316,16 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'reports.sales.view',
     'reports.cash.view',
     'reports.inventory.view',
+    // Edita la ficha del cliente --corregir un telefono mal cargado es
+    // exactamente su trabajo-- y autoriza pasarse del limite, que es el caso
+    // que hoy obliga a llamar al duenio por telefono.
+    //
+    // SIN `accounts.adjust`, y es deliberado: pasarse del limite es autorizar
+    // una operacion que EXISTE, con su venta detras. Un ajuste manual es
+    // escribir un movimiento que no responde a nada, y eso queda en el escalon
+    // de arriba.
+    'clients.manage',
+    'accounts.overrideLimit',
   ],
 
   cajero: PERFIL_CAJA,
@@ -266,6 +336,13 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
    */
   vendedor: PERFIL_CAJA,
 
+  /**
+   * Repositor. Sin cuenta corriente, como pide el objetivo 3.
+   *
+   * No vende, no cobra y no atiende: no hay ninguna operacion suya que necesite
+   * saber quien debe cuanto. Y el saldo de un cliente es informacion privada de
+   * esa persona.
+   */
   repositor: ['products.view', 'stock.view', 'stock.adjust', 'inventory.movements.view'],
 
   /**
@@ -302,6 +379,10 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'reports.purchases.view',
     'reports.costs.view',
     'reports.inventory.view',
+    // SIN cuenta corriente, como pide el objetivo 3. Compras negocia con
+    // proveedores; la cuenta corriente es la relacion con los CLIENTES, que es
+    // el otro lado del mostrador. Separar quien compra de quien cobra ya es el
+    // control basico del rol, y darle la cartera de deudores lo desharia.
   ],
 
   /**
@@ -328,6 +409,11 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'branches.view',
     'suppliers.view',
     'purchases.view',
+    // Lectura de la cuenta corriente: es la mitad nueva de lo que hay que
+    // auditar. Sin `charge`, `payment`, `adjust` ni `overrideLimit`: quien
+    // revisa no debe poder modificar lo que revisa.
+    'clients.view',
+    'accounts.view',
   ],
 }
 

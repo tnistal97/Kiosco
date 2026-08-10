@@ -9,7 +9,7 @@
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@prisma/client'
 import { audit } from '@/server/audit/audit'
-import { conflict, invalid, notFound } from '@/server/http/errors'
+import { conflict, forbidden, invalid, notFound } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
 import type { Monto } from '@/lib/money'
 import {
@@ -40,10 +40,18 @@ import {
   unidadDeVentaODefecto,
   type UnidadDeVenta,
 } from '@/modules/products/units'
-import { esEfectivo, etiquetaDeMedio, normalizarMedio, type MedioDePago } from './payment-methods'
+import {
+  MEDIO_CUENTA,
+  esCuenta,
+  esEfectivo,
+  etiquetaDeMedio,
+  normalizarMedio,
+  type MedioDePago,
+} from './payment-methods'
 import type { PagoInput } from './schemas'
 import { turnoAbiertoDe, turnoParaOperar } from '@/modules/cash/service.turnos'
 import { applyStockMovement } from '@/modules/inventory/service'
+import { applyAccountMovement, autorizanteDelLimite } from '@/modules/clients/cuenta'
 
 export interface SaleLineInput {
   productId: number
@@ -130,6 +138,22 @@ export interface CreateSaleInput {
   payments?: PagoInput[]
   /** Forma anterior a la Fase 3: un solo medio para toda la venta. */
   paymentMethod?: string
+  /**
+   * A quien se le vende. Opcional, y va a seguir siendolo.
+   *
+   * Una venta al mostrador no lo necesita: obligar a identificar a todo
+   * comprador convertiria la venta rapida en un tramite. La UNICA excepcion la
+   * impone el servidor unas lineas mas abajo: con una linea `ACCOUNT` el
+   * cliente pasa a ser obligatorio, porque una deuda sin deudor no se cobra.
+   */
+  clientId?: number
+  /**
+   * Autorizacion explicita para fiar por encima del limite de credito.
+   *
+   * No alcanza con mandarlo: exige `accounts.overrideLimit`, y queda guardado
+   * QUIEN autorizo en la fila del libro, no solo en la bitacora.
+   */
+  autorizarExcesoDeCredito?: boolean
 }
 
 /**
@@ -165,6 +189,30 @@ export interface CreatedSale {
   cashCollected: Monto
   /** Vuelto total. Cero cuando se pago justo o no hubo efectivo. */
   changeGiven: Monto
+  /**
+   * Lo que quedo a cuenta, y como quedo el cliente. Null en una venta cobrada.
+   *
+   * Va en la respuesta y no solo en la base porque es lo que hay que mostrarle
+   * a quien atiende en el momento: "Juan queda debiendo $32.000". Sin esto,
+   * confirmar una venta fiada no diria nada distinto de confirmar una cobrada.
+   */
+  account: {
+    clientId: number
+    clientName: string
+    /** Lo que se cargo a la cuenta en ESTA venta. */
+    charged: Monto
+    previousBalance: Monto
+    resultingBalance: Monto
+    /**
+     * Cuanto del cargo se absorbio con saldo a favor que el cliente ya tenia.
+     *
+     * `"0.00"` en el caso normal. Cuando es distinto de cero, la venta no
+     * genero toda esa deuda: parte salio del credito que el cliente tenia.
+     */
+    creditApplied: Monto
+    /** Verdadero cuando hizo falta autorizar el exceso de limite. */
+    limitOverridden: boolean
+  } | null
 }
 
 /**
@@ -290,13 +338,56 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
       //    Es LA regla de la entidad: la suma de los pagos es EXACTAMENTE el
       //    total. No "aproximadamente": exactamente. Por eso el dinero se
       //    migro a Decimal antes que esto.
+      //
+      //    Desde la Fase 4A una de esas lineas puede ser `ACCOUNT`, y la regla
+      //    NO se relaja para permitirlo: el fiado CUBRE parte del total, asi
+      //    que la suma sigue dando exacto. Lo que cambia es a donde va cada
+      //    linea --el efectivo al cajon, la cuenta al libro del cliente-- y eso
+      //    se resuelve en los pasos 6 y 7.
       const pagos = resolverPagos(input, total)
+
+      // 3 bis) Fiar exige cliente, y exige permiso.
+      //
+      //    Es LA regla del objetivo 2, y la impone el servidor: una venta al
+      //    mostrador no necesita cliente, pero una deuda sin deudor no se puede
+      //    cobrar. Se comprueba ANTES de tocar el stock para que el rechazo no
+      //    deje nada a medias.
+      const aCuenta = sumar(...pagos.filter((p) => esCuenta(p.method)).map((p) => p.amount))
+      const hayFiado = !esCero(aCuenta)
+
+      if (hayFiado && input.clientId === undefined) {
+        throw invalid('Una venta con saldo a cuenta necesita un cliente.', undefined, {
+          code: 'ACCOUNT_SALE_NEEDS_CLIENT',
+        })
+      }
+      if (hayFiado && !session.permissions.has('accounts.charge')) {
+        throw forbidden('No tiene permiso para vender a cuenta')
+      }
+
+      // El autorizante del exceso de limite. Comprueba el permiso aunque
+      // despues no haga falta usarlo: pedir una autorizacion que no se tiene es
+      // un rechazo, no algo que se ignore en silencio.
+      const autorizante = autorizanteDelLimite(session, input.autorizarExcesoDeCredito === true)
+
+      // El cliente se lee aca --dentro de la transaccion y acotado a la
+      // sucursal-- porque su nombre entra en la respuesta y en la bitacora, y
+      // porque un id de otra sucursal no puede quedar asociado a esta venta.
+      const cliente =
+        input.clientId === undefined
+          ? null
+          : await tx.client.findFirst({
+              where: { id: input.clientId, branchId },
+              select: { id: true, name: true },
+            })
+
+      if (input.clientId !== undefined && !cliente) throw notFound('El cliente no existe')
 
       // 4) Venta, items y pagos, en una sola escritura.
       const venta = await tx.sale.create({
         data: {
           userId: session.userId,
           branchId,
+          clientId: cliente?.id ?? null,
           total,
           items: {
             create: itemsConPrecio.map((i) => ({
@@ -359,7 +450,13 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
       //    Se crea UN movimiento por medio, no uno por venta: asi el listado
       //    de caja muestra como se cobro de verdad, y el esperado del turno
       //    suma exactamente lo que entro.
-      for (const pago of pagos) {
+      //
+      //    `ACCOUNT` queda AFUERA, y no es un detalle: un cargo a cuenta no es
+      //    plata que cambio de manos, es una promesa. Anotarlo en la caja haria
+      //    que el listado del turno muestre dinero que nadie recibio. Cada
+      //    linea de pago va a exactamente uno de dos destinos, y hay una
+      //    reconciliacion por cada destino.
+      for (const pago of pagos.filter((p) => !esCuenta(p.method))) {
         await tx.cashRegisterMovement.create({
           data: {
             branchId,
@@ -372,6 +469,41 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
             shiftId: turno?.id ?? null,
           },
         })
+      }
+
+      // 7) Lo fiado va al libro del cliente.
+      //
+      //    UN movimiento por venta, no uno por linea: la venta cargo un importe
+      //    a la cuenta, y partirlo en dos porque el ticket tenia dos lineas
+      //    `ACCOUNT` no diria nada mas.
+      //
+      //    Va DESPUES de la caja para que el orden de los bloqueos sea siempre
+      //    el mismo, y es aca donde se comprueba el limite de credito: dentro
+      //    de la transaccion y en la misma sentencia que mueve el saldo, que es
+      //    lo unico que impide que dos cajas simultaneas se pasen entre las
+      //    dos. Ver docs/CUSTOMER_ACCOUNT_LEDGER.md.
+      let cuenta: CreatedSale['account'] = null
+
+      if (hayFiado && cliente) {
+        const movimiento = await applyAccountMovement(tx, {
+          branchId,
+          clientId: cliente.id,
+          type: 'SALE_CHARGE',
+          amount: aCuenta,
+          userId: session.userId,
+          saleId: venta.id,
+          authorizedById: autorizante,
+        })
+
+        cuenta = {
+          clientId: cliente.id,
+          clientName: cliente.name,
+          charged: aMonto(aCuenta),
+          previousBalance: aMonto(movimiento.previousBalance),
+          resultingBalance: aMonto(movimiento.resultingBalance),
+          creditApplied: aMonto(movimiento.creditoAplicado),
+          limitOverridden: autorizante !== null,
+        }
       }
 
       const enEfectivo = sumar(...pagos.filter((p) => esEfectivo(p.method)).map((p) => p.amount))
@@ -424,6 +556,14 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
           pagos: pagosParaMostrar,
           enEfectivo: aMonto(enEfectivo),
           items: itemsParaMostrar,
+          // El cliente y lo fiado, cuando los hubo. La bitacora NO repite el
+          // movimiento del libro: guarda quien hizo la venta y a quien se le
+          // fio; el movimiento con sus saldos vive en
+          // `CustomerAccountMovement`, que es su responsabilidad.
+          clientId: cliente?.id ?? null,
+          cliente: cliente?.name ?? null,
+          aCuenta: cuenta === null ? null : cuenta.charged,
+          limiteAutorizadoPor: autorizante,
         },
         origin: 'POST /api/sales',
       })
@@ -436,6 +576,7 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         payments: pagosParaMostrar,
         cashCollected: aMonto(enEfectivo),
         changeGiven: aMonto(vuelto),
+        account: cuenta,
       }
     },
     { timeout: 15_000, maxWait: 15_000 },
@@ -447,6 +588,23 @@ export interface CancelResult {
   status: 'canceled'
   restoredItems: number
   cashReversed: Monto
+  /**
+   * Lo que se devolvio a la cuenta del cliente. Null si la venta no tenia
+   * parte fiada.
+   *
+   * `resultingBalance` puede quedar NEGATIVO, y ese es el caso importante: si
+   * el cliente ya habia pagado parte de lo que se le fio, al anular la venta
+   * esa plata pasa a estar a su favor. Ver docs/CUSTOMER_ACCOUNT_LEDGER.md.
+   */
+  account: {
+    clientId: number
+    clientName: string
+    reverted: Monto
+    previousBalance: Monto
+    resultingBalance: Monto
+    /** Cuanto le queda a favor al cliente. `"0.00"` si no le queda nada. */
+    saldoAFavor: Monto
+  } | null
 }
 
 /**
@@ -467,7 +625,15 @@ export async function cancelSale(
     async (tx) => {
       const venta = await tx.sale.findUnique({
         where: { id: saleId },
-        select: { id: true, branchId: true, status: true, userId: true, date: true },
+        select: {
+          id: true,
+          branchId: true,
+          status: true,
+          userId: true,
+          date: true,
+          clientId: true,
+          client: { select: { id: true, name: true } },
+        },
       })
 
       if (!venta) throw notFound('La venta no existe')
@@ -567,6 +733,67 @@ export async function cancelSale(
         })
       }
 
+      // Reversion de la cuenta corriente: movimiento inverso, no borrado.
+      //
+      // Se lee lo que se cargo de los PAGOS de la venta y no del libro, y esa
+      // eleccion importa: el pago dice cuanto se fio en ESTA venta, mientras
+      // que el libro pudo haberse movido despues por cobros y ajustes que no
+      // tienen nada que ver con ella.
+      //
+      // EL CASO DIFICIL --objetivo 18-- y la politica, escrita:
+      //
+      //   venta fiada        +20.000   saldo 20.000
+      //   el cliente paga     -8.000   saldo 12.000
+      //   se anula la venta  -20.000   saldo -8.000
+      //
+      // Quedan $8.000 A FAVOR del cliente, y es lo correcto: esa plata la puso
+      // de verdad y la mercaderia volvio. El pago anterior NO se toca ni se
+      // reinterpreta --es un hecho, y ya tiene su comprobante-- y la anulacion
+      // revierte exactamente lo que la venta habia cargado. Cualquier otra
+      // politica --revertir "lo que quede", o cancelar el pago-- obligaria al
+      // sistema a decidir de quien es esa plata, y no es una decision suya.
+      let cuenta: CancelResult['account'] = null
+
+      const lineasACuenta = await tx.salePayment.findMany({
+        where: { saleId, method: MEDIO_CUENTA },
+        select: { amount: true },
+      })
+      const fiado = sumar(...lineasACuenta.map((p) => p.amount))
+
+      if (!esCero(fiado)) {
+        if (!venta.client) {
+          // No deberia poder ocurrir: la venta con parte a cuenta exige cliente
+          // y la clave foranea lo sostiene. Decirlo es mejor que revertir la
+          // caja y dejar la deuda viva sin que nadie se entere.
+          throw conflict(
+            `La venta #${saleId} tiene ${aMonto(fiado)} a cuenta pero no tiene cliente asociado. ` +
+              'No se puede anular sin dejar la cuenta descuadrada.',
+            { code: 'ACCOUNT_SALE_NEEDS_CLIENT' },
+          )
+        }
+
+        const movimiento = await applyAccountMovement(tx, {
+          branchId: venta.branchId,
+          clientId: venta.client.id,
+          type: 'SALE_CANCEL',
+          amount: negar(fiado),
+          userId: session.userId,
+          reason: motivo,
+          saleId,
+        })
+
+        cuenta = {
+          clientId: venta.client.id,
+          clientName: venta.client.name,
+          reverted: aMonto(fiado),
+          previousBalance: aMonto(movimiento.previousBalance),
+          resultingBalance: aMonto(movimiento.resultingBalance),
+          saldoAFavor: esNegativo(movimiento.resultingBalance)
+            ? aMonto(absoluto(movimiento.resultingBalance))
+            : aMonto(CERO_D),
+        }
+      }
+
       await audit(tx, {
         userId: session.userId,
         branchId: session.branchId,
@@ -590,6 +817,9 @@ export async function cancelSale(
           motivo,
           anuladaPor: session.userId,
           efectivoRevertido: aMonto(efectivoRevertido),
+          clientId: venta.clientId,
+          cuentaRevertida: cuenta === null ? null : cuenta.reverted,
+          saldoDelCliente: cuenta === null ? null : cuenta.resultingBalance,
         },
         origin: 'POST /api/sales/:id/cancel',
       })
@@ -599,6 +829,7 @@ export async function cancelSale(
         status: 'canceled' as const,
         restoredItems: items.length,
         cashReversed: aMonto(efectivoRevertido),
+        account: cuenta,
       }
     },
     { timeout: 15_000, maxWait: 15_000 },

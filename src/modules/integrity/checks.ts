@@ -176,6 +176,16 @@ export async function ventasContraSusPagos(): Promise<Comprobacion> {
  * El `FULL OUTER JOIN` no es adorno: encuentra tanto el pago sin movimiento
  * como el movimiento sin pago, que son dos errores distintos y los dos
  * importan.
+ *
+ * `ACCOUNT` queda EXCLUIDO desde la Fase 4A, y no es una excepcion para que la
+ * comprobacion siga pasando: es la regla del modelo. Un cargo a cuenta no es
+ * plata que cambio de manos, asi que no genera movimiento de caja, y exigirle
+ * uno seria exigir que el cajon registre dinero que nadie recibio. Lo fiado
+ * tiene su propia comprobacion --`ventasACuentaContraElLibro`-- que le exige lo
+ * que si le corresponde: su movimiento en el libro del cliente.
+ *
+ * Cada linea de pago va a exactamente UNO de dos destinos, y hay una
+ * comprobacion por cada destino. Ninguna linea queda sin comprobar.
  */
 export async function pagosContraLaCaja(): Promise<Comprobacion> {
   const revisadas = await contar(`
@@ -186,6 +196,7 @@ export async function pagosContraLaCaja(): Promise<Comprobacion> {
     WITH pagos AS (
       SELECT p."saleId" AS venta, p."method" AS medio, sum(p."amount") AS importe
         FROM "SalePayment" p
+       WHERE p."method" <> 'ACCOUNT'
        GROUP BY p."saleId", p."method"
     ),
     movimientos AS (
@@ -689,6 +700,340 @@ export async function costosContraSuHistorial(): Promise<Comprobacion> {
   }
 }
 
+// ===========================================================================
+// Cuenta corriente
+// ===========================================================================
+
+/**
+ * El saldo de un cliente es el saldo de su libro, y el libro es continuo.
+ *
+ * Las mismas tres reglas que el inventario, sobre la otra tabla:
+ *
+ *   1. Σ movimientos = Client.balance       el saldo cierra
+ *   2. previo + delta = resultante          cada fila cierra sola
+ *   3. previo = resultante del anterior     no falta ninguna fila
+ *
+ * La tercera es la que detecta una fila BORRADA del medio, y tiene el mismo
+ * punto ciego que en el inventario: borrar el ULTIMO movimiento y ajustar
+ * `Client.balance` a mano no lo ve ninguna de las tres. Contra eso protege el
+ * disparador de inmutabilidad, no esta comprobacion. Esta escrito porque
+ * decirlo vale mas que fingir lo contrario.
+ *
+ * `Client` se revisa ENTERO, incluidos los que no tienen ningun movimiento: un
+ * cliente con saldo distinto de cero y libro vacio es exactamente el caso que
+ * la regla 1 existe para encontrar.
+ */
+export async function clientesContraSuLibro(): Promise<Comprobacion> {
+  const revisadas = await contar('SELECT count(*)::bigint AS n FROM "Client"')
+
+  const saldos = await buscar(`
+    SELECT c."name"                                       AS cliente,
+           c."branchId"::text                             AS sucursal,
+           c."balance"::numeric(14,2)::text               AS saldo,
+           COALESCE(sum(m."amount"), 0)::numeric(14,2)::text AS libro,
+           count(m."id")::text                            AS cuantos
+      FROM "Client" c
+      LEFT JOIN "CustomerAccountMovement" m ON m."clientId" = c."id"
+     GROUP BY c."id", c."name", c."branchId", c."balance"
+    HAVING c."balance" <> COALESCE(sum(m."amount"), 0)
+     ORDER BY c."name"
+  `)
+
+  const filasSueltas = await buscar(`
+    SELECT m."id"::text                              AS id,
+           c."name"                                  AS cliente,
+           m."previousBalance"::numeric(14,2)::text  AS previo,
+           m."amount"::numeric(14,2)::text           AS delta,
+           m."resultingBalance"::numeric(14,2)::text AS resultante
+      FROM "CustomerAccountMovement" m
+      JOIN "Client" c ON c."id" = m."clientId"
+     WHERE m."previousBalance" + m."amount" <> m."resultingBalance"
+     ORDER BY m."id"
+  `)
+
+  const cadena = await buscar(`
+    WITH ordenado AS (
+      SELECT m."id", m."clientId", m."previousBalance",
+             lag(m."resultingBalance") OVER (
+               PARTITION BY m."clientId" ORDER BY m."id"
+             ) AS anterior
+        FROM "CustomerAccountMovement" m
+    )
+    SELECT o."id"::text                                     AS id,
+           c."name"                                         AS cliente,
+           o."previousBalance"::numeric(14,2)::text         AS previo,
+           COALESCE(o.anterior, 0)::numeric(14,2)::text     AS deberia
+      FROM ordenado o
+      JOIN "Client" c ON c."id" = o."clientId"
+     WHERE o."previousBalance" <> COALESCE(o.anterior, 0)
+     ORDER BY o."id"
+  `)
+
+  return {
+    nombre: 'Clientes',
+    revisadas,
+    inconsistencias: [
+      ...saldos.map((f): Inconsistencia => ({
+        entidad: String(f.cliente),
+        regla: 'saldo = suma del libro',
+        esperado: String(f.libro),
+        encontrado: String(f.saldo),
+        diferencia: restar(String(f.saldo), String(f.libro)),
+        detalle: `sucursal ${String(f.sucursal)}, ${String(f.cuantos)} movimiento(s)`,
+      })),
+      ...filasSueltas.map((f): Inconsistencia => ({
+        entidad: `Movimiento #${String(f.id)} — ${String(f.cliente)}`,
+        regla: 'previo + delta = resultante',
+        esperado: String(f.resultante),
+        encontrado: `${String(f.previo)} + ${String(f.delta)}`,
+        diferencia: null,
+      })),
+      ...cadena.map((f): Inconsistencia => ({
+        entidad: `Movimiento #${String(f.id)} — ${String(f.cliente)}`,
+        regla: 'empieza donde termino el anterior',
+        esperado: String(f.deberia),
+        encontrado: String(f.previo),
+        diferencia: restar(String(f.previo), String(f.deberia)),
+        detalle: 'falta un movimiento entre este y el anterior',
+      })),
+    ],
+  }
+}
+
+/**
+ * Lo fiado en una venta esta cargado en la cuenta del cliente.
+ *
+ * Es la comprobacion que le corresponde al destino que `pagosContraLaCaja` no
+ * mira. Por cada venta con lineas `ACCOUNT`:
+ *
+ *   Σ SalePayment(ACCOUNT) = Σ CustomerAccountMovement(SALE_CHARGE) de esa venta
+ *
+ * Y ademas, en la otra direccion: no puede existir un cargo a cuenta cuya venta
+ * no tenga linea `ACCOUNT`. El `FULL OUTER JOIN` encuentra los dos.
+ *
+ * La tercera regla no es de importes sino de coherencia: una venta con parte
+ * fiada tiene que tener CLIENTE, y el cargo tiene que ser al MISMO cliente. Una
+ * deuda cargada a otra persona cuadra perfecto en los importes y es el peor
+ * error posible de todo el modulo.
+ */
+export async function ventasACuentaContraElLibro(): Promise<Comprobacion> {
+  const revisadas = await contar(`
+    SELECT count(DISTINCT "saleId")::bigint AS n FROM "SalePayment" WHERE "method" = 'ACCOUNT'
+  `)
+
+  const importes = await buscar(`
+    WITH fiado AS (
+      SELECT p."saleId" AS venta, sum(p."amount") AS importe
+        FROM "SalePayment" p
+       WHERE p."method" = 'ACCOUNT'
+       GROUP BY p."saleId"
+    ),
+    cargado AS (
+      SELECT m."saleId" AS venta, sum(m."amount") AS importe
+        FROM "CustomerAccountMovement" m
+       WHERE m."type" = 'SALE_CHARGE' AND m."saleId" IS NOT NULL
+       GROUP BY m."saleId"
+    )
+    SELECT COALESCE(f.venta, c.venta)::text                    AS id,
+           COALESCE(f.importe, 0)::numeric(14,2)::text         AS fiado,
+           COALESCE(c.importe, 0)::numeric(14,2)::text         AS cargado
+      FROM fiado f
+      FULL OUTER JOIN cargado c ON c.venta = f.venta
+     WHERE COALESCE(f.importe, 0) <> COALESCE(c.importe, 0)
+     ORDER BY 1
+  `)
+
+  const sinCliente = await buscar(`
+    SELECT s."id"::text                          AS id,
+           sum(p."amount")::numeric(14,2)::text  AS fiado
+      FROM "Sale" s
+      JOIN "SalePayment" p ON p."saleId" = s."id" AND p."method" = 'ACCOUNT'
+     WHERE s."clientId" IS NULL
+     GROUP BY s."id"
+     ORDER BY s."id"
+  `)
+
+  const otroCliente = await buscar(`
+    SELECT m."id"::text        AS id,
+           m."saleId"::text    AS venta,
+           m."clientId"::text  AS "cargadoA",
+           s."clientId"::text  AS "deLaVenta"
+      FROM "CustomerAccountMovement" m
+      JOIN "Sale" s ON s."id" = m."saleId"
+     WHERE m."type" IN ('SALE_CHARGE', 'SALE_CANCEL')
+       AND m."clientId" IS DISTINCT FROM s."clientId"
+     ORDER BY m."id"
+  `)
+
+  return {
+    nombre: 'Venta a cuenta',
+    revisadas,
+    inconsistencias: [
+      ...importes.map((f): Inconsistencia => ({
+        entidad: `Venta #${String(f.id)}`,
+        regla: 'lo fiado en la venta = lo cargado a la cuenta',
+        esperado: String(f.fiado),
+        encontrado: String(f.cargado),
+        diferencia: restar(String(f.cargado), String(f.fiado)),
+      })),
+      ...sinCliente.map((f): Inconsistencia => ({
+        entidad: `Venta #${String(f.id)}`,
+        regla: 'una venta con saldo a cuenta tiene cliente',
+        esperado: 'un cliente',
+        encontrado: 'ninguno',
+        diferencia: null,
+        detalle: `${String(f.fiado)} a cuenta sin deudor: esa plata no se puede cobrar`,
+      })),
+      ...otroCliente.map((f): Inconsistencia => ({
+        entidad: `Movimiento #${String(f.id)}`,
+        regla: 'el cargo es al cliente de la venta',
+        esperado: `cliente ${String(f.deLaVenta ?? 'ninguno')}`,
+        encontrado: `cliente ${String(f.cargadoA)}`,
+        diferencia: null,
+        detalle: `venta #${String(f.venta)}`,
+      })),
+    ],
+  }
+}
+
+/**
+ * Todo cobro genero exactamente un movimiento, por el mismo importe y negativo.
+ *
+ * Tres reglas:
+ *
+ *   1. cada `CustomerPayment` tiene UN movimiento `PAYMENT`;
+ *   2. ese movimiento vale `-amount`;
+ *   3. si se cobro en efectivo, hay movimiento de caja por el mismo importe.
+ *
+ * La 3 es la que pide el objetivo 29: el efectivo que entra por cobranza tiene
+ * que llegar al cajon igual que el de una venta, y una transferencia NO.
+ */
+export async function pagosDeClientesContraElLibro(): Promise<Comprobacion> {
+  const revisadas = await contar('SELECT count(*)::bigint AS n FROM "CustomerPayment"')
+
+  const contraLibro = await buscar(`
+    SELECT p."number"                                       AS numero,
+           p."amount"::numeric(14,2)::text                  AS cobrado,
+           COALESCE(sum(m."amount"), 0)::numeric(14,2)::text AS movido,
+           count(m."id")::text                              AS cuantos
+      FROM "CustomerPayment" p
+      LEFT JOIN "CustomerAccountMovement" m
+             ON m."paymentId" = p."id" AND m."type" = 'PAYMENT'
+     GROUP BY p."id", p."number", p."amount"
+    HAVING count(m."id") <> 1
+        OR COALESCE(sum(m."amount"), 0) <> -p."amount"
+     ORDER BY p."number"
+  `)
+
+  // La union es por `customerPaymentId`, la clave foranea, y no por el numero
+  // de comprobante dentro de `description`: un texto es para leer, no para unir
+  // tablas. Con un LIKE, cambiar como se redacta esa frase haria que la
+  // comprobacion dejara de encontrar nada y empezara a informar que todo cierra.
+  const contraCaja = await buscar(`
+    SELECT p."number"                                        AS numero,
+           p."amount"::numeric(14,2)::text                   AS cobrado,
+           COALESCE(sum(cm."amount"), 0)::numeric(14,2)::text AS "enCaja"
+      FROM "CustomerPayment" p
+      LEFT JOIN "CashRegisterMovement" cm ON cm."customerPaymentId" = p."id"
+     WHERE p."method" = 'CASH'
+     GROUP BY p."id", p."number", p."amount"
+    HAVING p."amount" <> COALESCE(sum(cm."amount"), 0)
+     ORDER BY p."number"
+  `)
+
+  const noEfectivoEnCaja = await buscar(`
+    SELECT p."number"  AS numero,
+           p."method"  AS medio
+      FROM "CustomerPayment" p
+     WHERE p."method" <> 'CASH'
+       AND EXISTS (
+         SELECT 1 FROM "CashRegisterMovement" cm WHERE cm."customerPaymentId" = p."id"
+       )
+     ORDER BY p."number"
+  `)
+
+  return {
+    nombre: 'Cobros a clientes',
+    revisadas,
+    inconsistencias: [
+      ...contraLibro.map((f): Inconsistencia => ({
+        entidad: `Cobro ${String(f.numero)}`,
+        regla: 'todo cobro deja un movimiento de cuenta por el mismo importe, en negativo',
+        esperado: `-${String(f.cobrado)} en 1 movimiento`,
+        encontrado: `${String(f.movido)} en ${String(f.cuantos)}`,
+        diferencia: null,
+      })),
+      ...contraCaja.map((f): Inconsistencia => ({
+        entidad: `Cobro ${String(f.numero)}`,
+        regla: 'un cobro en efectivo entra al cajon',
+        esperado: String(f.cobrado),
+        encontrado: String(f.enCaja),
+        diferencia: restar(String(f.enCaja), String(f.cobrado)),
+      })),
+      ...noEfectivoEnCaja.map((f): Inconsistencia => ({
+        entidad: `Cobro ${String(f.numero)}`,
+        regla: 'un cobro que no es en efectivo NO entra al cajon',
+        esperado: 'ningun movimiento de caja',
+        encontrado: `movimiento de caja con medio ${String(f.medio)}`,
+        diferencia: null,
+      })),
+    ],
+  }
+}
+
+/**
+ * Una venta anulada deja la cuenta del cliente como estaba.
+ *
+ * Por cada venta anulada que tuvo parte fiada, la suma de sus movimientos de
+ * cuenta tiene que dar exactamente cero: el cargo y su reversion se cancelan.
+ * Es la misma forma que `anulacionesContraLaCaja`, sobre la otra tabla.
+ *
+ * IMPORTANTE — lo que esta regla NO dice: no dice que el SALDO del cliente
+ * vuelva a lo que era. Si entre la venta y su anulacion el cliente pago, ese
+ * pago sigue existiendo y le queda a favor. Eso es correcto y es la politica
+ * del objetivo 18: lo que se revierte es la venta, no la historia. Por eso se
+ * suman los movimientos DE ESA VENTA y no el saldo del cliente.
+ */
+export async function anulacionesContraLaCuenta(): Promise<Comprobacion> {
+  const revisadas = await contar(`
+    SELECT count(*)::bigint AS n
+      FROM "Sale" s
+     WHERE s."status" = 'canceled'
+       AND EXISTS (
+         SELECT 1 FROM "SalePayment" p
+          WHERE p."saleId" = s."id" AND p."method" = 'ACCOUNT'
+       )
+  `)
+
+  const filas = await buscar(`
+    SELECT m."saleId"::text                        AS id,
+           c."name"                                AS cliente,
+           sum(m."amount")::numeric(14,2)::text    AS saldo,
+           count(*)::text                          AS cuantos
+      FROM "CustomerAccountMovement" m
+      JOIN "Sale" s ON s."id" = m."saleId"
+      JOIN "Client" c ON c."id" = m."clientId"
+     WHERE s."status" = 'canceled'
+       AND m."type" IN ('SALE_CHARGE', 'SALE_CANCEL')
+     GROUP BY m."saleId", c."name"
+    HAVING sum(m."amount") <> 0
+     ORDER BY 1
+  `)
+
+  return {
+    nombre: 'Anulaciones de cuenta',
+    revisadas,
+    inconsistencias: filas.map((f): Inconsistencia => ({
+      entidad: `Venta anulada #${String(f.id)} — ${String(f.cliente)}`,
+      regla: 'cargo + reversion = 0',
+      esperado: '0.00',
+      encontrado: String(f.saldo),
+      diferencia: String(f.saldo),
+      detalle: `${String(f.cuantos)} movimiento(s) de esa venta`,
+    })),
+  }
+}
+
 /** Todas las comprobaciones, en el orden en que se informan. */
 export const COMPROBACIONES: Array<() => Promise<Comprobacion>> = [
   ventasContraSusLineas,
@@ -700,4 +1045,8 @@ export const COMPROBACIONES: Array<() => Promise<Comprobacion>> = [
   comprasContraSusRecepciones,
   recepcionesContraElStock,
   costosContraSuHistorial,
+  clientesContraSuLibro,
+  ventasACuentaContraElLibro,
+  pagosDeClientesContraElLibro,
+  anulacionesContraLaCuenta,
 ]

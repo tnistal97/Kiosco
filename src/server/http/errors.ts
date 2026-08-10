@@ -84,6 +84,25 @@ export type ErrorCode =
    * unidades, y media unidad no existe.
    */
   | 'INVALID_PURCHASE_CONVERSION'
+  // Clientes y cuenta corriente. Ver docs/CREDIT_POLICY.md.
+  /** Tiene ventas, pagos o movimientos: se da de baja, no se borra. */
+  | 'CLIENT_HAS_HISTORY'
+  | 'DUPLICATE_CLIENT'
+  /** Esta dado de baja: no se le puede fiar. */
+  | 'CLIENT_INACTIVE'
+  /** Sigue comprando de contado, pero tiene el fiado cortado. */
+  | 'CLIENT_CREDIT_DISABLED'
+  /** La venta lo dejaria por encima de su limite. Se puede autorizar. */
+  | 'CREDIT_LIMIT_EXCEEDED'
+  /** Una venta con parte a cuenta necesita saber a quien se le fia. */
+  | 'ACCOUNT_SALE_NEEDS_CLIENT'
+  /** El cobro deja saldo a favor y nadie lo confirmo todavia. */
+  | 'PAYMENT_LEAVES_CREDIT'
+  /**
+   * El saldo no se movio y ninguna de las causas conocidas lo explica.
+   * No deberia ocurrir: existe para no devolver un 500 mudo si ocurre.
+   */
+  | 'ACCOUNT_NOT_MOVED'
 
 /** Forma exacta del cuerpo de error. Compartida con el cliente. */
 export interface ApiErrorBody {

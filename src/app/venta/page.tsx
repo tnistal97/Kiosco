@@ -17,7 +17,11 @@ import {
 import { ResultadoBusqueda } from '@/components/venta/ResultadoBusqueda'
 import { Ticket } from '@/components/venta/Ticket'
 import { DialogoPeso } from '@/components/venta/DialogoPeso'
-import { DialogoCobro, type PagoParaEnviar } from '@/components/venta/DialogoCobro'
+import {
+  DialogoCobro,
+  type ExtraDeVenta,
+  type PagoParaEnviar,
+} from '@/components/venta/DialogoCobro'
 import { AyudaAtajos } from '@/components/venta/AyudaAtajos'
 import { AvisoCajaCerrada } from '@/components/venta/AvisoCajaCerrada'
 import { EscanerCamara } from '@/components/venta/EscanerCamara'
@@ -356,15 +360,20 @@ export default function VentaPage() {
 
   // ---------------------------------------------------------------- cobro
 
-  async function cobrar(pagos: PagoParaEnviar[]): Promise<number> {
+  async function cobrar(pagos: PagoParaEnviar[], extra: ExtraDeVenta): Promise<number> {
     const venta = await apiRequest('/api/sales', {
       method: 'POST',
-      // Solo producto, cantidad y como se paga. El precio, el total y la
-      // sucursal los pone el servidor, y el esquema ni siquiera declara esos
+      // Solo producto, cantidad, como se paga y a quien. El precio, el total y
+      // la sucursal los pone el servidor, y el esquema ni siquiera declara esos
       // campos: mandarlos hace fallar la peticion.
       body: {
         items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
         payments: pagos,
+        // Las dos claves solo van si corresponden: `.strict()` acepta que
+        // falten, y mandar `clientId: null` en cada venta al mostrador seria
+        // decir algo donde no hay nada que decir.
+        ...(extra.clientId === null ? {} : { clientId: extra.clientId }),
+        ...(extra.autorizarExcesoDeCredito ? { autorizarExcesoDeCredito: true } : {}),
       },
       parse: parseVenta,
     })

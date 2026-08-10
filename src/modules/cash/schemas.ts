@@ -3,9 +3,10 @@
  */
 
 import { z } from 'zod'
-import { amountSchema, optionalText, paymentMethodSchema } from '@/server/http/validate'
+import { amountSchema, optionalText } from '@/server/http/validate'
 import { paginationQuerySchema } from '@/server/http/pagination'
 import { esPositivo } from '@/lib/money'
+import { MEDIOS_DE_CAJA } from '@/modules/sales/payment-methods'
 
 export const TIPOS_MOVIMIENTO = ['ingreso', 'retiro', 'deposito'] as const
 export type TipoMovimiento = (typeof TIPOS_MOVIMIENTO)[number]
@@ -23,7 +24,10 @@ export const movimientoManualSchema = z
     // `esPositivo` y no `> 0`: despues de `amountSchema` el importe es una
     // cadena, y `'9.00' > 0` en JavaScript no es la comparacion que parece.
     amount: amountSchema.refine(esPositivo, 'El monto debe ser mayor que cero'),
-    paymentMethod: paymentMethodSchema,
+    // `MEDIOS_DE_CAJA` y no todos los medios: `ACCOUNT` no puede aparecer en un
+    // movimiento de caja, porque un cargo a cuenta no es plata que entro ni
+    // salio del cajon. Ver src/modules/sales/payment-methods.ts.
+    paymentMethod: z.enum(MEDIOS_DE_CAJA),
     description: optionalText(300),
     movementType: z.enum(TIPOS_MOVIMIENTO),
   })

@@ -8,10 +8,10 @@ datasource db {
 }
 
 model Branch {
-  id             Int                    @id @default(autoincrement())
-  name           String                 @unique
+  id             Int                       @id @default(autoincrement())
+  name           String                    @unique
   address        String?
-  createdAt      DateTime               @default(now())
+  createdAt      DateTime                  @default(now())
   email          String?
   phone          String?
   products       BranchStock[]
@@ -25,6 +25,9 @@ model Branch {
   stockMovements StockMovement[]
   purchaseOrders PurchaseOrder[]
   receipts       PurchaseReceipt[]
+  clients        Client[]
+  accountMoves   CustomerAccountMovement[]
+  clientPayments CustomerPayment[]
 
   /// Efectivo acumulado desde que se instalo el sistema.
   ///
@@ -118,8 +121,9 @@ model CashShift {
   closedBy     User?  @relation("ShiftClosedBy", fields: [closedById], references: [id])
   authorizedBy User?  @relation("ShiftAuthorizedBy", fields: [authorizedById], references: [id])
 
-  movements CashRegisterMovement[]
-  counts    CashCount[]
+  movements      CashRegisterMovement[]
+  counts         CashCount[]
+  clientPayments CustomerPayment[]
 
   @@index([branchId, openedAt])
   @@index([branchId, status])
@@ -151,20 +155,23 @@ model User {
 
   logs             AuditLog[]
   costChanges      ProductCostHistory[]
-  sales            Sale[]                 @relation("SaleCreatedBy")
-  canceledSales    Sale[]                 @relation("SaleCanceledBy")
+  sales            Sale[]                    @relation("SaleCreatedBy")
+  canceledSales    Sale[]                    @relation("SaleCanceledBy")
   stockChecks      StockCheck[]
   stockMovements   StockMovement[]
-  ordersCreated    PurchaseOrder[]        @relation("PurchaseOrderCreatedBy")
-  ordersCancelled  PurchaseOrder[]        @relation("PurchaseOrderCancelledBy")
+  ordersCreated    PurchaseOrder[]           @relation("PurchaseOrderCreatedBy")
+  ordersCancelled  PurchaseOrder[]           @relation("PurchaseOrderCancelledBy")
   receipts         PurchaseReceipt[]
   cashMovements    CashRegisterMovement[] // ← relación inversa agregada
-  shiftsOpened     CashShift[]            @relation("ShiftOpenedBy")
-  shiftsClosed     CashShift[]            @relation("ShiftClosedBy")
-  shiftsAuthorized CashShift[]            @relation("ShiftAuthorizedBy")
-  branch           Branch                 @relation(fields: [branchId], references: [id])
-  role             Role                   @relation(fields: [roleId], references: [id])
+  shiftsOpened     CashShift[]               @relation("ShiftOpenedBy")
+  shiftsClosed     CashShift[]               @relation("ShiftClosedBy")
+  shiftsAuthorized CashShift[]               @relation("ShiftAuthorizedBy")
+  branch           Branch                    @relation(fields: [branchId], references: [id])
+  role             Role                      @relation(fields: [roleId], references: [id])
   cashCounts       CashCount[]
+  accountMoves     CustomerAccountMovement[] @relation("AccountMovementBy")
+  accountOverrides CustomerAccountMovement[] @relation("AccountMovementAuthorizedBy")
+  clientPayments   CustomerPayment[]
 }
 
 model Category {
@@ -743,6 +750,234 @@ model PurchaseReceiptItem {
   @@index([productId])
 }
 
+/// Un cliente del almacen.
+///
+/// Lo UNICO obligatorio es el nombre, igual que en `Supplier` y por el mismo
+/// motivo: "Juan Perez" tiene que ser un cliente valido. Exigir DNI, CUIT o
+/// telefono obligaria a inventarlos, y un documento inventado es peor que
+/// ninguno porque parece un dato.
+///
+/// El cliente es DE UNA SUCURSAL. La cuenta corriente es una relacion de
+/// confianza entre un comercio y una persona, y dos locales del mismo duenio
+/// no necesariamente le fian a la misma gente. El dia que haga falta un cliente
+/// compartido, se agrega; empezar compartiendo obligaria a separar despues.
+///
+/// Ver docs/CUSTOMER_MODEL.md.
+model Client {
+  id       Int @id @default(autoincrement())
+  branchId Int
+
+  /// Como se lo nombra. Lo unico obligatorio.
+  name String
+
+  /// DNI, o lo que el comercio use para identificarlo. Sin validar: este
+  /// sistema todavia no emite nada fiscal, y rechazar datos que no se usan
+  /// para nada solo estorba.
+  document String?
+
+  /// Identificacion fiscal (en Argentina, el CUIT). Mismo criterio que en
+  /// `Supplier`: no se llama `cuit` para no atar el modelo a un pais.
+  taxId String?
+
+  phone   String?
+  /// Validado SI viene. Vacio es una respuesta valida.
+  email   String?
+  address String?
+  notes   String?
+
+  /// Un cliente dado de baja conserva su historial pero no se puede elegir en
+  /// una venta nueva. Nunca se borra: sus movimientos lo referencian.
+  isActive Boolean @default(true)
+
+  /// Cuanto se le permite deber, en pesos.
+  ///
+  /// NULL y 0 son AFIRMACIONES DISTINTAS, y confundirlas es el error que este
+  /// campo existe para no cometer:
+  ///
+  ///   NULL  sin limite configurado. Nadie decidio cuanto se le fia.
+  ///   0     no se le fia. Alguien decidio que su limite es cero.
+  ///
+  /// Por eso es nulo y no `@default(0)`: con cero por omision, todo cliente
+  /// nuevo nacería con el fiado prohibido sin que nadie lo hubiera dispuesto.
+  creditLimit Decimal? @db.Decimal(14, 2)
+
+  /// Si se le puede fiar HOY. Distinto de `isActive`, y a proposito.
+  ///
+  /// Un cliente que se atraso puede seguir comprando de contado: darlo de baja
+  /// para cortarle el fiado lo sacaria del sistema entero. Son dos preguntas
+  /// distintas y tienen dos columnas distintas.
+  isCreditEnabled Boolean @default(true)
+
+  /// Saldo materializado del libro. POSITIVO = DEBE.
+  ///
+  /// Misma relacion que `BranchStock.quantity` con `StockMovement`: se guarda
+  /// para que leer un saldo cueste una fila y no una suma de dos anios, pero
+  /// NO es la fuente de la verdad. La fuente es el libro:
+  ///
+  ///   para todo cliente:  suma(CustomerAccountMovement.amount) == balance
+  ///
+  /// Y no se edita: lo escribe unicamente `applyAccountMovement`, que ademas
+  /// es donde se comprueba el limite de credito. Ver
+  /// docs/CUSTOMER_ACCOUNT_LEDGER.md.
+  balance Decimal @default(0) @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branch    Branch                    @relation(fields: [branchId], references: [id])
+  sales     Sale[]
+  movements CustomerAccountMovement[]
+  payments  CustomerPayment[]
+
+  /// El listado filtra por sucursal y estado, y ordena por nombre.
+  @@index([branchId, isActive, name])
+  /// "Los que deben" y "los que tienen saldo a favor", que son dos filtros de
+  /// la pantalla y el reporte de cuentas por cobrar.
+  @@index([branchId, balance])
+  /// Buscar por telefono o documento, que es como se lo encuentra en el
+  /// mostrador cuando el nombre esta escrito distinto.
+  @@index([branchId, phone])
+  @@index([branchId, document])
+}
+
+/// Libro de cuenta corriente. Inmutable.
+///
+/// Mismo diseno que `StockMovement`, y por el mismo motivo: un saldo editable
+/// no se puede auditar. El saldo del cliente deja de ser un numero y pasa a ser
+/// el resultado de un libro:
+///
+///   para todo cliente:  suma(amount) == Client.balance
+///
+/// SIGNOS. Positivo aumenta la deuda, negativo la reduce:
+///
+///   SALE_CHARGE        +20.000   se le fio
+///   PAYMENT             -8.000   pago
+///   SALE_CANCEL        -20.000   se anulo la venta que se le habia fiado
+///   MANUAL_ADJUSTMENT   +/-      correccion administrativa, con motivo
+///
+/// Un saldo NEGATIVO es plata a favor del cliente. No es un error: pasa cuando
+/// paga de mas, y sobre todo cuando se anula una venta que ya habia pagado.
+///
+/// Ninguna fila se edita ni se borra: hay un disparador en la base que lo
+/// impide. Un error se corrige con otro movimiento. Ver
+/// docs/CUSTOMER_ACCOUNT_LEDGER.md.
+model CustomerAccountMovement {
+  id       Int @id @default(autoincrement())
+  branchId Int
+  clientId Int
+
+  /// SALE_CHARGE | PAYMENT | SALE_CANCEL | MANUAL_ADJUSTMENT.
+  ///
+  /// La base comprueba el tipo Y el signo que le corresponde, igual que en el
+  /// libro de stock: un pago que aumente la deuda no es un error que haya que
+  /// buscar, es una fila que PostgreSQL rechaza.
+  type String
+
+  /// Delta CON SIGNO, en pesos.
+  amount Decimal @db.Decimal(14, 2)
+
+  /// Saldo antes y despues. Redundantes --el tercero se deduce de los otros
+  /// dos-- y guardados igual: asi una fila del extracto se lee sin recorrer las
+  /// anteriores, que es exactamente lo que hace falta para mostrarle a alguien
+  /// por que debe lo que debe. La base obliga a que los tres concuerden.
+  previousBalance  Decimal @db.Decimal(14, 2)
+  resultingBalance Decimal @db.Decimal(14, 2)
+
+  /// De donde vino. Claves foraneas de verdad --a diferencia de la referencia
+  /// del libro de stock, que apunta a tablas distintas segun el tipo-- porque
+  /// aca solo hay dos origenes posibles y los dos son tablas concretas.
+  saleId    Int?
+  paymentId Int?
+
+  userId Int
+
+  /// Obligatorio en los ajustes manuales. Un ajuste sin motivo no se puede
+  /// auditar despues.
+  reason String?
+
+  /// Quien autorizo pasarse del limite, cuando hizo falta.
+  ///
+  /// Guardarlo en la fila del libro y no solo en la bitacora es deliberado: la
+  /// autorizacion es parte del hecho financiero. Quien lee el extracto tiene
+  /// que poder ver que esa deuda se tomo por encima del limite y quien lo
+  /// permitio, sin cruzar dos tablas.
+  authorizedById Int?
+
+  createdAt DateTime @default(now())
+
+  branch       Branch           @relation(fields: [branchId], references: [id])
+  client       Client           @relation(fields: [clientId], references: [id])
+  user         User             @relation("AccountMovementBy", fields: [userId], references: [id])
+  authorizedBy User?            @relation("AccountMovementAuthorizedBy", fields: [authorizedById], references: [id])
+  sale         Sale?            @relation(fields: [saleId], references: [id])
+  payment      CustomerPayment? @relation(fields: [paymentId], references: [id])
+
+  /// El extracto del cliente, que es lo que abre la ficha.
+  @@index([clientId, createdAt])
+  /// La reconciliacion y el reporte, por sucursal.
+  @@index([branchId, createdAt])
+  /// "Que movio la venta #482" y "que movio el recibo RC-000182".
+  @@index([saleId])
+  @@index([paymentId])
+  @@index([userId])
+}
+
+/// Un pago que hace el cliente a cuenta de lo que debe.
+///
+/// Entidad propia y no solo un movimiento del libro porque un pago tiene datos
+/// que el libro no tiene por que conocer: con que medio se pago, en que turno
+/// entro y que numero de comprobante se le dio al cliente. El movimiento del
+/// libro es la CONSECUENCIA del pago, y se crea en la misma transaccion: no
+/// existe forma de registrar uno sin el otro.
+///
+/// Ver docs/CUSTOMER_PAYMENT_FLOW.md.
+model CustomerPayment {
+  id Int @id @default(autoincrement())
+
+  /// "RC-00000182". Lo genera el SERVIDOR con una secuencia de PostgreSQL,
+  /// igual que el numero de orden de compra y por el mismo motivo: `count()+1`
+  /// hace que dos cobros simultaneos pidan el mismo numero.
+  number String @unique
+
+  branchId Int
+  clientId Int
+
+  /// Siempre POSITIVO: un pago de importe negativo seria un cargo disfrazado.
+  /// Lo comprueba la base con un CHECK.
+  amount Decimal @db.Decimal(14, 2)
+
+  /// 'CASH' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'TRANSFER' | 'OTHER'.
+  ///
+  /// NO admite 'ACCOUNT': pagar la cuenta con la cuenta no significa nada.
+  method String
+
+  /// Turno en el que entro, cuando entro al cajon. Null cuando no hubo turno
+  /// abierto y la sucursal no lo exige.
+  cashShiftId Int?
+
+  receivedById Int
+
+  /// Numero de operacion de la transferencia, ultimos digitos del cupon.
+  reference String?
+  notes     String?
+
+  createdAt DateTime @default(now())
+
+  branch        Branch                    @relation(fields: [branchId], references: [id])
+  client        Client                    @relation(fields: [clientId], references: [id])
+  shift         CashShift?                @relation(fields: [cashShiftId], references: [id])
+  receivedBy    User                      @relation(fields: [receivedById], references: [id])
+  movements     CustomerAccountMovement[]
+  cashMovements CashRegisterMovement[]
+
+  /// Los pagos de un cliente, en orden. Es lo que muestra la ficha.
+  @@index([clientId, createdAt])
+  /// El reporte de cobranza de la sucursal.
+  @@index([branchId, createdAt])
+  @@index([cashShiftId])
+  @@index([receivedById])
+}
+
 model Sale {
   id         Int      @id @default(autoincrement())
   userId     Int
@@ -766,15 +1001,38 @@ model Sale {
   /// exactamente lo que no se puede garantizar dos anios despues.
   total Decimal @default(0) @db.Decimal(14, 2)
 
+  /// A quien se le vendio. NULL es lo normal y va a seguir siendolo.
+  ///
+  /// Un almacen no le pide el nombre a quien compra un paquete de yerba, y
+  /// obligar a identificar a todo comprador convertiria la venta rapida en un
+  /// tramite. Todas las ventas anteriores a la Fase 4A quedan en NULL, y eso
+  /// NO significa "cliente desconocido": significa venta al mostrador.
+  ///
+  /// La unica excepcion la impone el servidor: una venta con saldo a cuenta SI
+  /// exige cliente, porque una deuda sin deudor no se puede cobrar. Ver
+  /// docs/CREDIT_POLICY.md.
+  clientId Int?
+
   items         SaleItem[]
   payments      SalePayment[]
   cashMovements CashRegisterMovement[]
-  user          User                   @relation("SaleCreatedBy", fields: [userId], references: [id])
-  canceledBy    User?                  @relation("SaleCanceledBy", fields: [canceledById], references: [id])
-  branch        Branch                 @relation(fields: [branchId], references: [id])
+  accountMoves  CustomerAccountMovement[]
+  user          User                      @relation("SaleCreatedBy", fields: [userId], references: [id])
+  canceledBy    User?                     @relation("SaleCanceledBy", fields: [canceledById], references: [id])
+  branch        Branch                    @relation(fields: [branchId], references: [id])
+
+  /// RESTRICT y no el `SetNull` que Prisma pone por omision en una relacion
+  /// opcional. La diferencia importa: con `SetNull`, borrar un cliente dejaria
+  /// sus ventas en pie pero sin dueno, y una venta que decia "de Juan" pasaria
+  /// a decir "del mostrador" sin que nadie se entere. Con RESTRICT, el cliente
+  /// con ventas simplemente no se puede borrar --se da de baja--, que es la
+  /// misma regla que ya rige para productos y proveedores.
+  client Client? @relation(fields: [clientId], references: [id], onDelete: Restrict)
 
   @@index([branchId, date])
   @@index([status])
+  /// Las ventas de un cliente, que es una de las tres listas de su ficha.
+  @@index([clientId, date])
 }
 
 model SaleItem {
@@ -823,8 +1081,19 @@ model SalePayment {
   id     Int @id @default(autoincrement())
   saleId Int
 
-  /// 'CASH' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'TRANSFER' | 'OTHER' | 'CARD'.
-  /// Ver src/modules/sales/payment-methods.ts. `CARD` es solo historico.
+  /// 'CASH' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'TRANSFER' | 'OTHER' | 'CARD' |
+  /// 'ACCOUNT'. Ver src/modules/sales/payment-methods.ts. `CARD` es historico.
+  ///
+  /// `ACCOUNT` desde la Fase 4A: es la parte de la venta que NO se cobro y
+  /// quedo en la cuenta del cliente. Existe aca --y no como una entidad
+  /// aparte-- para no romper la invariante que hace util a esta tabla:
+  ///
+  ///   suma(SalePayment.amount) == Sale.total,  siempre
+  ///
+  /// Una venta de $32.000 con $12.000 en efectivo y $20.000 fiados sigue
+  /// sumando $32.000. Lo que cambia es a DONDE va cada linea: el efectivo al
+  /// cajon, la cuenta al libro del cliente. `ACCOUNT` NO genera movimiento de
+  /// caja: no es plata que entro, es una promesa.
   method String
 
   amount Decimal @db.Decimal(14, 2)
@@ -901,17 +1170,27 @@ model CashRegisterMovement {
   /// sobre el campo description, que era la unica forma de relacionarlos.
   saleId Int?
 
+  /// Vinculo explicito con el cobro a un cliente, cuando el movimiento vino de
+  /// uno. Existe por el mismo motivo que `saleId`, y se agrego en la misma
+  /// migracion que lo necesitaba: sin esto, la reconciliacion tendria que
+  /// buscar el comprobante dentro de `description` con un LIKE, que es
+  /// exactamente el parseo de texto que este campo vino a eliminar en la
+  /// Fase 3. Un `description` es para leer, no para unir tablas.
+  customerPaymentId Int?
+
   /// Turno en el que ocurrio. Null solo en los movimientos anteriores a que
   /// existieran los turnos, que la migracion cuelga del turno `legacy`.
   shiftId Int?
 
-  branch Branch     @relation(fields: [branchId], references: [id])
-  user   User       @relation(fields: [userId], references: [id])
-  sale   Sale?      @relation(fields: [saleId], references: [id])
-  shift  CashShift? @relation(fields: [shiftId], references: [id])
+  branch          Branch           @relation(fields: [branchId], references: [id])
+  user            User             @relation(fields: [userId], references: [id])
+  sale            Sale?            @relation(fields: [saleId], references: [id])
+  shift           CashShift?       @relation(fields: [shiftId], references: [id])
+  customerPayment CustomerPayment? @relation(fields: [customerPaymentId], references: [id])
 
   @@index([branchId, date])
   @@index([saleId])
+  @@index([customerPaymentId])
   /// El saldo esperado de un turno suma los movimientos en efectivo de ESE
   /// turno. Es la consulta que se hace en cada venta y en cada cierre.
   @@index([shiftId, paymentMethod])

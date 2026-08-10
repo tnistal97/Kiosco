@@ -20,7 +20,12 @@ const TABLES = [
   'AuditLog',
   'StockCheck',
   'SaleItem',
+  // El libro de cuenta corriente y los cobros tambien tienen disparador de
+  // inmutabilidad, y TRUNCATE tampoco los dispara.
+  'CustomerAccountMovement',
+  'CustomerPayment',
   'Sale',
+  'Client',
   'CashRegisterMovement',
   'CashCount',
   'CashShift',
@@ -52,6 +57,7 @@ export async function resetDb(): Promise<void> {
   // que `RESTART IDENTITY` no la toca: los numeros seguirian creciendo entre
   // pruebas y "la primera orden es la OC-00000001" seria cierto una sola vez.
   await prisma.$executeRawUnsafe(`ALTER SEQUENCE "PurchaseOrder_numero_seq" RESTART WITH 1`)
+  await prisma.$executeRawUnsafe(`ALTER SEQUENCE "CustomerPayment_numero_seq" RESTART WITH 1`)
 }
 
 export interface Fixture {
@@ -89,6 +95,17 @@ export interface Fixture {
   /** Producto de la sucursal B. Un usuario de A no debe poder tocarlo. */
   productoB: { id: number; name: string; price: Monto; barcode: string }
   categoryId: number
+  /**
+   * Cliente con limite de $50.000 y saldo en cero. Los numeros del ejemplo del
+   * pedido de la Fase 4A.
+   */
+  cliente: { id: number; name: string }
+  /** Cliente SIN limite configurado (`creditLimit = null`): se le fia sin tope. */
+  clienteSinLimite: { id: number; name: string }
+  /** Cliente con el fiado cortado. Sigue comprando de contado. */
+  clienteBloqueado: { id: number; name: string }
+  /** Cliente de la sucursal B. Un usuario de A no debe poder tocarlo. */
+  clienteB: { id: number; name: string }
   /** Un usuario por cada rol del catalogo, todos en la sucursal A. */
   porRol: Record<string, TestUser>
   /** Turno abierto de cada sucursal. Sin turno no se puede vender. */
@@ -309,6 +326,20 @@ export async function seedFixture(): Promise<Fixture> {
     ],
   })
 
+  // Los cuatro clientes de la fixture. Todos arrancan en cero: el sistema
+  // anterior no tenia cuenta corriente, asi que no hay deuda historica que
+  // migrar y no se inventa ninguna. Ver el objetivo 27.
+  const [cliente, clienteSinLimite, clienteBloqueado, clienteB] = await Promise.all([
+    prisma.client.create({
+      data: { branchId: branchA.id, name: 'Juan Pérez', phone: '11-5555-1234', creditLimit: 50000 },
+    }),
+    prisma.client.create({ data: { branchId: branchA.id, name: 'Marta Gómez' } }),
+    prisma.client.create({
+      data: { branchId: branchA.id, name: 'Raúl Sosa', creditLimit: 20000, isCreditEnabled: false },
+    }),
+    prisma.client.create({ data: { branchId: branchB.id, name: 'Cliente de la B' } }),
+  ])
+
   return {
     branchA: { id: branchA.id, name: branchA.name },
     branchB: { id: branchB.id, name: branchB.name },
@@ -343,10 +374,71 @@ export async function seedFixture(): Promise<Fixture> {
     proveedor: { id: proveedor.id, name: proveedor.name },
     proveedorInactivo: { id: proveedorInactivo.id, name: proveedorInactivo.name },
     categoryId: category.id,
+    cliente: { id: cliente.id, name: cliente.name },
+    clienteSinLimite: { id: clienteSinLimite.id, name: clienteSinLimite.name },
+    clienteBloqueado: { id: clienteBloqueado.id, name: clienteBloqueado.name },
+    clienteB: { id: clienteB.id, name: clienteB.name },
     porRol,
     turnoA: turnoA.id,
     turnoB: turnoB.id,
   }
+}
+
+/** Saldo de un cliente, como cadena decimal. Positivo = debe. */
+export async function saldoDe(clientId: number): Promise<Monto> {
+  const c = await prisma.client.findUnique({ where: { id: clientId } })
+  return c === null ? '0.00' : aMonto(c.balance)
+}
+
+/**
+ * Comprueba LA invariante del libro de cuenta corriente, para todos los
+ * clientes.
+ *
+ *   para todo cliente:  suma(CustomerAccountMovement.amount) == Client.balance
+ *
+ * Se llama al final de los escenarios que mueven saldos. Si esa igualdad se
+ * rompe, el sistema esta mintiendo: o el saldo se movio sin dejar movimiento, o
+ * el movimiento dice una cosa y el saldo otra.
+ *
+ * Devuelve los descuadres en vez de lanzar, para que la prueba pueda mostrar
+ * cuales son. Comparacion en CADENA con escala fija, igual que en el libro de
+ * stock: dos `Decimal` con el mismo valor son objetos distintos, y pasarlos por
+ * `Number` reintroduciria el error de punto flotante que el libro no tolera.
+ */
+export interface DescuadreDeCuenta {
+  clientId: number
+  name: string
+  saldo: string
+  libro: string
+}
+
+export async function descuadresDeCuenta(): Promise<DescuadreDeCuenta[]> {
+  const [clientes, movimientos] = await Promise.all([
+    prisma.client.findMany({ select: { id: true, name: true, balance: true } }),
+    prisma.customerAccountMovement.groupBy({ by: ['clientId'], _sum: { amount: true } }),
+  ])
+
+  const libroPorCliente = new Map<number, string>()
+  for (const m of movimientos) {
+    libroPorCliente.set(m.clientId, (m._sum.amount ?? new Prisma.Decimal(0)).toFixed(2))
+  }
+
+  const descuadres: DescuadreDeCuenta[] = []
+  for (const c of clientes) {
+    const libro = libroPorCliente.get(c.id) ?? '0.00'
+    if (libro !== c.balance.toFixed(2)) {
+      descuadres.push({ clientId: c.id, name: c.name, saldo: c.balance.toFixed(2), libro })
+    }
+  }
+  return descuadres
+}
+
+/** El extracto de un cliente, del mas viejo al mas nuevo. */
+export async function movimientosDeCuenta(clientId: number) {
+  return prisma.customerAccountMovement.findMany({
+    where: { clientId },
+    orderBy: { id: 'asc' },
+  })
 }
 
 /**

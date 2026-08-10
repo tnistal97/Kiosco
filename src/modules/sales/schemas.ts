@@ -88,11 +88,44 @@ export const crearVentaSchema = z
      * unico pago por el total.
      */
     paymentMethod: paymentMethodSchema.optional(),
+
+    /**
+     * A quien se le vende. Opcional a proposito.
+     *
+     * Una venta al mostrador no lo lleva, y eso no va a cambiar. El servidor lo
+     * exige SOLO cuando hay una linea `ACCOUNT`: una deuda sin deudor no se
+     * puede cobrar. No se comprueba aca porque `payments` puede venir en
+     * cualquiera de las dos formas, y la regla vive donde se resuelven las dos.
+     */
+    clientId: idSchema.optional(),
+
+    /**
+     * Autorizacion explicita para fiar por encima del limite de credito.
+     *
+     * Un booleano no basta: el servidor exige `accounts.overrideLimit` y guarda
+     * QUIEN autorizo en la fila del libro. Mandarlo sin el permiso es un 403,
+     * no algo que se ignore en silencio.
+     */
+    autorizarExcesoDeCredito: z.boolean().optional(),
   })
   .strict()
   .refine((v) => v.payments !== undefined || v.paymentMethod !== undefined, {
     message: 'Falta indicar cómo se cobró',
     path: ['payments'],
+  })
+  // Un pago a cuenta no puede declarar "con cuanto pago": no se paga con nada.
+  // `pagoSchema` ya lo impide para todo lo que no sea efectivo; esto lo dice
+  // para el caso nuevo, que es el que alguien podria intentar.
+  .refine((v) => !v.payments?.some((p) => p.method === 'ACCOUNT' && p.cashReceived !== undefined), {
+    message: 'Un saldo a cuenta no se paga con efectivo',
+    path: ['payments'],
+  })
+  // La forma vieja --un solo medio para toda la venta-- no puede ser `ACCOUNT`.
+  // Es de antes de que existiera el fiado, la manda un cliente que no se
+  // actualizo, y una venta 100 % fiada por ese camino no llevaria cliente.
+  .refine((v) => v.paymentMethod !== 'ACCOUNT', {
+    message: 'Para vender a cuenta indicá los pagos y el cliente',
+    path: ['paymentMethod'],
   })
 
 /**
