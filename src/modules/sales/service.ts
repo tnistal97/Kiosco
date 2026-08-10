@@ -119,6 +119,8 @@ interface Catalogado {
   id: number
   name: string
   price: Dinero
+  /** Para congelarlo en la linea. NUNCA sale hacia la respuesta. */
+  cost: Dinero | null
   saleUnit: string
 }
 
@@ -203,9 +205,13 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
 
       // 1) Los productos se leen de la base, filtrados por la sucursal de la
       //    sesion. Un producto de otra sucursal simplemente no aparece.
+      //    `cost` se lee para CONGELARLO en la linea, no para mostrarlo: no
+      //    sale hacia ninguna respuesta de esta operacion --la caja nunca ve
+      //    el costo, tenga o no el permiso-- y se guarda tal cual, con NULL
+      //    cuando el producto no lo tiene cargado.
       const productos = await tx.product.findMany({
         where: { id: { in: lineas.map((l) => l.productId) }, branchId },
-        select: { id: true, name: true, price: true, saleUnit: true },
+        select: { id: true, name: true, price: true, cost: true, saleUnit: true },
       })
 
       // Cada linea se empareja con su producto una sola vez. A partir de aca
@@ -269,6 +275,11 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
         quantity,
         saleUnit: unidadDeVentaODefecto(producto.saleUnit),
         price: producto.price,
+        // El costo del producto EN ESTE MOMENTO. Se congela junto con el
+        // precio y por el mismo motivo: la rentabilidad de esta venta es un
+        // hecho de hoy y no puede cambiar porque manana llegue mercaderia mas
+        // cara. `null` cuando no se sabe, nunca cero.
+        costAtSale: producto.cost,
         subtotal: redondearPesos(multiplicar(producto.price, quantity)),
       }))
 
@@ -292,6 +303,7 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
               productId: i.productId,
               quantity: i.quantity,
               price: i.price,
+              costAtSale: i.costAtSale,
             })),
           },
           payments: {

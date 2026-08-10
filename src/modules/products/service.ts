@@ -49,6 +49,7 @@ import {
 import { estadoDeStock, type EstadoStock } from '@/modules/inventory/minimum'
 import { etiquetaDeTipo } from '@/modules/inventory/movement-types'
 import { calcularRentabilidad, type Rentabilidad } from './margen'
+import { registrarCambioDeCosto } from './costo'
 import {
   motivoDeCantidadInvalida,
   unidadDeCompraODefecto,
@@ -958,21 +959,38 @@ export async function cambiarCosto(session: Session, id: number, input: CambiarC
   }
 
   return prisma.$transaction(async (tx) => {
-    const despues = await tx.product.update({
+    // Por el registrador unico: toma el bloqueo del producto, compara contra
+    // el costo que hay EN ESE MOMENTO --no contra el que se leyo antes de
+    // entrar en la transaccion-- y encadena la fila de historial.
+    //
+    // `newCost` guarda NULL cuando se borra el costo. Antes guardaba 0, que es
+    // otra afirmacion: cero es "no me costo nada" --margen del 100%-- y nulo
+    // es "no sabemos".
+    const cambio = await registrarCambioDeCosto(tx, {
+      productId: id,
+      nuevo: input.cost === null ? null : dinero(input.cost),
+      supplierId: input.supplierId ?? null,
+      userId: session.userId,
+      reason: input.reason,
+    })
+
+    if (!cambio.cambio || cambio.historialId === null) {
+      // El costo cambio entre la lectura de arriba y el bloqueo: otra
+      // transaccion ya lo dejo en este valor. No hay nada que registrar.
+      throw invalid(
+        cambio.nuevo === null
+          ? 'El producto ya no tiene costo cargado: no hay nada que registrar'
+          : `El costo ya es ${aMontoCosto(cambio.nuevo)}: no hay nada que registrar`,
+      )
+    }
+
+    const despues = await tx.product.findUniqueOrThrow({
       where: { id },
-      data: { cost: input.cost },
       select: { ...CAMPOS_PRODUCTO, branchId: true },
     })
 
-    const historial = await tx.productCostHistory.create({
-      data: {
-        productId: id,
-        previousCost: antes.cost,
-        newCost: input.cost ?? 0,
-        supplierId: input.supplierId ?? null,
-        userId: session.userId,
-        reason: input.reason,
-      },
+    const historial = await tx.productCostHistory.findUniqueOrThrow({
+      where: { id: cambio.historialId },
       select: { id: true, createdAt: true },
     })
 
@@ -1141,7 +1159,7 @@ export async function actividadReciente(
     ...costos.map((c) => ({
       tipo: 'costo' as const,
       fecha: c.createdAt,
-      texto: `Costo: ${c.previousCost === null ? 'sin cargar' : aMontoCosto(c.previousCost)} → ${aMontoCosto(c.newCost)}`, // prettier-ignore
+      texto: `Costo: ${c.previousCost === null ? 'sin cargar' : aMontoCosto(c.previousCost)} → ${c.newCost === null ? 'sin cargar' : aMontoCosto(c.newCost)}`, // prettier-ignore
       usuario: c.user.name,
       motivo: c.reason,
     })),

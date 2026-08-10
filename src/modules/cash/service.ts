@@ -22,6 +22,7 @@ import type { Monto } from '@/lib/money'
 import type { TextoCantidad } from '@/lib/cantidad'
 import { aTextoCantidad } from '@/server/cantidad'
 import { unidadDeVentaODefecto, type UnidadDeVenta } from '@/modules/products/units'
+import { hoyEn, rangoDeDias, sumarDias, zonaDeSucursal } from '@/server/tiempo'
 import {
   aMonto,
   dinero,
@@ -91,11 +92,15 @@ export async function listarMovimientos(
   session: Session,
   query: ListarMovimientosQuery,
 ): Promise<Paginated<MovimientoListado>> {
-  const ahora = new Date()
-  const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate())
-  const finHoy = new Date(inicioHoy.getTime() + 24 * 60 * 60 * 1000 - 1)
-  // `dias: 2` significa ayer y hoy, que es lo que muestra la pantalla.
-  const desde = new Date(inicioHoy.getTime() - (query.dias - 1) * 24 * 60 * 60 * 1000)
+  // El dia lo decide la ZONA DE LA SUCURSAL, no la del proceso: un servidor
+  // en otro huso mostraria "los movimientos de hoy" de otro dia.
+  // Ver docs/TIMEZONE_POLICY.md.
+  const zona = await zonaDeSucursal(prisma, session.branchId)
+  const hoy = hoyEn(zona)
+  // `dias: 2` significa ayer y hoy, que es lo que muestra la pantalla. La
+  // resta es de dias de CALENDARIO: restar 24 horas se equivoca el dia que
+  // dura 23 o 25.
+  const { desde, hasta: finHoy } = rangoDeDias(sumarDias(hoy, -(query.dias - 1)), hoy, zona)
 
   const where = {
     branchId: session.branchId,
@@ -152,14 +157,16 @@ export async function saldoActual(session: Session): Promise<Saldo> {
   })
   if (!sucursal) throw notFound('Sucursal no encontrada')
 
-  const ahora = new Date()
-  const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate())
+  // "Hoy" es el dia comercial de la sucursal. Ver docs/TIMEZONE_POLICY.md.
+  const zona = await zonaDeSucursal(prisma, session.branchId)
+  const dia = hoyEn(zona)
+  const { desde: inicioHoy, hasta: finHoy } = rangoDeDias(dia, dia, zona)
 
   const hoy = await prisma.cashRegisterMovement.aggregate({
     where: {
       branchId: session.branchId,
       paymentMethod: MEDIO_EFECTIVO,
-      date: { gte: inicioHoy },
+      date: { gte: inicioHoy, lte: finHoy },
     },
     _sum: { amount: true },
   })

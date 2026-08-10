@@ -13,7 +13,13 @@
  */
 
 import { z } from 'zod'
-import { costSchema, idSchema, optionalText, quantitySchema } from '@/server/http/validate'
+import {
+  costSchema,
+  fechaLocalSchema,
+  idSchema,
+  optionalText,
+  quantitySchema,
+} from '@/server/http/validate'
 import { paginationQuerySchema } from '@/server/http/pagination'
 import { UNIDADES_DE_COMPRA } from '@/modules/products/units'
 import { ESTADOS_DE_COMPRA } from './status'
@@ -127,8 +133,9 @@ export const listarOrdenesSchema = paginationQuerySchema.extend({
   status: z.enum(ESTADOS_DE_COMPRA).optional(),
   /** Numero de orden, entero o el pedazo que uno se acuerda. */
   q: z.string().trim().max(40).optional(),
-  desde: z.coerce.date().optional(),
-  hasta: z.coerce.date().optional(),
+  /** Dias. El servidor los convierte con la zona de la sucursal. */
+  desde: fechaLocalSchema.optional(),
+  hasta: fechaLocalSchema.optional(),
 })
 
 /** Borrador generado desde los productos bajo minimo. */

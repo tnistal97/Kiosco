@@ -121,10 +121,11 @@ export default function MovimientosPage() {
     const params = new URLSearchParams({ page: String(page), pageSize: String(POR_PAGINA) })
     if (filtros.q.trim()) params.set('q', filtros.q.trim())
     if (filtros.tipo) params.set('tipo', filtros.tipo)
+    // Solo el DIA, en los dos extremos. Que "hasta el 5" incluya el 5 entero
+    // lo resuelve el servidor con la zona de la sucursal, que es el unico que
+    // sabe donde termina el dia del comercio.
     if (filtros.desde) params.set('desde', filtros.desde)
-    // `hasta` incluye el día entero: sin la hora, "hasta el 5" dejaría fuera
-    // todo lo del 5 salvo lo ocurrido a las 00:00:00.
-    if (filtros.hasta) params.set('hasta', `${filtros.hasta}T23:59:59.999`)
+    if (filtros.hasta) params.set('hasta', filtros.hasta)
 
     try {
       const pagina = await apiRequest(`/api/inventory/movements?${params.toString()}`, {

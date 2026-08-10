@@ -122,8 +122,11 @@ export default function AuditoriaPage() {
       })
       if (tabla !== '') params.set('tabla', tabla)
       if (accion !== '') params.set('accion', accion)
-      if (desde !== '') params.set('desde', `${desde}T00:00:00.000Z`)
-      if (hasta !== '') params.set('hasta', `${hasta}T23:59:59.999Z`)
+      // Solo el DIA. El servidor lo convierte con la zona de la sucursal:
+      // mandar `T00:00:00.000Z` era medianoche UTC, o sea las 21:00 del dia
+      // anterior. Ver docs/TIMEZONE_POLICY.md.
+      if (desde !== '') params.set('desde', desde)
+      if (hasta !== '') params.set('hasta', hasta)
       // Solo se manda si tiene forma de identificador: si no, el servidor
       // responde 400 y la pantalla parece rota mientras se escribe.
       if (/^[a-fA-F0-9-]{8,64}$/.test(requestId.trim())) {

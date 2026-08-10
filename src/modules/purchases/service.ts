@@ -38,6 +38,8 @@ import {
 import { aTextoCantidad, cantidad as aCantidad, type Cantidad } from '@/server/cantidad'
 import { applyStockMovement, type TxClient } from '@/modules/inventory/service'
 import { exigirProveedorActivo } from '@/modules/suppliers/service'
+import { registrarCambioDeCosto } from '@/modules/products/costo'
+import { finDelDia, inicioDelDia, zonaDeSucursal } from '@/server/tiempo'
 import {
   unidadDeCompraODefecto,
   unidadDeVentaODefecto,
@@ -178,16 +180,21 @@ export async function listarOrdenes(
   session: Session,
   query: ListarOrdenesQuery,
 ): Promise<Paginated<OrdenListada>> {
+  const zona = await zonaDeSucursal(prisma, session.branchId)
+
   const where: Prisma.PurchaseOrderWhereInput = {
     branchId: session.branchId,
     ...(query.supplierId === undefined ? {} : { supplierId: query.supplierId }),
     ...(query.status === undefined ? {} : { status: query.status }),
     ...(query.q ? { number: { contains: query.q, mode: 'insensitive' as const } } : {}),
+    // El filtro por fecha se resuelve con la zona de la SUCURSAL: `desde` es
+    // el primer instante de ese dia en el local y `hasta` el ultimo.
+    // Ver docs/TIMEZONE_POLICY.md.
     ...(query.desde || query.hasta
       ? {
           createdAt: {
-            ...(query.desde ? { gte: query.desde } : {}),
-            ...(query.hasta ? { lte: query.hasta } : {}),
+            ...(query.desde ? { gte: inicioDelDia(query.desde, zona) } : {}),
+            ...(query.hasta ? { lte: finDelDia(query.hasta, zona) } : {}),
           },
         }
       : {}),
@@ -931,26 +938,20 @@ export async function recibirMercaderia(
 
       // 11-12. El costo. Politica LAST RECEIVED COST: manda la ultima
       //        recepcion confirmada. Ver docs/PURCHASE_RECEIVING.md.
-      const costoAnterior = linea.product.cost
-      const cambiaCosto = costoAnterior === null || !iguales(costoAnterior, calculada.costoDeStock)
-
-      if (cambiaCosto) {
-        await tx.product.update({
-          where: { id: linea.productId },
-          data: { cost: calculada.costoDeStock },
-        })
-        await tx.productCostHistory.create({
-          data: {
-            productId: linea.productId,
-            previousCost: costoAnterior,
-            newCost: calculada.costoDeStock,
-            supplierId: orden.supplierId,
-            receiptId: recepcion.id,
-            userId: session.userId,
-            reason: `Recepción de ${orden.number} — ${proveedor.name}`,
-          },
-        })
-      }
+      //
+      //        Por el registrador unico, que toma el bloqueo de la fila del
+      //        producto y decide si hay cambio. Antes esto leia el costo del
+      //        `select` de la linea y comparaba aca: dos recepciones
+      //        simultaneas del mismo producto leian el mismo costo anterior y
+      //        dejaban dos filas de historial encadenadas al mismo punto.
+      const cambio = await registrarCambioDeCosto(tx, {
+        productId: linea.productId,
+        nuevo: calculada.costoDeStock,
+        supplierId: orden.supplierId,
+        receiptId: recepcion.id,
+        userId: session.userId,
+        reason: `Recepción de ${orden.number} — ${proveedor.name}`,
+      })
 
       // 13. El ultimo costo pactado con ESTE proveedor, para armar la proxima
       //     orden. No es historial: es un dato de referencia que se pisa.
@@ -978,7 +979,7 @@ export async function recibirMercaderia(
         stockQuantity: aTextoCantidad(calculada.cantidadDeStock),
         previousStock: aTextoCantidad(movimiento.previousQuantity),
         resultingStock: aTextoCantidad(movimiento.resultingQuantity),
-        costoActualizado: cambiaCosto,
+        costoActualizado: cambio.cambio,
         ...(puedeVerCosto(session) ? { diferencia } : {}),
       })
 
@@ -1221,6 +1222,8 @@ export async function costosDeRecepcion(receiptId: number) {
     productId: f.productId,
     name: f.product.name,
     previousCost: aMontoCostoOpcional(f.previousCost),
-    newCost: aMontoCosto(f.newCost),
+    // Una recepcion nunca deja el costo en NULL --siempre llega con un costo--
+    // pero la columna admite nulo desde la 3D y el tipo lo refleja.
+    newCost: aMontoCostoOpcional(f.newCost),
   }))
 }

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
 import { paginado, toSkipTake } from '@/server/http/pagination'
 import { consultarAuditoriaQuerySchema } from '@/modules/audit/schemas'
+import { finDelDia, inicioDelDia, zonaDeSucursal } from '@/server/tiempo'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,6 +33,8 @@ export const GET = handler(
     audit: 'GET /api/audit',
   },
   async ({ session, query }) => {
+    const zona = await zonaDeSucursal(prisma, session.branchId)
+
     const where: Prisma.AuditLogWhereInput = {
       // Las entradas anteriores a esta version no tienen branchId; se
       // incluyen mirando la sucursal del usuario, como antes.
@@ -44,11 +47,14 @@ export const GET = handler(
       ...(query.usuarioId ? { userId: query.usuarioId } : {}),
       ...(query.requestId ? { requestId: query.requestId } : {}),
       ...(query.resultado === 'todos' ? {} : { result: query.resultado }),
+      // El dia lo define la sucursal, no el navegador. Hasta la Fase 3D la
+      // pantalla mandaba medianoche UTC y la bitacora de un dia empezaba tres
+      // horas antes de que ese dia existiera.
       ...(query.desde || query.hasta
         ? {
             timestamp: {
-              ...(query.desde ? { gte: query.desde } : {}),
-              ...(query.hasta ? { lte: query.hasta } : {}),
+              ...(query.desde ? { gte: inicioDelDia(query.desde, zona) } : {}),
+              ...(query.hasta ? { lte: finDelDia(query.hasta, zona) } : {}),
             },
           }
         : {}),

@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod'
-import { idSchema } from '@/server/http/validate'
+import { fechaLocalSchema, idSchema } from '@/server/http/validate'
 import { paginationQuerySchema } from '@/server/http/pagination'
 
 /** Tablas sobre las que se registran eventos. Lista blanca para el filtro. */
@@ -19,6 +19,12 @@ export const TABLAS_AUDITADAS = [
   'Branch',
   'Category',
   'Supplier',
+  // Compras. Estaban auditadas desde la Fase 3C pero no figuraban aca, asi que
+  // el filtro de la pantalla no las ofrecia: los eventos existian y no habia
+  // forma de buscarlos.
+  'PurchaseOrder',
+  'PurchaseReceipt',
+  'PurchaseReceiptItem',
   'Authorization',
 ] as const
 
@@ -49,8 +55,16 @@ export const consultarAuditoriaQuerySchema = paginationQuerySchema.extend({
     .trim()
     .regex(/^[a-fA-F0-9-]{8,64}$/, 'Identificador de peticion invalido')
     .optional(),
-  desde: z.coerce.date().optional(),
-  hasta: z.coerce.date().optional(),
+  /**
+   * Dias, no instantes. El servidor los convierte con la zona de la sucursal.
+   *
+   * Hasta la Fase 3D la pantalla mandaba `2026-08-10T00:00:00.000Z`, o sea
+   * medianoche UTC: en Argentina, las 21:00 del dia anterior. La bitacora de
+   * un dia empezaba tres horas antes de que ese dia existiera.
+   * Ver docs/TIMEZONE_POLICY.md.
+   */
+  desde: fechaLocalSchema.optional(),
+  hasta: fechaLocalSchema.optional(),
 })
 
 export type ConsultarAuditoriaQuery = z.infer<typeof consultarAuditoriaQuerySchema>

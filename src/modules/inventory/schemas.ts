@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod'
-import { idSchema } from '@/server/http/validate'
+import { fechaLocalSchema, idSchema } from '@/server/http/validate'
 import { paginationQuerySchema } from '@/server/http/pagination'
 import { TIPOS_MOVIMIENTO } from './movement-types'
 import { REFERENCIAS } from './referencias'
@@ -17,8 +17,9 @@ export const consultarMovimientosQuerySchema = paginationQuerySchema.extend({
   /** "Que movio la venta #4832": referenceType=Sale&referenceId=4832. */
   referenceType: z.enum(REFERENCIAS).optional(),
   referenceId: idSchema.optional(),
-  desde: z.coerce.date().optional(),
-  hasta: z.coerce.date().optional(),
+  /** Dias. El servidor los convierte con la zona de la sucursal. */
+  desde: fechaLocalSchema.optional(),
+  hasta: fechaLocalSchema.optional(),
 })
 
 export type ConsultarMovimientosQuery = z.infer<typeof consultarMovimientosQuerySchema>

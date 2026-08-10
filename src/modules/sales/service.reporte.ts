@@ -7,7 +7,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import type { Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { invalid } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
@@ -17,6 +17,7 @@ import type { TextoCantidad } from '@/lib/cantidad'
 import { aMonto, multiplicar, redondearPesos, sumar, type Dinero } from '@/server/money'
 import { aTextoCantidad, type Cantidad } from '@/server/cantidad'
 import { unidadDeVentaODefecto, type UnidadDeVenta } from '@/modules/products/units'
+import { cantidadDeDias, esFechaLocal, rangoDeSucursal } from '@/server/tiempo'
 
 export interface VentaDelReporte {
   id: number
@@ -42,7 +43,16 @@ export interface TotalesDelReporte {
   /** Ventas no anuladas del rango completo, no solo de la pagina. */
   ventas: number
   anuladas: number
-  recaudado: Monto
+  /**
+   * Lo recaudado en el rango. `null` sin `reports.sales.view`.
+   *
+   * Contar operaciones y ver cuanto factura el local no son la misma
+   * informacion. El cajero necesita lo primero para encontrar una venta que
+   * tiene que anular; lo segundo es una cifra del negocio. Misma disciplina
+   * que el costo de un producto: no se esconde en la pantalla, no sale de la
+   * respuesta.
+   */
+  recaudado: Monto | null
 }
 
 /**
@@ -67,32 +77,25 @@ export async function reporteDeVentas(
   session: Session,
   query: ReporteVentasQuery,
 ): Promise<Paginated<VentaDelReporte> & { totales: TotalesDelReporte }> {
-  // El rango se interpreta en la HORA DEL LOCAL, no en UTC.
+  // El rango se interpreta en la ZONA HORARIA DE LA SUCURSAL.
   //
-  // Sin la `Z` final, `new Date` parsea en la zona horaria del proceso, que es
-  // la del comercio. Con la `Z` --como estaba hasta la Fase 3C-- el dia iba de
-  // las 00:00 UTC a las 23:59 UTC, y en Argentina eso son las 21:00 del dia
-  // anterior a las 20:59 del dia pedido.
+  // Hasta la Fase 3C esto se armaba con `T00:00:00.000Z` --UTC-- y en
+  // Argentina el "dia" iba de las 21:00 del dia anterior a las 20:59 del
+  // pedido: **toda venta hecha despues de las 21:00 desaparecia del dia**. La
+  // 3C lo corrigio quitando la `Z`, lo que traslado la decision a la zona del
+  // PROCESO: correcta en el servidor del local, incorrecta en cualquier otro.
   //
-  // La consecuencia era grave y silenciosa: **toda venta hecha despues de las
-  // 21:00 desaparecia del dia**. Un almacen que cierra a las 22 perdia de
-  // vista su ultima hora --de la pantalla de ventas, del reporte y del
-  // "recaudado hoy" del panel-- y volvia a aparecer al dia siguiente, como si
-  // se hubiera vendido manana.
-  //
-  // Lo encontro la suite de extremo a extremo de la Fase 3C, por correr
-  // pasadas las nueve de la noche. Antes de eso pasaba siempre, porque
-  // siempre se corria mas temprano.
-  const desde = new Date(`${query.start}T00:00:00.000`)
-  const hasta = new Date(`${query.end}T23:59:59.999`)
+  // Desde la 3D la decide un dato del negocio. Ver docs/TIMEZONE_POLICY.md.
+  if (!esFechaLocal(query.start) || !esFechaLocal(query.end)) throw invalid('Fechas invalidas')
+  if (query.start > query.end) throw invalid('La fecha inicial es posterior a la final')
 
-  if (Number.isNaN(desde.getTime()) || Number.isNaN(hasta.getTime())) {
-    throw invalid('Fechas invalidas')
-  }
-  if (desde > hasta) throw invalid('La fecha inicial es posterior a la final')
-
-  const dias = (hasta.getTime() - desde.getTime()) / (24 * 60 * 60 * 1000)
+  // Se cuentan DIAS DE CALENDARIO y no milisegundos divididos: un rango que
+  // cruza un cambio de horario de verano tiene un dia de 23 horas, y la
+  // division devolveria 30,96 dias para un mes de 31.
+  const dias = cantidadDeDias(query.start, query.end)
   if (dias > MAX_DIAS_REPORTE) throw invalid(`El rango no puede superar ${MAX_DIAS_REPORTE} dias`)
+
+  const { desde, hasta } = await rangoDeSucursal(prisma, session.branchId, query.start, query.end)
 
   const where: Prisma.SaleWhereInput = {
     branchId: session.branchId,
@@ -143,13 +146,30 @@ export async function reporteDeVentas(
     }),
   ])
 
-  // La recaudacion del rango completo, en una sola consulta agregada sobre
-  // los items de las ventas no anuladas. Sumarla trayendo todas las ventas
-  // seria volver a lo que la paginacion vino a evitar.
-  const recaudado = await prisma.saleItem.findMany({
-    where: { sale: { ...where, status: 'completed' } },
-    select: { price: true, quantity: true },
-  })
+  // La recaudacion del rango completo, AGREGADA EN LA BASE.
+  //
+  // Hasta la Fase 3D esto traia todas las lineas del rango --`findMany` sobre
+  // `SaleItem`-- y las sumaba en JavaScript. Con un mes flojo eran cientos de
+  // filas y no se notaba; con un anio de un almacen que vende cien tickets por
+  // dia son decenas de miles de objetos construidos para devolver un numero.
+  // La suma la hace ahora PostgreSQL, con el mismo redondeo por linea.
+  //
+  // Solo se pide si quien consulta puede verla: sin el permiso, la consulta ni
+  // siquiera se ejecuta.
+  const puedeVerRecaudado = session.permissions.has('reports.sales.view')
+  const recaudado = puedeVerRecaudado
+    ? await prisma.$queryRaw<Array<{ total: string }>>`
+        SELECT COALESCE(sum(round(i."price" * i."quantity", 2)), 0)::numeric(14,2)::text AS total
+          FROM "SaleItem" i
+          JOIN "Sale" s ON s."id" = i."saleId"
+         WHERE s."branchId" = ${session.branchId}
+           AND s."date" >= ${desde}
+           AND s."date" <= ${hasta}
+           AND s."status" = 'completed'
+           ${query.userId === undefined ? Prisma.empty : Prisma.sql`AND s."userId" = ${query.userId}`}
+           ${query.saleId === undefined ? Prisma.empty : Prisma.sql`AND s."id" = ${query.saleId}`}
+      `
+    : null
 
   const data: VentaDelReporte[] = ventas.map(({ cashMovements, items, ...venta }) => ({
     ...venta,
@@ -170,7 +190,7 @@ export async function reporteDeVentas(
     totales: {
       ventas: total - anuladas,
       anuladas,
-      recaudado: aMonto(totalDeLineas(recaudado)),
+      recaudado: recaudado === null ? null : (recaudado[0]?.total ?? '0.00'),
     },
   }
 }

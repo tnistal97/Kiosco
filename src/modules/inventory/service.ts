@@ -40,6 +40,7 @@ import {
 import { SIGNO_DE_TIPO, esTipoValido, etiquetaDeTipo, type TipoMovimiento } from './movement-types'
 import type { Referencia } from './referencias'
 import type { ConsultarMovimientosQuery } from './schemas'
+import { finDelDia, inicioDelDia, zonaDeSucursal } from '@/server/tiempo'
 
 /** Cliente de una transaccion. El servicio NO acepta el cliente global. */
 export type TxClient = Prisma.TransactionClient
@@ -468,6 +469,8 @@ export async function consultarMovimientos(
   session: Session,
   query: ConsultarMovimientosQuery,
 ): Promise<Paginated<MovimientoListado>> {
+  const zona = await zonaDeSucursal(prisma, session.branchId)
+
   const where: Prisma.StockMovementWhereInput = {
     branchId: session.branchId,
     ...(query.productId === undefined ? {} : { productId: query.productId }),
@@ -475,11 +478,14 @@ export async function consultarMovimientos(
     ...(query.usuarioId === undefined ? {} : { userId: query.usuarioId }),
     ...(query.referenceType === undefined ? {} : { referenceType: query.referenceType }),
     ...(query.referenceId === undefined ? {} : { referenceId: query.referenceId }),
+    // El filtro por fecha se resuelve con la zona de la SUCURSAL: `desde` es
+    // el primer instante de ese dia en el local y `hasta` el ultimo.
+    // Ver docs/TIMEZONE_POLICY.md.
     ...(query.desde || query.hasta
       ? {
           createdAt: {
-            ...(query.desde ? { gte: query.desde } : {}),
-            ...(query.hasta ? { lte: query.hasta } : {}),
+            ...(query.desde ? { gte: inicioDelDia(query.desde, zona) } : {}),
+            ...(query.hasta ? { lte: finDelDia(query.hasta, zona) } : {}),
           },
         }
       : {}),

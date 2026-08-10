@@ -16,6 +16,20 @@ import { MEDIOS_DE_PAGO, normalizarMedio } from '@/modules/sales/payment-methods
 export const idSchema = z.coerce.number().int().positive().max(2_147_483_647)
 
 /**
+ * Un DIA de calendario: `2026-08-10`. Nunca un instante.
+ *
+ * Es LA regla de fechas del sistema. El navegador manda el dia; el servidor lo
+ * convierte a instantes con la zona de la sucursal. Aceptar un instante seria
+ * dejar que el dispositivo decida donde empieza el dia del comercio, que es el
+ * error que la Fase 3C encontro: con `T00:00:00Z`, toda venta posterior a las
+ * 21:00 desaparecia de su dia. Ver docs/TIMEZONE_POLICY.md.
+ */
+export const fechaLocalSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha va como AAAA-MM-DD')
+
+/**
  * Cantidad de mercaderia vendida, ajustada o contada.
  *
  * Decimal desde la Fase 3B: 0,425 kg de queso es una linea de ticket valida.
