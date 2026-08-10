@@ -96,7 +96,31 @@ export const PERMISSIONS = [
   'cash.shift.close.other',
   'cash.shift.authorize',
   // Informacion administrativa
-  'reports.view',
+  //
+  // Los reportes se separan por MATERIA y no por pantalla, porque lo que hay
+  // que proteger es la informacion y no el menu. `reports.view`, que era uno
+  // solo para todo, desaparecio en la Fase 3D: daba lo mismo ver cuantas
+  // operaciones hubo que ver el margen del negocio.
+  /**
+   * Facturacion, operaciones, ticket promedio, anulaciones, por cajero y por
+   * medio de pago. Ni un costo, ni un margen.
+   */
+  'reports.sales.view',
+  /**
+   * Costo vendido, ganancia bruta, margen y la valorizacion del inventario.
+   *
+   * Es el permiso mas sensible del sistema: con el se calcula cuanto gana el
+   * negocio. Va aparte de `reports.sales.view` a proposito --se puede necesitar
+   * saber cuanto se vendio sin saber cuanto se gano-- y acompania a
+   * `products.cost.view`, que protege el mismo dato producto por producto.
+   */
+  'reports.costs.view',
+  /** Cantidades, stock bajo, agotados, movimientos por tipo, sin costo. */
+  'reports.inventory.view',
+  /** Turnos, diferencias de arqueo, ingresos, egresos y retiros. */
+  'reports.cash.view',
+  /** Total comprado, ordenes, recepciones, por proveedor y diferencias. */
+  'reports.purchases.view',
   'audit.view',
   // Administracion
   'users.view',
@@ -189,7 +213,12 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'cash.shift.close',
     'cash.shift.close.other',
     'cash.shift.authorize',
-    'reports.view',
+    // El encargado ve todo: es quien responde por el resultado del local.
+    'reports.sales.view',
+    'reports.costs.view',
+    'reports.inventory.view',
+    'reports.cash.view',
+    'reports.purchases.view',
     // Administra proveedores y compra: es quien recibe la lista de precios y
     // quien decide a quien comprarle. Ver docs/SUPPLIER_MODEL.md.
     'suppliers.view',
@@ -218,9 +247,15 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     ...PERFIL_CAJA,
     'sales.cancel',
     'cash.movement.create',
-    'reports.view',
     'stock.adjust',
     'inventory.movements.view',
+    // Lo que necesita para que el turno cierre: cuanto se vendio, como esta la
+    // caja y que falta reponer. SIN `reports.costs.view`, por el mismo motivo
+    // por el que no tiene `products.cost.view`: el margen del negocio no hace
+    // falta para nada de lo que hace.
+    'reports.sales.view',
+    'reports.cash.view',
+    'reports.inventory.view',
   ],
 
   cajero: PERFIL_CAJA,
@@ -262,7 +297,11 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'purchases.update',
     'purchases.receive',
     'purchases.cancel',
-    'reports.view',
+    // Compras, costos e inventario. Sin caja --no cobra-- y sin el reporte de
+    // ventas, que es informacion de mostrador y no de compra.
+    'reports.purchases.view',
+    'reports.costs.view',
+    'reports.inventory.view',
   ],
 
   /**
@@ -277,7 +316,13 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'stock.view',
     'inventory.movements.view',
     'cash.view',
-    'reports.view',
+    // Lectura amplia, cero escritura: es el unico rol que ve todos los
+    // reportes sin poder cambiar nada de lo que mira.
+    'reports.sales.view',
+    'reports.costs.view',
+    'reports.inventory.view',
+    'reports.cash.view',
+    'reports.purchases.view',
     'audit.view',
     'users.view',
     'branches.view',

@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/server/auth/session'
+import { ZONA_POR_DEFECTO } from '@/lib/tiempo'
 import { AppShell } from '@/components/shell/AppShell'
 import { SessionProvider, type SesionCliente } from '@/components/shell/SessionProvider'
 import { SCRIPT_TEMA } from '@/components/shell/ThemeToggle'
@@ -38,7 +39,7 @@ async function sesionParaElCliente(): Promise<SesionCliente | null> {
 
   const sucursal = await prisma.branch.findUnique({
     where: { id: session.branchId },
-    select: { name: true },
+    select: { name: true, timeZone: true },
   })
 
   return {
@@ -48,6 +49,10 @@ async function sesionParaElCliente(): Promise<SesionCliente | null> {
     role: session.role,
     branchId: session.branchId,
     branchName: sucursal?.name ?? 'Sucursal',
+    // La zona del LOCAL viaja con la sesion para que ninguna pantalla tenga
+    // que suponer que el dispositivo esta en el mismo huso que el comercio.
+    // Ver docs/TIMEZONE_POLICY.md.
+    timeZone: sucursal?.timeZone ?? ZONA_POR_DEFECTO,
     permissions: [...session.permissions],
   }
 }

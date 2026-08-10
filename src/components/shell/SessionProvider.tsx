@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import type { Permission } from '@/server/authz/permissions'
+import { ZONA_POR_DEFECTO, hoyEn, type FechaLocal } from '@/lib/tiempo'
 
 /**
  * La sesion, del lado del navegador.
@@ -22,6 +23,14 @@ export interface SesionCliente {
   role: string
   branchId: number
   branchName: string
+  /**
+   * La zona horaria DEL LOCAL, en formato IANA.
+   *
+   * Baja del servidor para que el navegador sepa donde empieza el dia sin
+   * tener que suponer que el dispositivo esta en el mismo huso que el
+   * comercio. Ver docs/TIMEZONE_POLICY.md.
+   */
+  timeZone: string
   permissions: string[]
 }
 
@@ -29,12 +38,25 @@ interface Valor {
   session: SesionCliente | null
   permisos: ReadonlySet<string>
   puede: (permission: Permission) => boolean
+  /**
+   * Que dia es hoy EN EL LOCAL, como `AAAA-MM-DD`.
+   *
+   * Es lo que hay que mandarle a la API cuando se pide "hoy". Hasta la Fase 3D
+   * cada pantalla lo armaba con `new Date()` del dispositivo, que es correcto
+   * solo si el dispositivo esta en el huso del comercio.
+   *
+   * Queda un riesgo que ninguna correccion del lado del cliente puede cubrir:
+   * un dispositivo con la FECHA mal puesta. Contra eso protege el servidor, que
+   * es el que interpreta el rango y el unico que decide.
+   */
+  hoy: () => FechaLocal
 }
 
 const Ctx = createContext<Valor>({
   session: null,
   permisos: new Set(),
   puede: () => false,
+  hoy: () => hoyEn(ZONA_POR_DEFECTO),
 })
 
 export function SessionProvider({
@@ -46,7 +68,13 @@ export function SessionProvider({
 }) {
   const valor = useMemo<Valor>(() => {
     const permisos = new Set(session?.permissions ?? [])
-    return { session, permisos, puede: (p: Permission) => permisos.has(p) }
+    const zona = session?.timeZone ?? ZONA_POR_DEFECTO
+    return {
+      session,
+      permisos,
+      puede: (p: Permission) => permisos.has(p),
+      hoy: () => hoyEn(zona),
+    }
   }, [session])
 
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>

@@ -87,7 +87,11 @@ const AREAS: Array<{ titulo: string; permisos: Array<{ clave: string; que: strin
   {
     titulo: 'Administración',
     permisos: [
-      { clave: 'reports.view', que: 'Ver reportes' },
+      { clave: 'reports.sales.view', que: 'Ver el reporte de ventas' },
+      { clave: 'reports.costs.view', que: 'Ver rentabilidad y márgenes' },
+      { clave: 'reports.inventory.view', que: 'Ver el reporte de inventario' },
+      { clave: 'reports.cash.view', que: 'Ver el reporte de caja' },
+      { clave: 'reports.purchases.view', que: 'Ver el reporte de compras' },
       { clave: 'audit.view', que: 'Ver la bitácora' },
       { clave: 'users.view', que: 'Ver el personal' },
       { clave: 'users.manage', que: 'Administrar el personal' },

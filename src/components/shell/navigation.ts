@@ -19,6 +19,14 @@ export interface EntradaNav {
   label: string
   /** Permiso necesario. Sin el, la entrada no se muestra. */
   permission?: Permission
+  /**
+   * Basta con UNO de estos. Para pantallas que agrupan varias materias, como
+   * Reportes: quien solo pueda ver compras tiene que poder entrar igual.
+   *
+   * No reemplaza a `permission`: la mayoria de las entradas protegen una sola
+   * cosa y una lista de un elemento se lee peor.
+   */
+  anyOf?: Permission[]
   /** Coincide tambien con las subrutas, p. ej. /productos/12. */
   matchPrefix?: boolean
 }
@@ -66,9 +74,28 @@ export const NAVEGACION: GrupoNav[] = [
     ],
   },
   {
+    title: 'Control',
+    items: [
+      // Un solo enlace para las seis materias. Cada seccion de la pantalla se
+      // dibuja o no segun su propio permiso, asi que quien tenga uno solo
+      // --el encargado de compras, por ejemplo-- entra y ve lo suyo.
+      {
+        href: '/reportes',
+        label: 'Reportes',
+        anyOf: [
+          'reports.sales.view',
+          'reports.costs.view',
+          'reports.inventory.view',
+          'reports.cash.view',
+          'reports.purchases.view',
+        ],
+      },
+      { href: '/auditoria', label: 'Auditoría', permission: 'audit.view' },
+    ],
+  },
+  {
     title: 'Administración',
     items: [
-      { href: '/auditoria', label: 'Auditoría', permission: 'audit.view' },
       { href: '/usuarios', label: 'Usuarios', permission: 'users.view' },
       { href: '/sucursales', label: 'Sucursales', permission: 'branches.view' },
       { href: '/configuracion', label: 'Configuración' },
@@ -80,7 +107,11 @@ export const NAVEGACION: GrupoNav[] = [
 export function navegacionPara(permisos: ReadonlySet<string>): GrupoNav[] {
   return NAVEGACION.map((g) => ({
     ...g,
-    items: g.items.filter((i) => !i.permission || permisos.has(i.permission)),
+    items: g.items.filter(
+      (i) =>
+        (!i.permission || permisos.has(i.permission)) &&
+        (!i.anyOf || i.anyOf.some((p) => permisos.has(p))),
+    ),
   })).filter((g) => g.items.length > 0)
 }
 

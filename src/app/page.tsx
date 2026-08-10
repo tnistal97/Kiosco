@@ -24,20 +24,19 @@ import { parsePaginaVentas, type VentaDTO } from '@/modules/sales/dto'
 import { parseArqueos, parseSaldo, type ArqueoDTO } from '@/modules/cash/dto'
 import { parseReposicion, type ReposicionDTO } from '@/modules/inventory/dto'
 import { parseResumenCompras, type ResumenComprasDTO } from '@/modules/purchases/dto'
+import { parseRentabilidadDelDia } from '@/modules/reports/dto'
 import type { Product } from '@/hooks/useProducts'
-
-/** YYYY-MM-DD de hoy, en hora local. */
-function hoy(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` // prettier-ignore
-}
 
 interface Panel {
   saldo: Monto | null
   efectivoHoy: Monto
   ventasHoy: number
   anuladasHoy: number
-  recaudadoHoy: Monto
+  /** `null` cuando quien mira no puede ver la facturacion del local. */
+  recaudadoHoy: Monto | null
+  gananciaHoy: Monto | null
+  margenHoy: string | null
+  lineasSinCostoHoy: number
   ultimasVentas: VentaDTO[]
   bajos: Product[]
   reposicion: ReposicionDTO
@@ -50,7 +49,10 @@ const VACIO: Panel = {
   efectivoHoy: CERO,
   ventasHoy: 0,
   anuladasHoy: 0,
-  recaudadoHoy: CERO,
+  recaudadoHoy: null,
+  gananciaHoy: null,
+  margenHoy: null,
+  lineasSinCostoHoy: 0,
   ultimasVentas: [],
   bajos: [],
   reposicion: { agotados: 0, bajoMinimo: 0, sinMinimo: 0 },
@@ -71,13 +73,16 @@ const VACIO: Panel = {
  * ningun lado obliga a buscar en el menu que pantalla lo explica.
  */
 export default function InicioPage() {
-  const { session, puede } = useSession()
+  const { session, puede, hoy } = useSession()
   const [datos, setDatos] = useState<Panel>(VACIO)
   const [cargando, setCargando] = useState(true)
 
   const verCaja = puede('cash.view')
   const verVentas = puede('sales.view')
-  const verReportes = puede('reports.view')
+  // La recaudacion y la ganancia son dos permisos distintos: se puede
+  // necesitar saber cuanto se vendio sin saber cuanto se gano.
+  const verRecaudado = puede('reports.sales.view')
+  const verGanancia = puede('reports.costs.view')
   const verStock = puede('stock.view')
   const verCompras = puede('purchases.view')
   const vender = puede('sales.create')
@@ -106,8 +111,10 @@ export default function InicioPage() {
       )
     }
 
-    if (verReportes) {
-      const d = hoy()
+    // El dia lo dice la sucursal, no el reloj del dispositivo.
+    const d = hoy()
+
+    if (verVentas) {
       tareas.push(
         apiRequest(`/api/admin/sales?start=${d}&end=${d}&page=1&pageSize=5`, {
           parse: parsePaginaVentas,
@@ -115,8 +122,24 @@ export default function InicioPage() {
           .then((r) => {
             salida.ventasHoy = r.totales.ventas
             salida.anuladasHoy = r.totales.anuladas
+            // Llega nulo sin `reports.sales.view`: el cajero ve sus ventas,
+            // no cuanto factura el local.
             salida.recaudadoHoy = r.totales.recaudado
             salida.ultimasVentas = r.data
+          })
+          .catch(() => undefined),
+      )
+    }
+
+    if (verGanancia) {
+      tareas.push(
+        apiRequest(`/api/reports/rentabilidad?desde=${d}&hasta=${d}`, {
+          parse: parseRentabilidadDelDia,
+        })
+          .then((r) => {
+            salida.gananciaHoy = r.gananciaBruta
+            salida.margenHoy = r.margenBruto
+            salida.lineasSinCostoHoy = r.lineasSinCosto
           })
           .catch(() => undefined),
       )
@@ -160,7 +183,7 @@ export default function InicioPage() {
     await Promise.all(tareas)
     setDatos(salida)
     setCargando(false)
-  }, [verCaja, verReportes, verStock, verCompras])
+  }, [verCaja, verVentas, verGanancia, verStock, verCompras, hoy])
 
   useEffect(() => {
     void cargar()
@@ -219,22 +242,37 @@ export default function InicioPage() {
             />
           )}
 
-          {verReportes && (
-            <>
-              <MetricCard
-                href="/ventas"
-                label="Ventas de hoy"
-                value={datos.ventasHoy}
-                detail={datos.anuladasHoy > 0 ? `${datos.anuladasHoy} anuladas` : 'Sin anulaciones'}
-                tone={datos.anuladasHoy > 0 ? 'warning' : 'neutral'}
-              />
-              <MetricCard
-                href="/ventas"
-                label="Recaudado hoy"
-                value={<Money amount={datos.recaudadoHoy} size="lg" />}
-                detail="No incluye las anuladas"
-              />
-            </>
+          {verVentas && (
+            <MetricCard
+              href="/ventas"
+              label="Ventas de hoy"
+              value={datos.ventasHoy}
+              detail={datos.anuladasHoy > 0 ? `${datos.anuladasHoy} anuladas` : 'Sin anulaciones'}
+              tone={datos.anuladasHoy > 0 ? 'warning' : 'neutral'}
+            />
+          )}
+
+          {verRecaudado && datos.recaudadoHoy !== null && (
+            <MetricCard
+              href="/reportes"
+              label="Recaudado hoy"
+              value={<Money amount={datos.recaudadoHoy} size="lg" />}
+              detail="No incluye las anuladas"
+            />
+          )}
+
+          {verGanancia && datos.gananciaHoy !== null && (
+            <MetricCard
+              href="/reportes"
+              label="Ganancia bruta hoy"
+              value={<Money amount={datos.gananciaHoy} size="lg" />}
+              detail={
+                datos.lineasSinCostoHoy > 0
+                  ? `${datos.margenHoy ?? '—'}% · ${datos.lineasSinCostoHoy} línea(s) sin costo`
+                  : `${datos.margenHoy ?? '—'}% de margen`
+              }
+              tone={datos.lineasSinCostoHoy > 0 ? 'warning' : 'neutral'}
+            />
           )}
 
           {verStock && (
@@ -384,11 +422,11 @@ export default function InicioPage() {
         )}
       </div>
 
-      {!cargando && !verCaja && !verReportes && !verStock && (
+      {!cargando && !verCaja && !verVentas && !verStock && (
         <Card>
           <EmptyState
             title="Tu panel está vacío a propósito"
-            description="Tu rol no incluye caja, reportes ni stock. Usá el menú para ir a lo que sí podés hacer."
+            description="Tu rol no incluye caja, ventas ni stock. Usá el menú para ir a lo que sí podés hacer."
             action={
               vender ? (
                 <ButtonLink href="/venta" variant="confirm">
