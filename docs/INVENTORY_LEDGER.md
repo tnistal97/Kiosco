@@ -425,3 +425,43 @@ crecen más de lo declarado.
 - **Órdenes de compra automáticas** a partir de las alertas de reposición.
 - **Reserva de stock.** Un ticket abierto en la pantalla de venta no bloquea
   unidades: el stock se descuenta al cobrar.
+
+## Fase 4D: el libro, ahora por lote
+
+`StockMovement.lotId`, nulo en todo el historial anterior y en todo producto con
+`lotTracking = NONE` —que es como arranca el catálogo entero—.
+
+**No se rellena hacia atrás.** Nadie sabe de qué partida eran las unidades que se
+vendieron el año pasado, y un lote inventado se ve igual que uno real.
+
+`applyStockMovement()` pasa a escribir **dos** saldos: el del producto y el del
+lote. Los dos con la misma técnica —`quantity + delta >= 0` dentro de la misma
+sentencia que descuenta— y en un orden que es parte del contrato: `BranchStock`
+primero, `BranchLotStock` después. Como todos los caminos pasan por ahí, todas
+las transacciones toman los bloqueos igual.
+
+La política del producto viaja **dentro** de la sentencia, junto a la
+comprobación de sucursal: un movimiento sin lote sobre un producto `REQUIRED` —o
+con lote sobre uno `NONE`— no afecta ninguna fila, y el camino de error dice cuál
+de las dos cosas fue.
+
+Que el lote pertenezca al producto lo garantiza una clave foránea **compuesta**
+`(productId, lotId)`. Con `lotId` nulo se satisface sola, que es exactamente lo
+que hace falta para el historial.
+
+### Un tipo más: `INVENTORY_COUNT`
+
+De los **dos signos**, y eso es exactamente por qué no es un `LOSS`: un sobrante
+contado no es una pérdida negativa, y mezclarlos haría que el reporte de mermas
+mienta. Tampoco figura entre los tipos de ajuste manual: si estuviera, cualquiera
+con `stock.adjust` podría escribir la diferencia de un inventario que nadie
+contó. Ver [PHYSICAL_INVENTORY.md](PHYSICAL_INVENTORY.md).
+
+### Un segundo libro: `LotAssignment`
+
+Atribuir stock existente a una partida **no es un movimiento**: había 20 y siguen
+habiendo 20, lo que cambia es la atribución. Fabricar un `+20` seguido de un
+`−20` para representarlo escribiría en este libro dos operaciones que nunca
+ocurrieron, y contaminaría todo reporte de movimientos por tipo.
+
+Ver [LOT_TRACKING_DESIGN.md](LOT_TRACKING_DESIGN.md).

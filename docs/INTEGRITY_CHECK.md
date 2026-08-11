@@ -32,8 +32,12 @@ COMPROBACION DE INTEGRIDAD
   Imputaciones ............ OK       2
   Devoluciones ............ OK       1
   Cantidades devueltas .... OK       1
+  Lotes ................... OK       5
+  Ventas por lote ......... OK       0
+  Recepciones por lote .... OK       0
+  Inventarios físicos ..... OK       1
 
-  Sin inconsistencias.  (93 ms)
+  Sin inconsistencias.  (173 ms)
 ```
 
 El número de la derecha es **cuántas filas se miraron**. Un `OK 0` no es lo
@@ -114,5 +118,49 @@ y su código de salida se puede vigilar.
 
 ## Qué comprueba exactamente
 
-Las diecinueve invariantes están en
+Las veintitrés invariantes están en
 [PHASE3_RECONCILIATION.md](PHASE3_RECONCILIATION.md), con el porqué de cada una.
+
+## Fase 4D: lotes e inventario físico
+
+Cuatro comprobaciones más, y las cuatro miran algo que ninguna de las diecinueve
+anteriores podía ver.
+
+**Lotes** — la invariante de la Fase 3A un nivel más abajo, y tres reglas que la
+rodean:
+
+1. el stock de un lote es la suma de su libro **más** la de sus atribuciones —son
+   dos libros y no uno porque atribuir stock existente a una partida no mueve
+   mercadería—;
+2. lo que los lotes explican no puede superar el stock del producto. Es una
+   **desigualdad**, y ahí está todo el diseño: los lotes explican _parte_ del
+   stock;
+3. ningún lote en negativo;
+4. un producto que **exige** lotes no deja stock sin atribuir. Es lo que hace que
+   `REQUIRED` signifique algo.
+
+**Ventas por lote** — el reparto no supera lo vendido (desigualdad otra vez: un
+producto `OPTIONAL` puede vender parte desde el stock sin atribuir), y el lote
+pertenece al producto de la línea. Esta segunda regla es la que ninguna suma
+detectaría: en `StockMovement` la impide una clave foránea **compuesta**
+`(productId, lotId)`; acá no hay columna de producto donde apoyarla.
+
+**Recepciones por lote** — **igualdad**, a diferencia de la venta: una línea
+repartida a medias deja mercadería en el depósito que el sistema no sabe de qué
+partida es, y como la recepción es inmutable desde la Fase 3C eso no se puede
+completar después. Más: una devolución sale de una partida que llegó con **esa**
+entrega.
+
+**Inventarios físicos** — la diferencia contada es lo que se movió, por
+`(sesión, producto, lote)` y no por sesión: dos líneas del mismo producto que se
+compensaran entre sí darían una suma correcta con los dos movimientos mal.
+
+Detecta las cuatro formas de que la aplicación salga mal —la diferencia que no se
+aplicó, el movimiento duplicado, la cantidad incorrecta y la sesión aplicada dos
+veces— porque las cuatro dan la misma desigualdad, y por eso alcanza con una
+regla y no hacen falta cuatro. Más una segunda que mira del otro lado: un
+`INVENTORY_COUNT` que referencia una sesión **no aplicada** es stock movido por un
+inventario que nadie aprobó.
+
+Ver [LOT_TRACKING_DESIGN.md](LOT_TRACKING_DESIGN.md) y
+[PHYSICAL_INVENTORY.md](PHYSICAL_INVENTORY.md).
