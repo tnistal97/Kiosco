@@ -53,6 +53,21 @@ export const TABLAS_AUDITADAS = [
   // compras en la Fase 3C.
   'SupplierAccountMovement',
   'SupplierPayment',
+  // Anticipos y devoluciones. Fase 4C.
+  //
+  // `SupplierPaymentAllocation` figura por UN solo caso: la imputacion
+  // DIFERIDA, que es una decision propia --a que entrega se aplica un anticipo
+  // que se entrego meses antes-- y que no queda registrada en ningun otro lado.
+  // El reparto que ocurre AL PAGAR no se audita aparte: ya esta dentro de la
+  // entrada del pago, con sus lineas y sus importes.
+  //
+  // `PurchaseReturn` cubre los cuatro eventos de una devolucion --crearla,
+  // editarla, cancelarla y confirmarla-- y la confirmacion lleva adentro el
+  // credito generado y lo que salio del deposito. Ni `StockMovement` ni
+  // `SupplierAccountMovement` se duplican: el libro de inventario y el de la
+  // cuenta ya guardan esos hechos mejor de lo que podria la bitacora.
+  'SupplierPaymentAllocation',
+  'PurchaseReturn',
   'Authorization',
 ] as const
 

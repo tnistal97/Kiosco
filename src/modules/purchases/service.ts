@@ -39,7 +39,7 @@ import {
   sumar,
   type Dinero,
 } from '@/server/money'
-import { aTextoCantidad, cantidad as aCantidad, type Cantidad } from '@/server/cantidad'
+import { CERO_C, aTextoCantidad, cantidad as aCantidad, type Cantidad } from '@/server/cantidad'
 import { applyStockMovement, type TxClient } from '@/modules/inventory/service'
 import { exigirProveedorActivo } from '@/modules/suppliers/service'
 import { registrarCambioDeCosto } from '@/modules/products/costo'
@@ -56,7 +56,11 @@ import {
 // momento, tambien el pago. Las dos cosas por sus unicas puertas.
 import { applySupplierAccountMovement, autorizanteDelSobrepago } from '@/modules/suppliers/cuenta'
 import { inicioDeHoyEnSucursal } from '@/modules/suppliers/service.cuenta'
-import { aplicarPago, siguienteNumeroDePagoAProveedor } from '@/modules/suppliers/service.pagos'
+import {
+  aplicarCreditoDisponible,
+  aplicarPago,
+  siguienteNumeroDePagoAProveedor,
+} from '@/modules/suppliers/service.pagos'
 import {
   unidadDeCompraODefecto,
   unidadDeVentaODefecto,
@@ -264,12 +268,99 @@ export interface LineaDeOrden {
   subtotal?: Monto
 }
 
+/** Lo devuelto de cada renglon de un conjunto de entregas. Una sola consulta. */
+async function devueltoDeRecepciones(
+  receiptIds: readonly number[],
+): Promise<Map<number, Cantidad>> {
+  if (receiptIds.length === 0) return new Map()
+
+  const filas = await prisma.$queryRaw<Array<{ id: number; devuelto: Cantidad }>>`
+    SELECT di."purchaseReceiptItemId" AS "id",
+           sum(di."quantity")         AS "devuelto"
+      FROM "PurchaseReturnItem" di
+      JOIN "PurchaseReturn" d ON d."id" = di."purchaseReturnId"
+     WHERE d."purchaseReceiptId" = ANY(${[...receiptIds]}::int[])
+       AND d."status" = 'CONFIRMED'
+     GROUP BY di."purchaseReceiptItemId"
+  `
+  return new Map(filas.map((f) => [f.id, f.devuelto]))
+}
+
+interface FinancieroDeEntrega {
+  /** Lo que costo. NUNCA cambia. */
+  total: Monto
+  /** Lo devuelto al proveedor, al costo historico. */
+  devuelto: Monto
+  /** `total - devuelto`. Lo que realmente se debe por esta entrega. */
+  neto: Monto
+  /** Lo aplicado por pagos. Puede superar al neto si se devolvio despues de pagar. */
+  imputado: Monto
+  pendiente: Monto
+  exceso: Monto
+}
+
+/** El estado financiero de cada entrega. Los cinco numeros del objetivo 22. */
+async function estadoFinancieroDeRecepciones(
+  receiptIds: readonly number[],
+): Promise<Map<number, FinancieroDeEntrega>> {
+  if (receiptIds.length === 0) return new Map()
+
+  const filas = await prisma.$queryRaw<
+    Array<{
+      id: number
+      total: string
+      devuelto: string
+      neto: string
+      imputado: string
+      pendiente: string
+      exceso: string
+    }>
+  >`
+    WITH entregas AS (
+      SELECT r."id",
+             r."total",
+             COALESCE((
+               SELECT sum(d."total") FROM "PurchaseReturn" d
+                WHERE d."purchaseReceiptId" = r."id" AND d."status" = 'CONFIRMED'
+             ), 0) AS devuelto,
+             COALESCE((
+               SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
+                WHERE a."receiptId" = r."id"
+             ), 0) AS imputado
+        FROM "PurchaseReceipt" r
+       WHERE r."id" = ANY(${[...receiptIds]}::int[])
+    )
+    SELECT "id",
+           "total"::numeric(14,2)::text                                     AS "total",
+           devuelto::numeric(14,2)::text                                    AS "devuelto",
+           ("total" - devuelto)::numeric(14,2)::text                        AS "neto",
+           imputado::numeric(14,2)::text                                    AS "imputado",
+           GREATEST("total" - devuelto - imputado, 0)::numeric(14,2)::text  AS "pendiente",
+           GREATEST(imputado - ("total" - devuelto), 0)::numeric(14,2)::text AS "exceso"
+      FROM entregas
+  `
+
+  return new Map(
+    filas.map((f) => [
+      f.id,
+      {
+        total: f.total,
+        devuelto: f.devuelto,
+        neto: f.neto,
+        imputado: f.imputado,
+        pendiente: f.pendiente,
+        exceso: f.exceso,
+      },
+    ]),
+  )
+}
+
 /**
  * El detalle de una orden, con sus lineas y sus recepciones.
  *
  * Toda la trazabilidad en una pantalla: que se pidio, que llego, cuando, quien
- * lo recibio y a que costo. Es la consulta mas cara del modulo y esta acotada
- * por el tope de lineas de una orden.
+ * lo recibio, a que costo, que volvio y cuanto queda por pagar. Es la consulta
+ * mas cara del modulo y esta acotada por el tope de lineas de una orden.
  */
 export async function obtenerOrden(session: Session, id: number) {
   const orden = await prisma.purchaseOrder.findFirst({
@@ -323,6 +414,17 @@ export async function obtenerOrden(session: Session, id: number) {
   const verCosto = puedeVerCosto(session)
   const { items, receipts, _count: _sinUsar, ...cabecera } = { ...orden, _count: undefined }
 
+  // Lo devuelto y lo imputado de cada entrega. Fase 4C, objetivo 22.
+  //
+  // DOS consultas agrupadas, no una por entrega ni una por renglon: una orden
+  // con tres entregas de diez lineas seria treinta consultas para armar dos
+  // columnas.
+  const idsDeEntregas = receipts.map((r) => r.id)
+  const [devueltoPorRenglon, financieroPorEntrega] = await Promise.all([
+    devueltoDeRecepciones(idsDeEntregas),
+    estadoFinancieroDeRecepciones(idsDeEntregas),
+  ])
+
   return {
     ...aOrdenListada(
       cabecera,
@@ -366,8 +468,26 @@ export async function obtenerOrden(session: Session, id: number) {
       receivedAt: r.receivedAt,
       notes: r.notes,
       receivedBy: r.receivedBy,
+      // El desglose financiero de la entrega. El importe ORIGINAL nunca se
+      // pisa: lo devuelto y la obligacion neta van al lado, no en su lugar. Es
+      // lo que pide el objetivo 22, y el motivo es que las tres cifras
+      // contestan preguntas distintas --cuanto costo, cuanto volvio, cuanto se
+      // debe-- y una sola las confunde.
+      ...(verCosto
+        ? {
+            financiero: financieroPorEntrega.get(r.id) ?? {
+              total: aMonto(CERO_D),
+              devuelto: aMonto(CERO_D),
+              neto: aMonto(CERO_D),
+              imputado: aMonto(CERO_D),
+              pendiente: aMonto(CERO_D),
+              exceso: aMonto(CERO_D),
+            },
+          }
+        : {}),
       items: r.items.map((ri) => {
         const diferencia = diferenciaDeCosto(ri.expectedUnitCost, ri.unitCost)
+        const devuelto = devueltoPorRenglon.get(ri.id) ?? CERO_C
         return {
           id: ri.id,
           orderItemId: ri.purchaseOrderItemId,
@@ -378,6 +498,8 @@ export async function obtenerOrden(session: Session, id: number) {
           },
           purchaseUnit: unidadDeCompraODefecto(ri.purchaseUnit),
           receivedQuantity: aTextoCantidad(ri.receivedQuantity),
+          returnedQuantity: aTextoCantidad(devuelto),
+          netQuantity: aTextoCantidad(ri.receivedQuantity.minus(devuelto)),
           stockQuantity: aTextoCantidad(ri.stockQuantity),
           // La diferencia de costo es informacion financiera entera: sin el
           // permiso no viaja ni el importe ni el aviso de que hubo diferencia.
@@ -816,6 +938,8 @@ export interface ResultadoDeRecepcion {
   saldoProveedor: Monto
   /** El pago inmediato, si se registro uno. */
   pago: { id: number; number: string; amount: Monto } | null
+  /** Los anticipos que se consumieron, si se pidio aplicarlos. Fase 4C. */
+  anticipos: Array<{ paymentId: number; number: string; amount: Monto }>
 }
 
 /**
@@ -1135,6 +1259,29 @@ export async function recibirMercaderia(
       receiptId: recepcion.id,
     })
 
+    // 15b. LOS ANTICIPOS. Fase 4C, objetivo 4.
+    //
+    //      Despues del cargo --antes no hay obligacion contra la cual
+    //      imputarlos-- y antes del pago inmediato, para que el pago cubra lo
+    //      que el credito no alcanzo a cubrir y no al reves.
+    //
+    //      NO SE APLICAN SOLOS: hace falta que la peticion lo pida. Aplicarlos en
+    //      silencio haria que el saldo baje sin que quien recibe entienda por
+    //      que, y que un anticipo reservado para otra compra desaparezca sin
+    //      aviso. La pantalla muestra el credito disponible y pregunta.
+    //
+    //      El tope es el importe de esta entrega, que acaba de nacer y todavia no
+    //      tiene ninguna imputacion. `aplicarCreditoDisponible` no se fia de eso:
+    //      vuelve a mirar el pendiente real con la fila tomada.
+    const anticipos = input.aplicarAnticipos
+      ? await aplicarCreditoDisponible(tx, {
+          supplierId: orden.supplierId,
+          receiptId: recepcion.id,
+          userId: session.userId,
+          tope: totalDeLaRecepcion,
+        })
+      : []
+
     // 16. El pago inmediato, si lo hubo. Objetivo 17.
     //
     //     DESPUES del cargo, siempre. "Pagado al contado" no evita la deuda: la
@@ -1174,10 +1321,22 @@ export async function recibirMercaderia(
         saldoProveedorNuevo: aMonto(cargo.resultingBalance),
         movimientoId: cargo.movementId,
         ...(pago === null ? {} : { pagoInmediato: pago.number }),
+        ...(anticipos.length === 0
+          ? {}
+          : {
+              anticiposAplicados: anticipos.map((a) => ({
+                pago: a.number,
+                importe: aMonto(a.amount),
+              })),
+            }),
       },
       origin: 'POST /api/purchases/:id/receive',
     })
 
+    // El saldo que se informa es el POSTERIOR al cargo, y no cambia por aplicar
+    // anticipos: una imputacion no mueve el saldo. Es la regla del objetivo 3, y
+    // aca se ve para que sirve: la plata del anticipo ya habia bajado el saldo
+    // cuando se entrego.
     return {
       receiptId: recepcion.id,
       orderId,
@@ -1188,6 +1347,11 @@ export async function recibirMercaderia(
       dueDate,
       saldoProveedor: aMonto(cargo.resultingBalance),
       pago: pago === null ? null : { id: pago.id, number: pago.number, amount: pago.amount },
+      anticipos: anticipos.map((a) => ({
+        paymentId: a.paymentId,
+        number: a.number,
+        amount: aMonto(a.amount),
+      })),
     }
   })
 }

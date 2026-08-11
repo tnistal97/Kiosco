@@ -252,6 +252,47 @@ export const PERMISSIONS = [
    * resultante y el comprobante.
    */
   'supplierAccounts.overpay',
+  /**
+   * Aplicar un pago ya registrado a obligaciones concretas. Fase 4C.
+   *
+   * Es el permiso del ANTICIPO: la plata se entrego en marzo, la mercaderia
+   * llego en agosto, y esto es decidir que ese anticipo cancela esta entrega.
+   *
+   * Aparte de `payment` porque no es lo mismo, aunque lo parezca. Pagar entrega
+   * dinero y deja rastro en la caja o en el banco; imputar no mueve un peso: solo
+   * cambia QUE ENTREGA figura como saldada. Quien puede imputar puede hacer que
+   * una entrega vieja aparezca pagada consumiendo un anticipo destinado a otra
+   * compra, y eso es una decision administrativa, no de mostrador.
+   *
+   * NO hace falta para imputar al pagar --el reparto de un pago nuevo va con
+   * `payment`, porque es la misma operacion-- sino para la imputacion DIFERIDA,
+   * que ocurre despues y sobre plata que ya se entrego.
+   */
+  'supplierAccounts.allocate',
+  // Devoluciones a proveedor. Ver docs/PURCHASE_RETURN_FLOW.md.
+  //
+  // Tres permisos y no uno, porque una devolucion tiene dos mitades que no
+  // siempre hace la misma persona: preparar el papel --que producto vuelve y
+  // cuanto-- y confirmarlo, que es cuando la mercaderia sale del deposito y el
+  // proveedor recibe un credito.
+  /** Ver las devoluciones y lo que se puede devolver de una entrega. */
+  'purchaseReturns.view',
+  /** Armar el borrador: elegir renglones y cantidades. No mueve nada todavia. */
+  'purchaseReturns.create',
+  /**
+   * Confirmar: sacar la mercaderia y emitir el credito.
+   *
+   * Es el permiso que importa de los tres. Un borrador es un papel; confirmar
+   * baja el stock y baja lo que le debemos al proveedor SIN que salga plata, que
+   * es exactamente el poder que `supplierAccounts.credit` protege del otro lado.
+   *
+   * La diferencia con la nota de credito --y el motivo de que compras SI tenga
+   * este y NO aquel-- es que aca hay mercaderia detras: el movimiento de stock
+   * queda en el libro de inventario, se reconcilia contra la devolucion y
+   * aparece en el recuento del deposito. Una nota de credito no deja mas rastro
+   * que el papel que alguien dice haber recibido.
+   */
+  'purchaseReturns.confirm',
 ] as const
 
 export type Permission = (typeof PERMISSIONS)[number]
@@ -354,6 +395,12 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'supplierAccounts.credit',
     'supplierAccounts.adjust',
     'supplierAccounts.overpay',
+    'supplierAccounts.allocate',
+    // Devoluciones enteras: es quien discute con el proveedor cuando algo llega
+    // roto, y quien responde por el credito que eso genera.
+    'purchaseReturns.view',
+    'purchaseReturns.create',
+    'purchaseReturns.confirm',
   ],
 
   /**
@@ -411,7 +458,26 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
    * saber quien debe cuanto. Y el saldo de un cliente es informacion privada de
    * esa persona.
    */
-  repositor: ['products.view', 'stock.view', 'stock.adjust', 'inventory.movements.view'],
+  /**
+   * Repositor. Sin cuenta corriente, como pide el objetivo 3 de la Fase 4A.
+   *
+   * VE las devoluciones y NO las crea, que es la respuesta al "evaluar
+   * participacion fisica" del objetivo 26 de la Fase 4C. Verlas le sirve: es
+   * quien tiene que apartar la mercaderia que se va a devolver. Crearlas, no:
+   * armar una devolucion es elegir renglones Y VER SU COSTO --de ahi sale el
+   * credito-- y el repositor no tiene `products.cost.view` desde la Fase 3B, a
+   * proposito. Darle el boton obligaria a una de dos cosas: filtrarle el costo,
+   * que es la informacion mas sensible del catalogo, o darle una pantalla ciega
+   * que no puede mostrar el credito que esta generando. Las dos son peores que
+   * no tener el boton.
+   */
+  repositor: [
+    'products.view',
+    'stock.view',
+    'stock.adjust',
+    'inventory.movements.view',
+    'purchaseReturns.view',
+  ],
 
   /**
    * Compras. Ve el catalogo y los proveedores y da entrada a la mercaderia.
@@ -464,6 +530,22 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     // arriba, que es quien responde por el dinero.
     'supplierAccounts.view',
     'supplierAccounts.payment',
+    // Y la imputacion diferida: es quien sabe a que compra corresponde el
+    // anticipo que se entrego en marzo, porque fue quien lo negocio.
+    'supplierAccounts.allocate',
+    // Las devoluciones, las tres. Es quien recibe la mercaderia, quien nota que
+    // llego rota y quien la discute con el proveedor.
+    //
+    // CON `confirm`, a diferencia de `supplierAccounts.credit`, que no tiene. La
+    // asimetria es deliberada y no una distraccion: las dos bajan la deuda sin
+    // que salga plata, pero la devolucion deja mercaderia saliendo del deposito
+    // --con su movimiento en el libro de inventario, su reconciliacion y su
+    // efecto en el recuento-- y la nota de credito no deja mas rastro que un
+    // papel. Se puede inventar una nota de credito; no se puede inventar una
+    // devolucion sin que falte el stock.
+    'purchaseReturns.view',
+    'purchaseReturns.create',
+    'purchaseReturns.confirm',
   ],
 
   /**
@@ -500,6 +582,10 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     // mismo. Sin esto el auditor podria revisar de quien se cobra y no a quien
     // se le paga, que es la mitad del dinero del negocio.
     'supplierAccounts.view',
+    // Las devoluciones tambien, solo lectura. Sin `create` ni `confirm`, y sin
+    // `supplierAccounts.allocate`: quien revisa no debe poder modificar lo que
+    // revisa, y una imputacion cambia que entrega figura como saldada.
+    'purchaseReturns.view',
   ],
 }
 

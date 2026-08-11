@@ -142,6 +142,10 @@ export interface LineaRecibidaDTO {
   product: { id: number; name: string; saleUnit: UnidadDeVenta }
   purchaseUnit: UnidadDeCompra
   receivedQuantity: TextoCantidad
+  /** Lo que volvio al proveedor, en unidad de compra. Fase 4C. */
+  returnedQuantity: TextoCantidad
+  /** `receivedQuantity - returnedQuantity`. Lo que quedo. Fase 4C. */
+  netQuantity: TextoCantidad
   stockQuantity: TextoCantidad
   unitCost?: Monto | null
   expectedUnitCost?: Monto | null
@@ -149,11 +153,25 @@ export interface LineaRecibidaDTO {
   diferencia?: DiferenciaDTO
 }
 
+/** El desglose financiero de una entrega. Los cinco numeros del objetivo 22. */
+export interface FinancieroDeEntregaDTO {
+  /** Lo que costo. NUNCA se pisa: lo devuelto va al lado, no en su lugar. */
+  total: Monto
+  devuelto: Monto
+  neto: Monto
+  imputado: Monto
+  pendiente: Monto
+  /** Lo pagado por encima del neto. Solo aparece devolviendo lo ya pagado. */
+  exceso: Monto
+}
+
 export interface RecepcionDTO {
   id: number
   receivedAt: string
   notes: string | null
   receivedBy: { id: number; name: string }
+  /** Solo con `products.cost.view`: es informacion financiera entera. */
+  financiero?: FinancieroDeEntregaDTO
   items: LineaRecibidaDTO[]
 }
 
@@ -164,6 +182,18 @@ function parseRecepcion(raw: unknown): RecepcionDTO {
     receivedAt: texto(raw.receivedAt),
     notes: textoOpcional(raw.notes),
     receivedBy: persona(raw.receivedBy),
+    ...(esObjeto(raw.financiero)
+      ? {
+          financiero: {
+            total: montoOpcional(raw.financiero.total) ?? '0.00',
+            devuelto: montoOpcional(raw.financiero.devuelto) ?? '0.00',
+            neto: montoOpcional(raw.financiero.neto) ?? '0.00',
+            imputado: montoOpcional(raw.financiero.imputado) ?? '0.00',
+            pendiente: montoOpcional(raw.financiero.pendiente) ?? '0.00',
+            exceso: montoOpcional(raw.financiero.exceso) ?? '0.00',
+          },
+        }
+      : {}),
     items: lista(raw.items, (i): LineaRecibidaDTO => {
       if (!esObjeto(i)) throw new Error('Linea de recepcion invalida')
       const prod = esObjeto(i.product) ? i.product : {}
@@ -178,6 +208,10 @@ function parseRecepcion(raw: unknown): RecepcionDTO {
         },
         purchaseUnit: unidadDeCompraODefecto(i.purchaseUnit),
         receivedQuantity: cantidadODefecto(i.receivedQuantity),
+        returnedQuantity: cantidadODefecto(i.returnedQuantity),
+        // Sin `netQuantity`, lo recibido: una respuesta anterior a la Fase 4C no
+        // lo trae, y en ese mundo el neto ERA lo recibido.
+        netQuantity: cantidadODefecto(i.netQuantity, cantidadODefecto(i.receivedQuantity)),
         stockQuantity: cantidadODefecto(i.stockQuantity),
         ...('unitCost' in i ? { unitCost: montoOpcional(i.unitCost) } : {}),
         ...('expectedUnitCost' in i ? { expectedUnitCost: montoOpcional(i.expectedUnitCost) } : {}),

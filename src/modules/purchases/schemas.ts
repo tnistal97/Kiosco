@@ -174,6 +174,15 @@ export const recibirSchema = z
       .optional(),
     /** Pago en el momento. Ver `pagoAlRecibirSchema`. */
     pago: pagoAlRecibirSchema.optional(),
+    /**
+     * Consumir los anticipos sin imputar del proveedor. Fase 4C, objetivo 4.
+     *
+     * `false` por omision, y la omision es la decision del objetivo: aplicar un
+     * anticipo en silencio hace que el saldo baje sin que quien recibe entienda
+     * por que, y que un anticipo reservado para otra compra desaparezca solo. La
+     * pantalla muestra cuanto credito hay y pregunta; esto es esa respuesta.
+     */
+    aplicarAnticipos: z.boolean().default(false),
   })
   .strict()
 
