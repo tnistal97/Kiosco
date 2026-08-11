@@ -317,8 +317,33 @@ export const PERMISSIONS = [
    *
    * El CODIGO de una partida con historial no lo cambia nadie: eso no es un
    * permiso, es un disparador en la base.
+   *
+   * Incluye ENDURECER la politica --NONE -> OPTIONAL -> REQUIRED-- pero ya no
+   * aflojarla: eso se separo en `lots.tracking.relax`.
    */
   'lots.manage',
+  /**
+   * AFLOJAR el rastreo de un producto: bajar de REQUIRED a OPTIONAL o a NONE,
+   * en lote o en vencimiento.
+   *
+   * Se separo de `manage` en la Fase 5A, y la separacion es por DIRECCION, no
+   * por operacion. El argumento original de juntarlas sigue siendo cierto en un
+   * sentido: quien exige lotes tiene que poder crearlos, o queda un producto
+   * que no se puede recibir. Pero no es simetrico. Endurecer es una decision
+   * operativa que se comprueba sola --el sistema exige atribuir el stock antes
+   * de dejar activar REQUIRED-- mientras que aflojar APAGA UN CONTROL, y lo
+   * apaga hacia atras: desde ese momento el producto acepta unidades sin
+   * partida, y lo que ya estaba trazado deja de exigirse.
+   *
+   * La pregunta concreta que lo motivo: compras necesita cargar la partida que
+   * llego para poder recibir; NO necesita poder decidir que ese producto deje
+   * de seguirse. Con este permiso aparte, compras conserva todo lo que hacia y
+   * pierde exactamente lo que no debia poder hacer.
+   *
+   * "Queda auditado" no alcanzaba como unica proteccion: la bitacora dice quien
+   * apago el control, no lo impide.
+   */
+  'lots.tracking.relax',
   /**
    * Elegir el lote A MANO donde el sistema elegiria por FEFO.
    *
@@ -465,8 +490,11 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'purchaseReturns.create',
     'purchaseReturns.confirm',
     // Lotes e inventario fisico, todo: es quien responde por el deposito.
+    // Incluido aflojar el rastreo: si un producto deja de necesitar lote, la
+    // decision es suya. Es el escalon que compras ya no tiene.
     'lots.view',
     'lots.manage',
+    'lots.tracking.relax',
     'lots.adjust',
     'inventoryCounts.view',
     'inventoryCounts.create',
@@ -652,10 +680,13 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     // codigo y su vencimiento, leidos del envase-- y sin este permiso compras no
     // podria recibir ese producto en absoluto.
     //
-    // Incluye poder cambiar la politica de rastreo, y eso hay que decirlo: quien
-    // recibe puede aflojar el rastreo de un producto. Queda auditado y es
-    // coherente con lo que el rol ya puede --crear deuda, fijar costos-- pero es
-    // un poder real y no un detalle.
+    // Puede ENDURECER la politica de rastreo --marcar que un producto pase a
+    // seguirse por lote-- pero desde la Fase 5A ya NO puede aflojarla. La
+    // pregunta que lo decidio fue directa: ¿compras necesita poder bajar un
+    // producto de REQUIRED a NONE? No. Necesita cargar la partida que llego
+    // para poder recibir, y eso lo sigue dando `manage`. Aflojar apaga un
+    // control, y ese escalon quedo en `lots.tracking.relax`, que tienen
+    // encargado y administrador.
     //
     // SIN `lots.adjust`: elegir el lote a mano es una operacion de mostrador.
     'lots.view',

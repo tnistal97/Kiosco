@@ -33,7 +33,16 @@ import { REQUEST_ID_HEADER, requestIdDe } from '@/server/http/requestId'
  * Tiene que ser publica: se llega a ella justamente cuando no se puede
  * comprobar nada contra el servidor. No contiene ningun dato del comercio.
  */
-const PUBLIC_PATHS = new Set(['/login', '/offline', '/api/auth/login', '/api/auth/logout'])
+const PUBLIC_PATHS = new Set([
+  '/login',
+  '/offline',
+  '/api/auth/login',
+  '/api/auth/logout',
+  // El monitor consulta la salud sin credenciales. Si exigiera sesion, un
+  // fallo de la base --que es justo lo que viene a detectar-- se veria como
+  // un 401 y no como un 503.
+  '/api/health',
+])
 
 /** Prefijos de recursos que no pasan por la comprobacion. */
 const PUBLIC_PREFIXES = ['/_next/', '/icons/', '/screenshots/']

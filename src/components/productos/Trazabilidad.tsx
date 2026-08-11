@@ -9,6 +9,7 @@ import { politicaDe, type UnidadDeVenta } from '@/modules/products/units'
 import {
   AYUDA_DE_LOTE,
   AYUDA_DE_VENCIMIENTO,
+  aflojaElRastreo,
   POLITICAS_DE_LOTE,
   POLITICAS_DE_VENCIMIENTO,
   etiquetaDePoliticaDeLote,
@@ -67,6 +68,7 @@ export function Trazabilidad({
   deshabilitado: boolean
 }) {
   const puedeAdministrar = usePermiso('lots.manage')
+  const puedeAflojar = usePermiso('lots.tracking.relax')
 
   const [desglose, setDesglose] = useState<DesgloseDeLotes | null>(null)
   const [lote, setLote] = useState<PoliticaDeLote>('NONE')
@@ -137,6 +139,28 @@ export function Trazabilidad({
 
   const bloqueado = deshabilitado || guardando || !puedeAdministrar
 
+  /**
+   * Sin `lots.tracking.relax` las opciones que BAJAN el escalón no se ofrecen.
+   *
+   * Deshabilitadas y visibles, no ocultas: quien recibe mercadería tiene que
+   * poder ver que el producto exige lotes y que eso no lo cambia él. Una opción
+   * que desaparece se lee como "no existe"; una deshabilitada, con el aviso de
+   * abajo, se lee como "no es tuyo". La decisión real la toma el servidor: esto
+   * es comodidad, no la defensa.
+   *
+   * Se compara contra lo GUARDADO --`desglose`-- y no contra lo elegido en
+   * pantalla, porque lo que el servidor va a mirar es el estado real del
+   * producto.
+   */
+  const actual = {
+    lotTracking: desglose.lotTracking,
+    expirationTracking: desglose.expirationTracking,
+  }
+  const aflojaElLote = (v: PoliticaDeLote) =>
+    !puedeAflojar && aflojaElRastreo(actual, { ...actual, lotTracking: v })
+  const aflojaElVencimiento = (v: PoliticaDeVencimiento) =>
+    !puedeAflojar && aflojaElRastreo(actual, { ...actual, expirationTracking: v })
+
   return (
     <div className="flex flex-col gap-4">
       {error && (
@@ -151,7 +175,7 @@ export function Trazabilidad({
         value={lote}
         options={OPCIONES_DE_LOTE.map((o) => ({
           ...o,
-          disabled: bloqueado,
+          disabled: bloqueado || aflojaElLote(o.value),
         }))}
         columns={3}
         onChange={(v) => {
@@ -170,7 +194,7 @@ export function Trazabilidad({
           value: v,
           label: etiquetaDePoliticaDeVencimiento(v),
           description: AYUDA_DE_VENCIMIENTO[v],
-          disabled: bloqueado || (lote === 'NONE' && v !== 'NONE'),
+          disabled: bloqueado || (lote === 'NONE' && v !== 'NONE') || aflojaElVencimiento(v),
         }))}
         columns={3}
         onChange={setVencimiento}
@@ -179,6 +203,13 @@ export function Trazabilidad({
       {lote === 'NONE' && (
         <p className="text-xs text-ink-faint">
           Sin lotes no hay vencimiento: una fecha necesita una partida donde vivir.
+        </p>
+      )}
+
+      {puedeAdministrar && !puedeAflojar && (
+        <p className="text-xs text-ink-faint">
+          Podés exigir más rastreo, no menos. Bajarlo haría que el producto acepte unidades sin
+          partida, y eso lo decide el encargado.
         </p>
       )}
 

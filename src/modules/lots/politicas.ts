@@ -92,6 +92,41 @@ export function combinacionValida(lote: PoliticaDeLote, venc: PoliticaDeVencimie
   return venc === 'NONE' || lote !== 'NONE'
 }
 
+/**
+ * Las tres politicas ordenadas por cuanto exigen. Sirve para comparar.
+ *
+ * Es el mismo orden en las dos preguntas --lote y vencimiento-- y por eso una
+ * sola tabla alcanza.
+ */
+const EXIGENCIA: Record<'NONE' | 'OPTIONAL' | 'REQUIRED', number> = {
+  NONE: 0,
+  OPTIONAL: 1,
+  REQUIRED: 2,
+}
+
+/**
+ * true si el cambio APAGA control: baja el escalon de lote, de vencimiento, o
+ * de los dos.
+ *
+ * Endurecer y aflojar no son simetricos y por eso se distinguen aca en vez de
+ * comparar cadenas en cada llamador. Endurecer se comprueba solo --el sistema
+ * exige atribuir el stock antes de dejar exigir lotes-- y aflojar no tiene
+ * ninguna comprobacion que lo frene: desde ese momento el producto acepta
+ * unidades sin partida. Ver `lots.tracking.relax` en authz/permissions.ts.
+ *
+ * Un cambio que sube una y baja la otra --pasar de (REQUIRED, NONE) a
+ * (OPTIONAL, OPTIONAL)-- cuenta como aflojar: basta con que algo baje.
+ */
+export function aflojaElRastreo(
+  antes: { lotTracking: PoliticaDeLote; expirationTracking: PoliticaDeVencimiento },
+  despues: { lotTracking: PoliticaDeLote; expirationTracking: PoliticaDeVencimiento },
+): boolean {
+  return (
+    EXIGENCIA[despues.lotTracking] < EXIGENCIA[antes.lotTracking] ||
+    EXIGENCIA[despues.expirationTracking] < EXIGENCIA[antes.expirationTracking]
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Vencimiento
 // ---------------------------------------------------------------------------

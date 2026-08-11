@@ -32,6 +32,7 @@ import { applyLotAssignment, type TxClient } from '@/modules/inventory/service'
 import { unidadDeVentaODefecto, type UnidadDeVenta } from '@/modules/products/units'
 import { comoFechaDeBase, comoFechaLocal } from './fefo'
 import {
+  aflojaElRastreo,
   diasHastaVencer,
   estadoDeVencimiento,
   combinacionValida,
@@ -650,6 +651,33 @@ export interface PoliticaCambiada {
  * aceptan movimientos sin lote. Queda auditado, porque es la decision que hay
  * que poder explicar.
  */
+/**
+ * Aflojar el rastreo exige `lots.tracking.relax`; endurecerlo no.
+ *
+ * Se comprueba en el SERVICIO y no en la ruta porque la ruta no sabe si el
+ * cambio afloja: eso depende de como esta hoy el producto, que hay que leer de
+ * la base. Un `permission:` en el handler solo puede exigir el permiso siempre
+ * --y entonces compras no podria endurecer-- o nunca.
+ */
+function exigirPermisoParaAflojar(
+  session: Session,
+  producto: { name: string; lotTracking: string; expirationTracking: string },
+  input: CambiarPoliticaInput,
+): void {
+  const antes = {
+    lotTracking: politicaDeLoteODefecto(producto.lotTracking),
+    expirationTracking: politicaDeVencimientoODefecto(producto.expirationTracking),
+  }
+  if (!aflojaElRastreo(antes, input)) return
+  if (session.permissions.has('lots.tracking.relax')) return
+
+  throw forbidden(
+    `Aflojar el rastreo de "${producto.name}" necesita el permiso lots.tracking.relax. ` +
+      'Podés endurecerlo, no bajarlo: desde ese momento el producto aceptaría ' +
+      'unidades sin partida.',
+  )
+}
+
 export async function cambiarPolitica(
   session: Session,
   productId: number,
@@ -663,6 +691,12 @@ export async function cambiarPolitica(
 
   return prisma.$transaction(async (tx) => {
     const producto = await productoDeLaSucursal(tx, session, productId)
+
+    // Aflojar exige un permiso aparte, y se comprueba con el estado REAL del
+    // producto leido dentro de la transaccion: no alcanza con mirar lo que
+    // manda el cliente, porque `REQUIRED -> REQUIRED` y `NONE -> REQUIRED`
+    // llegan con el mismo cuerpo y solo uno de los dos afloja algo.
+    exigirPermisoParaAflojar(session, producto, input)
 
     // 1. EL BLOQUEO, Y NADA MAS.
     await tx.$queryRaw`
