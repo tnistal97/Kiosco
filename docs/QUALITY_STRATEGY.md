@@ -28,7 +28,7 @@
 
 |                |                                                              |
 | -------------- | ------------------------------------------------------------ |
-| Pruebas        | **1.130** en vitest + **141** de extremo a extremo           |
+| Pruebas        | **1.131** en vitest + **141** de extremo a extremo           |
 | axe            | **+ cuatro pantallas**: clientes, ficha, cobro y comprobante |
 | ESLint         | **+ una cuarta frontera**: el saldo de un cliente            |
 | Reconciliación | **trece** invariantes (nueve + cuatro de cuenta corriente)   |
