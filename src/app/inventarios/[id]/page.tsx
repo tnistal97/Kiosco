@@ -200,10 +200,10 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-3 text-2xl font-semibold text-ink">
+          <h2 className="flex items-center gap-3 text-2xl font-semibold text-ink">
             {sesion.number}
             <Badge tone={tonoDeEstado(sesion.status)}>{sesion.statusLabel}</Badge>
-          </h1>
+          </h2>
           <p className="text-sm text-ink-muted">
             {sesion.scopeLabel}
             {sesion.blindCount ? ' · conteo a ciegas' : ''}

@@ -135,7 +135,7 @@ export default function LotesPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">Lotes</h1>
+          <h2 className="text-2xl font-semibold text-ink">Lotes</h2>
           <p className="text-sm text-ink-muted">
             Las partidas con unidades, ordenadas por vencimiento.
           </p>

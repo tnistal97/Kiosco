@@ -385,6 +385,56 @@ La prueba que compara el catálogo de TypeScript contra la restricción de
 PostgreSQL lee la **última** definición y no la primera, justamente porque esta
 tabla se reescribe cada vez que aparece un tipo nuevo.
 
+### Las migraciones de la Fase 4D
+
+Cinco, por dominio, y **ninguna inventa historia**. Es la decisión que las
+atraviesa: el catálogo entero arranca en `lotTracking = 'NONE'`, y el stock que
+ya existe no se convierte en partidas ficticias.
+
+| Migración                 | Qué hace                                                                    |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `phase4d_product_lots`    | `Product.lotTracking` y `expirationTracking`, y la tabla `ProductLot`       |
+| `phase4d_lot_stock`       | `BranchLotStock`, `LotAssignment` y `StockMovement.lotId`                    |
+| `phase4d_lot_receiving`   | `PurchaseReceiptItemLot`                                                     |
+| `phase4d_lot_sales`       | `SaleItemLotAllocation` y `PurchaseReturnItem.lotId`                        |
+| `phase4d_inventory_counts`| `InventoryCountSession`, `InventoryCountLine` y `INVENTORY_COUNT` en signos |
+
+#### Nada de `LEGACY-2026`
+
+La alternativa fácil era crear una partida sintética por producto y meterle
+todo el stock existente. Se descartó: sería un dato falso con formato de dato
+real, indistinguible en pantalla de una partida que alguien leyó de un envase.
+Lo que los lotes no explican aparece como **`sinAsignar`**, que además es
+**derivado y no una columna** —`BranchStock.quantity − Σ BranchLotStock`— para
+que no haya dos cifras que puedan divergir.
+
+Es el mismo criterio con el que `Product.cost` migró a `NULL` en vez de a cero
+en la Fase 3B.
+
+#### La cuarta AFLOJA una clave única de la Fase 4C
+
+`PurchaseReturnItem` pasa de ser único por `(devolución, línea)` a serlo por
+`(devolución, línea, lote)`, más un índice parcial para el caso sin partida. El
+motivo es concreto: una línea de recepción que llegó en dos partidas se devuelve
+entera con **dos renglones**, uno por cada una.
+
+Como toda restricción aflojada, el `ROLLBACK` puede fallar legítimamente si
+quedaron pares repetidos, y **aborta con un mensaje** en vez de borrar filas.
+Mismo criterio que la primera de la 4C.
+
+#### La quinta vuelve a reescribir la tabla de signos
+
+`INVENTORY_COUNT` entra en la rama `<> 0` —**de los dos signos**— porque un
+sobrante contado no es una pérdida negativa. Se reescribe la restricción entera
+por el mismo motivo que en la 4C: una sola tabla de signos, no dos.
+
+#### Los índices parciales son invisibles para el control de deriva
+
+`prisma migrate diff` no ve un `CREATE UNIQUE INDEX ... WHERE`, así que los
+índices parciales de esta fase —los del caso `lotId IS NULL`— viven sólo en el
+SQL. No es un descuido: es la razón por la que la comprobación de deriva de esta
+fase se corrió con `--shadow-database-url` y se leyó a mano.
+
 ## Qué comprueba la prueba automatizada
 
 | Caso                   | Qué verifica                                                                                 |

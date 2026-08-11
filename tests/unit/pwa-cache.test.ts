@@ -61,6 +61,38 @@ describe('Politica de cache del service worker', () => {
     '/control/caja',
     // El inicio: lleva saldo de caja, ventas del dia y faltantes.
     '/',
+    /*
+      Fase 4D. Las rutas nuevas se nombran UNA POR UNA y no se dan por cubiertas
+      por el patrón general.
+
+      La política es una lista blanca, así que en teoría una ruta nueva nace
+      fuera del caché sola. Nombrarlas igual tiene un motivo concreto: el día
+      que alguien agregue un patrón permisivo --"todo /api/reportes es
+      público"-- estas líneas lo frenan. Y el stock por partida de un producto
+      es exactamente lo que no puede quedar legible en el disco de una tablet
+      después de cerrar sesión.
+    */
+    '/api/lotes',
+    '/api/lotes/12',
+    '/api/lotes/atribuir',
+    '/api/productos/12/lotes',
+    '/api/inventarios',
+    '/api/inventarios/3',
+    '/api/inventarios/3/lineas',
+    '/api/inventarios/3/conteo',
+    '/api/inventarios/3/revision',
+    '/api/inventarios/3/aplicar',
+    '/api/inventarios/3/cancelar',
+    '/api/inventarios/3/lineas/9/resolver',
+    '/api/reportes/vencimientos',
+    '/api/reports/vencimientos',
+    '/api/reports/mermas?desde=2026-08-01&hasta=2026-08-11',
+    '/api/reports/inventarios?desde=2026-08-01&hasta=2026-08-11',
+    // Y las pantallas de la fase.
+    '/stock/lotes',
+    '/stock/lotes/7',
+    '/inventarios',
+    '/inventarios/3',
   ]
 
   for (const ruta of NUNCA_CACHEABLES) {

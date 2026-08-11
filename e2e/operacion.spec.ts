@@ -290,7 +290,7 @@ test.describe('Dia 3: el costo historico no se mueve', () => {
     await ficha.getByLabel(/^costo/i).waitFor()
     await ficha.getByLabel(/^costo/i).fill('9999')
     await ficha.getByLabel(/motivo del cambio de costo/i).fill('Aumento del proveedor')
-    await ficha.getByRole('button', { name: /guardar/i }).click()
+    await ficha.getByRole('button', { name: 'Guardar cambios' }).click()
     await page.waitForTimeout(2000)
 
     // 3. La ganancia del periodo NO se movio.

@@ -65,6 +65,20 @@ export const NAVEGACION: GrupoNav[] = [
         label: 'Movimientos',
         permission: 'inventory.movements.view',
       },
+      /*
+        Fase 4D. Van en el menú y no sólo como botones dentro de /stock.
+
+        Sin esto la barra no las nombra, la cabecera no sabe cómo titularlas
+        --caía en "Almacén"-- y cada pantalla terminaba poniendo su propio
+        `h1`, que dejaba DOS en la misma página. Lo encontró axe.
+      */
+      { href: '/stock/lotes', label: 'Lotes', permission: 'lots.view', matchPrefix: true },
+      {
+        href: '/inventarios',
+        label: 'Inventarios',
+        permission: 'inventoryCounts.view',
+        matchPrefix: true,
+      },
     ],
   },
   {

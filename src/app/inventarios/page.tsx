@@ -104,7 +104,7 @@ export default function InventariosPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">Inventarios físicos</h1>
+          <h2 className="text-2xl font-semibold text-ink">Inventarios físicos</h2>
           <p className="text-sm text-ink-muted">
             Contar el depósito y corregir lo que no coincide, sin cerrar el local.
           </p>

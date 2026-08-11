@@ -293,7 +293,7 @@ test.describe('Alertas de reposicion', () => {
     )
     await ficha.getByLabel(/mínimo de reposición/i).fill(String(stockActual))
     await expect(ficha.getByText(/ya está bajo mínimo/i)).toBeVisible()
-    await ficha.getByRole('button', { name: /guardar/i }).click()
+    await ficha.getByRole('button', { name: 'Guardar cambios' }).click()
     await page.waitForTimeout(1200)
 
     // Ahora el inventario lo marca.

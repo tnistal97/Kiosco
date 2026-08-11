@@ -612,6 +612,122 @@ test.describe('accesibilidad automatizada', () => {
     })
   }
 
+  /*
+    ---------------------------------------------------------------------
+    Fase 4D: lotes, vencimientos e inventario físico.
+
+    Nueve pantallas, y las tres que más riesgo tienen son las densas: el
+    listado de lotes pone estado de vencimiento, código, fecha y cantidad en
+    la misma fila; la recepción por partidas mete tres campos por partida
+    DENTRO de una línea que ya tenía dos; y la revisión de un inventario pone
+    cinco números por línea.
+
+    El contraste es el que no se puede medir a mano: los estados de
+    vencimiento usan cuatro tonos, y "vencido" sobre fondo de peligro es
+    exactamente donde un tono elegido a ojo se queda corto.
+    ---------------------------------------------------------------------
+  */
+
+  test('/stock/lotes no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/stock/lotes')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el detalle de un lote no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/stock/lotes')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+    // El código de la partida es el enlace de la fila.
+    await page.locator('a[href^="/stock/lotes/"]').first().click()
+    await page.waitForURL(/\/stock\/lotes\/\d+/)
+    await page.getByRole('heading', { level: 1 }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('/inventarios no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/inventarios')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el diálogo de nuevo inventario no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/inventarios')
+    await page.getByRole('button', { name: /nuevo inventario/i }).click()
+    await esperarDialogoEstable(page)
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('la pantalla de conteo no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/inventarios')
+    await page.getByRole('button', { name: /nuevo inventario/i }).click()
+    await esperarDialogoEstable(page)
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /crear inventario/i })
+      .click()
+    await page.waitForURL(/\/inventarios\/\d+/)
+    await page.getByRole('heading', { level: 1 }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('la trazabilidad de un producto no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/productos')
+    await page.getByRole('searchbox').first().fill('Yogur')
+    await page.waitForTimeout(900)
+    await page
+      .getByRole('row')
+      .filter({ hasText: 'Yogur' })
+      .first()
+      .locator('button[aria-expanded]')
+      .first()
+      .click()
+    await page.getByRole('menuitem', { name: 'Editar' }).click()
+    await esperarDialogoEstable(page)
+    // La sección de trazabilidad se carga aparte: sin esperarla, axe mide una
+    // ficha a la que le falta un tercio.
+    await page.getByRole('group', { name: 'Lotes' }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el diálogo de recepción con partidas no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/compras')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+
+    // Cualquier orden que todavía tenga algo pendiente sirve: lo que se mide
+    // es el bloque de partidas, no una compra concreta.
+    const recibir = page.getByRole('button', { name: /recibir mercader/i })
+    const abrible = page
+      .getByRole('row')
+      .filter({ hasText: /Pedida|Parcial/ })
+      .first()
+    await abrible.getByRole('link').first().click()
+    await page.waitForURL(/\/compras\/\d+/)
+    await recibir.first().click()
+    await esperarDialogoEstable(page)
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
   /**
    * Las recomendaciones, a la vista pero sin poder de veto.
    *

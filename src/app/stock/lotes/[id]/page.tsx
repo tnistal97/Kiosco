@@ -88,10 +88,10 @@ export default function LotePage({ params }: { params: Promise<{ id: string }> }
     <div className="space-y-6">
       <header>
         <p className="text-sm text-ink-muted">{lote.product.name}</p>
-        <h1 className="flex items-center gap-3 text-2xl font-semibold text-ink">
+        <h2 className="flex items-center gap-3 text-2xl font-semibold text-ink">
           <span className="font-mono">{lote.code}</span>
           <Badge tone={tonoDeVencimiento(lote.estado)}>{etiquetaDeVencimiento(lote.estado)}</Badge>
-        </h1>
+        </h2>
       </header>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

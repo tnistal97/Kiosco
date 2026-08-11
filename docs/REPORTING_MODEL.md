@@ -151,6 +151,51 @@ proveedor puede tener deuda por la entrega de ayer y un anticipo de marzo que
 todavía no se aplicó a nada. Ver
 [SUPPLIER_ADVANCES.md](SUPPLIER_ADVANCES.md).
 
+### Mermas, inventarios y vencimientos — Fase 4D
+
+Tres reportes nuevos, y los tres se apoyan en la misma decisión de costo.
+
+**QUÉ COSTO USAN, y por qué no es el histórico.** `SaleItem.costAtSale` existe
+porque una venta tiene un costo *en el momento de ocurrir* y ese dato se congela.
+Un ajuste de inventario **no lo tiene guardado**: nadie escribió "esta unidad se
+rompió y había costado $1.100". Así que los tres usan `Product.cost` —el actual—
+y lo dicen en el nombre del campo: `valorACostoActual`.
+
+Inventarle un costo histórico a una merma y llamarlo así sería exactamente el
+error que este proyecto viene evitando desde que `Product.cost` migró a `NULL`
+en vez de a cero: un dato falso con formato de dato real.
+
+**MERMAS: la diferencia de inventario no es una merma.** El reporte separa seis
+causas —pérdida, rotura, vencido retirado, uso interno, otro ajuste negativo y
+diferencia de inventario— y **la última no suma al total**. Un faltante contado
+puede ser robo, error de carga, una venta mal cobrada o mercadería que nunca
+llegó; llamarlo "pérdida" es afirmar una causa que nadie averiguó. Aparece con
+su propio nombre, y una diferencia **positiva** no aparece en absoluto: un
+sobrante no es una pérdida negativa.
+
+"Vencido retirado" no es un tipo de movimiento nuevo: es una baja cargada contra
+una partida cuya fecha ya había pasado el día del movimiento. Sale de comparar
+`ProductLot.expirationDate` con `StockMovement.createdAt`, así que es un dato
+registrado y no una suposición.
+
+**INVENTARIOS: las diferencias no se netean.** Positivas y negativas van en
+columnas separadas. Un recuento que encontró 20 de más y 20 de menos **no
+encontró cero**, y netearlas borra justamente lo que hace útil al reporte. El
+valor sí es el neto, y puede ser negativo.
+
+**VENCIMIENTOS: el valor no es una pérdida.** Es lo que costaría reponer esa
+mercadería hoy. Lo que vence la semana que viene todavía se vende, y lo ya
+vencido se compró a un costo que puede no ser el de hoy: presentarlo como
+pérdida realizada afirmaría dos cosas falsas a la vez. Por eso el campo se llama
+`valorACostoActual` y la pantalla lo rotula igual.
+
+`SIN FECHA` es un tramo aparte y no "vence lejos": una partida sin vencimiento
+no es una que vence tarde, es una sobre la que no hay nada que controlar.
+
+Los tres viven en `src/modules/reports/service.lots.ts`. Ver
+[LOT_EXPIRATION_POLICY.md](LOT_EXPIRATION_POLICY.md) y
+[PHYSICAL_INVENTORY.md](PHYSICAL_INVENTORY.md).
+
 ## Decisiones de reparto
 
 **El cajero no tiene ningún `reports.*`.** Ve sus ventas por `sales.view`, y la

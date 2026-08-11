@@ -183,7 +183,13 @@ export function Trazabilidad({
       )}
 
       <div className="flex flex-col gap-1.5 rounded-md border border-line bg-sunken p-3 text-sm">
-        <Renglon etiqueta="Stock actual">
+        {/*
+          "Stock del producto" y no "Stock actual": la ficha ya tiene un
+          "Stock actual" arriba, y dos renglones con el mismo nombre en el mismo
+          diálogo obligan a mirar dos veces para saber cuál es cuál. Acá además
+          el punto es contrastarlo con lo que está en partidas.
+        */}
+        <Renglon etiqueta="Stock del producto">
           {desglose.total} {simbolo}
         </Renglon>
         <Renglon etiqueta="En partidas">

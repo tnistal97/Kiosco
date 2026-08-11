@@ -201,7 +201,7 @@ test.describe('El costo', () => {
     await ficha.getByLabel(/^costo/i).fill('1300')
     // El campo de motivo aparece solo cuando el costo cambia de verdad.
     await ficha.getByLabel(/motivo del cambio de costo/i).fill('Aumento del proveedor')
-    await ficha.getByRole('button', { name: /guardar/i }).click()
+    await ficha.getByRole('button', { name: 'Guardar cambios' }).click()
     await page.waitForTimeout(2000)
 
     const otraVez = await abrirFicha(page, PRODUCTOS.leche.nombre)
@@ -265,7 +265,7 @@ test.describe('El lector encuentra por cualquiera de los codigos', () => {
     await ficha.getByPlaceholder(/escaneá o escribí/i).fill('9002222200002')
     await ficha.getByRole('button', { name: 'Agregar' }).click()
     await expect(ficha.getByText('9002222200002')).toHaveCount(1)
-    await ficha.getByRole('button', { name: /guardar/i }).click()
+    await ficha.getByRole('button', { name: 'Guardar cambios' }).click()
     await page.waitForTimeout(2000)
 
     await page.goto('/venta')
@@ -292,7 +292,7 @@ test.describe('El stock ya no se edita desde la ficha', () => {
 
     const ficha = await abrirFicha(page, PRODUCTOS.yerba.nombre)
     await ficha.getByLabel(/unidad de venta/i).selectOption('KG')
-    await ficha.getByRole('button', { name: /guardar/i }).click()
+    await ficha.getByRole('button', { name: 'Guardar cambios' }).click()
 
     await expect(ficha.getByText(/no se puede cambiar la unidad de venta/i)).toHaveCount(1)
   })

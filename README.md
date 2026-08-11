@@ -31,9 +31,20 @@ códigos de barras por cámara y por lector USB.
   en efectivo, transferencia o tarjeta, imputados a obligaciones concretas.
   **Anticipos** que se aplican después, y **devoluciones** que sacan la
   mercadería del depósito y acreditan su costo original.
+- **Lotes y vencimientos** — un producto puede seguirse por partida, con o sin
+  fecha, y las dos cosas se deciden por separado: la lavandina necesita número
+  de partida para poder retirarla y no tiene vencimiento que inventar. La venta
+  sale por **FEFO** —primero lo que vence antes—, lo vencido deja de ser
+  vendible sin dejar de ocupar stock, y la anulación devuelve a la misma
+  partida de la que salió.
+- **Inventario físico** — contar el depósito **sin cerrar el local**: lo que el
+  sistema espera se lee en el momento de contar, no al empezar, así que una
+  venta durante el recorrido no ensucia la diferencia. Conteo a ciegas,
+  revisión antes de tocar nada, y aplicación **por diferencia**: si después de
+  contar se vendió una unidad más, el ajuste la respeta en vez de borrarla.
 - **Libro de inventario** — cada venta, anulación y ajuste deja un movimiento
-  con el saldo anterior y el resultante. No se edita ni se borra: los errores
-  se corrigen con otro movimiento.
+  con el saldo anterior, el resultante y —desde la Fase 4D— de qué partida
+  salió. No se edita ni se borra: los errores se corrigen con otro movimiento.
 - **Administración** — usuarios y roles, reporte de ventas.
 - **Auditoría** — bitácora de cada operación, con usuario, sucursal, motivo,
   identificador de petición y resultado.
@@ -205,6 +216,11 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 | [SUPPLIER_ADVANCES.md](docs/SUPPLIER_ADVANCES.md)                           | Anticipos e imputación diferida                      |
 | [PURCHASE_RETURN_FLOW.md](docs/PURCHASE_RETURN_FLOW.md)                     | Devolver mercadería: estados, topes y stock          |
 | [PURCHASE_RETURN_ACCOUNTING.md](docs/PURCHASE_RETURN_ACCOUNTING.md)         | Qué le hace una devolución a la cuenta del proveedor |
+| [LOT_TRACKING_DESIGN.md](docs/LOT_TRACKING_DESIGN.md)                       | Los tres modelos de lote, y por qué se eligió éste   |
+| [LOT_EXPIRATION_POLICY.md](docs/LOT_EXPIRATION_POLICY.md)                   | Vencimientos: fecha de calendario, no instante       |
+| [FEFO_POLICY.md](docs/FEFO_POLICY.md)                                       | Por qué FEFO y no FIFO, y qué NO garantiza           |
+| [PHYSICAL_INVENTORY.md](docs/PHYSICAL_INVENTORY.md)                         | Contar el depósito: estados, conteo ciego, delta     |
+| [INVENTORY_COUNT_CONCURRENCY.md](docs/INVENTORY_COUNT_CONCURRENCY.md)       | Contar mientras se vende, y dos inventarios a la vez |
 | [PHASE3_RECONCILIATION.md](docs/PHASE3_RECONCILIATION.md)                   | Las invariantes que demuestran que el sistema cierra |
 | [INTEGRITY_CHECK.md](docs/INTEGRITY_CHECK.md)                               | Cómo se corre y cómo se lee la comprobación          |
 | [REPORTING_MODEL.md](docs/REPORTING_MODEL.md)                               | Qué calcula cada reporte y con qué costo             |
