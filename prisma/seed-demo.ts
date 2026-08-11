@@ -324,11 +324,19 @@ async function main() {
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "ProductSupplier" CASCADE')
   await prisma.$executeRawUnsafe('ALTER SEQUENCE "PurchaseOrder_numero_seq" RESTART WITH 1')
 
+  // El libro de cuenta corriente y los cobros tambien tienen disparador de
+  // inmutabilidad, y TRUNCATE no dispara disparadores de fila. Van antes que
+  // las ventas: los referencian.
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "CustomerAccountMovement" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "CustomerPayment" CASCADE')
+  await prisma.$executeRawUnsafe('ALTER SEQUENCE "CustomerPayment_numero_seq" RESTART WITH 1')
+
   await prisma.stockCheck.deleteMany()
   await prisma.saleItem.deleteMany()
   await prisma.salePayment.deleteMany()
   await prisma.cashRegisterMovement.deleteMany()
   await prisma.sale.deleteMany()
+  await prisma.client.deleteMany()
   await prisma.cashCount.deleteMany()
   await prisma.cashShift.deleteMany()
   await prisma.branchStock.deleteMany()
@@ -1058,11 +1066,335 @@ async function main() {
     })
   }
 
+  // ---------------------------------------------------------------------------
+  // Clientes y cuenta corriente
+  //
+  // El circuito completo de la Fase 4A, con los numeros del ejemplo del pedido:
+  //
+  //   Juan     venta $30.000 = $10.000 efectivo + $20.000 a cuenta
+  //            paga $8.000 por transferencia          → saldo $12.000
+  //            segunda venta fiada de $5.000          → saldo $17.000
+  //   Marta    sin limite configurado, compra fiada y no debe nada todavia
+  //   Raul     el fiado cortado. Sigue comprando de contado.
+  //
+  // Todo se escribe respetando LAS MISMAS invariantes que comprueba
+  // `npm run integrity:check`: cada movimiento lleva sus dos saldos, la cadena
+  // es continua, el fiado tiene su linea `ACCOUNT` en la venta y el cobro en
+  // efectivo --que aca no lo hay-- entraria al cajon. Un seed que no cierra
+  // haria fallar la comprobacion por culpa de los datos de ejemplo.
+  // ---------------------------------------------------------------------------
+  const cajeroId = usuarios.get('cajero') ?? adminId
+  const encargadoId = usuarios.get('encargado') ?? adminId
+
+  const [juan, marta, raul] = await Promise.all([
+    prisma.client.create({
+      data: {
+        branchId: sucursal.id,
+        name: 'Juan Pérez',
+        phone: '11-5555-1234',
+        document: '28.444.555',
+        creditLimit: 50_000,
+      },
+    }),
+    prisma.client.create({
+      data: {
+        branchId: sucursal.id,
+        name: 'Marta Gómez',
+        phone: '11-4444-9876',
+        notes: 'Pasa los viernes.',
+      },
+    }),
+    prisma.client.create({
+      data: {
+        branchId: sucursal.id,
+        name: 'Raúl Sosa',
+        phone: '11-3333-2211',
+        creditLimit: 20_000,
+        isCreditEnabled: false,
+        notes: 'Fiado cortado desde marzo. Compra de contado.',
+      },
+    }),
+  ])
+
+  /**
+   * Escribe un movimiento de cuenta y deja el saldo del cliente al dia.
+   *
+   * Es el equivalente de `moverStock` para la cuenta corriente: el seed no
+   * puede llamar a `applyAccountMovement` --vive en `src/` y trae toda la
+   * aplicacion-- pero SI tiene que dejar la base como la dejaria esa funcion.
+   */
+  async function moverCuenta(m: {
+    clientId: number
+    type: 'SALE_CHARGE' | 'PAYMENT' | 'SALE_CANCEL' | 'MANUAL_ADJUSTMENT'
+    amount: number
+    userId: number
+    saleId?: number
+    paymentId?: number
+    reason?: string
+    createdAt: Date
+  }): Promise<void> {
+    const antes = await prisma.client.findUniqueOrThrow({
+      where: { id: m.clientId },
+      select: { balance: true },
+    })
+    const previo = Number(antes.balance)
+    const resultante = previo + m.amount
+
+    await prisma.client.update({
+      where: { id: m.clientId },
+      data: { balance: resultante },
+    })
+
+    await prisma.customerAccountMovement.create({
+      data: {
+        branchId: sucursal.id,
+        clientId: m.clientId,
+        type: m.type,
+        amount: m.amount,
+        previousBalance: previo,
+        resultingBalance: resultante,
+        saleId: m.saleId ?? null,
+        paymentId: m.paymentId ?? null,
+        userId: m.userId,
+        reason: m.reason ?? null,
+        createdAt: m.createdAt,
+      },
+    })
+  }
+
+  /**
+   * Una venta con parte fiada. Devuelve el id.
+   *
+   * Lo fiado se DERIVA: `total - efectivo`. No se declara.
+   *
+   * Declararlo fue el primer intento y la reconciliacion lo encontro: los
+   * importes inventados no sumaban el total de las lineas, y la comprobacion
+   * "total = suma de los pagos" fallo sobre las tres ventas. Es exactamente lo
+   * que tiene que pasar, y por eso el seed se arregla derivando en vez de
+   * aflojando la comprobacion.
+   */
+  async function ventaFiada(opciones: {
+    clientId: number
+    lineas: Array<[number, number]>
+    /** Cuanto se cobra ahora. Lo que reste queda a cuenta. */
+    efectivo: number
+    cajero: number
+    horas: number
+  }): Promise<{ id: number; total: number; aCuenta: number }> {
+    const cuando = haceHoras(opciones.horas)
+    const items = opciones.lineas.map(([indice, cantidad]) => {
+      const producto = productos[indice]
+      if (!producto) throw new Error(`Producto ${String(indice)} fuera de rango`)
+      return { producto, cantidad }
+    })
+    const total = items.reduce((t, i) => t + i.producto.precio * i.cantidad, 0)
+    const aCuenta = total - opciones.efectivo
+
+    if (aCuenta <= 0) {
+      throw new Error(
+        `El efectivo (${String(opciones.efectivo)}) cubre el total (${String(total)}): ` +
+          'esta venta no tendria nada a cuenta.',
+      )
+    }
+
+    const venta = await prisma.sale.create({
+      data: {
+        userId: opciones.cajero,
+        branchId: sucursal.id,
+        clientId: opciones.clientId,
+        date: cuando,
+        createdAt: cuando,
+        total,
+        items: {
+          create: items.map((i) => ({
+            productId: i.producto.id,
+            quantity: i.cantidad,
+            price: i.producto.precio,
+            // El costo CONGELADO al vender. Es lo que hace que la ganancia de
+            // esta venta no cambie cuando llegue mercaderia mas cara.
+            costAtSale: i.producto.costo,
+          })),
+        },
+        payments: {
+          create: [
+            ...(opciones.efectivo > 0
+              ? [{ method: 'CASH', amount: opciones.efectivo, createdAt: cuando }]
+              : []),
+            { method: 'ACCOUNT', amount: aCuenta, createdAt: cuando },
+          ],
+        },
+      },
+      select: { id: true },
+    })
+
+    for (const i of items) {
+      await moverStock({
+        branchId: sucursal.id,
+        productId: i.producto.id,
+        type: 'SALE',
+        delta: -i.cantidad,
+        userId: opciones.cajero,
+        referenceType: 'Sale',
+        referenceId: venta.id,
+        fecha: cuando,
+      })
+    }
+
+    // SOLO el efectivo genera movimiento de caja. Lo fiado no es plata que
+    // cambio de manos: va al libro del cliente y a ningun lado mas.
+    if (opciones.efectivo > 0) {
+      await prisma.cashRegisterMovement.create({
+        data: {
+          branchId: sucursal.id,
+          userId: opciones.cajero,
+          amount: opciones.efectivo,
+          paymentMethod: 'CASH',
+          description: `Venta #${String(venta.id)}`,
+          type: 'sale',
+          saleId: venta.id,
+          date: cuando,
+          shiftId: turno.id,
+        },
+      })
+      caja += opciones.efectivo
+    }
+
+    await moverCuenta({
+      clientId: opciones.clientId,
+      type: 'SALE_CHARGE',
+      amount: aCuenta,
+      userId: opciones.cajero,
+      saleId: venta.id,
+      createdAt: cuando,
+    })
+
+    return { id: venta.id, total, aCuenta }
+  }
+
+  // El caso del ejemplo: parte en efectivo y el resto a cuenta.
+  const primeraDeJuan = await ventaFiada({
+    clientId: juan.id,
+    lineas: [
+      [0, 2],
+      [12, 3],
+    ],
+    efectivo: 10_000,
+    cajero: cajeroId,
+    horas: 30,
+  })
+
+  // Juan paga $8.000 por transferencia: el saldo baja y la caja NO sube.
+  const reciboJuan = await prisma.customerPayment.create({
+    data: {
+      number: 'RC-00000001',
+      branchId: sucursal.id,
+      clientId: juan.id,
+      amount: 8_000,
+      method: 'TRANSFER',
+      receivedById: encargadoId,
+      reference: 'Transferencia 4471',
+      createdAt: haceHoras(20),
+    },
+  })
+  await moverCuenta({
+    clientId: juan.id,
+    type: 'PAYMENT',
+    amount: -8_000,
+    userId: encargadoId,
+    paymentId: reciboJuan.id,
+    createdAt: haceHoras(20),
+  })
+
+  // Segunda compra, esta enteramente fiada. Queda dentro de su limite.
+  const segundaDeJuan = await ventaFiada({
+    clientId: juan.id,
+    lineas: [[19, 1]],
+    efectivo: 0,
+    cajero: cajeroId,
+    horas: 4,
+  })
+
+  // Marta compra fiada sin limite configurado. Con NULL no hay tope, que no es
+  // lo mismo que un limite de cero.
+  const ventaDeMarta = await ventaFiada({
+    clientId: marta.id,
+    lineas: [[3, 2]],
+    efectivo: 0,
+    cajero: cajeroId,
+    horas: 3,
+  })
+
+  // Y un cobro en EFECTIVO, que si entra al cajon: es la otra mitad del
+  // objetivo 29, y sin el la comprobacion "Cobros a clientes" solo veria el
+  // caso de la transferencia.
+  // Marta paga la MITAD de lo suyo, en efectivo. El importe se deriva de lo
+  // que de verdad debe: inventarlo fue el error que encontro la reconciliacion.
+  const pagaMarta = Math.round(ventaDeMarta.aCuenta / 2)
+  const reciboMarta = await prisma.customerPayment.create({
+    data: {
+      number: 'RC-00000002',
+      branchId: sucursal.id,
+      clientId: marta.id,
+      amount: pagaMarta,
+      method: 'CASH',
+      cashShiftId: turno.id,
+      receivedById: cajeroId,
+      createdAt: haceHoras(2),
+    },
+  })
+  await moverCuenta({
+    clientId: marta.id,
+    type: 'PAYMENT',
+    amount: -pagaMarta,
+    userId: cajeroId,
+    paymentId: reciboMarta.id,
+    createdAt: haceHoras(2),
+  })
+  await prisma.cashRegisterMovement.create({
+    data: {
+      branchId: sucursal.id,
+      userId: cajeroId,
+      amount: pagaMarta,
+      paymentMethod: 'CASH',
+      description: `Cobro RC-00000002 · ${marta.name}`,
+      type: 'customer_payment',
+      customerPaymentId: reciboMarta.id,
+      date: haceHoras(2),
+      shiftId: turno.id,
+    },
+  })
+  caja += pagaMarta
+
+  // Raul tiene el fiado cortado y una deuda vieja cargada por ajuste manual: es
+  // el caso que muestra por que `accounts.adjust` es un permiso aparte.
+  await moverCuenta({
+    clientId: raul.id,
+    type: 'MANUAL_ADJUSTMENT',
+    amount: 14_200,
+    userId: adminId,
+    reason: 'Deuda anterior a la puesta en marcha del sistema',
+    createdAt: haceDias(30),
+  })
+
+  await prisma.branch.update({ where: { id: sucursal.id }, data: { currentCash: caja } })
+
   const totalProductos = await prisma.product.count()
   const totalVentas = await prisma.sale.count()
+  const totalClientes = await prisma.client.count()
+  // El saldo se LEE de la base, no se anuncia de memoria: un mensaje que dice
+  // un numero distinto del real es peor que no decir nada.
+  const saldoJuan = await prisma.client.findUniqueOrThrow({
+    where: { id: juan.id },
+    select: { balance: true },
+  })
+
   console.log('Listo.')
   console.log(`  Sucursales: 2   Productos: ${totalProductos}   Ventas: ${totalVentas}`)
   console.log(`  Usuarios: ${USUARIOS.length + 1}   Clave para todos: ${CLAVE_DEMO}`)
+  console.log(
+    `  Clientes: ${totalClientes}   ${juan.name} debe ${saldoJuan.balance.toFixed(2)} ` +
+      `(fiados ${String(primeraDeJuan.aCuenta + segundaDeJuan.aCuenta)}, pagó 8.000)`,
+  )
   console.log(`  Caja de "${sucursal.name}": ${caja.toLocaleString('es-AR')}`)
 }
 

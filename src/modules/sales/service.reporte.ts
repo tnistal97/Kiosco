@@ -17,7 +17,7 @@ import type { TextoCantidad } from '@/lib/cantidad'
 import { aMonto, multiplicar, redondearPesos, sumar, type Dinero } from '@/server/money'
 import { aTextoCantidad, type Cantidad } from '@/server/cantidad'
 import { unidadDeVentaODefecto, type UnidadDeVenta } from '@/modules/products/units'
-import { cantidadDeDias, esFechaLocal, rangoDeSucursal } from '@/server/tiempo'
+import { cantidadDeDias, comoTimestampUTC, esFechaLocal, rangoDeSucursal } from '@/server/tiempo'
 
 export interface VentaDelReporte {
   id: number
@@ -156,6 +156,12 @@ export async function reporteDeVentas(
   //
   // Solo se pide si quien consulta puede verla: sin el permiso, la consulta ni
   // siquiera se ejecuta.
+  //
+  // Los bordes van como TEXTO con `::timestamp`, no como `Date`. Un `Date`
+  // viaja como `timestamptz` y obliga a PostgreSQL a convertir la columna con
+  // la zona de la SESION, que sale del sistema operativo del servidor de base
+  // de datos: con la base en Argentina, eso corre toda venta posterior a las
+  // 21:00 fuera de su propio dia. Ver `comoTimestampUTC` en @/server/tiempo.
   const puedeVerRecaudado = session.permissions.has('reports.sales.view')
   const recaudado = puedeVerRecaudado
     ? await prisma.$queryRaw<Array<{ total: string }>>`
@@ -163,8 +169,8 @@ export async function reporteDeVentas(
           FROM "SaleItem" i
           JOIN "Sale" s ON s."id" = i."saleId"
          WHERE s."branchId" = ${session.branchId}
-           AND s."date" >= ${desde}
-           AND s."date" <= ${hasta}
+           AND s."date" >= ${comoTimestampUTC(desde)}::timestamp
+           AND s."date" <= ${comoTimestampUTC(hasta)}::timestamp
            AND s."status" = 'completed'
            ${query.userId === undefined ? Prisma.empty : Prisma.sql`AND s."userId" = ${query.userId}`}
            ${query.saleId === undefined ? Prisma.empty : Prisma.sql`AND s."id" = ${query.saleId}`}

@@ -121,6 +121,15 @@ export const PERMISSIONS = [
   'reports.cash.view',
   /** Total comprado, ordenes, recepciones, por proveedor y diferencias. */
   'reports.purchases.view',
+  /**
+   * Cartera de clientes: cuanto se debe, quienes deben y cuanto se cobro.
+   *
+   * Aparte de `accounts.view`, que es la cuenta de UNA persona. Este es el
+   * agregado del negocio, y son dos preguntas distintas: el cajero necesita
+   * saber cuanto debe Juan para cobrarle; no necesita ver la cartera entera ni
+   * el ranking de deudores. Ver el objetivo 31.
+   */
+  'reports.clients.view',
   'audit.view',
   // Administracion
   'users.view',
@@ -270,6 +279,7 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'reports.inventory.view',
     'reports.cash.view',
     'reports.purchases.view',
+    'reports.clients.view',
     // Administra proveedores y compra: es quien recibe la lista de precios y
     // quien decide a quien comprarle. Ver docs/SUPPLIER_MODEL.md.
     'suppliers.view',
@@ -316,6 +326,9 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'reports.sales.view',
     'reports.cash.view',
     'reports.inventory.view',
+    // La cartera si: el supervisor cierra el turno y necesita saber cuanto se
+    // fio y cuanto se cobro en su guardia.
+    'reports.clients.view',
     // Edita la ficha del cliente --corregir un telefono mal cargado es
     // exactamente su trabajo-- y autoriza pasarse del limite, que es el caso
     // que hoy obliga a llamar al duenio por telefono.
@@ -404,6 +417,7 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'reports.inventory.view',
     'reports.cash.view',
     'reports.purchases.view',
+    'reports.clients.view',
     'audit.view',
     'users.view',
     'branches.view',

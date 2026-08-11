@@ -190,6 +190,10 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 | [PURCHASE_FLOW.md](docs/PURCHASE_FLOW.md)                                   | Orden de compra: estados, numeración, unidades       |
 | [PURCHASE_RECEIVING.md](docs/PURCHASE_RECEIVING.md)                         | Recepción, política de costo e inmutabilidad         |
 | [TIMEZONE_POLICY.md](docs/TIMEZONE_POLICY.md)                               | El día comercial: por qué IANA y no `UTC-3`          |
+| [CUSTOMER_MODEL.md](docs/CUSTOMER_MODEL.md)                                 | Qué sabe el sistema de un cliente, y qué no          |
+| [CUSTOMER_ACCOUNT_LEDGER.md](docs/CUSTOMER_ACCOUNT_LEDGER.md)               | El libro de cuenta corriente y sus invariantes       |
+| [CREDIT_POLICY.md](docs/CREDIT_POLICY.md)                                   | Límite, autorización y fiado cortado                 |
+| [CUSTOMER_PAYMENT_FLOW.md](docs/CUSTOMER_PAYMENT_FLOW.md)                   | Cobrar, el comprobante y el ajuste manual            |
 | [PHASE3_RECONCILIATION.md](docs/PHASE3_RECONCILIATION.md)                   | Las invariantes que demuestran que el sistema cierra |
 | [INTEGRITY_CHECK.md](docs/INTEGRITY_CHECK.md)                               | Cómo se corre y cómo se lee la comprobación          |
 | [REPORTING_MODEL.md](docs/REPORTING_MODEL.md)                               | Qué calcula cada reporte y con qué costo             |

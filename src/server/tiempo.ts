@@ -84,3 +84,37 @@ export async function rangoDeSucursal(
 ): Promise<RangoDeDias> {
   return rangoDeDias(desde, hasta, await zonaDeSucursal(cliente, branchId))
 }
+
+/**
+ * Un instante como literal `timestamp` SIN zona, en UTC. `2026-08-11 00:08:36.972`.
+ *
+ * ES OBLIGATORIO PARA TODA COMPARACION DE FECHAS EN SQL CRUDO, y el motivo es
+ * un error real que sobrevivio a la Fase 3D entera:
+ *
+ *   Las columnas de fecha son `timestamp(3)` SIN zona, y guardan UTC. Cuando
+ *   una consulta compara una de esas columnas contra un `Date` de JavaScript,
+ *   el conector lo manda como `timestamptz`, y PostgreSQL --para poder
+ *   compararlos-- convierte LA COLUMNA usando la zona de la SESION, que sale
+ *   del sistema operativo del servidor de base de datos.
+ *
+ *   Con la base corriendo en Argentina, una venta de las 21:08 --guardada como
+ *   `2026-08-11 00:08` UTC-- se convierte a `2026-08-11 03:08` y queda FUERA
+ *   del rango de su propio dia, que termina a las `02:59:59.999`.
+ *
+ *   Es exactamente la desaparicion de las ventas posteriores a las 21:00 que
+ *   la Fase 3C encontro y la 3D creyo cerrar. La 3D arreglo el lado de
+ *   JavaScript --el rango se calcula con la zona IANA de la sucursal, y eso
+ *   sigue estando bien-- pero no este otro lado, y la suite no lo detecto
+ *   porque corrio antes de las 21:00. Un error que solo aparece tres horas por
+ *   dia es peor que uno permanente: parece intermitente.
+ *
+ * Pasando el borde como TEXTO y casteandolo a `::timestamp` en la consulta, no
+ * hay ninguna conversion: los dos lados son `timestamp` sin zona y los dos
+ * estan en UTC. La zona del sistema operativo deja de decidir, que es la regla
+ * de todo el modulo.
+ *
+ * Ver docs/TIMEZONE_POLICY.md.
+ */
+export function comoTimestampUTC(instante: Date): string {
+  return instante.toISOString().replace('T', ' ').replace('Z', '')
+}

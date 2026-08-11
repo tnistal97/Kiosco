@@ -64,6 +64,100 @@ async function rentabilidad(usuario = fx.admin) {
 }
 
 // ---------------------------------------------------------------------------
+// La venta de las 21:30
+// ---------------------------------------------------------------------------
+
+describe('una venta despues de las 21:00 aparece en SU dia', () => {
+  /**
+   * Es la regresion de un error que sobrevivio a la Fase 3D entera.
+   *
+   * La 3D arreglo el calculo del rango --se hace con la zona IANA de la
+   * sucursal, y eso estaba bien-- pero las consultas de reporte comparaban la
+   * columna contra un `Date` de JavaScript. El conector lo manda como
+   * `timestamptz`, y PostgreSQL convierte LA COLUMNA usando la zona de la
+   * SESION, que sale del sistema operativo del servidor de base de datos.
+   *
+   * Con la base en Argentina, una venta de las 21:30 --guardada como 00:30 UTC
+   * del dia siguiente-- se convertia a 03:30 y quedaba fuera de un dia que
+   * termina a las 02:59:59.999. Desaparecia de su propio dia.
+   *
+   * LA SUITE NO LO DETECTABA porque las ventas de las otras pruebas se crean
+   * con `now()`: solo fallaban si la suite corria despues de las 21:00. Un
+   * error que aparece tres horas por dia es peor que uno permanente, porque
+   * parece intermitente.
+   *
+   * Esta prueba NO depende del reloj: fija la fecha de la venta a mano en la
+   * franja peligrosa y pregunta por el dia local que le corresponde.
+   */
+  it('LA REGRESION: una venta de las 21:30 no desaparece de su dia', async () => {
+    await fijarCosto(fx.productoA.id, '8000.00', 'Lista de mayo')
+    const venta = await vender(fx.productoA.id, '1', '12500.00')
+    expect(venta.status).toBe(201)
+
+    // 15 de mayo de 2026, 21:30 en Buenos Aires = 16 de mayo 00:30 UTC.
+    //
+    // Es la franja en la que el dia local y el dia UTC ya no coinciden, que es
+    // donde vivia el error. Se escribe directo porque lo que se prueba es la
+    // LECTURA, no como se creo la venta.
+    const instante = new Date('2026-05-16T00:30:00.000Z')
+    await prisma.sale.update({ where: { id: venta.body.id }, data: { date: instante } })
+
+    const { GET } = await import('@/app/api/reports/rentabilidad/route')
+    const reporte = await call<{ facturado: string; lineasTotales: number }>(
+      GET,
+      '/api/reports/rentabilidad?desde=2026-05-15&hasta=2026-05-15',
+      { cookie: await sessionCookie(fx.admin) },
+    )
+
+    expect(reporte.status).toBe(200)
+    expect(
+      reporte.body.facturado,
+      'la venta de las 21:30 desaparecio del 15 de mayo: el rango se calculo bien ' +
+        'pero la comparacion en SQL convirtio la columna con la zona de la sesion',
+    ).toBe('12500.00')
+    expect(reporte.body.lineasTotales).toBe(1)
+  })
+
+  it('y NO aparece en el dia siguiente', async () => {
+    await fijarCosto(fx.productoA.id, '8000.00', 'Lista de mayo')
+    const venta = await vender(fx.productoA.id, '1', '12500.00')
+    await prisma.sale.update({
+      where: { id: venta.body.id },
+      data: { date: new Date('2026-05-16T00:30:00.000Z') },
+    })
+
+    const { GET } = await import('@/app/api/reports/rentabilidad/route')
+    const reporte = await call<{ facturado: string }>(
+      GET,
+      '/api/reports/rentabilidad?desde=2026-05-16&hasta=2026-05-16',
+      { cookie: await sessionCookie(fx.admin) },
+    )
+
+    // La otra mitad: arreglar el limite de abajo corriendo todo un dia hacia
+    // adelante habria hecho pasar la prueba anterior y roto esta.
+    expect(reporte.body.facturado, 'la venta se conto en el dia equivocado').toBe('0.00')
+  })
+
+  it('el reporte de ventas la encuentra igual', async () => {
+    const venta = await vender(fx.productoA.id, '1', '12500.00')
+    await prisma.sale.update({
+      where: { id: venta.body.id },
+      data: { date: new Date('2026-05-16T00:30:00.000Z') },
+    })
+
+    const { GET } = await import('@/app/api/reports/ventas/route')
+    const reporte = await call<{ totales: { facturado: string; operaciones: number } }>(
+      GET,
+      '/api/reports/ventas?desde=2026-05-15&hasta=2026-05-15',
+      { cookie: await sessionCookie(fx.admin) },
+    )
+
+    expect(reporte.body.totales.operaciones, 'el reporte de ventas tiene el mismo problema').toBe(1)
+    expect(reporte.body.totales.facturado).toBe('12500.00')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // El costo congelado
 // ---------------------------------------------------------------------------
 

@@ -28,19 +28,41 @@ arreglarla sola es la peor respuesta posible: tapa el síntoma, **borra la
 evidencia** y deja intacto el error de origen para que vuelva a pasar. Se
 informa, y decide una persona.
 
-## Las nueve comprobaciones
+## Las trece comprobaciones
 
-| Comprobación       | Regla                                                                                         |
-| ------------------ | --------------------------------------------------------------------------------------------- |
-| **Ventas**         | `total = Σ round(precio × cantidad, 2)`                                                       |
-| **Pagos**          | `total = Σ pagos`, y toda venta tiene pagos                                                   |
-| **Venta y caja**   | por medio de pago: `movimiento = cobrado`                                                     |
-| **Anulaciones**    | por medio: `venta + reversión = 0`                                                            |
-| **Turnos de caja** | `esperado = inicial + efectivo del turno`; `diferencia = contado − esperado`                  |
-| **Inventario**     | `stock = Σ libro`; `previo + delta = resultante`; cada fila empieza donde terminó la anterior |
-| **Compras**        | `recibido = Σ recepciones`, nunca `> pedido`; estado derivado; `total = Σ pedido × costo`     |
-| **Recepciones**    | `stock = recibido × unidades por bulto`; toda recepción tiene su movimiento                   |
-| **Costos**         | `Product.cost` = último evento del historial; el historial encadena                           |
+| Comprobación              | Regla                                                                                                |
+| ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Ventas**                | `total = Σ round(precio × cantidad, 2)`                                                              |
+| **Pagos**                 | `total = Σ pagos`, y toda venta tiene pagos                                                          |
+| **Venta y caja**          | por medio de pago: `movimiento = cobrado`                                                            |
+| **Anulaciones**           | por medio: `venta + reversión = 0`                                                                   |
+| **Turnos de caja**        | `esperado = inicial + efectivo del turno`; `diferencia = contado − esperado`                         |
+| **Inventario**            | `stock = Σ libro`; `previo + delta = resultante`; cada fila empieza donde terminó la anterior        |
+| **Compras**               | `recibido = Σ recepciones`, nunca `> pedido`; estado derivado; `total = Σ pedido × costo`            |
+| **Recepciones**           | `stock = recibido × unidades por bulto`; toda recepción tiene su movimiento                          |
+| **Costos**                | `Product.cost` = último evento del historial; el historial encadena                                  |
+| **Clientes**              | `saldo = Σ libro`; `previo + delta = resultante`; cada fila empieza donde terminó la anterior        |
+| **Venta a cuenta**        | `Σ pagos ACCOUNT = Σ cargos al libro`; toda venta fiada tiene cliente; el cargo es a **ese** cliente |
+| **Cobros a clientes**     | cada cobro deja **un** movimiento por `−importe`; en efectivo entra al cajón, y sólo en efectivo     |
+| **Anulaciones de cuenta** | por venta anulada: `cargo + reversión = 0`                                                           |
+
+Las cuatro últimas son de la Fase 4A. Ver
+[`CUSTOMER_ACCOUNT_LEDGER.md`](CUSTOMER_ACCOUNT_LEDGER.md).
+
+### Cada línea de pago va a exactamente un destino
+
+`ACCOUNT` **no genera movimiento de caja**, así que **Venta y caja** lo excluye.
+No es una excepción para que la comprobación siga pasando: es la regla del
+modelo. Un cargo a cuenta no es plata que cambió de manos, y exigirle un
+movimiento de caja sería exigir que el cajón registre dinero que nadie recibió.
+
+Lo que sí se le exige está en **Venta a cuenta**: su movimiento en el libro del
+cliente. Cada línea va a uno de dos destinos —la caja o el libro— y hay una
+comprobación por destino. **Ninguna línea queda sin comprobar.**
+
+La tercera regla de **Venta a cuenta** es la que más importa y la menos obvia:
+que el cargo sea al cliente **de la venta**. Una deuda cargada a otra persona
+cuadra perfecto en los importes, y es el peor error posible del módulo.
 
 ### Por qué la continuidad del libro necesita tres reglas y no dos
 

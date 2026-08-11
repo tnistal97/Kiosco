@@ -25,6 +25,20 @@ export const TABLAS_AUDITADAS = [
   'PurchaseOrder',
   'PurchaseReceipt',
   'PurchaseReceiptItem',
+  // Clientes y cuenta corriente. Fase 4A.
+  //
+  // `CustomerAccountMovement` figura por UN solo caso: el ajuste manual, que
+  // es el unico movimiento del libro que no tiene una venta ni un cobro
+  // detras. Los otros tres tipos NO se auditan por separado --la venta y el
+  // cobro ya se auditan enteros, y emitir una entrada por cada movimiento
+  // duplicaria en la bitacora lo que el libro ya guarda mejor--.
+  //
+  // Cada tabla tiene una responsabilidad distinta: `CustomerAccountMovement`
+  // es la HISTORIA FINANCIERA --con sus saldos, su continuidad y su
+  // inmutabilidad--; `AuditLog` es QUIEN hizo la accion.
+  'Client',
+  'CustomerAccountMovement',
+  'CustomerPayment',
   'Authorization',
 ] as const
 

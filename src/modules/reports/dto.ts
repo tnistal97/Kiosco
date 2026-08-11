@@ -273,6 +273,69 @@ export function parseReporteCaja(d: unknown): ReporteCajaDTO {
   }
 }
 
+export interface ReporteClientesDTO {
+  cartera: {
+    saldoPendiente: Monto
+    deudores: number
+    deudaPromedio: Monto
+    saldoAFavor: Monto
+    conSaldoAFavor: number
+    sobreLimite: number
+  }
+  periodo: {
+    ventasACuenta: Monto
+    cuantasVentasACuenta: number
+    cobrado: Monto
+    cuantosCobros: number
+    cobradoEnEfectivo: Monto
+    ajustes: Monto
+  }
+  topDeudores: Array<{ cliente: string; saldo: Monto; limite: Monto | null }>
+  cobrosPorMedio: Array<{ medio: string; etiqueta: string; cobrado: Monto; cuantos: number }>
+}
+
+export function parseReporteClientes(d: unknown): ReporteClientesDTO {
+  const o = esObjeto(d) ? d : {}
+  const c = esObjeto(o.cartera) ? o.cartera : {}
+  const p = esObjeto(o.periodo) ? o.periodo : {}
+
+  return {
+    cartera: {
+      saldoPendiente: montoODefecto(c.saldoPendiente),
+      deudores: numero(c.deudores),
+      deudaPromedio: montoODefecto(c.deudaPromedio),
+      saldoAFavor: montoODefecto(c.saldoAFavor),
+      conSaldoAFavor: numero(c.conSaldoAFavor),
+      sobreLimite: numero(c.sobreLimite),
+    },
+    periodo: {
+      ventasACuenta: montoODefecto(p.ventasACuenta),
+      cuantasVentasACuenta: numero(p.cuantasVentasACuenta),
+      cobrado: montoODefecto(p.cobrado),
+      cuantosCobros: numero(p.cuantosCobros),
+      cobradoEnEfectivo: montoODefecto(p.cobradoEnEfectivo),
+      ajustes: montoODefecto(p.ajustes),
+    },
+    topDeudores: lista(o.topDeudores, (i) => {
+      const f = esObjeto(i) ? i : {}
+      return {
+        cliente: texto(f.cliente, '—'),
+        saldo: montoODefecto(f.saldo),
+        limite: montoOpcional(f.limite),
+      }
+    }),
+    cobrosPorMedio: lista(o.cobrosPorMedio, (i) => {
+      const f = esObjeto(i) ? i : {}
+      return {
+        medio: texto(f.medio, '—'),
+        etiqueta: texto(f.etiqueta, texto(f.medio, '—')),
+        cobrado: montoODefecto(f.cobrado),
+        cuantos: numero(f.cuantos),
+      }
+    }),
+  }
+}
+
 /** Lo que el panel necesita de la rentabilidad del dia: tres cifras. */
 export function parseRentabilidadDelDia(d: unknown): {
   gananciaBruta: Monto

@@ -58,7 +58,7 @@ un margen inflado, que es la misma mentira por otro camino.
 
 Contarlas con costo cero las mostraría como lo más rentable del local.
 
-## Las seis materias y sus permisos
+## Las siete materias y sus permisos
 
 | Reporte      | Permiso                  | Qué muestra                                                                               |
 | ------------ | ------------------------ | ----------------------------------------------------------------------------------------- |
@@ -68,6 +68,27 @@ Contarlas con costo cero las mostraría como lo más rentable del local.
 | Inventario   | `reports.inventory.view` | Productos, agotados, bajo mínimo, sin costo, movimientos por tipo                         |
 | Compras      | `reports.purchases.view` | Total comprado, órdenes, recepciones, por proveedor, diferencias de costo                 |
 | Caja         | `reports.cash.view`      | Turnos, diferencias, ingresos, egresos, retiros                                           |
+| Clientes     | `reports.clients.view`   | Saldo pendiente, deudores, deuda promedio, top deudores, cobrado, vendido a cuenta        |
+
+### El reporte de clientes no llama ganancia a la deuda
+
+`saldoPendiente` es **lo que falta cobrar**, no lo que se ganó. Una venta fiada
+ya figura en Ventas como facturación y en Rentabilidad como margen; sumarla otra
+vez acá la contaría dos veces. Lo que este reporte agrega es la pregunta que los
+otros dos no responden: **cuánto de eso todavía no entró**.
+
+Y separa la **foto** de la **película**. `cartera` es el estado de hoy —un saldo
+es un acumulado y no tiene fecha— y `periodo` es lo que ocurrió dentro del
+rango. Mostrarlos juntos sin distinguirlos haría pensar que toda la deuda se
+generó en esos días.
+
+`deudaPromedio` se calcula sobre **los que deben**, no sobre el padrón entero:
+dividir por todos daría un número que baja cada vez que se carga un cliente
+nuevo, y eso no significa nada.
+
+`reports.clients.view` va aparte de `accounts.view`. El cajero tiene el segundo
+—necesita saber cuánto debe Juan cuando lo tiene enfrente— y no el primero: la
+lista completa de deudores del negocio no le hace falta para cobrar.
 
 Se separan por **materia** y no por pantalla, porque lo que hay que proteger es
 la información y no el menú. `reports.view`, que era uno solo para todo,

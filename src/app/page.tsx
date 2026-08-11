@@ -15,6 +15,7 @@ import {
   Skeleton,
   StockBadge,
   cn,
+  formatMoney,
 } from '@/components/ui'
 import { useSession } from '@/components/shell/SessionProvider'
 import { apiRequest } from '@/lib/api-client'
@@ -24,7 +25,11 @@ import { parsePaginaVentas, type VentaDTO } from '@/modules/sales/dto'
 import { parseArqueos, parseSaldo, type ArqueoDTO } from '@/modules/cash/dto'
 import { parseReposicion, type ReposicionDTO } from '@/modules/inventory/dto'
 import { parseResumenCompras, type ResumenComprasDTO } from '@/modules/purchases/dto'
-import { parseRentabilidadDelDia } from '@/modules/reports/dto'
+import {
+  parseRentabilidadDelDia,
+  parseReporteClientes,
+  type ReporteClientesDTO,
+} from '@/modules/reports/dto'
 import type { Product } from '@/hooks/useProducts'
 
 interface Panel {
@@ -42,6 +47,8 @@ interface Panel {
   reposicion: ReposicionDTO
   compras: ResumenComprasDTO
   ultimoArqueo: ArqueoDTO | null
+  /** La cartera de clientes. Null cuando no se puede ver. */
+  clientes: ReporteClientesDTO | null
 }
 
 const VACIO: Panel = {
@@ -58,6 +65,7 @@ const VACIO: Panel = {
   reposicion: { agotados: 0, bajoMinimo: 0, sinMinimo: 0 },
   compras: { pendientes: 0, parciales: 0, borradores: 0 },
   ultimoArqueo: null,
+  clientes: null,
 }
 
 /**
@@ -85,6 +93,15 @@ export default function InicioPage() {
   const verGanancia = puede('reports.costs.view')
   const verStock = puede('stock.view')
   const verCompras = puede('purchases.view')
+  /**
+   * La CARTERA, no la cuenta de una persona.
+   *
+   * `reports.clients.view` y no `accounts.view`, que es lo que tiene el cajero:
+   * el cajero necesita saber cuanto debe Juan cuando lo tiene enfrente --y eso
+   * lo ve en el POS y en la ficha-- pero no la lista completa de deudores del
+   * negocio. Es lo que pide el objetivo 31.
+   */
+  const verCartera = puede('reports.clients.view')
   const vender = puede('sales.create')
 
   const cargar = useCallback(async () => {
@@ -180,10 +197,26 @@ export default function InicioPage() {
       )
     }
 
+    if (verCartera) {
+      // La cartera de clientes: cuanto se debe y cuanto se cobro HOY. El
+      // cajero NO la pide --no tiene `reports.clients.view`-- y por eso ni
+      // siquiera se dibuja la tarjeta: pedirle a la API algo que va a
+      // responder 403 llena la bitacora de rechazos que no significan nada.
+      tareas.push(
+        apiRequest(`/api/reports/clientes?desde=${d}&hasta=${d}`, {
+          parse: parseReporteClientes,
+        })
+          .then((r) => {
+            salida.clientes = r
+          })
+          .catch(() => undefined),
+      )
+    }
+
     await Promise.all(tareas)
     setDatos(salida)
     setCargando(false)
-  }, [verCaja, verVentas, verGanancia, verStock, verCompras, hoy])
+  }, [verCaja, verVentas, verGanancia, verStock, verCompras, verCartera, hoy])
 
   useEffect(() => {
     void cargar()
@@ -288,6 +321,29 @@ export default function InicioPage() {
                     ? 'warning'
                     : 'success'
               }
+            />
+          )}
+
+          {verCartera && datos.clientes && (
+            <MetricCard
+              href="/clientes"
+              label="Por cobrar"
+              value={<Money amount={datos.clientes.cartera.saldoPendiente} size="lg" />}
+              detail={
+                datos.clientes.cartera.sobreLimite > 0
+                  ? `${String(datos.clientes.cartera.deudores)} deben · ${String(datos.clientes.cartera.sobreLimite)} sobre el límite`
+                  : `${String(datos.clientes.cartera.deudores)} cliente(s) deben`
+              }
+              tone={datos.clientes.cartera.sobreLimite > 0 ? 'warning' : 'neutral'}
+            />
+          )}
+
+          {verCartera && datos.clientes && (
+            <MetricCard
+              href="/clientes"
+              label="Cobrado hoy"
+              value={<Money amount={datos.clientes.periodo.cobrado} size="lg" />}
+              detail={`${String(datos.clientes.periodo.cuantosCobros)} cobro(s) · fiado hoy ${formatMoney(datos.clientes.periodo.ventasACuenta)}`}
             />
           )}
 

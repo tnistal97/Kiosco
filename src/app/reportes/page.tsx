@@ -25,12 +25,14 @@ import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { sumarDias } from '@/lib/tiempo'
 import {
   parseReporteCaja,
+  parseReporteClientes,
   parseReporteCompras,
   parseReporteInventario,
   parseReporteProductos,
   parseReporteRentabilidad,
   parseReporteVentas,
   type ReporteCajaDTO,
+  type ReporteClientesDTO,
   type ReporteComprasDTO,
   type ReporteInventarioDTO,
   type ReporteProductosDTO,
@@ -58,7 +60,8 @@ export default function ReportesPage() {
   const verInventario = puede('reports.inventory.view')
   const verCaja = puede('reports.cash.view')
   const verCompras = puede('reports.purchases.view')
-  const algo = verVentas || verCostos || verInventario || verCaja || verCompras
+  const verClientes = puede('reports.clients.view')
+  const algo = verVentas || verCostos || verInventario || verCaja || verCompras || verClientes
 
   const [desde, setDesde] = useState(() => sumarDias(hoy(), -6))
   const [hasta, setHasta] = useState(() => hoy())
@@ -71,6 +74,7 @@ export default function ReportesPage() {
   const [inv, setInv] = useState<ReporteInventarioDTO | null>(null)
   const [compras, setCompras] = useState<ReporteComprasDTO | null>(null)
   const [caja, setCaja] = useState<ReporteCajaDTO | null>(null)
+  const [clientes, setClientes] = useState<ReporteClientesDTO | null>(null)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -103,13 +107,18 @@ export default function ReportesPage() {
         verCaja
           ? apiRequest(`/api/reports/caja?${q}`, { parse: parseReporteCaja }).then(setCaja)
           : Promise.resolve(),
+        verClientes
+          ? apiRequest(`/api/reports/clientes?${q}`, { parse: parseReporteClientes }).then(
+              setClientes,
+            )
+          : Promise.resolve(),
       ])
     } catch (e) {
       setError(mensajeDeError(e))
     } finally {
       setCargando(false)
     }
-  }, [desde, hasta, verVentas, verCostos, verInventario, verCaja, verCompras])
+  }, [desde, hasta, verVentas, verCostos, verInventario, verCaja, verCompras, verClientes])
 
   useEffect(() => {
     if (algo) void cargar()
@@ -286,6 +295,81 @@ export default function ReportesPage() {
               p.producto,
               p.unidades,
               <Money key="f" amount={p.facturado} />,
+            ])}
+          />
+        </Card>
+      )}
+
+      {!cargando && verClientes && clientes && (
+        <Card>
+          <CardHeader
+            title="Clientes"
+            description="La cartera es de hoy; lo fiado y lo cobrado, del período. No es ganancia: es lo que falta cobrar."
+          />
+
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Dato
+              titulo="Saldo pendiente"
+              valor={<Money amount={clientes.cartera.saldoPendiente} size="lg" />}
+              detalle={`${String(clientes.cartera.deudores)} cliente(s) deben`}
+            />
+            <Dato
+              titulo="Deuda promedio"
+              valor={<Money amount={clientes.cartera.deudaPromedio} size="lg" />}
+              detalle="Entre los que deben, no entre todos"
+            />
+            <Dato
+              titulo="Saldo a favor"
+              valor={<Money amount={clientes.cartera.saldoAFavor} size="lg" />}
+              detalle={`${String(clientes.cartera.conSaldoAFavor)} cliente(s) con crédito`}
+            />
+            <Dato
+              titulo="Sobre el límite"
+              valor={String(clientes.cartera.sobreLimite)}
+              detalle="Casi siempre por una autorización"
+            />
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Dato
+              titulo="Vendido a cuenta"
+              valor={<Money amount={clientes.periodo.ventasACuenta} size="lg" />}
+              detalle={`${String(clientes.periodo.cuantasVentasACuenta)} venta(s) en el período`}
+            />
+            <Dato
+              titulo="Cobrado"
+              valor={<Money amount={clientes.periodo.cobrado} size="lg" />}
+              detalle={`${String(clientes.periodo.cuantosCobros)} cobro(s)`}
+            />
+            <Dato
+              titulo="De eso, en efectivo"
+              valor={<Money amount={clientes.periodo.cobradoEnEfectivo} size="lg" />}
+              detalle="Lo único que entró al cajón"
+            />
+            <Dato
+              titulo="Ajustes manuales"
+              valor={<Money amount={clientes.periodo.ajustes} size="lg" />}
+              detalle="Correcciones administrativas"
+            />
+          </div>
+
+          <Tabla
+            titulo="Quiénes deben más"
+            cabeceras={['Cliente', 'Saldo', 'Límite']}
+            filas={clientes.topDeudores.map((d) => [
+              d.cliente,
+              <Money key="s" amount={d.saldo} size="sm" />,
+              d.limite === null ? 'Sin límite' : <Money key="l" amount={d.limite} size="sm" />,
+            ])}
+          />
+
+          <Tabla
+            titulo="Cobros por medio"
+            cabeceras={['Medio', 'Cobrado', 'Cobros']}
+            filas={clientes.cobrosPorMedio.map((m) => [
+              m.etiqueta,
+              <Money key="c" amount={m.cobrado} size="sm" />,
+              String(m.cuantos),
             ])}
           />
         </Card>

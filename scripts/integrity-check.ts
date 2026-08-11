@@ -13,7 +13,8 @@
 import { comprobarIntegridad } from '../src/modules/integrity/service'
 import { prisma } from '../src/lib/prisma'
 
-const ANCHO = 22
+/** Ancho de la columna de etiquetas. El nombre mas largo entra con holgura. */
+const ANCHO = 25
 
 /** `Ventas ............... ` */
 function etiqueta(nombre: string): string {

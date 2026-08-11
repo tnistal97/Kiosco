@@ -178,6 +178,64 @@ test.describe('accesibilidad automatizada', () => {
     expect(detalle(violations)).toBe('sin faltas')
   })
 
+  test('/clientes no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/clientes')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+    // Se espera al listado: analizar la pantalla mientras carga mide el
+    // esqueleto y no la tabla, que es donde estan los controles.
+    await page.getByRole('searchbox', { name: /Buscar clientes/i }).waitFor({ timeout: 20_000 })
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('la ficha de un cliente no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/clientes')
+    await page
+      .getByRole('link', { name: /Juan Pérez/ })
+      .first()
+      .click()
+
+    // El extracto es lo que hay que auditar: la tabla con los saldos.
+    await page.getByRole('heading', { name: 'Movimientos' }).waitFor({ timeout: 20_000 })
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el diálogo de cobro a un cliente no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/clientes')
+    await page
+      .getByRole('link', { name: /Juan Pérez/ })
+      .first()
+      .click()
+    await page.getByRole('button', { name: 'Registrar pago' }).click()
+    await page.getByRole('dialog').waitFor({ state: 'attached' })
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el comprobante de pago no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/clientes')
+    await page
+      .getByRole('link', { name: /Juan Pérez/ })
+      .first()
+      .click()
+    await page
+      .getByRole('link', { name: /RC-\d{8}/ })
+      .first()
+      .click()
+    await page.getByText('Comprobante de pago').waitFor({ timeout: 20_000 })
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
   test('/proveedores no tiene faltas', async ({ page }) => {
     await entrar(page, 'duenio')
     await page.goto('/proveedores')

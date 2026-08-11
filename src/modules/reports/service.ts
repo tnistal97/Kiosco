@@ -23,7 +23,7 @@
 import { prisma } from '@/lib/prisma'
 import type { Session } from '@/server/auth/session'
 import { forbidden, invalid } from '@/server/http/errors'
-import { cantidadDeDias, esFechaLocal, rangoDeSucursal } from '@/server/tiempo'
+import { cantidadDeDias, comoTimestampUTC, esFechaLocal, rangoDeSucursal } from '@/server/tiempo'
 import type { Monto } from '@/lib/money'
 import type { TextoCantidad } from '@/lib/cantidad'
 import type { Permission } from '@/server/authz/permissions'
@@ -48,7 +48,7 @@ async function preparar(
   session: Session,
   query: RangoQuery,
   permiso: Permission,
-): Promise<{ desde: Date; hasta: Date; branchId: number }> {
+): Promise<{ desde: string; hasta: string; branchId: number }> {
   if (!session.permissions.has(permiso)) {
     throw forbidden('No tiene permiso para ver este reporte')
   }
@@ -59,7 +59,18 @@ async function preparar(
   }
 
   const { desde, hasta } = await rangoDeSucursal(prisma, session.branchId, query.desde, query.hasta)
-  return { desde, hasta, branchId: session.branchId }
+
+  // Los bordes salen como TEXTO, no como `Date`, y las consultas los castean
+  // con `::timestamp`. Es obligatorio: un `Date` viaja como `timestamptz` y
+  // obliga a PostgreSQL a convertir la columna con la zona de la SESION, que
+  // sale del sistema operativo del servidor de base de datos. Con la base en
+  // Argentina, eso corre cada venta posterior a las 21:00 fuera de su propio
+  // dia. Ver `comoTimestampUTC` y docs/TIMEZONE_POLICY.md.
+  return {
+    desde: comoTimestampUTC(desde),
+    hasta: comoTimestampUTC(hasta),
+    branchId: session.branchId,
+  }
 }
 
 /** Las consultas devuelven texto: un `numeric` que pasa por `number` ya perdio. */
@@ -71,6 +82,157 @@ async function filas(sql: string, ...valores: unknown[]): Promise<Fila[]> {
 
 const monto = (v: string | null | undefined): Monto => v ?? '0.00'
 const cantidad = (v: string | null | undefined): TextoCantidad => v ?? '0.000'
+
+// ===========================================================================
+// Clientes y cuenta corriente
+// ===========================================================================
+
+export interface ReporteDeClientes {
+  cartera: {
+    /** Lo que el conjunto de clientes debe HOY. No es una ganancia. */
+    saldoPendiente: Monto
+    deudores: number
+    deudaPromedio: Monto
+    /** Lo que el comercio le debe a sus clientes: pagos de mas y anulaciones. */
+    saldoAFavor: Monto
+    conSaldoAFavor: number
+    /** Cuantos estan por encima de su limite. Casi siempre por una autorizacion. */
+    sobreLimite: number
+  }
+  /** Lo que pasa DENTRO del rango. Lo de arriba es una foto de hoy. */
+  periodo: {
+    ventasACuenta: Monto
+    cuantasVentasACuenta: number
+    cobrado: Monto
+    cuantosCobros: number
+    /** Cuanto de lo cobrado entro al cajon. El resto fue transferencia o tarjeta. */
+    cobradoEnEfectivo: Monto
+    ajustes: Monto
+  }
+  topDeudores: Array<{ cliente: string; saldo: Monto; limite: Monto | null }>
+  cobrosPorMedio: Array<{ medio: string; etiqueta: string; cobrado: Monto; cuantos: number }>
+}
+
+/**
+ * La cartera de clientes y el movimiento de cuenta corriente del rango.
+ *
+ * DOS COSAS QUE ESTE REPORTE NO HACE, y las dos son deliberadas:
+ *
+ *   1. NO LLAMA GANANCIA A LA DEUDA. `saldoPendiente` es lo que falta cobrar,
+ *      no lo que se gano. Una venta fiada ya figura en el reporte de ventas
+ *      como facturacion y en el de rentabilidad como margen; sumarla de nuevo
+ *      aca la contaria dos veces. Lo que este reporte agrega es la pregunta que
+ *      los otros dos no responden: cuanto de eso todavia no entro.
+ *
+ *   2. NO MEZCLA LA FOTO CON LA PELICULA. `cartera` es el estado de HOY --los
+ *      saldos son acumulados y no tienen fecha-- y `periodo` es lo que ocurrio
+ *      dentro del rango. Mostrarlos juntos sin distinguirlos haria pensar que
+ *      la deuda se genero toda en esos dias.
+ *
+ * Ver docs/REPORTING_MODEL.md.
+ */
+export async function reporteDeClientes(
+  session: Session,
+  query: RangoQuery,
+): Promise<ReporteDeClientes> {
+  const { desde, hasta, branchId } = await preparar(session, query, 'reports.clients.view')
+
+  const [cartera, periodo, deudores, medios] = await Promise.all([
+    filas(
+      `SELECT
+         COALESCE(sum("balance") FILTER (WHERE "balance" > 0), 0)::numeric(14,2)::text AS deuda,
+         count(*) FILTER (WHERE "balance" > 0)::text                                   AS deudores,
+         COALESCE(-sum("balance") FILTER (WHERE "balance" < 0), 0)::numeric(14,2)::text AS "aFavor",
+         count(*) FILTER (WHERE "balance" < 0)::text                                   AS "conAFavor",
+         count(*) FILTER (
+           WHERE "creditLimit" IS NOT NULL AND "balance" > "creditLimit"
+         )::text                                                                       AS "sobreLimite"
+       FROM "Client" WHERE "branchId" = $1`,
+      branchId,
+    ),
+    // Todo el movimiento del rango en UNA consulta agregada por tipo. Cuatro
+    // agregados separados serian cuatro recorridas de la misma tabla.
+    filas(
+      `SELECT
+         COALESCE(sum("amount") FILTER (WHERE "type" = 'SALE_CHARGE'), 0)::numeric(14,2)::text AS fiado,
+         count(*) FILTER (WHERE "type" = 'SALE_CHARGE')::text                     AS "cuantasFiadas",
+         COALESCE(-sum("amount") FILTER (WHERE "type" = 'PAYMENT'), 0)::numeric(14,2)::text    AS cobrado,
+         count(*) FILTER (WHERE "type" = 'PAYMENT')::text                         AS "cuantosCobros",
+         COALESCE(sum("amount") FILTER (WHERE "type" = 'MANUAL_ADJUSTMENT'), 0)::numeric(14,2)::text AS ajustes,
+         COALESCE((
+           SELECT sum(p."amount") FROM "CustomerPayment" p
+            WHERE p."branchId" = $1 AND p."createdAt" >= $2::timestamp AND p."createdAt" <= $3::timestamp
+              AND p."method" = 'CASH'
+         ), 0)::numeric(14,2)::text                                               AS "enEfectivo"
+       FROM "CustomerAccountMovement"
+       WHERE "branchId" = $1 AND "createdAt" >= $2::timestamp AND "createdAt" <= $3::timestamp`,
+      branchId,
+      desde,
+      hasta,
+    ),
+    filas(
+      `SELECT "name"                        AS cliente,
+              "balance"::numeric(14,2)::text AS saldo,
+              "creditLimit"::numeric(14,2)::text AS limite
+         FROM "Client"
+        WHERE "branchId" = $1 AND "balance" > 0
+        ORDER BY "balance" DESC
+        LIMIT ${String(TOPE_RANKING)}`,
+      branchId,
+    ),
+    filas(
+      `SELECT "method"                            AS medio,
+              sum("amount")::numeric(14,2)::text  AS cobrado,
+              count(*)::text                      AS cuantos
+         FROM "CustomerPayment"
+        WHERE "branchId" = $1 AND "createdAt" >= $2::timestamp AND "createdAt" <= $3::timestamp
+        GROUP BY "method" ORDER BY sum("amount") DESC`,
+      branchId,
+      desde,
+      hasta,
+    ),
+  ])
+
+  const c = cartera[0] ?? {}
+  const p = periodo[0] ?? {}
+  const cuantosDeudores = Number(c.deudores ?? '0')
+
+  return {
+    cartera: {
+      saldoPendiente: monto(c.deuda),
+      deudores: cuantosDeudores,
+      // El promedio se calcula sobre los que DEBEN, no sobre todos los
+      // clientes: dividir por el padron entero daria un numero que baja cada
+      // vez que se carga un cliente nuevo, y eso no significa nada.
+      deudaPromedio:
+        cuantosDeudores === 0 ? '0.00' : (Number(c.deuda ?? '0') / cuantosDeudores).toFixed(2),
+      saldoAFavor: monto(c.aFavor),
+      conSaldoAFavor: Number(c.conAFavor ?? '0'),
+      sobreLimite: Number(c.sobreLimite ?? '0'),
+    },
+    periodo: {
+      ventasACuenta: monto(p.fiado),
+      cuantasVentasACuenta: Number(p.cuantasFiadas ?? '0'),
+      cobrado: monto(p.cobrado),
+      cuantosCobros: Number(p.cuantosCobros ?? '0'),
+      cobradoEnEfectivo: monto(p.enEfectivo),
+      ajustes: monto(p.ajustes),
+    },
+    topDeudores: deudores.map((f) => ({
+      cliente: f.cliente ?? '—',
+      saldo: monto(f.saldo),
+      // `null` significa "sin limite configurado", y viaja tal cual: no se
+      // reemplaza por cero, que es la afirmacion contraria.
+      limite: f.limite ?? null,
+    })),
+    cobrosPorMedio: medios.map((f) => ({
+      medio: f.medio ?? '—',
+      etiqueta: etiquetaDeMedio(f.medio ?? ''),
+      cobrado: monto(f.cobrado),
+      cuantos: Number(f.cuantos ?? '0'),
+    })),
+  }
+}
 
 // ===========================================================================
 // Ventas
@@ -121,7 +283,7 @@ export async function reporteDeVentas(
          count(*) FILTER (WHERE "status" = 'canceled')::text                   AS anuladas,
          COALESCE(sum("total") FILTER (WHERE "status" = 'canceled'), 0)::numeric(14,2)::text  AS anulado
        FROM "Sale"
-       WHERE "branchId" = $1 AND "date" >= $2 AND "date" <= $3`,
+       WHERE "branchId" = $1 AND "date" >= $2::timestamp AND "date" <= $3::timestamp`,
       branchId,
       desde,
       hasta,
@@ -131,7 +293,7 @@ export async function reporteDeVentas(
               sum("total")::numeric(14,2)::text                                  AS facturado,
               count(*)::text                                                     AS operaciones
          FROM "Sale"
-        WHERE "branchId" = $1 AND "date" >= $2 AND "date" <= $3 AND "status" = 'completed'
+        WHERE "branchId" = $1 AND "date" >= $2::timestamp AND "date" <= $3::timestamp AND "status" = 'completed'
         GROUP BY 1 ORDER BY 1`,
       branchId,
       desde,
@@ -143,7 +305,7 @@ export async function reporteDeVentas(
               sum(s."total")::numeric(14,2)::text AS facturado,
               count(*)::text       AS operaciones
          FROM "Sale" s JOIN "User" u ON u."id" = s."userId"
-        WHERE s."branchId" = $1 AND s."date" >= $2 AND s."date" <= $3 AND s."status" = 'completed'
+        WHERE s."branchId" = $1 AND s."date" >= $2::timestamp AND s."date" <= $3::timestamp AND s."status" = 'completed'
         GROUP BY u."name" ORDER BY sum(s."total") DESC`,
       branchId,
       desde,
@@ -154,7 +316,7 @@ export async function reporteDeVentas(
               sum(p."amount")::numeric(14,2)::text AS cobrado,
               count(*)::text        AS operaciones
          FROM "SalePayment" p JOIN "Sale" s ON s."id" = p."saleId"
-        WHERE s."branchId" = $1 AND s."date" >= $2 AND s."date" <= $3 AND s."status" = 'completed'
+        WHERE s."branchId" = $1 AND s."date" >= $2::timestamp AND s."date" <= $3::timestamp AND s."status" = 'completed'
         GROUP BY p."method" ORDER BY sum(p."amount") DESC`,
       branchId,
       desde,
@@ -246,7 +408,7 @@ export async function reporteDeRentabilidad(
          COALESCE(sum(round(i."price" * i."quantity", 2))
                   FILTER (WHERE i."costAtSale" IS NULL), 0)::numeric(14,2)::text        AS "facturadoSinCosto"
        FROM "SaleItem" i JOIN "Sale" s ON s."id" = i."saleId"
-       WHERE s."branchId" = $1 AND s."date" >= $2 AND s."date" <= $3 AND s."status" = 'completed'`,
+       WHERE s."branchId" = $1 AND s."date" >= $2::timestamp AND s."date" <= $3::timestamp AND s."status" = 'completed'`,
       branchId,
       desde,
       hasta,
@@ -260,7 +422,7 @@ export async function reporteDeRentabilidad(
          FROM "SaleItem" i
          JOIN "Sale" s ON s."id" = i."saleId"
          JOIN "Product" p ON p."id" = i."productId"
-        WHERE s."branchId" = $1 AND s."date" >= $2 AND s."date" <= $3 AND s."status" = 'completed'
+        WHERE s."branchId" = $1 AND s."date" >= $2::timestamp AND s."date" <= $3::timestamp AND s."status" = 'completed'
         GROUP BY p."name"
         ORDER BY (COALESCE(sum(round(i."price" * i."quantity", 2))
                            FILTER (WHERE i."costAtSale" IS NOT NULL), 0)
@@ -332,7 +494,7 @@ export async function reporteDeProductos(
       FROM "SaleItem" i
       JOIN "Sale" s ON s."id" = i."saleId"
       JOIN "Product" p ON p."id" = i."productId"
-     WHERE s."branchId" = $1 AND s."date" >= $2 AND s."date" <= $3 AND s."status" = 'completed'
+     WHERE s."branchId" = $1 AND s."date" >= $2::timestamp AND s."date" <= $3::timestamp AND s."status" = 'completed'
      GROUP BY p."name"`
 
   const [mas, menos, sinVentas] = await Promise.all([
@@ -344,7 +506,7 @@ export async function reporteDeProductos(
         WHERE p."branchId" = $1 AND p."isActive"
           AND NOT EXISTS (
             SELECT 1 FROM "SaleItem" i JOIN "Sale" s ON s."id" = i."saleId"
-             WHERE i."productId" = p."id" AND s."date" >= $2 AND s."date" <= $3
+             WHERE i."productId" = p."id" AND s."date" >= $2::timestamp AND s."date" <= $3::timestamp
                AND s."status" = 'completed'
           )`,
       branchId,
@@ -423,7 +585,7 @@ export async function reporteDeInventario(
     filas(
       `SELECT "type" AS tipo, count(*)::text AS cuantos
          FROM "StockMovement"
-        WHERE "branchId" = $1 AND "createdAt" >= $2 AND "createdAt" <= $3
+        WHERE "branchId" = $1 AND "createdAt" >= $2::timestamp AND "createdAt" <= $3::timestamp
         GROUP BY "type" ORDER BY count(*) DESC`,
       branchId,
       desde,
@@ -483,13 +645,13 @@ export async function reporteDeCompras(
     filas(
       `SELECT
          (SELECT count(*) FROM "PurchaseOrder"
-           WHERE "branchId" = $1 AND "createdAt" >= $2 AND "createdAt" <= $3)::text AS ordenes,
+           WHERE "branchId" = $1 AND "createdAt" >= $2::timestamp AND "createdAt" <= $3::timestamp)::text AS ordenes,
          (SELECT count(*) FROM "PurchaseReceipt"
-           WHERE "branchId" = $1 AND "receivedAt" >= $2 AND "receivedAt" <= $3)::text AS recepciones,
+           WHERE "branchId" = $1 AND "receivedAt" >= $2::timestamp AND "receivedAt" <= $3::timestamp)::text AS recepciones,
          (SELECT COALESCE(sum(round(ri."receivedQuantity" * ri."unitCost", 2)), 0)
             FROM "PurchaseReceiptItem" ri
             JOIN "PurchaseReceipt" r ON r."id" = ri."purchaseReceiptId"
-           WHERE r."branchId" = $1 AND r."receivedAt" >= $2 AND r."receivedAt" <= $3)::numeric(14,2)::text AS total`,
+           WHERE r."branchId" = $1 AND r."receivedAt" >= $2::timestamp AND r."receivedAt" <= $3::timestamp)::numeric(14,2)::text AS total`,
       branchId,
       desde,
       hasta,
@@ -502,7 +664,7 @@ export async function reporteDeCompras(
          JOIN "PurchaseReceiptItem" ri ON ri."purchaseReceiptId" = r."id"
          JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
          JOIN "Supplier" sup ON sup."id" = o."supplierId"
-        WHERE r."branchId" = $1 AND r."receivedAt" >= $2 AND r."receivedAt" <= $3
+        WHERE r."branchId" = $1 AND r."receivedAt" >= $2::timestamp AND r."receivedAt" <= $3::timestamp
         GROUP BY sup."name" ORDER BY 3 DESC`,
       branchId,
       desde,
@@ -518,7 +680,7 @@ export async function reporteDeCompras(
          JOIN "PurchaseReceipt" r ON r."id" = ri."purchaseReceiptId"
          JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
          JOIN "Product" p ON p."id" = ri."productId"
-        WHERE r."branchId" = $1 AND r."receivedAt" >= $2 AND r."receivedAt" <= $3
+        WHERE r."branchId" = $1 AND r."receivedAt" >= $2::timestamp AND r."receivedAt" <= $3::timestamp
           AND ri."unitCost" <> ri."expectedUnitCost"
         ORDER BY abs(ri."unitCost" - ri."expectedUnitCost") DESC
         LIMIT ${String(TOPE_RANKING)}`,
@@ -588,7 +750,7 @@ export async function reporteDeCaja(session: Session, query: RangoQuery): Promis
               COALESCE(sum("difference") FILTER (WHERE "difference" < 0), 0)::numeric(14,2)::text AS faltantes
          FROM "CashShift"
         WHERE "branchId" = $1 AND "status" = 'closed'
-          AND "openedAt" >= $2 AND "openedAt" <= $3`,
+          AND "openedAt" >= $2::timestamp AND "openedAt" <= $3::timestamp`,
       branchId,
       desde,
       hasta,
@@ -600,7 +762,7 @@ export async function reporteDeCaja(session: Session, query: RangoQuery): Promis
          COALESCE(sum("amount") FILTER (WHERE "type" = 'retiro'), 0)::numeric(14,2)::text   AS retiros,
          COALESCE(sum("amount") FILTER (WHERE "type" = 'sale'), 0)::numeric(14,2)::text     AS ventas
        FROM "CashRegisterMovement"
-       WHERE "branchId" = $1 AND "date" >= $2 AND "date" <= $3
+       WHERE "branchId" = $1 AND "date" >= $2::timestamp AND "date" <= $3::timestamp
          AND "paymentMethod" = $4`,
       branchId,
       desde,
@@ -616,7 +778,7 @@ export async function reporteDeCaja(session: Session, query: RangoQuery): Promis
               sh."difference"::numeric(14,2)::text     AS diferencia
          FROM "CashShift" sh
          LEFT JOIN "User" u ON u."id" = sh."closedById"
-        WHERE sh."branchId" = $1 AND sh."openedAt" >= $2 AND sh."openedAt" <= $3
+        WHERE sh."branchId" = $1 AND sh."openedAt" >= $2::timestamp AND sh."openedAt" <= $3::timestamp
           AND sh."status" <> 'legacy'
         ORDER BY sh."openedAt" DESC LIMIT ${String(TOPE_RANKING * 2)}`,
       branchId,

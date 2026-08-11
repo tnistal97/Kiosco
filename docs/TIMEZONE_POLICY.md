@@ -1,5 +1,14 @@
 # Zona horaria: el día comercial
 
+> **Corrección de la Fase 4A.** Este documento afirmaba que el problema de las
+> ventas posteriores a las 21:00 estaba cerrado desde la Fase 3D. Estaba cerrado
+> **a medias**: el cálculo del rango sí, la **comparación en SQL crudo** no. Ver
+> [_La segunda mitad del problema_](#la-segunda-mitad-del-problema-fase-4a).
+>
+> La suite no lo detectaba porque las ventas de las pruebas se crean con `now()`
+> y la suite corría antes de las 21:00. Un error que aparece tres horas por día
+> es peor que uno permanente: parece intermitente.
+
 ## El bug que originó esta política
 
 La Fase 3C encontró esto, y conviene contarlo antes que la solución porque
@@ -157,3 +166,76 @@ El día comercial se usa para **listar** turnos por fecha, no para delimitarlos.
 - diciembre de 2008 usa el horario de verano que regía entonces
 - el día de un cambio de horario dura 23 o 25 horas y ninguna venta se pierde
 - una zona inválida en la base cae a Buenos Aires en vez de romper el reporte
+
+---
+
+## La segunda mitad del problema (Fase 4A)
+
+La Fase 3D arregló **de dónde sale el día**: el rango se calcula con la zona
+IANA de la sucursal, y eso sigue estando bien. Lo que no arregló es **cómo se
+compara ese rango contra la base**.
+
+### El mecanismo
+
+Las columnas de fecha son `timestamp(3)` **sin zona**, y guardan UTC. Cuando una
+consulta en SQL crudo compara una de esas columnas contra un `Date` de
+JavaScript, el conector lo manda como `timestamptz`. Para poder compararlos,
+PostgreSQL convierte **la columna** usando la zona de la **sesión**, que sale
+del sistema operativo del servidor de base de datos.
+
+Con la base corriendo en Argentina:
+
+```
+venta de las 21:30      guardada como   2026-05-16 00:30   (UTC)
+la sesion la interpreta como local  →   2026-05-16 03:30   (UTC)
+
+el dia 15 de mayo va de   2026-05-15 03:00   a   2026-05-16 02:59:59.999
+```
+
+`03:30 > 02:59:59.999`. **La venta desaparece de su propio día.**
+
+Es exactamente el bug de la Fase 3C, con otra causa: allá el rango se calculaba
+mal, acá se calcula bien y se compara mal. El síntoma que ve el almacén es el
+mismo.
+
+### La regla
+
+**Todo borde de fecha que cruce hacia SQL crudo va como TEXTO, con
+`::timestamp`.** Nunca como `Date`.
+
+```ts
+// mal: viaja como timestamptz y arrastra la zona de la sesión
+;`WHERE s."date" >= ${desde}`
+// bien: los dos lados son timestamp sin zona, los dos en UTC
+`WHERE s."date" >= ${comoTimestampUTC(desde)}::timestamp`
+```
+
+`comoTimestampUTC()` vive en `src/server/tiempo.ts` y es la única forma
+autorizada de convertir un instante en un literal para SQL.
+
+**Las consultas tipadas de Prisma (`findMany`, `count`, `aggregate`) no están
+afectadas**: Prisma conoce el tipo de la columna y vincula el parámetro
+correctamente. El problema es exclusivo de `$queryRaw` y `$queryRawUnsafe`.
+
+### Por qué no se arregla configurando la sesión en UTC
+
+Se podría poner `SET TimeZone = 'UTC'` en la conexión y el síntoma
+desaparecería. No se hizo, por dos motivos:
+
+1. **Dependería de la configuración**, que es exactamente lo que esta política
+   existe para no hacer. Una conexión nueva, un _pooler_ que no propague el
+   ajuste, o una réplica configurada distinto, y el error vuelve sin que nada
+   avise.
+2. **Escondería la ambigüedad en vez de eliminarla.** Con el cast explícito, la
+   consulta dice lo que quiere decir y funciona igual en cualquier servidor, en
+   cualquier zona.
+
+### Cómo se prueba
+
+`tests/integration/reportes.test.ts`, tres casos que **no dependen del reloj**:
+fijan la fecha de una venta a `2026-05-16T00:30:00Z` —las 21:30 del 15 en Buenos
+Aires— y comprueban que aparece en el 15 y **no** en el 16. La segunda mitad
+importa: correr todo un día hacia adelante haría pasar la primera y rompería la
+segunda.
+
+Se verificó que fallan sin el arreglo.
