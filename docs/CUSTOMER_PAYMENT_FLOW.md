@@ -91,6 +91,14 @@ exacto.
 Hay una prueba de concurrencia que registra diez cobros en paralelo y verifica
 que los diez números sean distintos.
 
+> **Cualquier cosa que escriba un `CustomerPayment` tiene que pedirle el número
+> a la secuencia. También el seed.** La primera versión del seed de demostración
+> escribía `RC-00000001` a mano y dejaba la secuencia en 1: el primer cobro real
+> chocaba contra el índice único y quien estaba cobrando veía _"Ya existe un
+> registro con esos datos"_ por algo que había hecho bien. Lo encontró la suite
+> de extremo a extremo, que es el único lugar donde un número escrito a mano y
+> una secuencia viva se cruzan.
+
 ---
 
 ## 5. Sobrepago
