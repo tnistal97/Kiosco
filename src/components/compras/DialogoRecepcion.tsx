@@ -1,11 +1,22 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Alert, Button, Dialog, Field, Input, Textarea, aviso } from '@/components/ui'
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Dialog,
+  Field,
+  Input,
+  Money,
+  Textarea,
+  aviso,
+} from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { cantidadDesdeTexto, compararCantidades } from '@/lib/cantidad'
-import { montoDesdeTexto } from '@/lib/money'
+import { esPositivo, montoDesdeTexto, type Monto } from '@/lib/money'
+import { parseResumenDeCuenta } from '@/modules/suppliers/dto.cuenta'
 import { descripcionDeConversion } from '@/modules/purchases/conversion'
 import { NOMBRE_DE_UNIDAD_DE_COMPRA } from '@/modules/products/units'
 import type { DetalleOrdenDTO, LineaDTO } from '@/modules/purchases/dto'
@@ -43,11 +54,21 @@ export function DialogoRecepcion({
   onRecibido: () => void
 }) {
   const puedeCambiarCosto = usePermiso('products.cost.update')
+  const puedeVerCuenta = usePermiso('supplierAccounts.view')
 
   const [entradas, setEntradas] = useState<Record<number, EntradaLinea>>({})
   const [notas, setNotas] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * El credito disponible del proveedor, y si se va a consumir. Objetivo 4.
+   *
+   * NO se aplica solo: la casilla arranca APAGADA. Aplicarlo en silencio hace
+   * que el saldo baje sin que quien recibe entienda por que, y que un anticipo
+   * reservado para otra compra desaparezca sin aviso.
+   */
+  const [credito, setCredito] = useState<Monto | null>(null)
+  const [aplicarAnticipos, setAplicarAnticipos] = useState(false)
 
   // Solo las lineas que tienen algo pendiente: una que ya llego entera no
   // aporta nada al formulario y alarga la lista de la que hay que leer.
@@ -73,7 +94,28 @@ export function DialogoRecepcion({
     setNotas('')
     setError(null)
     setEnviando(false)
-  }, [abierto, orden])
+    setAplicarAnticipos(false)
+    setCredito(null)
+
+    // El credito se pide al abrir y no antes: la mayoria de las recepciones no
+    // tiene ninguno, y una consulta por cada pantalla de compra que se mira
+    // seria pagar por el caso raro. Si falla, no se ofrece la casilla y la
+    // recepcion sigue funcionando igual.
+    if (!puedeVerCuenta) return
+    let vivo = true
+    void apiRequest(`/api/suppliers/${String(orden.supplier.id)}/cuenta/resumen`, {
+      parse: parseResumenDeCuenta,
+    })
+      .then((cuenta) => {
+        if (vivo && esPositivo(cuenta.sinImputar)) setCredito(cuenta.sinImputar)
+      })
+      // Silencio a proposito: es informacion adicional, no un requisito. Sin
+      // credito la casilla no aparece y la recepcion funciona igual.
+      .catch(() => undefined)
+    return () => {
+      vivo = false
+    }
+  }, [abierto, orden, puedeVerCuenta])
 
   function set(id: number, cambio: Partial<EntradaLinea>) {
     setEntradas((e) => ({ ...e, [id]: { ...(e[id] ?? { cantidad: '', costo: '' }), ...cambio } }))
@@ -116,6 +158,7 @@ export function DialogoRecepcion({
         method: 'POST',
         body: {
           notes: notas.trim(),
+          aplicarAnticipos,
           items: aRecibir.map((e) => ({
             orderItemId: e.linea.id,
             quantity: e.cantidad,
@@ -241,6 +284,32 @@ export function DialogoRecepcion({
               </div>
             </div>
           ))}
+
+          {/*
+            El credito disponible del proveedor. Objetivo 4: se MUESTRA y se
+            pregunta, nunca se aplica en silencio. Quien recibe tiene que
+            enterarse de que está consumiendo un anticipo.
+          */}
+          {credito !== null && pendientes.length > 0 && (
+            <div className="rounded-lg border border-primary/35 bg-primary-quiet p-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-sm text-ink">Crédito disponible del proveedor</span>
+                <span className="text-lg font-semibold text-ink" data-numeric="">
+                  <Money amount={credito} />
+                </span>
+              </div>
+              <Checkbox
+                className="mt-2"
+                checked={aplicarAnticipos}
+                disabled={enviando}
+                label="Aplicar automáticamente a esta entrega"
+                description="Se consumen del pago más antiguo hacia el más nuevo. No cambia el saldo: esa plata ya se entregó."
+                onChange={(e) => {
+                  setAplicarAnticipos(e.target.checked)
+                }}
+              />
+            </div>
+          )}
 
           {pendientes.length > 0 && (
             <Field label="Notas" hint="Remito, transportista, lo que convenga anotar">

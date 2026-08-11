@@ -127,6 +127,30 @@ Es la única cifra del sistema que usa `Product.cost` (el actual) a propósito: 
 pregunta es "cuánto vale **reponer** lo que tengo hoy", no "cuánto pagué por
 ello".
 
+### Bruto y neto, en columnas separadas — Fase 4C
+
+El reporte de compras muestra **recibido bruto**, **devuelto** y **compras
+netas**, las tres. No es redundancia: son dos preguntas distintas —cuánta
+mercadería manejó el depósito, y cuánto costó el mes— y una sola columna las
+confunde. Mostrar sólo el neto esconde el movimiento; sólo el bruto miente sobre
+el costo.
+
+`devuelto` se mide por la **fecha de confirmación** de la devolución, no por la
+de la entrega que deshace. Una entrega de marzo devuelta en abril baja las
+compras de abril: es cuando salió la mercadería y cuando nació el crédito.
+Reescribir marzo hacia atrás haría que el mismo rango diera números distintos
+según cuándo se consulte.
+
+En el reporte de proveedores, `devuelto` es un **subconjunto** de
+`notasDeCredito` —toda devolución emite un `PURCHASE_CREDIT`— y se separa porque
+la diferencia entre las dos cifras es el crédito que el proveedor emitió sin que
+nada volviera.
+
+`anticiposSinImputar` **no se resta** de la deuda: son dos cosas distintas. Un
+proveedor puede tener deuda por la entrega de ayer y un anticipo de marzo que
+todavía no se aplicó a nada. Ver
+[SUPPLIER_ADVANCES.md](SUPPLIER_ADVANCES.md).
+
 ## Decisiones de reparto
 
 **El cajero no tiene ningún `reports.*`.** Ve sus ventas por `sales.view`, y la

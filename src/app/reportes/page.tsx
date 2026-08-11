@@ -414,6 +414,16 @@ export default function ReportesPage() {
               valor={<Money amount={proveedores.cuentasPorPagar.sinVencimiento} size="lg" />}
               detalle="Nadie cargó una fecha"
             />
+            {/*
+              NO se resta de la deuda: son dos cosas distintas. Un proveedor
+              puede tener deuda por la entrega de ayer y un anticipo de marzo
+              que todavía no se aplicó a nada.
+            */}
+            <Dato
+              titulo="Anticipos sin imputar"
+              valor={<Money amount={proveedores.cuentasPorPagar.anticiposSinImputar} size="lg" />}
+              detalle={`${String(proveedores.cuentasPorPagar.proveedoresConAnticipo)} proveedor(es) con crédito nuestro`}
+            />
           </div>
 
           <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -436,6 +446,16 @@ export default function ReportesPage() {
               titulo="Notas de crédito"
               valor={<Money amount={proveedores.periodo.notasDeCredito} size="lg" />}
               detalle="Bajan la deuda sin que salga plata"
+            />
+            {/*
+              Subconjunto del anterior: toda devolución emite una nota de
+              crédito. La diferencia entre las dos cifras es el crédito que el
+              proveedor emitió sin que nada volviera.
+            */}
+            <Dato
+              titulo="De eso, por devoluciones"
+              valor={<Money amount={proveedores.periodo.devuelto} size="lg" />}
+              detalle={`${String(proveedores.periodo.devoluciones)} devolución(es) con mercadería`}
             />
           </div>
 
@@ -511,10 +531,27 @@ export default function ReportesPage() {
             title="Compras"
             description="Medidas por lo que LLEGÓ: una orden que nunca se recibió no es una compra."
           />
+          {/*
+            Bruto y neto en columnas SEPARADAS. Son dos preguntas distintas:
+            cuánta mercadería entró por la puerta, y cuánta se quedó. Mostrar
+            sólo el neto esconde el movimiento del depósito; sólo el bruto
+            miente sobre el costo.
+          */}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Dato
-              titulo="Total comprado"
+              titulo="Recibido bruto"
               valor={<Money amount={compras.totalComprado} size="lg" />}
+              detalle={`${String(compras.recepciones)} recepción(es)`}
+            />
+            <Dato
+              titulo="Devuelto"
+              valor={<Money amount={compras.devuelto} size="lg" />}
+              detalle={`${String(compras.devoluciones)} devolución(es)`}
+            />
+            <Dato
+              titulo="Compras netas"
+              valor={<Money amount={compras.comprasNetas} size="lg" />}
+              detalle="Lo que quedó"
             />
             <Dato titulo="Órdenes" valor={String(compras.ordenes)} />
             <Dato titulo="Recepciones" valor={String(compras.recepciones)} />

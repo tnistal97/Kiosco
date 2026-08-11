@@ -25,6 +25,7 @@ import type { Session } from '@/server/auth/session'
 import { forbidden, invalid } from '@/server/http/errors'
 import { cantidadDeDias, comoTimestampUTC, esFechaLocal, rangoDeSucursal } from '@/server/tiempo'
 import type { Monto } from '@/lib/money'
+import { aMonto, dinero, restar } from '@/server/money'
 import type { TextoCantidad } from '@/lib/cantidad'
 import type { Permission } from '@/server/authz/permissions'
 import { MEDIO_EFECTIVO, etiquetaDeMedio } from '@/modules/sales/payment-methods'
@@ -616,7 +617,13 @@ export async function reporteDeInventario(
 export interface ReporteDeCompras {
   ordenes: number
   recepciones: number
+  /** RECIBIDO BRUTO: todo lo que entro, sin descontar nada. */
   totalComprado: Monto
+  /** Lo devuelto al proveedor DENTRO del rango, al costo historico. Fase 4C. */
+  devuelto: Monto
+  devoluciones: number
+  /** `totalComprado - devuelto`. La compra que quedo. Fase 4C. */
+  comprasNetas: Monto
   porProveedor: Array<{ proveedor: string; ordenes: number; total: Monto }>
   diferenciasDeCosto: Array<{
     orden: string
@@ -634,6 +641,19 @@ export interface ReporteDeCompras {
  * es una compra, es una promesa. Las diferencias entre el costo pedido y el
  * recibido se listan enteras --no un resumen-- porque cada una es una
  * conversacion pendiente con un proveedor.
+ *
+ * BRUTO Y NETO VAN EN COLUMNAS SEPARADAS, que es lo que pide el objetivo 23. Son
+ * dos preguntas distintas: cuanta mercaderia entro por la puerta, y cuanta se
+ * quedo. Un mes con $500.000 recibidos y $80.000 devueltos costo $420.000, pero
+ * el deposito manejo $500.000 y la diferencia dice algo sobre el proveedor.
+ * Mostrar solo el neto esconde ese dato; mostrar solo el bruto miente sobre el
+ * costo.
+ *
+ * `devuelto` se mide por la FECHA DE CONFIRMACION de la devolucion, no por la de
+ * la entrega que deshace. Una entrega de marzo devuelta en abril baja las
+ * compras de abril: es cuando salio la mercaderia y cuando nacio el credito. El
+ * reporte de marzo ya se leyo, y reescribirlo hacia atras haria que el mismo
+ * rango diera numeros distintos segun cuando se consulte.
  */
 export async function reporteDeCompras(
   session: Session,
@@ -651,7 +671,13 @@ export async function reporteDeCompras(
          (SELECT COALESCE(sum(round(ri."receivedQuantity" * ri."unitCost", 2)), 0)
             FROM "PurchaseReceiptItem" ri
             JOIN "PurchaseReceipt" r ON r."id" = ri."purchaseReceiptId"
-           WHERE r."branchId" = $1 AND r."receivedAt" >= $2::timestamp AND r."receivedAt" <= $3::timestamp)::numeric(14,2)::text AS total`,
+           WHERE r."branchId" = $1 AND r."receivedAt" >= $2::timestamp AND r."receivedAt" <= $3::timestamp)::numeric(14,2)::text AS total,
+         (SELECT COALESCE(sum(d."total"), 0) FROM "PurchaseReturn" d
+           WHERE d."branchId" = $1 AND d."status" = 'CONFIRMED'
+             AND d."confirmedAt" >= $2::timestamp AND d."confirmedAt" <= $3::timestamp)::numeric(14,2)::text AS devuelto,
+         (SELECT count(*) FROM "PurchaseReturn" d
+           WHERE d."branchId" = $1 AND d."status" = 'CONFIRMED'
+             AND d."confirmedAt" >= $2::timestamp AND d."confirmedAt" <= $3::timestamp)::text AS devoluciones`,
       branchId,
       desde,
       hasta,
@@ -695,6 +721,12 @@ export async function reporteDeCompras(
     ordenes: Number(r?.ordenes ?? 0),
     recepciones: Number(r?.recepciones ?? 0),
     totalComprado: monto(r?.total ?? null),
+    devuelto: monto(r?.devuelto ?? null),
+    devoluciones: Number(r?.devoluciones ?? 0),
+    // La resta se hace en JavaScript y no en SQL a proposito: los dos operandos
+    // ya vienen redondeados a pesos desde la base, y restarlos aca deja ver que
+    // el neto es exactamente la diferencia de las dos columnas que se muestran.
+    comprasNetas: aMonto(restar(dinero(r?.total ?? '0'), dinero(r?.devuelto ?? '0'))),
     porProveedor: porProveedor.map((f) => ({
       proveedor: f.proveedor ?? '',
       ordenes: Number(f.ordenes ?? 0),
@@ -723,6 +755,17 @@ export interface ReporteDeProveedores {
     porVencer: Monto
     /** Lo que no tiene fecha de vencimiento cargada. No es ni una cosa ni la otra. */
     sinVencimiento: Monto
+    /**
+     * Plata ya entregada que no esta aplicada a ninguna entrega. Fase 4C.
+     *
+     * NO se resta de `total`, y no es un descuido. Son dos cosas distintas:
+     * `total` es la suma de los saldos POSITIVOS --a quienes les debemos-- y
+     * esto es credito que tenemos, repartido entre pagos concretos. Un proveedor
+     * puede tener las dos cosas a la vez: deuda por la entrega de ayer y un
+     * anticipo de marzo que todavia no se aplico a nada.
+     */
+    anticiposSinImputar: Monto
+    proveedoresConAnticipo: number
   }
   /** Lo que paso DENTRO del rango. Lo de arriba es una foto. */
   periodo: {
@@ -734,6 +777,17 @@ export interface ReporteDeProveedores {
     pagadoEnEfectivo: Monto
     notasDeCredito: Monto
     ajustes: Monto
+    /**
+     * Lo devuelto al proveedor dentro del rango, al costo historico. Fase 4C.
+     *
+     * Es un SUBCONJUNTO de `notasDeCredito`: toda devolucion confirmada emite un
+     * `PURCHASE_CREDIT`, asi que ya esta contada ahi. Se separa porque son dos
+     * hechos distintos --uno movio mercaderia y el otro solo papeles-- y la
+     * diferencia entre las dos cifras es exactamente el credito que el proveedor
+     * emitio sin que nada volviera.
+     */
+    devuelto: Monto
+    devoluciones: number
   }
   deudaPorProveedor: Array<{ proveedor: string; saldo: Monto; vencido: Monto }>
   topPorCompras: Array<{ proveedor: string; comprado: Monto; recepciones: number }>
@@ -774,18 +828,38 @@ export async function reporteDeProveedores(
   const [saldos, obligaciones, periodo, porProveedor, top, medios] = await Promise.all([
     filas(
       `SELECT COALESCE(sum("balance") FILTER (WHERE "balance" > 0), 0)::numeric(14,2)::text AS total,
-              count(*) FILTER (WHERE "balance" > 0)::text                                   AS proveedores
+              count(*) FILTER (WHERE "balance" > 0)::text                                   AS proveedores,
+              (SELECT COALESCE(sum(disponible), 0) FROM (
+                 SELECT p."amount" - COALESCE((
+                          SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
+                           WHERE a."paymentId" = p."id"
+                        ), 0) AS disponible
+                   FROM "SupplierPayment" p
+               ) x WHERE disponible > 0)::numeric(14,2)::text                               AS anticipos,
+              (SELECT count(DISTINCT p."supplierId") FROM "SupplierPayment" p
+                WHERE p."amount" > COALESCE((
+                        SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
+                         WHERE a."paymentId" = p."id"
+                      ), 0))::text                                                          AS "conAnticipo"
          FROM "Supplier"`,
     ),
     // Vencido, por vencer y sin fecha, en UNA pasada sobre las obligaciones
     // abiertas. Tres agregados separados serian tres recorridas de lo mismo.
+    //
+    // Lo devuelto se descuenta, igual que en la ficha del proveedor: una entrega
+    // que volvio al proveedor no se reclama aunque nunca se haya pagado.
     filas(
       `WITH abiertas AS (
          SELECT r."dueDate",
-                r."total" - COALESCE((
-                  SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
-                   WHERE a."receiptId" = r."id"
-                ), 0) AS pendiente
+                r."total"
+                  - COALESCE((
+                      SELECT sum(d."total") FROM "PurchaseReturn" d
+                       WHERE d."purchaseReceiptId" = r."id" AND d."status" = 'CONFIRMED'
+                    ), 0)
+                  - COALESCE((
+                      SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
+                       WHERE a."receiptId" = r."id"
+                    ), 0) AS pendiente
            FROM "PurchaseReceipt" r
           WHERE r."debtRecorded" = true
        )
@@ -813,7 +887,16 @@ export async function reporteDeProveedores(
            SELECT sum(p."amount") FROM "SupplierPayment" p
             WHERE p."branchId" = $1 AND p."paidAt" >= $2::timestamp AND p."paidAt" <= $3::timestamp
               AND p."method" = 'CASH'
-         ), 0)::numeric(14,2)::text                                                  AS "enEfectivo"
+         ), 0)::numeric(14,2)::text                                                  AS "enEfectivo",
+         COALESCE((
+           SELECT sum(d."total") FROM "PurchaseReturn" d
+            WHERE d."branchId" = $1 AND d."status" = 'CONFIRMED'
+              AND d."confirmedAt" >= $2::timestamp AND d."confirmedAt" <= $3::timestamp
+         ), 0)::numeric(14,2)::text                                                  AS devuelto,
+         (SELECT count(*) FROM "PurchaseReturn" d
+           WHERE d."branchId" = $1 AND d."status" = 'CONFIRMED'
+             AND d."confirmedAt" >= $2::timestamp AND d."confirmedAt" <= $3::timestamp)::text
+                                                                                     AS devoluciones
        FROM "SupplierAccountMovement"
        WHERE "branchId" = $1 AND "createdAt" >= $2::timestamp AND "createdAt" <= $3::timestamp`,
       branchId,
@@ -823,10 +906,15 @@ export async function reporteDeProveedores(
     filas(
       `WITH vencido AS (
          SELECT o."supplierId",
-                sum(r."total" - COALESCE((
-                  SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
-                   WHERE a."receiptId" = r."id"
-                ), 0)) AS monto
+                sum(r."total"
+                    - COALESCE((
+                        SELECT sum(d."total") FROM "PurchaseReturn" d
+                         WHERE d."purchaseReceiptId" = r."id" AND d."status" = 'CONFIRMED'
+                      ), 0)
+                    - COALESCE((
+                        SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
+                         WHERE a."receiptId" = r."id"
+                      ), 0)) AS monto
            FROM "PurchaseReceipt" r
            JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
           WHERE r."debtRecorded" = true
@@ -882,6 +970,8 @@ export async function reporteDeProveedores(
       vencido: monto(o?.vencido),
       porVencer: monto(o?.porVencer),
       sinVencimiento: monto(o?.sinFecha),
+      anticiposSinImputar: monto(s?.anticipos),
+      proveedoresConAnticipo: Number(s?.conAnticipo ?? '0'),
     },
     periodo: {
       recibido: monto(p?.recibido),
@@ -891,6 +981,8 @@ export async function reporteDeProveedores(
       pagadoEnEfectivo: monto(p?.enEfectivo),
       notasDeCredito: monto(p?.notas),
       ajustes: monto(p?.ajustes),
+      devuelto: monto(p?.devuelto),
+      devoluciones: Number(p?.devoluciones ?? '0'),
     },
     deudaPorProveedor: porProveedor.map((f) => ({
       proveedor: f.proveedor ?? '—',

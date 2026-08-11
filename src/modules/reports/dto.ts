@@ -187,7 +187,11 @@ export function parseReporteInventario(d: unknown): ReporteInventarioDTO {
 export interface ReporteComprasDTO {
   ordenes: number
   recepciones: number
+  /** RECIBIDO BRUTO. Nunca se pisa con el neto: son dos preguntas distintas. */
   totalComprado: Monto
+  devuelto: Monto
+  devoluciones: number
+  comprasNetas: Monto
   porProveedor: Array<{ proveedor: string; ordenes: number; total: Monto }>
   diferenciasDeCosto: Array<{
     orden: string
@@ -204,6 +208,11 @@ export function parseReporteCompras(d: unknown): ReporteComprasDTO {
     ordenes: numero(o.ordenes),
     recepciones: numero(o.recepciones),
     totalComprado: montoODefecto(o.totalComprado),
+    devuelto: montoODefecto(o.devuelto),
+    devoluciones: numero(o.devoluciones),
+    // Sin `comprasNetas`, lo bruto: una respuesta anterior a la Fase 4C no lo
+    // trae, y en ese mundo el neto ERA el bruto.
+    comprasNetas: montoODefecto(o.comprasNetas, montoODefecto(o.totalComprado)),
     porProveedor: lista(o.porProveedor, (i) => {
       const f = esObjeto(i) ? i : {}
       return {
@@ -361,6 +370,8 @@ export interface ReporteProveedoresDTO {
     vencido: Monto
     porVencer: Monto
     sinVencimiento: Monto
+    anticiposSinImputar: Monto
+    proveedoresConAnticipo: number
   }
   periodo: {
     recibido: Monto
@@ -370,6 +381,9 @@ export interface ReporteProveedoresDTO {
     pagadoEnEfectivo: Monto
     notasDeCredito: Monto
     ajustes: Monto
+    /** Subconjunto de `notasDeCredito`: el que movio mercaderia. */
+    devuelto: Monto
+    devoluciones: number
   }
   deudaPorProveedor: Array<{ proveedor: string; saldo: Monto; vencido: Monto }>
   topPorCompras: Array<{ proveedor: string; comprado: Monto; recepciones: number }>
@@ -388,6 +402,8 @@ export function parseReporteProveedores(d: unknown): ReporteProveedoresDTO {
       vencido: montoODefecto(c.vencido),
       porVencer: montoODefecto(c.porVencer),
       sinVencimiento: montoODefecto(c.sinVencimiento),
+      anticiposSinImputar: montoODefecto(c.anticiposSinImputar),
+      proveedoresConAnticipo: numero(c.proveedoresConAnticipo),
     },
     periodo: {
       recibido: montoODefecto(p.recibido),
@@ -397,6 +413,8 @@ export function parseReporteProveedores(d: unknown): ReporteProveedoresDTO {
       pagadoEnEfectivo: montoODefecto(p.pagadoEnEfectivo),
       notasDeCredito: montoODefecto(p.notasDeCredito),
       ajustes: montoODefecto(p.ajustes),
+      devuelto: montoODefecto(p.devuelto),
+      devoluciones: numero(p.devoluciones),
     },
     deudaPorProveedor: lista(o.deudaPorProveedor, (f) => {
       const x = esObjeto(f) ? f : {}

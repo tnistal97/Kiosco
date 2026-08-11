@@ -26,6 +26,8 @@ import {
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { esNegativo, esPositivo } from '@/lib/money'
+import { AnticiposDeProveedor } from './AnticiposDeProveedor'
+import { DevolucionesDeProveedor } from './DevolucionesDeProveedor'
 import { DialogoAjusteProveedor } from './DialogoAjusteProveedor'
 import { DialogoPagoProveedor } from './DialogoPagoProveedor'
 import {
@@ -101,6 +103,8 @@ export function CuentaDeProveedor({ supplierId }: { supplierId: number }) {
   const puedeAcreditar = usePermiso('supplierAccounts.credit')
   const puedeAjustar = usePermiso('supplierAccounts.adjust')
   const puedeSobrepagar = usePermiso('supplierAccounts.overpay')
+  const puedeImputar = usePermiso('supplierAccounts.allocate')
+  const puedeVerDevoluciones = usePermiso('purchaseReturns.view')
 
   const [cuenta, setCuenta] = useState<ResumenDeCuentaDTO | null>(null)
   const [deudas, setDeudas] = useState<DeudaDTO[]>([])
@@ -227,6 +231,41 @@ export function CuentaDeProveedor({ supplierId }: { supplierId: number }) {
           <Metrica etiqueta="Última compra">{fechaCorta(cuenta.ultimaCompra)}</Metrica>
           <Metrica etiqueta="Último pago">{fechaCorta(cuenta.ultimoPago)}</Metrica>
           <Metrica etiqueta="Entregas sin saldar">{cuenta.deudasAbiertas}</Metrica>
+
+          {/*
+            Los dos numeros de la Fase 4C. El primero NO es lo mismo que un saldo
+            negativo: el saldo puede estar en cero y haber igual un anticipo sin
+            aplicar, porque la deuda que lo compensa esta en otra entrega.
+          */}
+          <Metrica
+            etiqueta="Pagos sin imputar"
+            detalle={
+              cuenta.pagosConSaldo === 0
+                ? undefined
+                : `${String(cuenta.pagosConSaldo)} comprobante(s)`
+            }
+          >
+            {esPositivo(cuenta.sinImputar) ? (
+              <Money amount={cuenta.sinImputar} tone="in" />
+            ) : (
+              <span className="text-ink-faint">Nada</span>
+            )}
+          </Metrica>
+
+          <Metrica
+            etiqueta="Devuelto"
+            detalle={
+              cuenta.devoluciones === 0
+                ? undefined
+                : `${String(cuenta.devoluciones)} devolución(es)`
+            }
+          >
+            {esPositivo(cuenta.devuelto) ? (
+              <Money amount={cuenta.devuelto} />
+            ) : (
+              <span className="text-ink-faint">Nada</span>
+            )}
+          </Metrica>
         </div>
 
         {aFavor && (
@@ -273,6 +312,8 @@ export function CuentaDeProveedor({ supplierId }: { supplierId: number }) {
                   <TH>Fecha</TH>
                   <TH>Vencimiento</TH>
                   <TH className="text-right">Importe original</TH>
+                  <TH className="text-right">Devuelto</TH>
+                  <TH className="text-right">Obligación neta</TH>
                   <TH className="text-right">Pagado</TH>
                   <TH className="text-right">Pendiente</TH>
                   <TH>Estado</TH>
@@ -307,10 +348,30 @@ export function CuentaDeProveedor({ supplierId }: { supplierId: number }) {
                       <Money amount={d.total} />
                     </TD>
                     <TD className="text-right">
+                      {esPositivo(d.devuelto) ? (
+                        <Money amount={d.devuelto} />
+                      ) : (
+                        <span className="text-ink-faint">—</span>
+                      )}
+                    </TD>
+                    <TD className="text-right">
+                      <Money amount={d.neto} />
+                    </TD>
+                    <TD className="text-right">
                       <Money amount={d.pagado} />
                     </TD>
                     <TD className="text-right">
                       <Money amount={d.pendiente} />
+                      {/*
+                        El exceso solo aparece devolviendo mercaderia que ya se
+                        habia pagado. Va en su propia linea y con su palabra: un
+                        pendiente en cero, solo, haria pensar que quedo justa.
+                      */}
+                      {esPositivo(d.exceso) && (
+                        <div className="text-xs text-success">
+                          <Money amount={d.exceso} /> a favor
+                        </div>
+                      )}
                     </TD>
                     <TD>
                       {/* Color Y palabra. Nunca solo el color. */}
@@ -325,6 +386,18 @@ export function CuentaDeProveedor({ supplierId }: { supplierId: number }) {
           </TableWrap>
         )}
       </Card>
+
+      {/* ------------------------------------------------------- anticipos */}
+      <AnticiposDeProveedor
+        supplierId={supplierId}
+        puedeImputar={puedeImputar}
+        onImputado={() => {
+          void cargar()
+        }}
+      />
+
+      {/* ----------------------------------------------------- devoluciones */}
+      {puedeVerDevoluciones && <DevolucionesDeProveedor supplierId={supplierId} />}
 
       {/* -------------------------------------------------------- extracto */}
       <Card className="p-4">
@@ -389,11 +462,32 @@ export function CuentaDeProveedor({ supplierId }: { supplierId: number }) {
                           aumenta lo que debemos, negativo lo reduce. Mostrar
                           todo en positivo con una flecha obligaria a mirar dos
                           columnas para saber que paso.
+
+                          `signed` hace falta: sin el, `Money` dibuja el valor
+                          ABSOLUTO y el unico indicio del signo era el color. Un
+                          pago de -$15.000 se leia "$ 15.000,00" en verde, y en
+                          blanco y negro no se leia nada. Ver el criterio de
+                          WCAG 1.4.1, que este proyecto respeta en todos los
+                          estados y se habia salteado en estas dos columnas.
                         */}
-                        <Money amount={m.amount} tone={esNegativo(m.amount) ? 'in' : 'neutral'} />
+                        <Money
+                          amount={m.amount}
+                          signed
+                          tone={esNegativo(m.amount) ? 'in' : 'neutral'}
+                        />
                       </TD>
                       <TD className="text-right">
-                        <Money amount={m.resultingBalance} />
+                        {/*
+                          El saldo tambien con signo, y es donde mas importa: un
+                          saldo de -$5.000 --credito a favor nuestro-- se veia
+                          igual que uno de $5.000 de deuda. Con los anticipos de
+                          la Fase 4C el saldo negativo pasa de raro a corriente.
+                        */}
+                        <Money
+                          amount={m.resultingBalance}
+                          signed
+                          tone={esNegativo(m.resultingBalance) ? 'in' : 'neutral'}
+                        />
                       </TD>
                     </TR>
                   ))}

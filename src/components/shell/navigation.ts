@@ -77,6 +77,16 @@ export const NAVEGACION: GrupoNav[] = [
         permission: 'suppliers.view',
         matchPrefix: true,
       },
+      // Las devoluciones se ARMAN desde el detalle de una entrega --de ahi
+      // salen el costo y el tope-- pero se LISTAN por su cuenta: "que le
+      // devolvimos este mes" es una pregunta propia, y sin este enlace habria
+      // que ir orden por orden para contestarla.
+      {
+        href: '/devoluciones',
+        label: 'Devoluciones',
+        permission: 'purchaseReturns.view',
+        matchPrefix: true,
+      },
     ],
   },
   {

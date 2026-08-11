@@ -26,6 +26,7 @@ import {
   aviso,
 } from '@/components/ui'
 import { usePermiso } from '@/components/shell/SessionProvider'
+import { DialogoDevolucion } from '@/components/devoluciones/DialogoDevolucion'
 import { DialogoRecepcion } from '@/components/compras/DialogoRecepcion'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { parseDetalleOrden, type DetalleOrdenDTO } from '@/modules/purchases/dto'
@@ -59,6 +60,7 @@ export default function CompraPage() {
   const id = Number(params.id)
 
   const puedeRecibir = usePermiso('purchases.receive')
+  const puedeDevolver = usePermiso('purchaseReturns.create')
   const puedeActualizar = usePermiso('purchases.update')
   const puedeCancelar = usePermiso('purchases.cancel')
 
@@ -67,6 +69,7 @@ export default function CompraPage() {
   const [error, setError] = useState<string | null>(null)
   const [recibiendo, setRecibiendo] = useState(false)
   const [cancelando, setCancelando] = useState(false)
+  const [devolviendo, setDevolviendo] = useState<number | null>(null)
   const [motivo, setMotivo] = useState('')
   const [enCurso, setEnCurso] = useState(false)
 
@@ -326,7 +329,19 @@ export default function CompraPage() {
                       · {cuando(r.receivedAt)}
                     </span>
                   </h3>
-                  <span className="text-xs text-ink-faint">Recibió {r.receivedBy.name}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-ink-faint">Recibió {r.receivedBy.name}</span>
+                    {puedeDevolver && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setDevolviendo(r.id)
+                        }}
+                      >
+                        Devolver mercadería
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 {r.notes !== null && <p className="mt-1 text-xs text-ink-muted">{r.notes}</p>}
@@ -337,6 +352,8 @@ export default function CompraPage() {
                       <TR>
                         <TH>Producto</TH>
                         <TH className="text-right">Llegó</TH>
+                        <TH className="text-right">Devuelto</TH>
+                        <TH className="text-right">Neto</TH>
                         <TH className="text-right">Entró al stock</TH>
                         {conCostos && <TH className="text-right">Esperado</TH>}
                         {conCostos && <TH className="text-right">Facturado</TH>}
@@ -350,6 +367,21 @@ export default function CompraPage() {
                           <TD className="text-right" data-numeric="">
                             {li.receivedQuantity}{' '}
                             {NOMBRE_DE_UNIDAD_DE_COMPRA[li.purchaseUnit].toLowerCase()}
+                          </TD>
+                          {/*
+                            Lo recibido NO se pisa con el neto: son dos hechos
+                            distintos --lo que llegó y lo que quedó-- y una sola
+                            columna los confunde. Ver el objetivo 22.
+                          */}
+                          <TD className="text-right" data-numeric="">
+                            {li.returnedQuantity === '0.000' ? (
+                              <span className="text-ink-faint">—</span>
+                            ) : (
+                              <span className="text-warning">{li.returnedQuantity}</span>
+                            )}
+                          </TD>
+                          <TD className="text-right font-medium text-ink" data-numeric="">
+                            {li.netQuantity}
                           </TD>
                           <TD className="text-right font-medium text-ink" data-numeric="">
                             +{formatearCantidadConUnidad(li.stockQuantity, li.product.saleUnit)}
@@ -411,11 +443,68 @@ export default function CompraPage() {
                     </TBody>
                   </Table>
                 </TableWrap>
+
+                {/*
+                  El desglose financiero de la entrega. El importe ORIGINAL
+                  queda: lo devuelto se resta al lado, no lo reemplaza.
+                */}
+                {r.financiero !== undefined && (
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4">
+                    <div>
+                      <dt className="text-xs text-ink-faint">Importe original</dt>
+                      <dd className="text-ink">
+                        <Money amount={r.financiero.total} />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-ink-faint">Devoluciones</dt>
+                      <dd className="text-ink">
+                        <Money amount={r.financiero.devuelto} />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-ink-faint">Obligación neta</dt>
+                      <dd className="font-medium text-ink">
+                        <Money amount={r.financiero.neto} />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-ink-faint">Pagado</dt>
+                      <dd className="text-ink">
+                        <Money amount={r.financiero.imputado} />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-ink-faint">Pendiente</dt>
+                      <dd className="font-medium text-ink">
+                        <Money amount={r.financiero.pendiente} />
+                      </dd>
+                    </div>
+                    {r.financiero.exceso !== '0.00' && (
+                      <div>
+                        <dt className="text-xs text-ink-faint">A favor</dt>
+                        <dd className="font-medium text-success">
+                          <Money amount={r.financiero.exceso} />
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                )}
               </div>
             ))}
           </div>
         )}
       </Card>
+
+      {devolviendo !== null && (
+        <DialogoDevolucion
+          abierto
+          receiptId={devolviendo}
+          onCerrar={() => {
+            setDevolviendo(null)
+          }}
+        />
+      )}
 
       <DialogoRecepcion
         orden={orden}
