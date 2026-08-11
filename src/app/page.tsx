@@ -55,6 +55,16 @@ interface Panel {
   clientes: ReporteClientesDTO | null
   /** Las cuentas por pagar. Null cuando no se pueden ver. */
   proveedores: CarteraDeProveedoresDTO | null
+  /** Vencimientos de partidas. Null sin `lots.view`. Fase 4D. */
+  vencimientos: {
+    lotesVencidos: number
+    unidadesVencidas: string
+    lotesEnSieteDias: number
+    lotesEnTreintaDias: number
+    productosAfectados: number
+  } | null
+  /** Inventarios físicos sin terminar. Null sin `inventoryCounts.view`. */
+  inventarios: { enRevision: number; contando: number } | null
 }
 
 const VACIO: Panel = {
@@ -73,6 +83,8 @@ const VACIO: Panel = {
   ultimoArqueo: null,
   clientes: null,
   proveedores: null,
+  vencimientos: null,
+  inventarios: null,
 }
 
 /**
@@ -112,6 +124,16 @@ export default function InicioPage() {
    */
   const verCartera = puede('reports.clients.view')
   const vender = puede('sales.create')
+  /**
+   * Los dos permisos de la Fase 4D, y son dos a propósito.
+   *
+   * EL CAJERO NO TIENE NINGUNO. No es que se le esconden las tarjetas: sin
+   * permiso, esas consultas ni se hacen. Pedirle a la API algo que va a
+   * responder 403 llena la bitácora de rechazos que no significan nada, y qué
+   * partidas vencen en el depósito no es una decisión del mostrador.
+   */
+  const verLotes = puede('lots.view')
+  const verInventarios = puede('inventoryCounts.view')
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -236,10 +258,57 @@ export default function InicioPage() {
       )
     }
 
+    if (verLotes) {
+      // Qué se vence. Cuatro números operativos --lo que hay que sacar de la
+      // góndola hoy-- y por eso van con `lots.view` y no con el permiso de
+      // reportes: quien mira los lotes tiene que poder verlos.
+      tareas.push(
+        apiRequest('/api/reportes/vencimientos', {
+          parse: (raw) => raw as NonNullable<Panel['vencimientos']>,
+        })
+          .then((r) => {
+            salida.vencimientos = r
+          })
+          .catch(() => undefined),
+      )
+    }
+
+    if (verInventarios) {
+      // Los inventarios sin terminar, en DOS estados distintos: uno esperando
+      // que alguien cierre el conteo y otro esperando que alguien aplique las
+      // diferencias. Son dos momentos con dos responsables distintos, y un
+      // solo número los confundiría.
+      tareas.push(
+        Promise.all([
+          apiRequest('/api/inventarios?estado=REVIEW&pageSize=1', {
+            parse: (raw) => (raw as { pagination: { total: number } }).pagination.total,
+          }),
+          apiRequest('/api/inventarios?estado=COUNTING&pageSize=1', {
+            parse: (raw) => (raw as { pagination: { total: number } }).pagination.total,
+          }),
+        ])
+          .then(([enRevision, contando]) => {
+            salida.inventarios = { enRevision, contando }
+          })
+          .catch(() => undefined),
+      )
+    }
+
     await Promise.all(tareas)
     setDatos(salida)
     setCargando(false)
-  }, [verCaja, verVentas, verGanancia, verStock, verCompras, verCartera, verDeudas, hoy])
+  }, [
+    verCaja,
+    verVentas,
+    verGanancia,
+    verStock,
+    verCompras,
+    verCartera,
+    verDeudas,
+    verLotes,
+    verInventarios,
+    hoy,
+  ])
 
   useEffect(() => {
     void cargar()
@@ -412,6 +481,57 @@ export default function InicioPage() {
               tone={esPositivo(datos.proveedores.vencido) ? 'danger' : 'neutral'}
             />
           )}
+
+          {/*
+            Vencimientos. Fase 4D.
+
+            UNA tarjeta y no tres: lo vencido es el número accionable --hay que
+            sacarlo de la góndola hoy-- y los dos plazos son el detalle. Tres
+            tarjetas del mismo tema empujarían fuera de la pantalla a las que
+            hablan de plata.
+          */}
+          {verLotes && datos.vencimientos && (
+            <MetricCard
+              href="/stock/lotes?estado=VENCIDO"
+              label="Vencidos"
+              value={datos.vencimientos.lotesVencidos}
+              detail={
+                datos.vencimientos.lotesVencidos > 0
+                  ? `${datos.vencimientos.unidadesVencidas} unidades · ${String(datos.vencimientos.lotesEnSieteDias)} vence(n) en 7 días`
+                  : datos.vencimientos.lotesEnSieteDias > 0
+                    ? `${String(datos.vencimientos.lotesEnSieteDias)} vence(n) en 7 días · ${String(datos.vencimientos.lotesEnTreintaDias)} en 30`
+                    : `${String(datos.vencimientos.lotesEnTreintaDias)} vence(n) en 30 días`
+              }
+              tone={
+                datos.vencimientos.lotesVencidos > 0
+                  ? 'danger'
+                  : datos.vencimientos.lotesEnSieteDias > 0
+                    ? 'warning'
+                    : 'success'
+              }
+            />
+          )}
+
+          {/*
+            Inventarios sin terminar. Los dos estados son dos responsables
+            distintos --quien cierra el conteo y quien aplica las diferencias--
+            y por eso el detalle los nombra por separado.
+          */}
+          {verInventarios &&
+            datos.inventarios &&
+            datos.inventarios.enRevision + datos.inventarios.contando > 0 && (
+              <MetricCard
+                href="/inventarios"
+                label="Inventarios abiertos"
+                value={datos.inventarios.enRevision + datos.inventarios.contando}
+                detail={
+                  datos.inventarios.enRevision > 0
+                    ? `${String(datos.inventarios.enRevision)} esperando que se apliquen`
+                    : `${String(datos.inventarios.contando)} contando`
+                }
+                tone={datos.inventarios.enRevision > 0 ? 'warning' : 'neutral'}
+              />
+            )}
         </div>
       )}
 

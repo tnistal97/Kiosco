@@ -41,6 +41,11 @@ import {
   type ReporteRentabilidadDTO,
   type ReporteVentasDTO,
 } from '@/modules/reports/dto'
+import type {
+  ReporteDeInventarios,
+  ReporteDeMermas,
+  ReporteDeVencimientos,
+} from '@/modules/reports/service.lots'
 
 /**
  * Reportes.
@@ -63,7 +68,9 @@ export default function ReportesPage() {
   const verCaja = puede('reports.cash.view')
   const verCompras = puede('reports.purchases.view')
   const verClientes = puede('reports.clients.view')
-  const algo = verVentas || verCostos || verInventario || verCaja || verCompras || verClientes
+  const verLotes = puede('lots.view')
+  const algo =
+    verVentas || verCostos || verInventario || verCaja || verCompras || verClientes || verLotes
 
   const [desde, setDesde] = useState(() => sumarDias(hoy(), -6))
   const [hasta, setHasta] = useState(() => hoy())
@@ -78,6 +85,9 @@ export default function ReportesPage() {
   const [caja, setCaja] = useState<ReporteCajaDTO | null>(null)
   const [clientes, setClientes] = useState<ReporteClientesDTO | null>(null)
   const [proveedores, setProveedores] = useState<ReporteProveedoresDTO | null>(null)
+  const [mermas, setMermas] = useState<ReporteDeMermas | null>(null)
+  const [inventarios, setInventarios] = useState<ReporteDeInventarios | null>(null)
+  const [vencimientos, setVencimientos] = useState<ReporteDeVencimientos | null>(null)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -123,13 +133,42 @@ export default function ReportesPage() {
               setClientes,
             )
           : Promise.resolve(),
+        // Los tres de la Fase 4D. Mermas e inventarios van bajo el permiso de
+        // inventario --son la misma materia-- y los vencimientos bajo
+        // `lots.view`, que es el permiso operativo: quien mira los lotes tiene
+        // que poder ver qué se le vence sin pedir el de reportes.
+        verInventario
+          ? apiRequest(`/api/reports/mermas?${q}`, { parse: (r) => r as ReporteDeMermas }).then(
+              setMermas,
+            )
+          : Promise.resolve(),
+        verInventario
+          ? apiRequest(`/api/reports/inventarios?${q}`, {
+              parse: (r) => r as ReporteDeInventarios,
+            }).then(setInventarios)
+          : Promise.resolve(),
+        verLotes
+          ? apiRequest('/api/reports/vencimientos', {
+              parse: (r) => r as ReporteDeVencimientos,
+            }).then(setVencimientos)
+          : Promise.resolve(),
       ])
     } catch (e) {
       setError(mensajeDeError(e))
     } finally {
       setCargando(false)
     }
-  }, [desde, hasta, verVentas, verCostos, verInventario, verCaja, verCompras, verClientes])
+  }, [
+    desde,
+    hasta,
+    verVentas,
+    verCostos,
+    verInventario,
+    verCaja,
+    verCompras,
+    verClientes,
+    verLotes,
+  ])
 
   useEffect(() => {
     if (algo) void cargar()
@@ -522,6 +561,182 @@ export default function ReportesPage() {
               filas={inv.movimientosPorTipo.map((m) => [m.etiqueta, String(m.cuantos)])}
             />
           )}
+        </Card>
+      )}
+
+      {/*
+        MERMAS. Fase 4D.
+
+        La diferencia de inventario tiene su propio renglón y NO suma al total.
+        Un faltante contado puede ser robo, error de carga o una venta mal
+        cobrada: meterlo dentro de "mermas" haría que el total afirme una causa
+        que nadie averiguó.
+      */}
+      {!cargando && verInventario && mermas && mermas.renglones.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Mermas"
+            description="Lo que salió del depósito sin venderse, separado por causa."
+          />
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <Dato
+              titulo="Unidades perdidas"
+              valor={mermas.totalUnidades}
+              detalle="No incluye las diferencias de inventario"
+            />
+            {mermas.totalACostoActual !== null && (
+              <Dato
+                titulo="Valor a costo actual"
+                valor={<Money amount={mermas.totalACostoActual} size="lg" />}
+                detalle="Lo que costaría reponerlo hoy, no lo que costó"
+              />
+            )}
+            <Dato titulo="Productos afectados" valor={String(mermas.productos)} />
+          </div>
+
+          <Tabla
+            titulo="Por causa"
+            cabeceras={
+              mermas.totalACostoActual === null
+                ? ['Causa', 'Unidades', 'Movimientos']
+                : ['Causa', 'Unidades', 'Movimientos', 'A costo actual']
+            }
+            filas={mermas.renglones.map((r) => {
+              const base: React.ReactNode[] = [
+                r.categoria === 'INVENTORY_DIFF' ? (
+                  <span key="e" className="text-ink-muted">
+                    {r.etiqueta} <span className="text-xs text-ink-faint">(no es merma)</span>
+                  </span>
+                ) : (
+                  r.etiqueta
+                ),
+                r.unidades,
+                String(r.movimientos),
+              ]
+              return r.valorACostoActual === null
+                ? base
+                : [...base, <Money key="v" amount={r.valorACostoActual} size="sm" />]
+            })}
+          />
+
+          <Tabla
+            titulo="Los productos con más bajas"
+            cabeceras={['Producto', 'Causa', 'Unidades']}
+            filas={mermas.porProducto
+              .slice(0, 15)
+              .map((p) => [p.productName, p.categoria, p.unidades])}
+          />
+        </Card>
+      )}
+
+      {/* INVENTARIOS FÍSICOS. Fase 4D. */}
+      {!cargando && verInventario && inventarios && inventarios.sesiones.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Inventarios físicos"
+            description="Los recuentos del período y lo que encontró cada uno."
+          />
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <Dato titulo="Sesiones" valor={String(inventarios.sesiones.length)} />
+            <Dato titulo="Aplicadas" valor={String(inventarios.aplicadas)} />
+            <Dato
+              titulo="Sin terminar"
+              valor={String(inventarios.pendientes)}
+              detalle="Contando o esperando aplicarse"
+            />
+          </div>
+
+          <Tabla
+            titulo="Sesiones"
+            cabeceras={
+              inventarios.sesiones[0]?.valorACostoActual === null
+                ? ['Inventario', 'Responsable', 'Estado', 'Contados', 'Con diferencia', '+', '−']
+                : [
+                    'Inventario',
+                    'Responsable',
+                    'Estado',
+                    'Contados',
+                    'Con diferencia',
+                    '+',
+                    '−',
+                    'Valor',
+                  ]
+            }
+            filas={inventarios.sesiones.map((s) => {
+              const base: React.ReactNode[] = [
+                s.number,
+                s.responsable,
+                s.estado,
+                String(s.productosContados),
+                String(s.productosConDiferencia),
+                s.diferenciaPositiva,
+                s.diferenciaNegativa,
+              ]
+              return s.valorACostoActual === null
+                ? base
+                : [...base, <Money key="v" amount={s.valorACostoActual} size="sm" />]
+            })}
+          />
+          <p className="mt-2 text-xs text-ink-faint">
+            Las diferencias van separadas y no netas: un inventario que encontró 20 de más y 20 de
+            menos no encontró cero. El valor es el neto, a costo actual.
+          </p>
+        </Card>
+      )}
+
+      {/* VENCIMIENTOS. Fase 4D. */}
+      {!cargando && verLotes && vencimientos && (
+        <Card>
+          <CardHeader
+            title="Vencimientos"
+            description={`Estado de hoy (${vencimientos.hoy}), no del período.`}
+          />
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {vencimientos.tramos.map((t) => (
+              <Dato
+                key={t.tramo}
+                titulo={t.etiqueta}
+                valor={`${String(t.lotes)} lote(s)`}
+                detalle={`${t.unidades} unidades · ${String(t.productos)} producto(s)`}
+              />
+            ))}
+            <Dato
+              titulo="Sin vencimiento"
+              valor={`${String(vencimientos.sinFecha.lotes)} lote(s)`}
+              detalle={`${vencimientos.sinFecha.unidades} unidades — no hay nada que controlar`}
+            />
+          </div>
+
+          {vencimientos.tramos.some((t) => t.valorACostoActual !== null) && (
+            <div className="mt-4">
+              <Dato
+                titulo="Valor a costo actual"
+                valor={
+                  <Money
+                    amount={vencimientos.tramos
+                      .reduce((s, t) => s + Number(t.valorACostoActual ?? 0), 0)
+                      .toFixed(2)}
+                    size="lg"
+                  />
+                }
+                detalle="Lo que costaría reponerlo hoy. NO es una pérdida: lo que vence la semana que viene todavía se vende."
+              />
+            </div>
+          )}
+
+          <Tabla
+            titulo="Las partidas más próximas"
+            cabeceras={['Partida', 'Producto', 'Vence', 'Días', 'Unidades']}
+            filas={vencimientos.detalle
+              .slice(0, 25)
+              .map((d) => [
+                d.code,
+                d.productName,
+                d.expirationDate ?? '—',
+                d.dias === null ? '—' : String(d.dias),
+                d.quantity,
+              ])}
+          />
         </Card>
       )}
 

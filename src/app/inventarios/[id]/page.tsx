@@ -41,6 +41,13 @@ interface Sesion {
     sinResolver: number
     conDiferencia: number
   }
+  /** Líneas que otro inventario ya corrigió. Sólo viene en el detalle. */
+  conflictos?: Array<{
+    lineId: number
+    productName: string
+    lotCode: string | null
+    sessionNumber: string
+  }>
 }
 
 interface Linea {
@@ -83,6 +90,7 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
   const [error, setError] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [filtro, setFiltro] = useState('')
+  const [estadoLinea, setEstadoLinea] = useState('')
   const [borradores, setBorradores] = useState<Record<number, string>>({})
   const [guardando, setGuardando] = useState(false)
 
@@ -96,6 +104,7 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
     const params2 = new URLSearchParams({
       pageSize: '100',
       ...(filtro ? { diferencia: filtro } : {}),
+      ...(estadoLinea ? { estado: estadoLinea } : {}),
     })
     Promise.all([
       apiRequest<Sesion>(`/api/inventarios/${id}`, { parse: (d) => d as Sesion }),
@@ -119,7 +128,7 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
     return () => {
       vivo = false
     }
-  }, [id, filtro])
+  }, [id, filtro, estadoLinea])
 
   useEffect(() => cargar(), [cargar])
 
@@ -256,6 +265,31 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
         </Alert>
       )}
 
+      {/*
+        Otro inventario ya corrigió estas partidas. Fase 4D.1.
+
+        Sale ACÁ y no como motivo del rechazo: quien revisa necesita verlo antes
+        de apretar Aplicar, no después. Y con todas las líneas, porque lo que
+        decide es cuántas hay que volver a contar.
+      */}
+      {(sesion.conflictos ?? []).length > 0 && (
+        <Alert tone="danger" title="Otro inventario ya corrigió parte de esto">
+          <p>
+            Estas líneas se contaron antes de que otra sesión corrigiera las mismas partidas.
+            Aplicar ahora corregiría dos veces la misma diferencia: hay que volver a contarlas.
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-sm">
+            {(sesion.conflictos ?? []).map((c) => (
+              <li key={c.lineId}>
+                {c.productName}
+                {c.lotCode === null ? '' : ` · partida ${c.lotCode}`} — corregida por{' '}
+                {c.sessionNumber}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
+
       {aCiegas && (
         <Alert tone="info" title="Conteo a ciegas">
           Lo que el sistema espera no se muestra mientras se cuenta. Aparece al cerrar el conteo.
@@ -277,6 +311,36 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
               <option value="positivas">Diferencias positivas</option>
               <option value="negativas">Diferencias negativas</option>
             </Select>
+
+            {/*
+              El filtro que faltaba. Una sesión de mil líneas con tres sin
+              resolver no se puede aplicar, y encontrar esas tres a mano es el
+              paso donde el mecanismo se abandona.
+            */}
+            <Select
+              aria-label="Filtro de estado de la línea"
+              value={estadoLinea}
+              onChange={(e) => {
+                setEstadoLinea(e.target.value)
+              }}
+            >
+              <option value="">Todos los estados</option>
+              <option value="UNRESOLVED">Sin resolver</option>
+              <option value="RECOUNT">Pendientes de segundo conteo</option>
+              <option value="COUNTED">Contadas</option>
+              <option value="PENDING">Sin contar</option>
+            </Select>
+
+            {sesion.lineas.sinResolver > 0 && estadoLinea !== 'UNRESOLVED' && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setEstadoLinea('UNRESOLVED')
+                }}
+              >
+                Ver las {sesion.lineas.sinResolver} sin resolver
+              </Button>
+            )}
           </div>
         )}
 

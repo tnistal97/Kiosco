@@ -19,8 +19,8 @@ import {
   TR,
   Table,
   TableWrap,
-  aviso,
 } from '@/components/ui'
+import { DialogoNuevoInventario } from '@/components/inventarios/DialogoNuevoInventario'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest } from '@/lib/api-client'
 import {
@@ -100,22 +100,6 @@ export default function InventariosPage() {
 
   useEffect(() => cargar(), [cargar])
 
-  function crear() {
-    setCreando(true)
-    apiRequest<Sesion>('/api/inventarios', {
-      method: 'POST',
-      body: { scope: 'ALL', blindCount: true },
-      parse: (d) => d as Sesion,
-    })
-      .then((s) => {
-        window.location.href = `/inventarios/${String(s.id)}`
-      })
-      .catch((e: unknown) => {
-        aviso.error(e instanceof Error ? e.message : 'No se pudo crear el inventario')
-        setCreando(false)
-      })
-  }
-
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -126,11 +110,25 @@ export default function InventariosPage() {
           </p>
         </div>
         {puedeCrear && (
-          <Button onClick={crear} disabled={creando}>
-            {creando ? 'Creando…' : 'Nuevo inventario'}
+          <Button
+            onClick={() => {
+              setCreando(true)
+            }}
+          >
+            Nuevo inventario
           </Button>
         )}
       </header>
+
+      <DialogoNuevoInventario
+        abierto={creando}
+        onCerrar={() => {
+          setCreando(false)
+        }}
+        onCreado={(id) => {
+          window.location.href = `/inventarios/${String(id)}`
+        }}
+      />
 
       <Card>
         <div className="flex flex-wrap items-end gap-3 p-4">
