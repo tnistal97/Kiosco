@@ -28,26 +28,35 @@ arreglarla sola es la peor respuesta posible: tapa el síntoma, **borra la
 evidencia** y deja intacto el error de origen para que vuelva a pasar. Se
 informa, y decide una persona.
 
-## Las trece comprobaciones
+## Las diecisiete comprobaciones
 
-| Comprobación              | Regla                                                                                                |
-| ------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **Ventas**                | `total = Σ round(precio × cantidad, 2)`                                                              |
-| **Pagos**                 | `total = Σ pagos`, y toda venta tiene pagos                                                          |
-| **Venta y caja**          | por medio de pago: `movimiento = cobrado`                                                            |
-| **Anulaciones**           | por medio: `venta + reversión = 0`                                                                   |
-| **Turnos de caja**        | `esperado = inicial + efectivo del turno`; `diferencia = contado − esperado`                         |
-| **Inventario**            | `stock = Σ libro`; `previo + delta = resultante`; cada fila empieza donde terminó la anterior        |
-| **Compras**               | `recibido = Σ recepciones`, nunca `> pedido`; estado derivado; `total = Σ pedido × costo`            |
-| **Recepciones**           | `stock = recibido × unidades por bulto`; toda recepción tiene su movimiento                          |
-| **Costos**                | `Product.cost` = último evento del historial; el historial encadena                                  |
-| **Clientes**              | `saldo = Σ libro`; `previo + delta = resultante`; cada fila empieza donde terminó la anterior        |
-| **Venta a cuenta**        | `Σ pagos ACCOUNT = Σ cargos al libro`; toda venta fiada tiene cliente; el cargo es a **ese** cliente |
-| **Cobros a clientes**     | cada cobro deja **un** movimiento por `−importe`; en efectivo entra al cajón, y sólo en efectivo     |
-| **Anulaciones de cuenta** | por venta anulada: `cargo + reversión = 0`                                                           |
+| Comprobación              | Regla                                                                                                 |
+| ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Ventas**                | `total = Σ round(precio × cantidad, 2)`                                                               |
+| **Pagos**                 | `total = Σ pagos`, y toda venta tiene pagos                                                           |
+| **Venta y caja**          | por medio de pago: `movimiento = cobrado`                                                             |
+| **Anulaciones**           | por medio: `venta + reversión = 0`                                                                    |
+| **Turnos de caja**        | `esperado = inicial + efectivo del turno`; `diferencia = contado − esperado`                          |
+| **Inventario**            | `stock = Σ libro`; `previo + delta = resultante`; cada fila empieza donde terminó la anterior         |
+| **Compras**               | `recibido = Σ recepciones`, nunca `> pedido`; estado derivado; `total = Σ pedido × costo`             |
+| **Recepciones**           | `stock = recibido × unidades por bulto`; toda recepción tiene su movimiento                           |
+| **Costos**                | `Product.cost` = último evento del historial; el historial encadena                                   |
+| **Clientes**              | `saldo = Σ libro`; `previo + delta = resultante`; cada fila empieza donde terminó la anterior         |
+| **Venta a cuenta**        | `Σ pagos ACCOUNT = Σ cargos al libro`; toda venta fiada tiene cliente; el cargo es a **ese** cliente  |
+| **Cobros a clientes**     | cada cobro deja **un** movimiento por `−importe`; en efectivo entra al cajón, y sólo en efectivo      |
+| **Anulaciones de cuenta** | por venta anulada: `cargo + reversión = 0`                                                            |
+| **Proveedores**           | `saldo = Σ libro`; `previo + delta = resultante`; cada fila empieza donde terminó la anterior         |
+| **Deuda por recepción**   | `debtRecorded ⟺ exactamente un cargo`; el cargo vale el importe real; `total = Σ líneas`              |
+| **Pagos a proveedores**   | cada pago deja **un** movimiento por `−importe`; en efectivo sale del cajón, y sólo en efectivo       |
+| **Imputaciones**          | `Σ por pago ≤ el pago`; `Σ por entrega ≤ lo que costó`; toda imputación apunta a una deuda registrada |
 
-Las cuatro últimas son de la Fase 4A. Ver
-[`CUSTOMER_ACCOUNT_LEDGER.md`](CUSTOMER_ACCOUNT_LEDGER.md).
+Las cuatro de clientes son de la Fase 4A —ver
+[`CUSTOMER_ACCOUNT_LEDGER.md`](CUSTOMER_ACCOUNT_LEDGER.md)— y las cuatro de
+proveedores, de la 4B: ver [`SUPPLIER_ACCOUNT_LEDGER.md`](SUPPLIER_ACCOUNT_LEDGER.md).
+
+Las dos últimas reglas de **Imputaciones** son **desigualdades**, y eso es el
+punto: sobre-imputar es imposible, sub-imputar es legítimo. Un pago puede quedar
+sin imputar —un anticipo— y el saldo lo lleva el libro igual.
 
 ### Cada línea de pago va a exactamente un destino
 

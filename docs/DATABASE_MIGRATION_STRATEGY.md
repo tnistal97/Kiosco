@@ -298,6 +298,43 @@ sólo referencia lo que las anteriores ya crearon.
 reemplaza una lista blanca por una más amplia, y ninguna fila existente puede
 dejar de cumplirla.
 
+### Las migraciones de la Fase 4B
+
+Cinco, con el mismo criterio: separadas por dominio y en orden de dependencia.
+
+| Migración                     | Qué hace                                              |
+| ----------------------------- | ----------------------------------------------------- |
+| `phase4b_supplier_balance`    | `Supplier.balance` y `defaultPaymentTermDays`         |
+| `phase4b_receipt_obligation`  | `PurchaseReceipt.total`, `dueDate` y `debtRecorded`   |
+| `phase4b_supplier_payments`   | `SupplierPayment`, su secuencia y el vínculo con caja |
+| `phase4b_supplier_accounts`   | El libro, sus cuatro `CHECK` y los dos disparadores   |
+| `phase4b_payment_allocations` | `SupplierPaymentAllocation` y su disparador           |
+
+**Ninguna inventa deuda histórica.** Es el objetivo 36 y la decisión segura: una
+entrega de hace seis meses casi con seguridad ya se pagó. Ver
+[`ACCOUNTS_PAYABLE_POLICY.md`](ACCOUNTS_PAYABLE_POLICY.md).
+
+#### La segunda migración tuvo que apagar un disparador
+
+`PurchaseReceipt` es inmutable desde la Fase 3C, y el primer intento de rellenar
+`total` murió contra su disparador — que es exactamente lo que se le pide a un
+disparador. La migración lo apaga, rellena, y lo reemplaza por uno nuevo que
+congela la fila **entera menos `dueDate`**:
+
+```sql
+IF TG_OP = 'UPDATE' AND (to_jsonb(NEW) - 'dueDate') = (to_jsonb(OLD) - 'dueDate')
+```
+
+Comparar la fila entera y no una lista de columnas es deliberado: **falla
+cerrado**. La columna que alguien agregue el año que viene nace congelada, sin
+que nadie tenga que acordarse de sumarla a una lista.
+
+Que el vencimiento sí se pueda corregir no es una excepción arbitraria: la
+inmutabilidad de la 3C protege lo que la recepción **hizo** —movió stock, cambió
+un costo— y el vencimiento no movió nada. Es una condición comercial que se
+acuerda entre personas y puede cambiar sin que la entrega cambie. Exige permiso
+y queda auditado con el antes y el después.
+
 **No hay una migración de permisos.** Los permisos viven en
 `src/server/authz/permissions.ts`, no en la base: no hay nada que migrar. El día
 que se muevan a tablas `Permission`/`RolePermission` —que es lo que anticipa ese

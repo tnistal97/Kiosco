@@ -607,7 +607,7 @@ que hay** y demuestra que cierran.
 
 ### Lo que se agregó al sistema
 
-**Reconciliación** (`src/modules/integrity/`): trece invariantes comprobadas por
+**Reconciliación** (`src/modules/integrity/`): diecisiete invariantes comprobadas por
 SQL sobre las tablas, independientes del código que escribe. Sólo lectura.
 Nueve nacieron con la Fase 3; las cuatro de cuenta corriente, con la 4A.
 Ver [PHASE3_RECONCILIATION.md](PHASE3_RECONCILIATION.md).

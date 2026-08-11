@@ -26,6 +26,10 @@ COMPROBACION DE INTEGRIDAD
   Venta a cuenta .......... OK       3
   Cobros a clientes ....... OK       2
   Anulaciones de cuenta ... OK       0
+  Proveedores ............. OK       5
+  Deuda por recepción ..... OK       2
+  Pagos a proveedores ..... OK       1
+  Imputaciones ............ OK       1
 
   Sin inconsistencias.  (73 ms)
 ```
@@ -79,7 +83,7 @@ de control que deja rastro en lo que controla es una mala herramienta.
 
 Se evaluó agregar `Sistema > Integridad` y se decidió que no, por evidencia:
 
-- Las trece comprobaciones tardan **~73 ms sobre 43 productos, 15 ventas y 3
+- Las diecisiete comprobaciones tardan **~141 ms sobre 43 productos, 15 ventas y 3
   clientes**, que es una base de demostración. Escalan con el volumen: son
   recorridos completos de `Sale`, `SaleItem`, `StockMovement`,
   `CashRegisterMovement` y —desde la Fase 4A— `CustomerAccountMovement`.
@@ -108,5 +112,5 @@ y su código de salida se puede vigilar.
 
 ## Qué comprueba exactamente
 
-Las trece invariantes están en
+Las diecisiete invariantes están en
 [PHASE3_RECONCILIATION.md](PHASE3_RECONCILIATION.md), con el porqué de cada una.

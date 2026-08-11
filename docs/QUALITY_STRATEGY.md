@@ -33,7 +33,41 @@
 | ESLint         | **+ una cuarta frontera**: el saldo de un cliente            |
 | Reconciliación | **trece** invariantes (nueve + cuatro de cuenta corriente)   |
 
-Y una prueba nueva que no mide alcance sino honestidad: `LA REGRESION: una venta
+### Fase 4B
+
+|                |                                                                     |
+| -------------- | ------------------------------------------------------------------- |
+| Pruebas        | **1.181** en vitest + **161** de extremo a extremo                  |
+| axe            | **+ cuatro pantallas**: cuenta, pago, nota de crédito y comprobante |
+| ESLint         | **+ una quinta frontera**: el saldo de un proveedor                 |
+| Reconciliación | **diecisiete** invariantes (trece + cuatro de cuentas por pagar)    |
+
+Y tres cosas que la fase encontró sobre su propio código, antes de que las
+encontrara alguien más:
+
+**La cuarta frontera de ESLint marcaba las lecturas.** Al escribir la quinta —el
+espejo— la regla saltó sobre un `select: { balance: true }`, que es legítimo
+desde cualquier lado. La de clientes no lo hacía sólo porque en este proyecto los
+`select` viven en constantes aparte, fuera del alcance del selector. Es la peor
+forma de que una regla "funcione": el día que alguien escriba el select en línea,
+la esquiva extrayéndolo a una constante y de paso deja de protegerse de las
+escrituras. Las dos reglas quedaron acotadas a `data`.
+
+**La autorización de sobrepago se decidía con una lectura vieja.** El primer
+diseño ataba el autorizante a "y además, según la lectura previa, sobra": con dos
+pagos simultáneos de $40.000 sobre una deuda de $50.000, ninguno sobrepasaba
+según _su_ lectura, así que ninguno viajaba autorizado y el segundo se rechazaba
+aunque quien pagaba lo hubiera confirmado. Lo encontró la prueba de concurrencia.
+**El consentimiento lo da quien opera, no una lectura que puede estar vencida.**
+
+**Una comprobación que no podía fallar nunca.** Con la condición
+`balance + delta >= 0` dentro del `UPDATE`, el `if` que volvía a mirar el saldo
+después del movimiento era código inalcanzable. Se borró: un `if` que no puede
+ejecutarse se lee como una defensa y no defiende de nada.
+
+### La regresión de las 21:00
+
+Y una prueba de la 4A que no mide alcance sino honestidad: `LA REGRESION: una venta
 de las 21:30 no desaparece de su dia`. La Fase 4A encontró que el error de las
 21:00 —que la 3C descubrió y la 3D dio por cerrado— **seguía vivo en el SQL
 crudo de los reportes**. Sobrevivió a una fase entera porque la suite crea sus

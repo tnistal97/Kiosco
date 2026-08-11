@@ -194,6 +194,10 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 | [CUSTOMER_ACCOUNT_LEDGER.md](docs/CUSTOMER_ACCOUNT_LEDGER.md)               | El libro de cuenta corriente y sus invariantes       |
 | [CREDIT_POLICY.md](docs/CREDIT_POLICY.md)                                   | Límite, autorización y fiado cortado                 |
 | [CUSTOMER_PAYMENT_FLOW.md](docs/CUSTOMER_PAYMENT_FLOW.md)                   | Cobrar, el comprobante y el ajuste manual            |
+| [SUPPLIER_ACCOUNT_LEDGER.md](docs/SUPPLIER_ACCOUNT_LEDGER.md)               | El libro de cuentas por pagar y sus invariantes      |
+| [ACCOUNTS_PAYABLE_POLICY.md](docs/ACCOUNTS_PAYABLE_POLICY.md)               | De dónde nace la deuda, vencimientos y estados       |
+| [SUPPLIER_PAYMENT_FLOW.md](docs/SUPPLIER_PAYMENT_FLOW.md)                   | Pagar a un proveedor, la caja y el comprobante       |
+| [SUPPLIER_PAYMENT_ALLOCATION.md](docs/SUPPLIER_PAYMENT_ALLOCATION.md)       | Qué obligación cancela cada peso de un pago          |
 | [PHASE3_RECONCILIATION.md](docs/PHASE3_RECONCILIATION.md)                   | Las invariantes que demuestran que el sistema cierra |
 | [INTEGRITY_CHECK.md](docs/INTEGRITY_CHECK.md)                               | Cómo se corre y cómo se lee la comprobación          |
 | [REPORTING_MODEL.md](docs/REPORTING_MODEL.md)                               | Qué calcula cada reporte y con qué costo             |

@@ -39,18 +39,23 @@ Antes de las cuatro, la Fase 3 propiamente dicha llevó el dinero a `Decimal`
 El sistema tiene cinco lugares por los que **tiene** que pasar cierta escritura,
 y ninguno se puede saltear:
 
-| Puerta                   | Qué protege                                      | Cómo se garantiza                                |
-| ------------------------ | ------------------------------------------------ | ------------------------------------------------ |
-| `applyStockMovement`     | Nadie más escribe `BranchStock`                  | Regla de ESLint                                  |
-| `registrarCambioDeCosto` | Nadie más escribe `Product.cost` ni el historial | Bloqueo `FOR UPDATE` + convención                |
-| `handler`                | Toda ruta declara su permiso                     | `tests/authorization/permissions-matrix.test.ts` |
-| `audit`                  | La bitácora tiene una sola forma                 | Convención + pruebas                             |
-| `rangoDeSucursal`        | Todo filtro por fecha usa la zona del local      | [TIMEZONE_POLICY.md](TIMEZONE_POLICY.md)         |
-| `applyAccountMovement`   | Nadie más escribe `Client.balance`               | Regla de ESLint (Fase 4A)                        |
+| Puerta                         | Qué protege                                      | Cómo se garantiza                                |
+| ------------------------------ | ------------------------------------------------ | ------------------------------------------------ |
+| `applyStockMovement`           | Nadie más escribe `BranchStock`                  | Regla de ESLint                                  |
+| `registrarCambioDeCosto`       | Nadie más escribe `Product.cost` ni el historial | Bloqueo `FOR UPDATE` + convención                |
+| `handler`                      | Toda ruta declara su permiso                     | `tests/authorization/permissions-matrix.test.ts` |
+| `audit`                        | La bitácora tiene una sola forma                 | Convención + pruebas                             |
+| `rangoDeSucursal`              | Todo filtro por fecha usa la zona del local      | [TIMEZONE_POLICY.md](TIMEZONE_POLICY.md)         |
+| `applyAccountMovement`         | Nadie más escribe `Client.balance`               | Regla de ESLint (Fase 4A)                        |
+| `applySupplierAccountMovement` | Nadie más escribe `Supplier.balance`             | Regla de ESLint (Fase 4B)                        |
 
 > **Sexta puerta, Fase 4A.** El saldo de un cliente sigue la misma regla que el
 > stock: no se escribe, se mueve. Ver
 > [CUSTOMER_ACCOUNT_LEDGER.md](CUSTOMER_ACCOUNT_LEDGER.md).
+>
+> **Séptima puerta, Fase 4B.** Y lo que le debemos a un proveedor, también:
+> mismo diseño, mismo vocabulario, el signo mirando para el otro lado. Ver
+> [SUPPLIER_ACCOUNT_LEDGER.md](SUPPLIER_ACCOUNT_LEDGER.md).
 >
 > Y `rangoDeSucursal` resultó tener una segunda mitad que la Fase 3D no cubrió:
 > calcular bien el rango no alcanza si la comparación en SQL lo convierte con la
@@ -93,7 +98,8 @@ Desde la Fase 4A, además:
 npm run integrity:check
 ```
 
-Trece invariantes —nueve de la Fase 3 y cuatro de cuenta corriente—, calculadas
+Diecisiete invariantes —nueve de la Fase 3, cuatro de cuenta corriente y cuatro
+de cuentas por pagar—, calculadas
 **por otro camino** que el que las escribió: SQL
 sobre las tablas contra `Decimal.js` en la aplicación. Sólo lectura, sin
 corregir nada. Ver [INTEGRITY_CHECK.md](INTEGRITY_CHECK.md).

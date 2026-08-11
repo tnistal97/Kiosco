@@ -58,7 +58,7 @@ un margen inflado, que es la misma mentira por otro camino.
 
 Contarlas con costo cero las mostraría como lo más rentable del local.
 
-## Las siete materias y sus permisos
+## Las ocho materias y sus permisos
 
 | Reporte      | Permiso                  | Qué muestra                                                                               |
 | ------------ | ------------------------ | ----------------------------------------------------------------------------------------- |
@@ -69,6 +69,27 @@ Contarlas con costo cero las mostraría como lo más rentable del local.
 | Compras      | `reports.purchases.view` | Total comprado, órdenes, recepciones, por proveedor, diferencias de costo                 |
 | Caja         | `reports.cash.view`      | Turnos, diferencias, ingresos, egresos, retiros                                           |
 | Clientes     | `reports.clients.view`   | Saldo pendiente, deudores, deuda promedio, top deudores, cobrado, vendido a cuenta        |
+| Proveedores  | `reports.purchases.view` | Cuentas por pagar, vencido, por vencer, recibido, pagado, deuda por proveedor, top        |
+
+### El reporte de proveedores no mezcla comprado con pagado
+
+Son dos columnas y dos preguntas: **cuánta mercadería entró** y **cuánta plata
+salió**. Una entrega a 30 días suma a la primera y no a la segunda, y sumarlas
+juntas haría pensar que el mes costó el doble.
+
+Va bajo `reports.purchases.view` y no bajo un permiso nuevo: es la misma materia
+que el reporte de compras, y quien ya podía ver cuánto se compró puede ver
+cuánto de eso falta pagar.
+
+**Un detalle que no es un error:** `cuentasPorPagar.total` sale de
+`Supplier.balance` y `vencido` sale de las obligaciones, que son por entrega y
+tienen fecha. Los dos pueden no cerrar entre sí, y la diferencia es exactamente
+lo pagado sin imputar más lo ajustado a mano, que no cuelga de ninguna entrega.
+Ver [`SUPPLIER_PAYMENT_ALLOCATION.md`](SUPPLIER_PAYMENT_ALLOCATION.md).
+
+**Y "vencido" se calcula contra el FINAL DEL RANGO**, no contra el reloj de hoy:
+un reporte de marzo consultado en agosto tiene que decir qué estaba vencido al
+cierre de marzo. Usar la fecha de hoy convertiría todo marzo en "vencido".
 
 ### El reporte de clientes no llama ganancia a la deuda
 

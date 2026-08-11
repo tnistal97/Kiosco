@@ -64,6 +64,10 @@ PurchaseReceiptItem:       3 filas, suma     32.000
 Sale:                     15 filas, suma 164770.00
 SaleItem:                 32 filas, suma     57.000
 StockMovement:            78 filas, suma    878.000
+Supplier:                  5 filas, suma   9180.00
+SupplierAccountMovement:   3 filas, suma   9180.00
+SupplierPayment:           1 filas, suma  46900.00
+SupplierPaymentAllocation: 1 filas, suma  46900.00
 ```
 
 Cantidad de filas **y suma de la columna que importa** de cada tabla. Un
