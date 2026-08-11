@@ -340,6 +340,51 @@ y queda auditado con el antes y el después.
 que se muevan a tablas `Permission`/`RolePermission` —que es lo que anticipa ese
 archivo— esa sí será una migración.
 
+### Las migraciones de la Fase 4C
+
+Cuatro, con el mismo criterio.
+
+| Migración                         | Qué hace                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------ |
+| `phase4c_supplier_advances`       | `SupplierPaymentAllocation.createdById`; el par deja de ser único        |
+| `phase4c_purchase_returns`        | `PurchaseReturn` y `PurchaseReturnItem`, su secuencia y sus disparadores |
+| `phase4c_purchase_return_finance` | `SupplierAccountMovement.returnId` y un crédito por devolución           |
+| `phase4c_purchase_return_stock`   | `PURCHASE_RETURN` en la tabla de signos del libro de inventario          |
+
+#### La primera volvió a chocar contra un disparador
+
+Y también estuvo bien. `SupplierPaymentAllocation` es inmutable desde la 4B, y el
+`UPDATE` que rellena `createdById` murió contra su disparador. La migración lo
+**apaga y lo vuelve a encender dentro de su propia transacción**, así que no hay
+ningún instante en el que otra sesión pueda escribir con la guardia baja.
+
+La diferencia con lo que hubo que hacer en la 4B con `PurchaseReceipt`: allá una
+columna quedó editable para siempre; acá el disparador vuelve **intacto** y sigue
+rechazando todo, incluida la columna nueva. Nada queda más flojo de lo que estaba.
+
+#### La primera también AFLOJA una restricción
+
+Deja de ser único el par `(paymentId, receiptId)`. Aflojar no puede invalidar
+ningún dato existente —todo lo que cumplía la regla vieja cumple la nueva— pero
+**el rollback sí puede fallar**: restaurar el índice único exige que no haya
+quedado ningún par repetido. El bloque `ROLLBACK` lo comprueba y **aborta con un
+mensaje** en vez de borrar filas: cuál de las dos imputaciones sobra es una
+decisión de negocio, no de una migración.
+
+El motivo del cambio está en
+[`SUPPLIER_PAYMENT_ALLOCATION.md`](SUPPLIER_PAYMENT_ALLOCATION.md), sección 6 bis.
+
+#### La cuarta reescribe una tabla de signos entera
+
+`StockMovement_tipo_signo_check` se reemplaza completa en vez de agregarle una
+restricción aparte, para que siga habiendo **una** tabla de signos y no dos que
+haya que leer juntas. La lista se repite entera a propósito: así el archivo dice
+cuál es la regla resultante y no sólo qué le cambió.
+
+La prueba que compara el catálogo de TypeScript contra la restricción de
+PostgreSQL lee la **última** definición y no la primera, justamente porque esta
+tabla se reescribe cada vez que aparece un tipo nuevo.
+
 ## Qué comprueba la prueba automatizada
 
 | Caso                   | Qué verifica                                                                                 |

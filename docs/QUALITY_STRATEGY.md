@@ -65,6 +65,58 @@ aunque quien pagaba lo hubiera confirmado. Lo encontró la prueba de concurrenci
 después del movimiento era código inalcanzable. Se borró: un `if` que no puede
 ejecutarse se lee como una defensa y no defiende de nada.
 
+### Fase 4C
+
+|                |                                                                         |
+| -------------- | ----------------------------------------------------------------------- |
+| Pruebas        | **1.271** en vitest + **191** de extremo a extremo                      |
+| axe            | **+ cuatro pantallas**: listado y detalle de devolución, y dos diálogos |
+| ESLint         | **+ una sexta frontera**: la imputación de pagos                        |
+| Reconciliación | **diecinueve** invariantes (diecisiete + dos de devoluciones)           |
+
+La sexta frontera es distinta de las cinco anteriores y conviene decir en qué.
+Aquellas protegen un **saldo** —stock, cuenta de cliente, cuenta de proveedor— de
+que alguien lo escriba sin dejar la fila del libro que lo explica. Esta protege
+una tabla que no tiene saldo detrás: una imputación no mueve nada.
+
+Lo que protege es **la comprobación**. Los dos topes de una imputación no se
+pueden expresar en una restricción de la base —cada uno es la suma de otra
+tabla— y se hacen cumplir tomando bloqueos en un orden preciso, que sólo existe
+dentro de `imputacion.ts`. Un `create` escrito en cualquier otro lado los
+saltearía sin que nada se queje.
+
+Y tres cosas que la fase encontró sobre su propio código:
+
+**El bloqueo y la suma estaban en la misma sentencia.** Es el error más silencioso
+de los tres. Bajo `READ COMMITTED` la instantánea se toma al **empezar** la
+sentencia, así que la transacción que espera el bloqueo suma con una foto
+anterior a la escritura de la que estaba esperando: las dos leen "queda todo" y
+las dos imputan. PostgreSQL reevalúa la fila bloqueada después de esperarla, pero
+no las subconsultas. **Pasaba las veinticuatro pruebas de integración** y lo
+encontró la de concurrencia en la primera vuelta. La solución son dos sentencias:
+bloquear primero, sumar después.
+
+**Una comprobación de reconciliación que no podía fallar nunca.** El objetivo 24
+pedía comprobar que lo imputado no supere la obligación **neta**. Se escribió, y
+la prueba que debía verla fallar no lo lograba. La cuenta explica por qué:
+
+```
+exceso > devuelto  ⟺  imputado > total
+```
+
+Es exactamente la regla del importe original, que ya estaba. Se borró la
+duplicada y quedó una prueba que **fija la equivalencia**: si algún día deja de
+valer, falla y ahí sí hace falta la segunda regla. Es el mismo error que la 4B
+tuvo que borrar del pago, encontrado esta vez por una prueba en vez de por
+lectura.
+
+**Una prueba anclada a la primera versión de una restricción.** La que compara el
+catálogo de tipos de movimiento contra el `CHECK` de PostgreSQL leía la migración
+de la Fase 3A. Al agregar `PURCHASE_RETURN` —que reescribe la tabla de signos
+entera— falló, y con razón: era una prueba sobre historia, no sobre la regla
+vigente. Ahora lee la **última** definición, descartando los bloques `ROLLBACK`
+comentados.
+
 ### La regresión de las 21:00
 
 Y una prueba de la 4A que no mide alcance sino honestidad: `LA REGRESION: una venta

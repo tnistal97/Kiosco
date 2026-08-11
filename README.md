@@ -27,6 +27,10 @@ códigos de barras por cámara y por lector USB.
 - **Compras** — proveedores, órdenes de compra con estados, y recepción total
   o parcial. Lo que llega entra al stock convertido a la unidad de venta —5
   cajas de 8 son 40 botellas— y actualiza el costo del producto.
+- **Cuentas por pagar** — la deuda nace de la entrega, con su vencimiento. Pagos
+  en efectivo, transferencia o tarjeta, imputados a obligaciones concretas.
+  **Anticipos** que se aplican después, y **devoluciones** que sacan la
+  mercadería del depósito y acreditan su costo original.
 - **Libro de inventario** — cada venta, anulación y ajuste deja un movimiento
   con el saldo anterior y el resultante. No se edita ni se borra: los errores
   se corrigen con otro movimiento.
@@ -198,6 +202,9 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 | [ACCOUNTS_PAYABLE_POLICY.md](docs/ACCOUNTS_PAYABLE_POLICY.md)               | De dónde nace la deuda, vencimientos y estados       |
 | [SUPPLIER_PAYMENT_FLOW.md](docs/SUPPLIER_PAYMENT_FLOW.md)                   | Pagar a un proveedor, la caja y el comprobante       |
 | [SUPPLIER_PAYMENT_ALLOCATION.md](docs/SUPPLIER_PAYMENT_ALLOCATION.md)       | Qué obligación cancela cada peso de un pago          |
+| [SUPPLIER_ADVANCES.md](docs/SUPPLIER_ADVANCES.md)                           | Anticipos e imputación diferida                      |
+| [PURCHASE_RETURN_FLOW.md](docs/PURCHASE_RETURN_FLOW.md)                     | Devolver mercadería: estados, topes y stock          |
+| [PURCHASE_RETURN_ACCOUNTING.md](docs/PURCHASE_RETURN_ACCOUNTING.md)         | Qué le hace una devolución a la cuenta del proveedor |
 | [PHASE3_RECONCILIATION.md](docs/PHASE3_RECONCILIATION.md)                   | Las invariantes que demuestran que el sistema cierra |
 | [INTEGRITY_CHECK.md](docs/INTEGRITY_CHECK.md)                               | Cómo se corre y cómo se lee la comprobación          |
 | [REPORTING_MODEL.md](docs/REPORTING_MODEL.md)                               | Qué calcula cada reporte y con qué costo             |

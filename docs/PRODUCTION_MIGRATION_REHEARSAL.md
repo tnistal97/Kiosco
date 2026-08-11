@@ -60,14 +60,16 @@ Client:                    3 filas, suma  19060.00
 CustomerAccountMovement:   6 filas, suma  19060.00
 CustomerPayment:           2 filas, suma   9120.00
 Product:                  43 filas, suma 161970.00
-PurchaseReceiptItem:       3 filas, suma     32.000
+PurchaseReceiptItem:       4 filas, suma     42.000
+PurchaseReturn:            1 filas, suma   1836.00
+PurchaseReturnItem:        1 filas, suma      2.000
 Sale:                     15 filas, suma 164770.00
 SaleItem:                 32 filas, suma     57.000
-StockMovement:            78 filas, suma    878.000
-Supplier:                  5 filas, suma   9180.00
-SupplierAccountMovement:   3 filas, suma   9180.00
-SupplierPayment:           1 filas, suma  46900.00
-SupplierPaymentAllocation: 1 filas, suma  46900.00
+StockMovement:            80 filas, suma    886.000
+Supplier:                  5 filas, suma   2344.00
+SupplierAccountMovement:   6 filas, suma   2344.00
+SupplierPayment:           2 filas, suma  61900.00
+SupplierPaymentAllocation: 2 filas, suma  56900.00
 ```
 
 Cantidad de filas **y suma de la columna que importa** de cada tabla. Un
@@ -79,6 +81,13 @@ Las dos juntas son difíciles de pasar por casualidad.
 > importes y sólo mueve las fechas, así que dos corridas dan la misma huella.
 > Un número copiado a ojo en un documento como éste es peor que no ponerlo —
 > invita a comparar contra algo que nunca fue cierto.
+
+Las dos tablas de devolución entraron en la Fase 4C, y entran las DOS y no sólo
+la cabecera: el importe de una devolución es la suma de sus renglones, y un
+respaldo que perdiera los renglones dejaría la cabecera con un total que nada
+respalda —exactamente lo que la reconciliación marca— sin que la huella lo
+notara. De la cabecera se suma el IMPORTE, que es el crédito que generó; de los
+renglones, la CANTIDAD, que es la mercadería que salió del depósito.
 
 Las tres tablas de cuenta corriente entraron en la Fase 4A. Sin ellas, un
 respaldo que perdiera el libro de clientes se restauraría y la comparación diría

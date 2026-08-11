@@ -215,7 +215,9 @@ negociación, no una operación de sistema.
 | 5   | cada pago tiene exactamente un `PAYMENT`; en efectivo, además su egreso de caja              |
 
 Más las dos de imputación, en
-[SUPPLIER_PAYMENT_ALLOCATION.md](SUPPLIER_PAYMENT_ALLOCATION.md).
+[SUPPLIER_PAYMENT_ALLOCATION.md](SUPPLIER_PAYMENT_ALLOCATION.md), y las dos de
+devolución que agrega la Fase 4C, en
+[PURCHASE_RETURN_ACCOUNTING.md](PURCHASE_RETURN_ACCOUNTING.md).
 
 ### El punto ciego, dicho en voz alta
 
@@ -234,18 +236,23 @@ tiene es peor que una que sabe que le falta.
 
 **No se edita y no se borra.** Un error se corrige con un movimiento nuevo.
 
-| Qué pasó                                       | Qué se registra                                    |
-| ---------------------------------------------- | -------------------------------------------------- |
-| el proveedor mandó menos de lo facturado       | nota de crédito (`PURCHASE_CREDIT`) con motivo     |
-| se cargó una recepción con el costo equivocado | nota de crédito o ajuste, con motivo               |
-| había deuda anterior a esta fase               | ajuste manual (`MANUAL_ADJUSTMENT`) con motivo     |
-| se pagó de más                                 | queda saldo a favor; lo consume la próxima entrega |
+| Qué pasó                                       | Qué se registra                                        |
+| ---------------------------------------------- | ------------------------------------------------------ |
+| el proveedor mandó menos de lo facturado       | nota de crédito (`PURCHASE_CREDIT`) con motivo         |
+| se cargó una recepción con el costo equivocado | nota de crédito o ajuste, con motivo                   |
+| había deuda anterior a esta fase               | ajuste manual (`MANUAL_ADJUSTMENT`) con motivo         |
+| se pagó de más                                 | queda saldo a favor; se imputa a la próxima entrega    |
+| volvió mercadería al proveedor                 | **devolución** (`PURCHASE_RETURN` + `PURCHASE_CREDIT`) |
 
-La devolución física de mercadería al proveedor **no está implementada** en esta
-fase. Lo que hay es la corrección _financiera_ —la nota de crédito— y el
-movimiento de stock por los caminos que ya existen. No se finge que sea una
-devolución formal. La extensión futura está anotada en
-[ACCOUNTS_PAYABLE_POLICY.md](ACCOUNTS_PAYABLE_POLICY.md), sección "lo que falta".
+**La devolución física llegó en la Fase 4C.** Hasta la 4B había sólo corrección
+_financiera_ —la nota de crédito— y movimiento de stock por caminos separados,
+sin nada que los uniera; hoy hay una entidad con renglones, con el costo
+congelado de la entrega original, que mueve las dos cosas en una transacción. Ver
+[PURCHASE_RETURN_FLOW.md](PURCHASE_RETURN_FLOW.md).
+
+La separación entre las dos sigue siendo la que importa: la **nota de crédito**
+corrige plata sin que vuelva mercadería; la **devolución** es mercadería que
+vuelve, y por eso deja rastro en el libro de inventario.
 
 ---
 
@@ -257,4 +264,7 @@ devolución formal. La extensión futura está anotada en
 - [CUSTOMER_ACCOUNT_LEDGER.md](CUSTOMER_ACCOUNT_LEDGER.md) — el libro espejo, del otro lado del mostrador
 - [PURCHASE_RECEIVING.md](PURCHASE_RECEIVING.md) — de dónde nace la deuda
 - [INVENTORY_LEDGER.md](INVENTORY_LEDGER.md) — el primer libro del sistema
+- [SUPPLIER_ADVANCES.md](SUPPLIER_ADVANCES.md) — anticipos e imputación diferida
+- [PURCHASE_RETURN_FLOW.md](PURCHASE_RETURN_FLOW.md) — devoluciones: el circuito
+- [PURCHASE_RETURN_ACCOUNTING.md](PURCHASE_RETURN_ACCOUNTING.md) — devoluciones: el efecto en la cuenta
 - [PHASE3_RECONCILIATION.md](PHASE3_RECONCILIATION.md) — el motor de comprobación

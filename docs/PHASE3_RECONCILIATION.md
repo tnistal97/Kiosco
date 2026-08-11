@@ -28,7 +28,7 @@ arreglarla sola es la peor respuesta posible: tapa el síntoma, **borra la
 evidencia** y deja intacto el error de origen para que vuelva a pasar. Se
 informa, y decide una persona.
 
-## Las diecisiete comprobaciones
+## Las diecinueve comprobaciones
 
 | Comprobación              | Regla                                                                                                 |
 | ------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -49,14 +49,26 @@ informa, y decide una persona.
 | **Deuda por recepción**   | `debtRecorded ⟺ exactamente un cargo`; el cargo vale el importe real; `total = Σ líneas`              |
 | **Pagos a proveedores**   | cada pago deja **un** movimiento por `−importe`; en efectivo sale del cajón, y sólo en efectivo       |
 | **Imputaciones**          | `Σ por pago ≤ el pago`; `Σ por entrega ≤ lo que costó`; toda imputación apunta a una deuda registrada |
+| **Devoluciones**          | `importe = Σ renglones`; salió su mercadería; acreditó su importe; el crédito viene de una confirmada |
+| **Cantidades devueltas**  | `Σ devuelto de una línea ≤ lo recibido`; el costo de cada renglón es el **congelado** en la recepción |
 
 Las cuatro de clientes son de la Fase 4A —ver
-[`CUSTOMER_ACCOUNT_LEDGER.md`](CUSTOMER_ACCOUNT_LEDGER.md)— y las cuatro de
-proveedores, de la 4B: ver [`SUPPLIER_ACCOUNT_LEDGER.md`](SUPPLIER_ACCOUNT_LEDGER.md).
+[`CUSTOMER_ACCOUNT_LEDGER.md`](CUSTOMER_ACCOUNT_LEDGER.md)—, las cuatro de
+proveedores de la 4B —ver
+[`SUPPLIER_ACCOUNT_LEDGER.md`](SUPPLIER_ACCOUNT_LEDGER.md)— y las dos de
+devoluciones de la 4C: ver
+[`PURCHASE_RETURN_ACCOUNTING.md`](PURCHASE_RETURN_ACCOUNTING.md).
 
 Las dos últimas reglas de **Imputaciones** son **desigualdades**, y eso es el
 punto: sobre-imputar es imposible, sub-imputar es legítimo. Un pago puede quedar
 sin imputar —un anticipo— y el saldo lo lleva el libro igual.
+
+El tope de una entrega es su importe **ORIGINAL** y no el neto de devoluciones, y
+tampoco es un descuido: una entrega pagada entera y devuelta después queda con
+más imputado que su obligación neta, legítimamente, porque las imputaciones no se
+mueven hacia atrás. La regla que faltaría —"el exceso sobre el neto no supera lo
+devuelto"— es **algebraicamente idéntica** a ésta, y hay una prueba que fija esa
+equivalencia en vez de duplicar la comprobación.
 
 ### Cada línea de pago va a exactamente un destino
 

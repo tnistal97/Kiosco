@@ -124,27 +124,24 @@ Una imputación de importe cero se rechaza: no imputa nada y ocupa una fila.
 En los tres casos el saldo del proveedor baja igual —lo mueve el libro— y el
 excedente aparece como crédito nuestro.
 
-### Lo que NO hace esta fase
+### La imputación diferida llegó en la Fase 4C
 
-**Imputar un anticipo a una recepción futura.** Hoy el excedente vive como saldo
-a favor y **lo consume la próxima entrega sola**, porque el libro suma:
+La 4B soportaba imputaciones **sólo contra obligaciones que ya existían**, y lo
+dejó documentado como decisión: el excedente vivía como saldo a favor y lo
+consumía la próxima entrega sola, porque el libro suma. Eso cubría el caso
+económico y no la trazabilidad: no quedaba escrito que _ese_ pago del martes
+canceló _esa_ entrega del jueves.
 
-```
-saldo   -5.000        (pagamos 5.000 de más)
-recepción     +50.000
-saldo   +45.000       ← la entrega nueva ya vino descontada
-```
+**Desde la 4C se puede.** Un pago ya registrado se aplica después, por
+`POST /api/suppliers/:id/pagos/:pagoId/imputar`, con permiso propio
+(`supplierAccounts.allocate`). Y la regla que lo hace posible sin duplicar plata:
 
-Eso cubre el caso económico. Lo que no cubre es dejar escrito que _ese_ pago del
-martes canceló _esa_ entrega del jueves, que es trazabilidad y no plata.
+> **imputar NO mueve el saldo.** El saldo bajó cuando se entregó la plata.
 
-Es la decisión que el objetivo 22 pedía documentar: **se soportan imputaciones
-contra obligaciones que ya existen**, y la imputación diferida queda para 4C.
-Complicarla ahora habría metido un estado nuevo —"crédito disponible para
-imputar"— que hay que mantener sincronizado con el saldo, y dos números que
-significan casi lo mismo es exactamente el problema que este módulo evita.
+Ver [SUPPLIER_ADVANCES.md](SUPPLIER_ADVANCES.md).
 
-No se inventan imputaciones falsas para tapar el hueco.
+No se inventan imputaciones falsas para tapar ningún hueco: un pago sin aplicar
+se ve como lo que es, con su importe, lo imputado y lo disponible.
 
 ---
 
@@ -179,6 +176,34 @@ De las siete que agrega la Fase 4B, dos son de esta tabla:
 Ninguna de las dos es una igualdad, y eso es el punto: sobre-imputar es
 imposible, sub-imputar es legítimo.
 
+La segunda mira el importe **ORIGINAL** de la entrega, no el neto de
+devoluciones, y no es un descuido: una entrega pagada entera y devuelta después
+queda con más imputado que su obligación neta, legítimamente. Ver
+[PURCHASE_RETURN_ACCOUNTING.md](PURCHASE_RETURN_ACCOUNTING.md), sección 6.
+
+---
+
+## 6 bis. El par (pago, entrega) dejó de ser único — Fase 4C
+
+Hasta la 4B había un índice único sobre `(paymentId, receiptId)`: un pago imputaba
+**una vez** a cada obligación. No estorbaba, porque todas las imputaciones de un
+pago nacían dentro de la transacción de ese pago, de una sola vez.
+
+La imputación diferida rompió ese supuesto. Un anticipo de $50.000 cubre $30.000
+de una entrega hoy; la semana que viene llega la nota que faltaba y corresponde
+aplicarle los $20.000 restantes **a la misma entrega**. Con el par único esa
+segunda imputación era imposible —y no había salida, porque una imputación
+tampoco se edita—: el dinero quedaba varado, con la entrega abierta y el pago con
+saldo disponible, sin forma de juntarlos.
+
+**Lo que se pierde:** "cuánto le puso este pago a esta entrega" pasa a ser una
+suma en vez de una fila.
+
+**Lo que se gana:** cada fila sigue siendo un hecho inmutable, con su fecha, su
+importe y —desde la 4C— su autor. Es exactamente como este sistema contesta el
+saldo de un proveedor (suma del libro) y el stock de un producto (suma de
+movimientos). El índice único era el que estaba fuera de lugar.
+
 ---
 
 ## 7. Documentos relacionados
@@ -186,4 +211,6 @@ imposible, sub-imputar es legítimo.
 - [SUPPLIER_ACCOUNT_LEDGER.md](SUPPLIER_ACCOUNT_LEDGER.md) — de dónde sale el saldo
 - [SUPPLIER_PAYMENT_FLOW.md](SUPPLIER_PAYMENT_FLOW.md) — cómo se registra el pago
 - [ACCOUNTS_PAYABLE_POLICY.md](ACCOUNTS_PAYABLE_POLICY.md) — vencimientos y estados
+- [SUPPLIER_ADVANCES.md](SUPPLIER_ADVANCES.md) — anticipos e imputación diferida
+- [PURCHASE_RETURN_ACCOUNTING.md](PURCHASE_RETURN_ACCOUNTING.md) — qué pasa con las imputaciones cuando vuelve mercadería
 - [PHASE3_RECONCILIATION.md](PHASE3_RECONCILIATION.md) — el motor de comprobación

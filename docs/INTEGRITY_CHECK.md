@@ -19,19 +19,21 @@ COMPROBACION DE INTEGRIDAD
   Anulaciones ............. OK       1
   Turnos de caja .......... OK       1
   Inventario .............. OK      43
-  Compras ................. OK       2
-  Recepciones ............. OK       3
+  Compras ................. OK       3
+  Recepciones ............. OK       4
   Costos .................. OK       1
   Clientes ................ OK       3
   Venta a cuenta .......... OK       3
   Cobros a clientes ....... OK       2
   Anulaciones de cuenta ... OK       0
   Proveedores ............. OK       5
-  Deuda por recepción ..... OK       2
-  Pagos a proveedores ..... OK       1
-  Imputaciones ............ OK       1
+  Deuda por recepción ..... OK       3
+  Pagos a proveedores ..... OK       2
+  Imputaciones ............ OK       2
+  Devoluciones ............ OK       1
+  Cantidades devueltas .... OK       1
 
-  Sin inconsistencias.  (73 ms)
+  Sin inconsistencias.  (93 ms)
 ```
 
 El número de la derecha es **cuántas filas se miraron**. Un `OK 0` no es lo
@@ -83,7 +85,7 @@ de control que deja rastro en lo que controla es una mala herramienta.
 
 Se evaluó agregar `Sistema > Integridad` y se decidió que no, por evidencia:
 
-- Las diecisiete comprobaciones tardan **~141 ms sobre 43 productos, 15 ventas y 3
+- Las diecinueve comprobaciones tardan **~93 ms sobre 43 productos, 15 ventas y 3
   clientes**, que es una base de demostración. Escalan con el volumen: son
   recorridos completos de `Sale`, `SaleItem`, `StockMovement`,
   `CashRegisterMovement` y —desde la Fase 4A— `CustomerAccountMovement`.
@@ -112,5 +114,5 @@ y su código de salida se puede vigilar.
 
 ## Qué comprueba exactamente
 
-Las diecisiete invariantes están en
+Las diecinueve invariantes están en
 [PHASE3_RECONCILIATION.md](PHASE3_RECONCILIATION.md), con el porqué de cada una.
