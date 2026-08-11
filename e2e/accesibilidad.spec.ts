@@ -318,6 +318,79 @@ test.describe('accesibilidad automatizada', () => {
     expect(detalle(violations)).toBe('sin faltas')
   })
 
+  // ---- Fase 4B: cuentas por pagar --------------------------------------
+  //
+  // La cuenta del proveedor tiene lo que mas riesgo de accesibilidad trae de
+  // todo el modulo: una tabla con ESTADOS. Un estado que solo se distinga por
+  // el color es una falta de WCAG 1.4.1, y por eso cada uno lleva su palabra.
+
+  test('la cuenta corriente de un proveedor no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/proveedores')
+    await page.getByRole('link', { name: 'Bebidas Andinas' }).click()
+    await page.getByRole('heading', { name: 'Cuenta corriente' }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el diálogo de pago a un proveedor no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/proveedores')
+    await page.getByRole('link', { name: 'Bebidas Andinas' }).click()
+    await page.getByRole('button', { name: 'Registrar pago' }).click()
+    await page.getByRole('heading', { name: /Pagar a/ }).waitFor()
+    await esperarDialogoEstable(page)
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el diálogo de nota de crédito no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/proveedores')
+    await page.getByRole('link', { name: 'Bebidas Andinas' }).click()
+    await page.getByRole('button', { name: 'Nota de crédito' }).click()
+    await page.getByRole('heading', { name: /Nota de crédito de/ }).waitFor()
+    await esperarDialogoEstable(page)
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el comprobante de pago a proveedor no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+
+    // El comprobante que el seed deja creado: un pago parcial por
+    // transferencia a "Distribuidora del Norte", que es el proveedor del
+    // circuito de compras de la demostracion.
+    //
+    // Se busca POR EL PAGO y no por el proveedor a proposito. El primer intento
+    // preguntaba por "Bebidas Andinas" --que es a quien le paga
+    // `proveedores.spec.ts`-- y pasaba o fallaba segun que fichero de pruebas
+    // hubiera corrido antes: los dos comparten la base y Playwright los
+    // reparte entre procesos. Una prueba que depende del orden de otra no
+    // prueba lo que dice probar.
+    const id = await page.evaluate(async () => {
+      const r = await fetch('/api/suppliers?q=Distribuidora del Norte&pageSize=10')
+      const p = (await r.json()) as { data: Array<{ id: number }> }
+      const supplierId = p.data[0]?.id
+      if (supplierId === undefined) throw new Error('falta el proveedor de la demostracion')
+
+      const pagos = await fetch(`/api/suppliers/${String(supplierId)}/pagos?pageSize=1`)
+      const lista = (await pagos.json()) as { data: Array<{ id: number }> }
+      const pago = lista.data[0]?.id
+      if (pago === undefined) throw new Error('el seed no dejo ningun pago a proveedor')
+      return pago
+    })
+
+    await page.goto(`/comprobantes/proveedor/${String(id)}`)
+    await page.getByText('Comprobante de pago a proveedor').waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
   test('/compras no tiene faltas', async ({ page }) => {
     await entrar(page, 'duenio')
     await page.goto('/compras')
