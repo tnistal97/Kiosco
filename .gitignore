@@ -100,3 +100,10 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Artefactos de release. Se construyen, no se versionan: llevan el .next
+# entero y su checksum cambia en cada build.
+/dist/
+# Identidad del binario. Lo escribe scripts/release-artifact.mjs en el momento
+# de construir; versionarlo dejaria un commit falso pegado al codigo.
+/build-info.json

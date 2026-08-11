@@ -36,7 +36,10 @@
     "integrity:check": "tsx scripts/integrity-check.ts",
     "reconcile": "tsx scripts/integrity-check.ts",
     "rehearsal": "tsx scripts/rehearsal.ts",
-    "rehearsal:prodlike": "tsx scripts/rehearsal-produccion.ts"
+    "rehearsal:prodlike": "tsx scripts/rehearsal-produccion.ts",
+    "release:artifact": "node scripts/release-artifact.mjs",
+    "smoke:staging": "node scripts/smoke.mjs staging",
+    "smoke:production": "node scripts/smoke.mjs production"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.4",
