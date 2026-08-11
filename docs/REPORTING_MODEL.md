@@ -156,7 +156,7 @@ todavía no se aplicó a nada. Ver
 Tres reportes nuevos, y los tres se apoyan en la misma decisión de costo.
 
 **QUÉ COSTO USAN, y por qué no es el histórico.** `SaleItem.costAtSale` existe
-porque una venta tiene un costo *en el momento de ocurrir* y ese dato se congela.
+porque una venta tiene un costo _en el momento de ocurrir_ y ese dato se congela.
 Un ajuste de inventario **no lo tiene guardado**: nadie escribió "esta unidad se
 rompió y había costado $1.100". Así que los tres usan `Product.cost` —el actual—
 y lo dicen en el nombre del campo: `valorACostoActual`.

@@ -391,13 +391,13 @@ Cinco, por dominio, y **ninguna inventa historia**. Es la decisión que las
 atraviesa: el catálogo entero arranca en `lotTracking = 'NONE'`, y el stock que
 ya existe no se convierte en partidas ficticias.
 
-| Migración                 | Qué hace                                                                    |
-| ------------------------- | --------------------------------------------------------------------------- |
-| `phase4d_product_lots`    | `Product.lotTracking` y `expirationTracking`, y la tabla `ProductLot`       |
-| `phase4d_lot_stock`       | `BranchLotStock`, `LotAssignment` y `StockMovement.lotId`                    |
-| `phase4d_lot_receiving`   | `PurchaseReceiptItemLot`                                                     |
-| `phase4d_lot_sales`       | `SaleItemLotAllocation` y `PurchaseReturnItem.lotId`                        |
-| `phase4d_inventory_counts`| `InventoryCountSession`, `InventoryCountLine` y `INVENTORY_COUNT` en signos |
+| Migración                  | Qué hace                                                                    |
+| -------------------------- | --------------------------------------------------------------------------- |
+| `phase4d_product_lots`     | `Product.lotTracking` y `expirationTracking`, y la tabla `ProductLot`       |
+| `phase4d_lot_stock`        | `BranchLotStock`, `LotAssignment` y `StockMovement.lotId`                   |
+| `phase4d_lot_receiving`    | `PurchaseReceiptItemLot`                                                    |
+| `phase4d_lot_sales`        | `SaleItemLotAllocation` y `PurchaseReturnItem.lotId`                        |
+| `phase4d_inventory_counts` | `InventoryCountSession`, `InventoryCountLine` y `INVENTORY_COUNT` en signos |
 
 #### Nada de `LEGACY-2026`
 

@@ -633,3 +633,84 @@ El circuito de dinero está cerrado hacia adentro: se sabe qué entró, qué sal
 por qué. Lo que falta es hacia afuera —**clientes, fiado, cuenta corriente,
 deuda a proveedores**— y `PurchaseReceipt` ya es su ancla natural: una recepción
 es lo que genera un saldo a pagar.
+
+## Fase 4D: el estante sabe de qué partida es cada unidad
+
+Hasta acá el sistema sabía **cuánto** hay de cada producto. `BranchStock` es un
+número por producto y sucursal, y contra ese número se vende, se compra y se
+ajusta.
+
+La 4D agrega el nivel de abajo sin tocar el de arriba: **`BranchStock` sigue
+siendo la verdad agregada**. Lo que se agrega es de qué partida es cada unidad,
+para los productos donde eso importa.
+
+### Lo que se agregó al modelo
+
+| Cambio                                       | Por qué                                                                                    |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `Product.lotTracking` y `expirationTracking` | **Dos banderas**, no una: la lavandina necesita partida y no tiene fecha que inventar      |
+| `ProductLot`                                 | La partida: código normalizado, vencimiento como `DATE`, identidad congelada al primer uso |
+| `BranchLotStock`                             | El `BranchStock` de las partidas. Materializado por el mismo motivo                        |
+| `LotAssignment`                              | Un **segundo libro**: atribuir stock existente no mueve mercadería                         |
+| `StockMovement.lotId`                        | El libro de siempre, ahora con la partida. Clave foránea **compuesta**                     |
+| `InventoryCountSession` / `Line`             | El inventario físico, con sus cinco estados                                                |
+
+### La decisión que la atraviesa: nada se inventa
+
+Un catálogo existente no tiene partidas. La alternativa fácil —crear un
+`LEGACY-2026` por producto y meterle todo el stock— se descartó: sería un dato
+falso con formato de dato real, indistinguible de una partida que alguien leyó
+de un envase.
+
+Lo que las partidas no explican aparece como **`sinAsignar`**, y es **derivado**:
+
+```
+sinAsignar = BranchStock.quantity − Σ BranchLotStock.quantity
+```
+
+No es una columna. Dos cifras guardadas por separado empiezan a diferir el día
+que alguien se olvida de una, y entonces hay que decidir cuál creer.
+
+### Por qué `LotAssignment` es un libro aparte
+
+Activar el rastreo sobre un producto con 20 unidades **no cambia el stock**:
+sigue habiendo 20. Lo que cambia es que ahora se sabe de qué partida son.
+
+Escribir eso como movimientos de inventario obligaría a inventar un `+20`
+seguido de un `−20` para que las sumas cerraran, y el libro pasaría a contar
+mercadería que nunca entró ni salió. Por eso la atribución tiene su propio
+libro, con su motivo, su responsable, su fecha y su disparador de inmutabilidad.
+
+La invariante que los une:
+
+```
+BranchLotStock.quantity == Σ movimientos(lote) + Σ atribuciones(lote)
+```
+
+### Las cuatro invariantes nuevas
+
+| #   | Regla                                              | Qué caza                                      |
+| --- | -------------------------------------------------- | --------------------------------------------- |
+| 1   | `BranchLotStock == Σ movimientos + Σ atribuciones` | Un saldo de partida sin libro que lo explique |
+| 2   | `Σ BranchLotStock(producto) <= BranchStock`        | Más unidades atribuidas que las que hay       |
+| 3   | `BranchLotStock >= 0`                              | Una partida en negativo                       |
+| 4   | `sinAsignar == 0` para `REQUIRED`                  | La promesa de `REQUIRED` incumplida           |
+
+La segunda es una **desigualdad** a propósito: un producto `OPTIONAL` puede
+tener stock sin atribuir, y eso no es un error. La cuarta es la que convierte
+`REQUIRED` en una promesa comprobable en vez de una intención.
+
+La reconciliación pasó de diecinueve comprobaciones a **veintitrés**.
+
+### Lo que NO se hizo, a propósito
+
+- **No hay ubicaciones ni bin management.** Este sistema no tiene modelo de
+  depósito, y fabricar uno para poder decir "pasillo 3" sería inventar datos que
+  nadie cargó.
+- **No hay números de serie individuales.** Una partida es un grupo, no una
+  unidad.
+- **FEFO no es una lectura física.** Si dos partidas comparten código de barras,
+  el sistema no sabe cuál agarró el cajero: decide por política de rotación. Está
+  escrito en la pantalla, en [FEFO_POLICY.md](FEFO_POLICY.md) y es el motivo del
+  permiso `lots.adjust`.
+- **Un inventario aplicado no se revierte.** Se cuenta de nuevo.

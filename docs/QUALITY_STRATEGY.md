@@ -653,3 +653,81 @@ Decirlo vale más que fingir lo contrario.
 permiso: exige que **toda excepción de la lista siga borrando algo**. Una
 excepción que dejó de hacer falta tiene que caducar, o la lista crece hasta no
 significar nada.
+
+### Una prueba puede pasar por el motivo equivocado — Fase 4D.1
+
+El caso más caro de la fase no fue un defecto del producto: fue una **prueba que
+dependía de algo que nadie prometió**.
+
+`tests/performance/devoluciones.test.ts` repartía sus devoluciones sobre "la
+mitad más nueva por `id`" de unas recepciones creadas con un producto cartesiano:
+
+```sql
+FROM "PurchaseOrder" o, generate_series(1, 5) AS i
+```
+
+PostgreSQL elige libremente cuál de los dos lados recorre por fuera, y los dos
+órdenes son correctos. Con `generate_series` por fuera, el proveedor que la
+prueba mira recibe los ids 1, 2001, 4001, 6001 y 8001 —dos caen en la mitad que
+recibe devolución— y la prueba pasa. Con `PurchaseOrder` por fuera recibe 1, 2,
+3, 4 y 5, ninguna cae, y tres casos fallan con un mensaje que no dice por qué:
+
+```
+expected '0.00,0.00,0.00,0.00,0.00' to contain '1000.00'
+```
+
+Se reprodujo forzando el plan (`SET enable_material = off`) sobre el esquema
+real, y da exactamente esa cadena.
+
+**Las tres lecciones, en orden de importancia:**
+
+1. **Un fixture no puede depender del orden físico de las filas.** El reparto
+   ahora lo decide `receivedAt`, que es un valor de la fila. Mismo resultado con
+   cualquier plan, comprobado con los dos.
+
+2. **La precondición de una prueba se afirma, no se supone.** Se agregó un caso
+   que mira al proveedor _peor servido_ del fixture. Si el reparto vuelve a
+   depender del plan, falla ahí —con el número que lo explica— y no tres
+   assertions más abajo.
+
+3. **Un fixture de volumen tiene que `ANALYZE`.** Sin estadísticas el
+   planificador decide con `reltuples = -1` y el plan que se mide no es el que
+   va a correr en producción. El fixture de `tests/performance/lotes.test.ts` lo
+   hace explícitamente, y por eso su prueba de `EXPLAIN` significa algo.
+
+### Medir el plan, no sólo el tiempo
+
+`tests/performance/lotes.test.ts` incluye un caso que **no mide milisegundos**:
+corre `EXPLAIN` sobre la consulta de FEFO y exige que la entrada a `ProductLot`
+sea por índice, prohibiendo el `Seq Scan`.
+
+El motivo: con diez mil partidas un recorrido de tabla tarda tres milisegundos y
+**sigue siendo lineal**. Un tope de tiempo lo dejaría pasar; con un millón de
+partidas deja de pasar en producción, que es donde no hay tope que valga. Lo que
+se quiere garantizar no es "tarda poco hoy" sino "escala".
+
+Se exige el índice sobre `ProductLot` y **no** sobre `BranchLotStock`: son dos
+filas por producto y el planificador puede resolverlas por cualquiera de sus dos
+índices según cómo ordene el join. Exigir un plan concreto donde hay varios
+correctos convierte la prueba en un obstáculo.
+
+### Lo que sólo encuentra una prueba de extremo a extremo
+
+Tres defectos de la Fase 4D no los podía ver ninguna prueba de integración,
+porque los tres viven **en la costura entre el servidor y la pantalla**:
+
+- `obtenerOrden` traía la política de rastreo en el `select` y la **descartaba al
+  armar el DTO**. La API respondía 200 con datos correctos salvo dos campos, y
+  la pantalla de recepción nunca pedía partidas.
+- La inicialización de partidas no podía funcionar nunca: un producto `NONE` no
+  admite lotes, así que el botón fallaba en silencio.
+- Al recargar después de repartir, la pantalla pisaba la elección del usuario y
+  dejaba el botón de guardar deshabilitado.
+
+Y un cuarto, en la siembra: `ProductLot` apunta a `User` con `RESTRICT`, y el
+vaciado no la tocaba. No se notaba la primera vez —sobre una base vacía no hay
+partidas— sino en la **segunda** siembra, que es la que corre antes de cada
+tanda de E2E.
+
+Ninguno es un error de lógica de negocio. Los cuatro son de integración real, y
+por eso los E2E no son opcionales aunque el dominio esté bien probado.
