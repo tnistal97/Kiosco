@@ -1034,6 +1034,374 @@ export async function anulacionesContraLaCuenta(): Promise<Comprobacion> {
   }
 }
 
+// ===========================================================================
+// Cuentas por pagar a proveedores (Fase 4B)
+// ===========================================================================
+
+/**
+ * El saldo de todo proveedor es la suma de su libro.
+ *
+ *   para todo proveedor:  suma(SupplierAccountMovement.amount) == Supplier.balance
+ *
+ * Es la invariante del modulo, y la misma forma que la de clientes y la de
+ * inventario. Tres reglas, como alla:
+ *
+ *   1. el saldo cierra contra la suma del libro;
+ *   2. cada fila cumple `previo + delta = resultante`;
+ *   3. cada fila arranca donde termino la anterior del mismo proveedor.
+ *
+ * La 3 es la que detecta un movimiento BORRADO en el medio: las otras dos
+ * seguirian dando bien. No detecta uno borrado al final --lo tapa el disparador
+ * de inmutabilidad, no esta comprobacion-- y eso esta escrito en
+ * docs/SUPPLIER_ACCOUNT_LEDGER.md en vez de darse por cubierto.
+ */
+export async function proveedoresContraSuLibro(): Promise<Comprobacion> {
+  const revisadas = await contar('SELECT count(*)::bigint AS n FROM "Supplier"')
+
+  const saldos = await buscar(`
+    SELECT s."name"                                      AS proveedor,
+           s."balance"::numeric(14,2)::text              AS saldo,
+           COALESCE(m.total, 0)::numeric(14,2)::text     AS libro,
+           COALESCE(m.cuantos, 0)::text                  AS cuantos
+      FROM "Supplier" s
+      LEFT JOIN (
+        SELECT "supplierId", sum("amount") AS total, count(*) AS cuantos
+          FROM "SupplierAccountMovement"
+         GROUP BY "supplierId"
+      ) m ON m."supplierId" = s."id"
+     WHERE s."balance" <> COALESCE(m.total, 0)
+     ORDER BY s."name"
+  `)
+
+  const filasSueltas = await buscar(`
+    SELECT m."id"::text                              AS id,
+           s."name"                                  AS proveedor,
+           m."previousBalance"::numeric(14,2)::text  AS previo,
+           m."amount"::numeric(14,2)::text           AS delta,
+           m."resultingBalance"::numeric(14,2)::text AS resultante
+      FROM "SupplierAccountMovement" m
+      JOIN "Supplier" s ON s."id" = m."supplierId"
+     WHERE m."previousBalance" + m."amount" <> m."resultingBalance"
+     ORDER BY m."id"
+  `)
+
+  const cadena = await buscar(`
+    WITH ordenado AS (
+      SELECT m."id", m."supplierId", m."previousBalance",
+             lag(m."resultingBalance") OVER (
+               PARTITION BY m."supplierId" ORDER BY m."id"
+             ) AS anterior
+        FROM "SupplierAccountMovement" m
+    )
+    SELECT o."id"::text                                 AS id,
+           s."name"                                     AS proveedor,
+           o."previousBalance"::numeric(14,2)::text     AS previo,
+           COALESCE(o.anterior, 0)::numeric(14,2)::text AS deberia
+      FROM ordenado o
+      JOIN "Supplier" s ON s."id" = o."supplierId"
+     WHERE o."previousBalance" <> COALESCE(o.anterior, 0)
+     ORDER BY o."id"
+  `)
+
+  return {
+    nombre: 'Proveedores',
+    revisadas,
+    inconsistencias: [
+      ...saldos.map((f): Inconsistencia => ({
+        entidad: String(f.proveedor),
+        regla: 'saldo = suma del libro',
+        esperado: String(f.libro),
+        encontrado: String(f.saldo),
+        diferencia: restar(String(f.saldo), String(f.libro)),
+        detalle: `${String(f.cuantos)} movimiento(s)`,
+      })),
+      ...filasSueltas.map((f): Inconsistencia => ({
+        entidad: `Movimiento #${String(f.id)} — ${String(f.proveedor)}`,
+        regla: 'previo + delta = resultante',
+        esperado: String(f.resultante),
+        encontrado: `${String(f.previo)} + ${String(f.delta)}`,
+        diferencia: null,
+      })),
+      ...cadena.map((f): Inconsistencia => ({
+        entidad: `Movimiento #${String(f.id)} — ${String(f.proveedor)}`,
+        regla: 'cada movimiento arranca donde termino el anterior',
+        esperado: String(f.deberia),
+        encontrado: String(f.previo),
+        diferencia: restar(String(f.previo), String(f.deberia)),
+        detalle: 'falta un movimiento entre este y el anterior',
+      })),
+    ],
+  }
+}
+
+/**
+ * Toda recepcion financiera esta representada EXACTAMENTE UNA VEZ.
+ *
+ * Es el objetivo 24, y la invariante se comprueba EN LAS DOS DIRECCIONES:
+ *
+ *   debtRecorded = true  <=>  existe exactamente un PURCHASE_CHARGE suyo
+ *
+ * Las dos direcciones importan y detectan cosas distintas:
+ *
+ *   · una recepcion con `debtRecorded` y sin cargo -> se perdio la deuda;
+ *   · una recepcion con cargo y sin `debtRecorded` -> alguien escribio en el
+ *     libro por fuera del servicio.
+ *
+ * Una recepcion SIN ninguna de las dos es correcta: es anterior a esta fase, y
+ * la migracion no inventa deuda historica. Ver docs/ACCOUNTS_PAYABLE_POLICY.md.
+ *
+ * Y el importe del cargo tiene que ser el REAL de la entrega, que es el
+ * objetivo 6: si la factura vino $104.500, se deben $104.500 y no los $100.000
+ * que decia la orden.
+ */
+export async function recepcionesContraLaDeuda(): Promise<Comprobacion> {
+  const revisadas = await contar('SELECT count(*)::bigint AS n FROM "PurchaseReceipt"')
+
+  const desalineadas = await buscar(`
+    SELECT r."id"::text                          AS id,
+           o."number"                            AS orden,
+           r."debtRecorded"::text                AS marcada,
+           count(m."id")::text                   AS cargos
+      FROM "PurchaseReceipt" r
+      JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
+      LEFT JOIN "SupplierAccountMovement" m
+             ON m."receiptId" = r."id" AND m."type" = 'PURCHASE_CHARGE'
+     GROUP BY r."id", o."number", r."debtRecorded"
+    HAVING (r."debtRecorded" = true  AND count(m."id") <> 1)
+        OR (r."debtRecorded" = false AND count(m."id") <> 0)
+     ORDER BY r."id"
+  `)
+
+  const importes = await buscar(`
+    SELECT r."id"::text                       AS id,
+           o."number"                         AS orden,
+           r."total"::numeric(14,2)::text     AS total,
+           m."amount"::numeric(14,2)::text    AS cargo
+      FROM "PurchaseReceipt" r
+      JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
+      JOIN "SupplierAccountMovement" m
+             ON m."receiptId" = r."id" AND m."type" = 'PURCHASE_CHARGE'
+     WHERE m."amount" <> r."total"
+     ORDER BY r."id"
+  `)
+
+  // El total tiene que seguir siendo la suma de las lineas, al costo REAL.
+  // Vale la pena repetirlo aca aunque la migracion lo dejo asi: es la unica
+  // forma de que un INSERT hecho por fuera del servicio se note.
+  const contraLineas = await buscar(`
+    SELECT r."id"::text                       AS id,
+           o."number"                         AS orden,
+           r."total"::numeric(14,2)::text     AS total,
+           COALESCE(sum(round(i."receivedQuantity" * i."unitCost", 2)), 0)::numeric(14,2)::text
+                                              AS lineas
+      FROM "PurchaseReceipt" r
+      JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
+      LEFT JOIN "PurchaseReceiptItem" i ON i."purchaseReceiptId" = r."id"
+     GROUP BY r."id", o."number", r."total"
+    HAVING r."total" <> COALESCE(sum(round(i."receivedQuantity" * i."unitCost", 2)), 0)
+     ORDER BY r."id"
+  `)
+
+  return {
+    nombre: 'Deuda por recepción',
+    revisadas,
+    inconsistencias: [
+      ...desalineadas.map((f): Inconsistencia => ({
+        entidad: `Recepción #${String(f.id)} — ${String(f.orden)}`,
+        regla: 'marcada como registrada <=> tiene exactamente un cargo',
+        esperado: f.marcada === 'true' ? '1 cargo' : 'ningun cargo',
+        encontrado: `${String(f.cargos)} cargo(s), marcada=${String(f.marcada)}`,
+        diferencia: null,
+      })),
+      ...importes.map((f): Inconsistencia => ({
+        entidad: `Recepción #${String(f.id)} — ${String(f.orden)}`,
+        regla: 'el cargo vale lo que costo la entrega',
+        esperado: String(f.total),
+        encontrado: String(f.cargo),
+        diferencia: restar(String(f.cargo), String(f.total)),
+      })),
+      ...contraLineas.map((f): Inconsistencia => ({
+        entidad: `Recepción #${String(f.id)} — ${String(f.orden)}`,
+        regla: 'importe = suma de las lineas al costo real',
+        esperado: String(f.lineas),
+        encontrado: String(f.total),
+        diferencia: restar(String(f.total), String(f.lineas)),
+      })),
+    ],
+  }
+}
+
+/**
+ * Todo pago a proveedor genero exactamente un movimiento, y la caja acompana.
+ *
+ * Tres reglas, el espejo exacto de las de cobranza:
+ *
+ *   1. cada `SupplierPayment` tiene UN movimiento `PAYMENT`;
+ *   2. ese movimiento vale `-amount`;
+ *   3. si se pago en efectivo hay egreso de caja por `-amount`, y si NO se pago
+ *      en efectivo no hay ninguno.
+ *
+ * La 3 es la del objetivo 15, y la parte que mas se confunde en la practica:
+ * una transferencia baja la deuda y NO baja el cajon. La union es por
+ * `supplierPaymentId`, la clave foranea, y no por el numero de comprobante
+ * dentro de `description`.
+ */
+export async function pagosAProveedoresContraElLibro(): Promise<Comprobacion> {
+  const revisadas = await contar('SELECT count(*)::bigint AS n FROM "SupplierPayment"')
+
+  const contraLibro = await buscar(`
+    SELECT p."number"                                        AS numero,
+           p."amount"::numeric(14,2)::text                    AS pagado,
+           COALESCE(sum(m."amount"), 0)::numeric(14,2)::text  AS movido,
+           count(m."id")::text                                AS cuantos
+      FROM "SupplierPayment" p
+      LEFT JOIN "SupplierAccountMovement" m
+             ON m."paymentId" = p."id" AND m."type" = 'PAYMENT'
+     GROUP BY p."id", p."number", p."amount"
+    HAVING count(m."id") <> 1
+        OR COALESCE(sum(m."amount"), 0) <> -p."amount"
+     ORDER BY p."number"
+  `)
+
+  const contraCaja = await buscar(`
+    SELECT p."number"                                         AS numero,
+           (-p."amount")::numeric(14,2)::text                  AS esperado,
+           COALESCE(sum(cm."amount"), 0)::numeric(14,2)::text  AS "enCaja"
+      FROM "SupplierPayment" p
+      LEFT JOIN "CashRegisterMovement" cm ON cm."supplierPaymentId" = p."id"
+     WHERE p."method" = 'CASH'
+     GROUP BY p."id", p."number", p."amount"
+    HAVING -p."amount" <> COALESCE(sum(cm."amount"), 0)
+     ORDER BY p."number"
+  `)
+
+  const noEfectivoEnCaja = await buscar(`
+    SELECT p."number" AS numero,
+           p."method" AS medio
+      FROM "SupplierPayment" p
+     WHERE p."method" <> 'CASH'
+       AND EXISTS (
+         SELECT 1 FROM "CashRegisterMovement" cm WHERE cm."supplierPaymentId" = p."id"
+       )
+     ORDER BY p."number"
+  `)
+
+  return {
+    nombre: 'Pagos a proveedores',
+    revisadas,
+    inconsistencias: [
+      ...contraLibro.map((f): Inconsistencia => ({
+        entidad: `Pago ${String(f.numero)}`,
+        regla: 'todo pago deja un movimiento de cuenta por el mismo importe, en negativo',
+        esperado: `-${String(f.pagado)} en 1 movimiento`,
+        encontrado: `${String(f.movido)} en ${String(f.cuantos)}`,
+        diferencia: null,
+      })),
+      ...contraCaja.map((f): Inconsistencia => ({
+        entidad: `Pago ${String(f.numero)}`,
+        regla: 'un pago en efectivo sale del cajon',
+        esperado: String(f.esperado),
+        encontrado: String(f.enCaja),
+        diferencia: restar(String(f.enCaja), String(f.esperado)),
+      })),
+      ...noEfectivoEnCaja.map((f): Inconsistencia => ({
+        entidad: `Pago ${String(f.numero)}`,
+        regla: 'un pago que no es en efectivo NO sale del cajon',
+        esperado: 'ningun movimiento de caja',
+        encontrado: `movimiento de caja con medio ${String(f.medio)}`,
+        diferencia: null,
+      })),
+    ],
+  }
+}
+
+/**
+ * Nadie imputa mas de lo que hay.
+ *
+ * Dos reglas, y ninguna es una IGUALDAD:
+ *
+ *   suma(imputaciones de un pago)       <=  el importe del pago
+ *   suma(imputaciones de una recepcion) <=  el importe de la obligacion
+ *
+ * Que sean desigualdades es el punto: sobre-imputar es imposible, sub-imputar
+ * es legitimo. Un pago puede quedar parcialmente sin imputar --un anticipo, o
+ * plata que sobro despues de cubrir todo lo pendiente-- y eso no es un
+ * descuadre: el saldo lo lleva el libro, no la imputacion. Ver
+ * docs/SUPPLIER_PAYMENT_ALLOCATION.md.
+ *
+ * La segunda es la que cierra el cuarto caso de concurrencia del objetivo 34:
+ * dos pagos simultaneos que juntos cancelaran dos veces el mismo importe
+ * pendiente apareceria aca.
+ */
+export async function imputacionesContraSusTopes(): Promise<Comprobacion> {
+  const revisadas = await contar('SELECT count(*)::bigint AS n FROM "SupplierPaymentAllocation"')
+
+  const sobrePago = await buscar(`
+    SELECT p."number"                                        AS numero,
+           p."amount"::numeric(14,2)::text                    AS pago,
+           COALESCE(sum(a."amount"), 0)::numeric(14,2)::text  AS imputado
+      FROM "SupplierPayment" p
+      JOIN "SupplierPaymentAllocation" a ON a."paymentId" = p."id"
+     GROUP BY p."id", p."number", p."amount"
+    HAVING sum(a."amount") > p."amount"
+     ORDER BY p."number"
+  `)
+
+  const sobreObligacion = await buscar(`
+    SELECT r."id"::text                                      AS id,
+           o."number"                                        AS orden,
+           r."total"::numeric(14,2)::text                     AS total,
+           COALESCE(sum(a."amount"), 0)::numeric(14,2)::text  AS imputado
+      FROM "PurchaseReceipt" r
+      JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
+      JOIN "SupplierPaymentAllocation" a ON a."receiptId" = r."id"
+     GROUP BY r."id", o."number", r."total"
+    HAVING sum(a."amount") > r."total"
+     ORDER BY r."id"
+  `)
+
+  // Una imputacion contra una entrega que NUNCA entro al libro no significa
+  // nada: seria plata aplicada a una obligacion que el sistema no reconoce.
+  const sinObligacion = await buscar(`
+    SELECT a."id"::text  AS id,
+           p."number"    AS numero,
+           r."id"::text  AS "receiptId"
+      FROM "SupplierPaymentAllocation" a
+      JOIN "SupplierPayment" p ON p."id" = a."paymentId"
+      JOIN "PurchaseReceipt" r ON r."id" = a."receiptId"
+     WHERE r."debtRecorded" = false
+     ORDER BY a."id"
+  `)
+
+  return {
+    nombre: 'Imputaciones',
+    revisadas,
+    inconsistencias: [
+      ...sobrePago.map((f): Inconsistencia => ({
+        entidad: `Pago ${String(f.numero)}`,
+        regla: 'lo imputado no supera el importe del pago',
+        esperado: `<= ${String(f.pago)}`,
+        encontrado: String(f.imputado),
+        diferencia: restar(String(f.imputado), String(f.pago)),
+      })),
+      ...sobreObligacion.map((f): Inconsistencia => ({
+        entidad: `Recepción #${String(f.id)} — ${String(f.orden)}`,
+        regla: 'lo imputado a una entrega no supera lo que costo',
+        esperado: `<= ${String(f.total)}`,
+        encontrado: String(f.imputado),
+        diferencia: restar(String(f.imputado), String(f.total)),
+      })),
+      ...sinObligacion.map((f): Inconsistencia => ({
+        entidad: `Imputación #${String(f.id)} — ${String(f.numero)}`,
+        regla: 'toda imputacion apunta a una entrega que entro al libro',
+        esperado: 'entrega con deuda registrada',
+        encontrado: `recepción #${String(f.receiptId)} sin deuda registrada`,
+        diferencia: null,
+      })),
+    ],
+  }
+}
+
 /** Todas las comprobaciones, en el orden en que se informan. */
 export const COMPROBACIONES: Array<() => Promise<Comprobacion>> = [
   ventasContraSusLineas,
@@ -1049,4 +1417,8 @@ export const COMPROBACIONES: Array<() => Promise<Comprobacion>> = [
   ventasACuentaContraElLibro,
   pagosDeClientesContraElLibro,
   anulacionesContraLaCuenta,
+  proveedoresContraSuLibro,
+  recepcionesContraLaDeuda,
+  pagosAProveedoresContraElLibro,
+  imputacionesContraSusTopes,
 ]

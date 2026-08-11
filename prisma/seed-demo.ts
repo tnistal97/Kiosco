@@ -107,6 +107,63 @@ async function moverStock(m: {
   })
 }
 
+/**
+ * Mueve la cuenta de un proveedor, igual que `applySupplierAccountMovement`.
+ *
+ * Hace exactamente lo mismo que el servicio y en el mismo orden: lee el saldo,
+ * lo mueve, y escribe la fila del libro con el anterior y el resultante. Si el
+ * seed se apartara, la reconciliacion lo marcaria --que es la unica forma de
+ * que un seed sirva para probar algo--.
+ *
+ * No se llama al servicio de verdad porque el seed no tiene sesion HTTP y usa
+ * su propio `PrismaClient`; lo que se copia es la regla, no el codigo.
+ *
+ * Ver docs/SUPPLIER_ACCOUNT_LEDGER.md.
+ */
+async function moverCuentaDeProveedor(m: {
+  /** La sucursal DESDE LA QUE se opero. Informativa, pero no puede ser falsa. */
+  branchId: number
+  supplierId: number
+  type: 'PURCHASE_CHARGE' | 'PAYMENT' | 'PURCHASE_CREDIT' | 'MANUAL_ADJUSTMENT'
+  /** CON SIGNO. Positivo aumenta lo que le debemos. */
+  monto: number
+  userId: number
+  receiptId?: number
+  paymentId?: number
+  reason?: string
+  reference?: string
+  fecha: Date
+}): Promise<void> {
+  const proveedor = await prisma.supplier.findUniqueOrThrow({
+    where: { id: m.supplierId },
+    select: { balance: true },
+  })
+  const antes = proveedor.balance
+  const despues = antes.plus(m.monto)
+
+  await prisma.supplier.update({
+    where: { id: m.supplierId },
+    data: { balance: despues },
+  })
+
+  await prisma.supplierAccountMovement.create({
+    data: {
+      branchId: m.branchId,
+      supplierId: m.supplierId,
+      type: m.type,
+      amount: m.monto,
+      previousBalance: antes,
+      resultingBalance: despues,
+      receiptId: m.receiptId ?? null,
+      paymentId: m.paymentId ?? null,
+      userId: m.userId,
+      reason: m.reason ?? null,
+      reference: m.reference ?? null,
+      createdAt: m.fecha,
+    },
+  })
+}
+
 type SemillaProducto = {
   nombre: string
   barcode: string
@@ -168,6 +225,11 @@ const PROVEEDORES = [
     contactName: 'Julio',
     phone: '11-4321-7788',
     email: 'ventas@andinas.example',
+    // Es el proveedor del circuito de compras de la demostracion, y el unico
+    // con plazo pactado: 30 dias. Con esto las entregas nacen con vencimiento y
+    // la pantalla de cuentas por pagar muestra algo. Los demas quedan en NULL,
+    // que es la verdad de casi todos: nadie declaro el plazo.
+    defaultPaymentTermDays: 30,
   },
   { name: 'Lacteos La Pradera', contactName: 'Don Alberto', phone: '11-6789-1234' },
   {
@@ -335,6 +397,14 @@ async function main() {
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "CustomerAccountMovement" CASCADE')
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "CustomerPayment" CASCADE')
   await prisma.$executeRawUnsafe('ALTER SEQUENCE "CustomerPayment_numero_seq" RESTART WITH 1')
+
+  // Y el libro de proveedores, con la misma precaucion: las tres tablas de la
+  // Fase 4B tienen disparador de inmutabilidad. El orden importa --las
+  // imputaciones referencian a los pagos-- aunque CASCADE lo resolveria igual.
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "SupplierPaymentAllocation" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "SupplierAccountMovement" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "SupplierPayment" CASCADE')
+  await prisma.$executeRawUnsafe('ALTER SEQUENCE "SupplierPayment_numero_seq" RESTART WITH 1')
 
   await prisma.stockCheck.deleteMany()
   await prisma.saleItem.deleteMany()
@@ -620,6 +690,13 @@ async function main() {
       cuando: Date,
       nota: string,
     ): Promise<void> {
+      // El importe de la obligacion, al costo REAL. Se calcula ANTES de crear
+      // la cabecera porque la fila es inmutable: `total` va en el INSERT.
+      const totalDeLaEntrega = entregas.reduce(
+        (acc, e) => acc + Math.round(e.cantidad * e.costo * 100) / 100,
+        0,
+      )
+
       const recepcion = await prisma.purchaseReceipt.create({
         data: {
           purchaseOrderId: orden.id,
@@ -627,7 +704,26 @@ async function main() {
           receivedById: compradorId,
           receivedAt: cuando,
           notes: nota,
+          total: totalDeLaEntrega,
+          // 30 dias desde la entrega, que es el plazo del proveedor de la
+          // demostracion. Congelado, como en el servicio.
+          dueDate: new Date(cuando.getTime() + 30 * 24 * 60 * 60 * 1000),
+          debtRecorded: true,
         },
+      })
+
+      // Y la deuda. En la DEMOSTRACION si se crea --el objetivo 36 dice "para
+      // demo/tests si crear datos explicitos"-- porque aca la deuda es
+      // inventada a proposito y se sabe. En produccion la migracion no genera
+      // ninguna: una entrega de hace seis meses casi con seguridad ya se pago.
+      await moverCuentaDeProveedor({
+        branchId: sucursal.id,
+        supplierId: proveedorCompra,
+        type: 'PURCHASE_CHARGE',
+        monto: totalDeLaEntrega,
+        userId: compradorId,
+        receiptId: recepcion.id,
+        fecha: cuando,
       })
 
       for (const e of entregas) {
@@ -718,6 +814,58 @@ async function main() {
       await prisma.purchaseOrder.update({
         where: { id: orden.id },
         data: { status: 'RECEIVED' },
+      })
+
+      // Y UN PAGO PARCIAL, por transferencia. Fase 4B.
+      //
+      // Parcial a proposito: asi la pantalla de cuentas por pagar muestra los
+      // tres estados a la vez --una entrega saldada, una a medias y el saldo
+      // pendiente-- sin que haya que tocar nada. Y por transferencia, que es lo
+      // normal con un proveedor y ademas deja ver la regla que mas se confunde:
+      // baja la deuda y NO baja el cajon.
+      const primeraEntrega = await prisma.purchaseReceipt.findFirstOrThrow({
+        where: { purchaseOrderId: orden.id },
+        orderBy: { id: 'asc' },
+        select: { id: true, total: true },
+      })
+
+      const pago = await prisma.supplierPayment.create({
+        data: {
+          number: `PP-${String(1).padStart(8, '0')}`,
+          branchId: sucursal.id,
+          supplierId: proveedorCompra,
+          amount: primeraEntrega.total,
+          method: 'TRANSFER',
+          paidById: compradorId,
+          paidAt: haceDias(2),
+          reference: 'Transferencia 0044-19822',
+          notes: 'A cuenta de la entrega del lunes.',
+          createdAt: haceDias(2),
+        },
+      })
+      // La secuencia tiene que quedar donde termino el numero escrito a mano, o
+      // el primer pago real desde la pantalla chocaria contra el indice unico.
+      // Es el error que la Fase 4A cometio con los recibos y encontro el E2E.
+      await prisma.$executeRawUnsafe(`SELECT setval('"SupplierPayment_numero_seq"', 1, true)`)
+
+      await moverCuentaDeProveedor({
+        branchId: sucursal.id,
+        supplierId: proveedorCompra,
+        type: 'PAYMENT',
+        monto: -Number(primeraEntrega.total),
+        userId: compradorId,
+        paymentId: pago.id,
+        fecha: haceDias(2),
+      })
+
+      // La imputacion: este pago cancela ESA entrega, entera.
+      await prisma.supplierPaymentAllocation.create({
+        data: {
+          paymentId: pago.id,
+          receiptId: primeraEntrega.id,
+          amount: primeraEntrega.total,
+          createdAt: haceDias(2),
+        },
       })
     }
   }

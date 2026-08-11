@@ -39,6 +39,20 @@ export const TABLAS_AUDITADAS = [
   'Client',
   'CustomerAccountMovement',
   'CustomerPayment',
+  // Cuentas por pagar. Fase 4B, y el mismo reparto de responsabilidades: el
+  // libro es la historia financiera; la bitacora es quien hizo la accion.
+  //
+  // `SupplierAccountMovement` figura por DOS casos --la nota de credito y el
+  // ajuste manual--, que son los unicos movimientos sin una entrega ni un pago
+  // detras. El cargo de una recepcion NO se audita aparte: ya se audita la
+  // recepcion entera, con el importe, el vencimiento y los dos saldos adentro.
+  //
+  // Lo agrego la prueba `auditoria-coherente`, que compara lo que se audita
+  // contra lo que se puede filtrar. Sin ella los dos eventos habrian quedado
+  // escritos y sin forma de buscarlos, que es exactamente lo que le paso a
+  // compras en la Fase 3C.
+  'SupplierAccountMovement',
+  'SupplierPayment',
   'Authorization',
 ] as const
 

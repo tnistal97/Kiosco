@@ -145,6 +145,26 @@ async function huella(url: string): Promise<string> {
       UNION ALL
       SELECT 'CustomerPayment', count(*)::text, COALESCE(sum("amount"), 0)::text
         FROM "CustomerPayment"
+      UNION ALL
+      -- Y las cuentas por pagar, desde la Fase 4B, por el mismo motivo del otro
+      -- lado del mostrador: sin estas cuatro, un respaldo que perdiera el libro
+      -- de proveedores se restauraria y la comparacion diria que todo esta
+      -- bien, con la deuda del negocio desaparecida y sin que nada avisara.
+      --
+      -- De Supplier se suma el SALDO y no el precio de nada: es el numero que
+      -- tiene que sobrevivir. Y las imputaciones entran porque son lo unico que
+      -- dice QUE entrega cancelo cada pago; perderlas deja los saldos intactos
+      -- y la trazabilidad en cero, que es un dano que ningun total delataria.
+      SELECT 'Supplier', count(*)::text, COALESCE(sum("balance"), 0)::text FROM "Supplier"
+      UNION ALL
+      SELECT 'SupplierAccountMovement', count(*)::text, COALESCE(sum("amount"), 0)::text
+        FROM "SupplierAccountMovement"
+      UNION ALL
+      SELECT 'SupplierPayment', count(*)::text, COALESCE(sum("amount"), 0)::text
+        FROM "SupplierPayment"
+      UNION ALL
+      SELECT 'SupplierPaymentAllocation', count(*)::text, COALESCE(sum("amount"), 0)::text
+        FROM "SupplierPaymentAllocation"
       ORDER BY 1
     `)
     return rows.map((r) => `${r.tabla}: ${r.filas} filas, suma ${r.suma}`).join('\n')
