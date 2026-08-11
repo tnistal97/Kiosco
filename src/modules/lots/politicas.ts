@@ -132,12 +132,12 @@ const ETIQUETAS_DE_ESTADO: Record<EstadoDeVencimiento, string> = {
  * La etiqueta ya dice "VENCIDO" en letras: quien no distingue el rojo del verde
  * --y quien mira la pantalla en un deposito con mala luz-- lee lo mismo.
  */
-const TONOS: Record<EstadoDeVencimiento, 'danger' | 'warning' | 'neutral' | 'ok'> = {
+const TONOS: Record<EstadoDeVencimiento, 'danger' | 'warning' | 'neutral' | 'success'> = {
   VENCIDO: 'danger',
   VENCE_HOY: 'danger',
   SIETE_DIAS: 'warning',
   TREINTA_DIAS: 'warning',
-  OK: 'ok',
+  OK: 'success',
   SIN_FECHA: 'neutral',
 }
 
@@ -147,7 +147,7 @@ export function etiquetaDeVencimiento(estado: EstadoDeVencimiento): string {
 
 export function tonoDeVencimiento(
   estado: EstadoDeVencimiento,
-): 'danger' | 'warning' | 'neutral' | 'ok' {
+): 'danger' | 'warning' | 'neutral' | 'success' {
   return TONOS[estado]
 }
 

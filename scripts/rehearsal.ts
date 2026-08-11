@@ -180,6 +180,46 @@ async function huella(url: string): Promise<string> {
       UNION ALL
       SELECT 'PurchaseReturnItem', count(*)::text, COALESCE(sum("quantity"), 0)::text
         FROM "PurchaseReturnItem"
+      UNION ALL
+      -- Y los lotes, desde la Fase 4D. Entran las SEIS tablas y no solo el
+      -- stock por lote, porque cada una contesta una pregunta que las otras no:
+      --
+      --   ProductLot              que partidas existen y cuando vencen
+      --   BranchLotStock          cuanto hay de cada una, donde
+      --   LotAssignment           que stock se atribuyo sin que entrara nada
+      --   PurchaseReceiptItemLot  con que partidas llego cada entrega
+      --   SaleItemLotAllocation   de que partidas salio cada venta
+      --   InventoryCount*         que se conto y que diferencia se aplico
+      --
+      -- Sin las cuatro ultimas, un respaldo que perdiera la trazabilidad se
+      -- restauraria con los saldos intactos y la comparacion diria que todo esta
+      -- bien: el stock por lote seguiria ahi y nadie podria decir de donde vino
+      -- ni a donde fue. Es el mismo dano que la Fase 4B senialo con las
+      -- imputaciones de pagos.
+      --
+      -- De ProductLot se cuenta la cantidad de partidas y se suma cero: no tiene
+      -- ningun numero propio que valga la pena sumar --su cantidad vive en
+      -- BranchLotStock-- y contar las filas ya delata la perdida.
+      SELECT 'ProductLot', count(*)::text, '0' FROM "ProductLot"
+      UNION ALL
+      SELECT 'BranchLotStock', count(*)::text, COALESCE(sum("quantity"), 0)::text
+        FROM "BranchLotStock"
+      UNION ALL
+      SELECT 'LotAssignment', count(*)::text, COALESCE(sum("quantity"), 0)::text
+        FROM "LotAssignment"
+      UNION ALL
+      SELECT 'PurchaseReceiptItemLot', count(*)::text,
+             COALESCE(sum("stockQuantity"), 0)::text FROM "PurchaseReceiptItemLot"
+      UNION ALL
+      SELECT 'SaleItemLotAllocation', count(*)::text, COALESCE(sum("quantity"), 0)::text
+        FROM "SaleItemLotAllocation"
+      UNION ALL
+      SELECT 'InventoryCountSession', count(*)::text, '0' FROM "InventoryCountSession"
+      UNION ALL
+      -- De las lineas se suma la DIFERENCIA: es el numero que se convirtio en
+      -- movimientos de stock, y el que la reconciliacion compara contra ellos.
+      SELECT 'InventoryCountLine', count(*)::text, COALESCE(sum("variance"), 0)::text
+        FROM "InventoryCountLine"
       ORDER BY 1
     `)
     return rows.map((r) => `${r.tabla}: ${r.filas} filas, suma ${r.suma}`).join('\n')

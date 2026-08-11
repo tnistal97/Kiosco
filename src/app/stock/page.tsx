@@ -116,6 +116,12 @@ export default function StockPage() {
 
       {puedeVerMovimientos && (
         <div className="flex justify-end">
+          <ButtonLink href="/stock/lotes" variant="secondary" size="sm">
+            Lotes
+          </ButtonLink>
+          <ButtonLink href="/inventarios" variant="secondary" size="sm">
+            Inventarios
+          </ButtonLink>
           <ButtonLink href="/stock/movimientos" variant="secondary" size="sm">
             Ver movimientos
           </ButtonLink>

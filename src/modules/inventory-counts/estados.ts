@@ -25,19 +25,22 @@ const ETIQUETAS: Record<EstadoDeInventario, string> = {
   CANCELLED: 'Cancelado',
 }
 
-const TONOS: Record<EstadoDeInventario, 'neutral' | 'info' | 'warning' | 'ok' | 'danger'> = {
-  DRAFT: 'neutral',
-  COUNTING: 'info',
-  REVIEW: 'warning',
-  APPLIED: 'ok',
-  CANCELLED: 'danger',
-}
+const TONOS: Record<EstadoDeInventario, 'neutral' | 'primary' | 'warning' | 'success' | 'danger'> =
+  {
+    DRAFT: 'neutral',
+    COUNTING: 'primary',
+    REVIEW: 'warning',
+    APPLIED: 'success',
+    CANCELLED: 'danger',
+  }
 
 export function etiquetaDeEstado(estado: string): string {
   return esEstadoValido(estado) ? ETIQUETAS[estado] : estado
 }
 
-export function tonoDeEstado(estado: string): 'neutral' | 'info' | 'warning' | 'ok' | 'danger' {
+export function tonoDeEstado(
+  estado: string,
+): 'neutral' | 'primary' | 'warning' | 'success' | 'danger' {
   return esEstadoValido(estado) ? TONOS[estado] : 'neutral'
 }
 

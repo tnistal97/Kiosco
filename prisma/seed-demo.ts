@@ -1795,6 +1795,181 @@ async function main() {
 
   await prisma.branch.update({ where: { id: sucursal.id }, data: { currentCash: caja } })
 
+  // -------------------------------------------------------------------------
+  // Lotes y vencimientos. Fase 4D.
+  //
+  // Las fechas son RELATIVAS a hoy y no literales: la base de demostracion se
+  // regenera cada tanto, y un vencimiento fijo dejaria todo vencido a los tres
+  // meses. Lo que hay que poder ver son los CINCO estados funcionando.
+  //
+  // El stock NO cambia: las partidas se atribuyen al stock que ya esta, con
+  // `LotAssignment`, que es exactamente lo que hace el flujo real al activar el
+  // rastreo sobre un producto que ya tiene unidades. Fabricar movimientos de
+  // entrada aca dejaria el libro contando mercaderia que nunca llego.
+  // -------------------------------------------------------------------------
+  async function partida(
+    productId: number,
+    code: string,
+    vence: string | null,
+    cantidad: number,
+  ): Promise<number> {
+    const lote = await prisma.productLot.create({
+      data: {
+        productId,
+        code,
+        codeNormalized: code.toUpperCase(),
+        expirationDate: vence === null ? null : new Date(`${vence}T00:00:00.000Z`),
+        createdById: adminId,
+      },
+      select: { id: true },
+    })
+    await prisma.branchLotStock.create({
+      data: { branchId: sucursal.id, lotId: lote.id, quantity: cantidad },
+    })
+    await prisma.lotAssignment.create({
+      data: {
+        branchId: sucursal.id,
+        productId,
+        lotId: lote.id,
+        quantity: cantidad,
+        reason: 'Inicialización del seguimiento por lote',
+        userId: adminId,
+        createdAt: haceDias(2),
+      },
+    })
+    return lote.id
+  }
+
+  /** `YYYY-MM-DD` a `dias` de hoy. Fecha de calendario, nunca un instante. */
+  function enDias(dias: number): string {
+    const d = new Date()
+    d.setUTCDate(d.getUTCDate() + dias)
+    return d.toISOString().slice(0, 10)
+  }
+
+  const yogur = await prisma.product.findFirstOrThrow({
+    where: { branchId: sucursal.id, name: { startsWith: 'Yogur' } },
+    select: { id: true },
+  })
+  const stockYogur = await prisma.branchStock.findUniqueOrThrow({
+    where: { branchId_productId: { branchId: sucursal.id, productId: yogur.id } },
+    select: { quantity: true },
+  })
+
+  // Las dos partidas del pedido, y la suma es EXACTAMENTE el stock del producto:
+  // sin eso, `REQUIRED` no se puede activar --y con razon, porque dejaria
+  // unidades que el sistema no puede explicar--.
+  const enSieteDias = Math.min(6, Number(stockYogur.quantity))
+  const enUnMes = Number(stockYogur.quantity) - enSieteDias
+  await partida(yogur.id, 'YG-260801', enDias(7), enSieteDias)
+  if (enUnMes > 0) await partida(yogur.id, 'YG-260807', enDias(25), enUnMes)
+
+  await prisma.product.update({
+    where: { id: yogur.id },
+    data: { lotTracking: 'REQUIRED', expirationTracking: 'REQUIRED' },
+  })
+
+  // La leche: partidas OPCIONALES, con una VENCIDA y otra que vence hoy. Es el
+  // caso que muestra los dos estados rojos y, sobre todo, la diferencia entre
+  // "disponible" y "vendible": la vencida ocupa stock y no se vende.
+  const leche = await prisma.product.findFirstOrThrow({
+    where: { branchId: sucursal.id, name: { startsWith: 'Leche' } },
+    select: { id: true },
+  })
+  await partida(leche.id, 'LP-2510', enDias(-3), 4)
+  await partida(leche.id, 'LP-2604', enDias(0), 6)
+  await prisma.product.update({
+    where: { id: leche.id },
+    data: { lotTracking: 'OPTIONAL', expirationTracking: 'OPTIONAL' },
+  })
+
+  // La lavandina: partida SIN vencimiento. Es el caso que justifica que las dos
+  // politicas sean dos banderas y no una --numero de partida para poder
+  // retirarla, sin fecha que inventar--.
+  const lavandina = await prisma.product.findFirstOrThrow({
+    where: { branchId: sucursal.id, name: { startsWith: 'Lavandina' } },
+    select: { id: true },
+  })
+  await partida(lavandina.id, 'LV-A7734', null, 10)
+  await prisma.product.update({
+    where: { id: lavandina.id },
+    data: { lotTracking: 'OPTIONAL', expirationTracking: 'NONE' },
+  })
+
+  // Un inventario fisico APLICADO, con una diferencia de una unidad. Es el
+  // historial que la pantalla necesita para no abrir vacia, y el que la
+  // reconciliacion de la Fase 4D comprueba contra sus movimientos.
+  const contado = await prisma.product.findFirstOrThrow({
+    where: { branchId: sucursal.id, name: { startsWith: 'Fideos' } },
+    select: { id: true },
+  })
+  const stockContado = await prisma.branchStock.findUniqueOrThrow({
+    where: { branchId_productId: { branchId: sucursal.id, productId: contado.id } },
+    select: { quantity: true },
+  })
+
+  const numeroDeInventario = await prisma.$queryRaw<Array<{ n: bigint }>>`
+    SELECT nextval('"InventoryCountSession_numero_seq"') AS n
+  `
+  const inventario = await prisma.inventoryCountSession.create({
+    data: {
+      number: `IF-${String(numeroDeInventario[0]?.n ?? 1).padStart(8, '0')}`,
+      branchId: sucursal.id,
+      status: 'APPLIED',
+      scope: 'SELECTION',
+      blindCount: true,
+      notes: 'Recuento de la góndola de secos',
+      startedById: adminId,
+      startedAt: haceDias(5),
+      completedAt: haceDias(5),
+      appliedById: adminId,
+      appliedAt: haceDias(5),
+    },
+    select: { id: true, number: true },
+  })
+
+  // La diferencia: el conteo encontro una unidad menos de la que el sistema
+  // esperaba. Los tres numeros del movimiento y los tres de la linea tienen que
+  // concordar --hay un CHECK para cada trio-- y el saldo final tiene que quedar
+  // en lo contado.
+  const antesDelConteo = Number(stockContado.quantity)
+  await prisma.inventoryCountLine.create({
+    data: {
+      sessionId: inventario.id,
+      productId: contado.id,
+      lotId: null,
+      status: 'COUNTED',
+      snapshotQuantity: antesDelConteo,
+      countedQuantity: antesDelConteo - 1,
+      expectedAtCount: antesDelConteo,
+      variance: -1,
+      countedById: adminId,
+      countedAt: haceDias(5),
+      notes: 'Faltaba un paquete en la góndola',
+    },
+  })
+  await prisma.stockMovement.create({
+    data: {
+      branchId: sucursal.id,
+      productId: contado.id,
+      type: 'INVENTORY_COUNT',
+      quantity: -1,
+      previousQuantity: antesDelConteo,
+      resultingQuantity: antesDelConteo - 1,
+      userId: adminId,
+      reason: `Inventario físico ${inventario.number}`,
+      referenceType: 'InventoryCountSession',
+      referenceId: inventario.id,
+      createdAt: haceDias(5),
+    },
+  })
+  // El saldo del producto tiene que reflejar la correccion: la fila del libro
+  // dice que bajo una unidad, y el stock materializado tiene que decir lo mismo.
+  await prisma.branchStock.update({
+    where: { branchId_productId: { branchId: sucursal.id, productId: contado.id } },
+    data: { quantity: { decrement: 1 } },
+  })
+
   const totalProductos = await prisma.product.count()
   const totalVentas = await prisma.sale.count()
   const totalClientes = await prisma.client.count()
