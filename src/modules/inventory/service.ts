@@ -45,6 +45,8 @@ import { SIGNO_DE_TIPO, esTipoValido, etiquetaDeTipo, type TipoMovimiento } from
 import type { Referencia } from './referencias'
 import type { ConsultarMovimientosQuery } from './schemas'
 import { finDelDia, inicioDelDia, zonaDeSucursal } from '@/server/tiempo'
+import { comoFechaLocal } from '@/modules/lots/fefo'
+import type { FechaLocal } from '@/lib/tiempo'
 
 /** Cliente de una transaccion. El servicio NO acepta el cliente global. */
 export type TxClient = Prisma.TransactionClient
@@ -710,6 +712,16 @@ export interface MovimientoListado {
   product: { id: number; name: string; barcode: string | null; saleUnit: UnidadDeVenta }
   user: { id: number; name: string }
   branch: { id: number; name: string }
+  /**
+   * De que partida movio. Fase 4D.
+   *
+   * `null` significa "sin partida", y es la respuesta correcta en dos casos
+   * distintos: un producto sin rastreo, y uno con rastreo opcional cuyo
+   * movimiento salio del stock no atribuido.
+   */
+  lotId: number | null
+  lotCode: string | null
+  lotExpirationDate: FechaLocal | null
 }
 
 const CAMPOS_MOVIMIENTO = {
@@ -734,6 +746,18 @@ const CAMPOS_MOVIMIENTO = {
   },
   user: { select: { id: true, name: true } },
   branch: { select: { id: true, name: true } },
+  /**
+   * De que partida salio --o entro-- este movimiento. Fase 4D.
+   *
+   * Nulo cuando el producto no lleva lotes, y tambien cuando lleva OPTIONAL y
+   * el movimiento fue sobre el stock sin atribuir. Los dos casos significan lo
+   * mismo en pantalla --"sin partida"-- y ninguno es un error.
+   *
+   * Es la mitad que faltaba del historial: sin esto, el libro dice que salieron
+   * dos yogures y no cual de las dos partidas quedo con menos, que es
+   * exactamente la pregunta que la fase vino a contestar.
+   */
+  lot: { select: { id: true, code: true, expirationDate: true } },
 } as const
 
 /**
@@ -797,7 +821,7 @@ export async function consultarMovimientos(
     }),
   ])
 
-  const data = movimientos.map(({ product, ...m }) => ({
+  const data = movimientos.map(({ product, lot, ...m }) => ({
     ...m,
     typeLabel: etiquetaDeTipo(m.type),
     quantity: aTextoCantidad(m.quantity),
@@ -809,6 +833,10 @@ export async function consultarMovimientos(
       barcode: product.barcodes[0]?.code ?? null,
       saleUnit: unidadDeVentaODefecto(product.saleUnit),
     },
+    // Plano y no anidado: la pantalla muestra una columna, no un objeto.
+    lotId: lot?.id ?? null,
+    lotCode: lot?.code ?? null,
+    lotExpirationDate: comoFechaLocal(lot?.expirationDate ?? null),
   }))
 
   return paginado(data, total, query)

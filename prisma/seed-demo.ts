@@ -422,6 +422,32 @@ async function main() {
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "PurchaseReturn" CASCADE')
   await prisma.$executeRawUnsafe('ALTER SEQUENCE "PurchaseReturn_numero_seq" RESTART WITH 1')
 
+  /*
+    Y los lotes y los inventarios de la Fase 4D.
+
+    ESTO NO ES OPCIONAL Y NO LO CUBRE NINGÚN CASCADE AJENO. `ProductLot` y
+    `LotAssignment` apuntan a `User` con ON DELETE RESTRICT --quién dio de alta
+    la partida y quién atribuyó las unidades son datos que no se pierden-- así
+    que el `deleteMany()` de usuarios de más abajo choca contra la clave
+    foránea y la siembra aborta.
+
+    No se nota la primera vez: sobre una base vacía no hay partidas que
+    referencien a nadie. Se nota en la SEGUNDA siembra, que es justamente la
+    que corre antes de cada tanda de pruebas de extremo a extremo.
+
+    El orden es hijo → padre, y `InventoryCountLine` va antes que su sesión
+    aunque CASCADE lo resolvería: un truncado que depende del CASCADE de otro
+    deja de funcionar el día que alguien reordena el archivo.
+  */
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "InventoryCountLine" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "InventoryCountSession" CASCADE')
+  await prisma.$executeRawUnsafe('ALTER SEQUENCE "InventoryCountSession_numero_seq" RESTART WITH 1')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "SaleItemLotAllocation" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "PurchaseReceiptItemLot" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "LotAssignment" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "BranchLotStock" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "ProductLot" CASCADE')
+
   await prisma.stockCheck.deleteMany()
   await prisma.saleItem.deleteMany()
   await prisma.salePayment.deleteMany()

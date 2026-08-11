@@ -37,6 +37,17 @@ export interface MovimientoDTO {
   product: { id: number; name: string; barcode: string | null; saleUnit: UnidadDeVenta }
   user: { id: number; name: string }
   branch: { id: number; name: string }
+  /**
+   * De que partida movio. Fase 4D.
+   *
+   * `null` es la respuesta correcta en dos casos y no un dato faltante: un
+   * producto sin rastreo, y uno con rastreo opcional cuyo movimiento salio del
+   * stock no atribuido. La pantalla los muestra igual --"—"-- porque en los dos
+   * la respuesta a "de que partida" es "de ninguna".
+   */
+  lotId: number | null
+  lotCode: string | null
+  lotExpirationDate: string | null
 }
 
 export interface PaginaMovimientos {
@@ -76,6 +87,9 @@ export function parseMovimiento(raw: unknown): MovimientoDTO {
     branch: esObjeto(raw.branch)
       ? { id: numero(raw.branch.id), name: texto(raw.branch.name, 'Sucursal') }
       : { id: 0, name: 'Sucursal' },
+    lotId: numeroOpcional(raw.lotId),
+    lotCode: textoOpcional(raw.lotCode),
+    lotExpirationDate: textoOpcional(raw.lotExpirationDate),
   }
 }
 

@@ -295,6 +295,25 @@ export default function MovimientosPage() {
                             </TD>
                             <TD>
                               <p className="font-medium text-ink">{m.product.name}</p>
+                              {/*
+                                La PARTIDA, cuando la hay. Fase 4D.
+
+                                Va bajo el nombre y no en una columna propia
+                                porque la tabla ya tiene siete y en 375 px no
+                                entra una octava. Sin partida no se muestra
+                                nada: un "—" repetido en cada fila de un
+                                catálogo que casi no usa lotes es ruido.
+                              */}
+                              {m.lotCode !== null && (
+                                <p className="font-mono text-xs text-ink-muted">
+                                  {m.lotCode}
+                                  {m.lotExpirationDate !== null && (
+                                    <span className="ml-1 font-sans text-ink-faint">
+                                      vence {m.lotExpirationDate}
+                                    </span>
+                                  )}
+                                </p>
+                              )}
                               {m.product.barcode && (
                                 <p className="font-mono text-xs text-ink-faint">
                                   {m.product.barcode}

@@ -46,6 +46,12 @@ import {
   type TxClient,
 } from '@/modules/inventory/service'
 import { motivoDeLotesInvalidos, resolverLotesRecibidos } from '@/modules/lots/entrada'
+import {
+  politicaDeLoteODefecto,
+  politicaDeVencimientoODefecto,
+  type PoliticaDeLote,
+  type PoliticaDeVencimiento,
+} from '@/modules/lots/politicas'
 import { exigirProveedorActivo } from '@/modules/suppliers/service'
 import { registrarCambioDeCosto } from '@/modules/products/costo'
 import {
@@ -261,7 +267,21 @@ export async function listarOrdenes(
 
 export interface LineaDeOrden {
   id: number
-  product: { id: number; name: string; saleUnit: UnidadDeVenta }
+  product: {
+    id: number
+    name: string
+    saleUnit: UnidadDeVenta
+    /**
+     * La politica de rastreo, para que la pantalla de recepcion sepa si tiene
+     * que pedir partidas. Fase 4D.
+     *
+     * Va en el DTO y no se deduce en el navegador porque el navegador no tiene
+     * de donde deducirla, y pedirla producto por producto seria una consulta
+     * por linea del remito.
+     */
+    lotTracking: PoliticaDeLote
+    expirationTracking: PoliticaDeVencimiento
+  }
   purchaseUnit: UnidadDeCompra
   unitsPerPurchaseUnit: TextoCantidad
   orderedQuantity: TextoCantidad
@@ -469,6 +489,8 @@ export async function obtenerOrden(session: Session, id: number) {
           id: i.product.id,
           name: i.product.name,
           saleUnit: unidadDeVentaODefecto(i.product.saleUnit),
+          lotTracking: politicaDeLoteODefecto(i.product.lotTracking),
+          expirationTracking: politicaDeVencimientoODefecto(i.product.expirationTracking),
         },
         purchaseUnit: unidadDeCompraODefecto(i.purchaseUnit),
         unitsPerPurchaseUnit: aTextoCantidad(i.unitsPerPurchaseUnit),

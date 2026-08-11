@@ -75,12 +75,30 @@ export function Trazabilidad({
   const [error, setError] = useState<string | null>(null)
   const [inicializando, setInicializando] = useState(false)
 
-  const cargar = useCallback(async () => {
-    const d = await apiRequest(`/api/productos/${String(productId)}/lotes`, { parse: comoDesglose })
-    setDesglose(d)
-    setLote(d.lotTracking)
-    setVencimiento(d.expirationTracking)
-  }, [productId])
+  /**
+   * Relee el desglose.
+   *
+   * `conservarEleccion` existe por un caso concreto: después de repartir el
+   * stock, la pantalla vuelve a leer para mostrar que no quedó nada sin
+   * asignar. Si en esa relectura se pisaran las dos políticas con lo que dice
+   * el servidor, la elección que el usuario acababa de hacer --"lotes
+   * obligatorios"-- desaparecería, y el botón de guardar quedaría deshabilitado
+   * porque ya no habría ningún cambio pendiente. Lo encontró la prueba de
+   * extremo a extremo del flujo completo.
+   */
+  const cargar = useCallback(
+    async (conservarEleccion = false) => {
+      const d = await apiRequest(`/api/productos/${String(productId)}/lotes`, {
+        parse: comoDesglose,
+      })
+      setDesglose(d)
+      if (!conservarEleccion) {
+        setLote(d.lotTracking)
+        setVencimiento(d.expirationTracking)
+      }
+    },
+    [productId],
+  )
 
   useEffect(() => {
     void cargar().catch(() => {
@@ -226,7 +244,9 @@ export function Trazabilidad({
         }}
         onHecho={() => {
           setInicializando(false)
-          void cargar()
+          // Conservando la elección: el usuario venía de pedir "obligatorios" y
+          // repartió justamente para poder guardarlo.
+          void cargar(true)
         }}
       />
     </div>
@@ -303,6 +323,27 @@ function DialogoInicializacion({
     setEnviando(true)
     setError(null)
     try {
+      /*
+        PRIMERO, si el producto todavía no admite lotes, se lo pasa a OPCIONAL.
+
+        Un producto `NONE` no puede tener partidas --el servidor lo rechaza con
+        `LOT_NOT_TRACKED`, y con razón: una partida de un producto que no se
+        rastrea es un dato que nadie va a mirar--. Así que el camino
+        `NONE → REQUIRED` no existe de un salto, y no debería: pasa por
+        opcional, que es exactamente lo que es la verdad mientras se reparte
+        --el producto YA admite partidas, todavía no las exige todas--.
+
+        Esto lo encontró la prueba de extremo a extremo del flujo completo: la
+        pantalla dejaba apretar "Asignar" y la asignación fallaba en silencio.
+      */
+      if (desglose.lotTracking === 'NONE') {
+        await apiRequest(`/api/productos/${String(productId)}/lotes`, {
+          method: 'PUT',
+          body: { lotTracking: 'OPTIONAL', expirationTracking: 'NONE' },
+          parse: () => null,
+        })
+      }
+
       // Las partidas se resuelven o se crean POR CODIGO: la mercadería que ya
       // está en el estante trae códigos que el sistema no vio nunca.
       const conId: Array<{ lotId: number; quantity: string }> = []
