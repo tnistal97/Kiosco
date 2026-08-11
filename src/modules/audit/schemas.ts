@@ -68,6 +68,25 @@ export const TABLAS_AUDITADAS = [
   // cuenta ya guardan esos hechos mejor de lo que podria la bitacora.
   'SupplierPaymentAllocation',
   'PurchaseReturn',
+  // Lotes e inventario fisico. Fase 4D.
+  //
+  // `ProductLot` cubre el alta de una partida y la correccion de su
+  // vencimiento, que es el unico campo editable de un lote con historial y la
+  // decision que hay que poder explicar: cambia si la mercaderia se vende o se
+  // tira.
+  //
+  // `LotAssignment` es atribuir stock EXISTENTE a una partida. No mueve
+  // mercaderia --por eso no esta en el libro de inventario-- y por eso mismo es
+  // lo unico que registra quien decidio que esas ocho unidades son de ese lote.
+  //
+  // `InventoryCountSession` cubre los cinco momentos de un inventario: armarlo,
+  // cerrarlo, aplicarlo, cancelarlo y el intento rechazado. Los conteos linea
+  // por linea NO se auditan aparte --serian miles de entradas que dicen lo
+  // mismo que la propia linea, que ya guarda quien conto y cuando-- ni se
+  // duplican los `INVENTORY_COUNT`, que el libro de inventario guarda mejor.
+  'ProductLot',
+  'LotAssignment',
+  'InventoryCountSession',
   'Authorization',
 ] as const
 

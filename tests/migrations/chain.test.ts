@@ -159,6 +159,15 @@ describe('La cadena oficial', () => {
       '20260812110000_phase4c_purchase_returns',
       '20260812120000_phase4c_purchase_return_finance',
       '20260812130000_phase4c_purchase_return_stock',
+      // Fase 4D: lotes, vencimientos e inventario fisico. Cinco migraciones y
+      // no una, separadas POR DOMINIO: el modelo de la partida, su stock, la
+      // compra, la venta y el inventario. Cada una se puede revertir sin tocar
+      // las otras, y su bloque de ROLLBACK aborta si ya hay datos que dependan.
+      '20260813100000_phase4d_product_lots',
+      '20260813110000_phase4d_lot_stock',
+      '20260813120000_phase4d_lot_receiving',
+      '20260813130000_phase4d_lot_sales',
+      '20260813140000_phase4d_inventory_counts',
     ])
   })
 

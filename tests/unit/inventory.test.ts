@@ -187,6 +187,9 @@ describe('Tipos de movimiento', () => {
       INTERNAL_USE: '< 0',
       PURCHASE_RECEIPT: '> 0',
       PURCHASE_RETURN: '< 0',
+      // Los DOS signos, como el ajuste manual: un sobrante contado no es una
+      // perdida negativa. Ver docs/PHYSICAL_INVENTORY.md.
+      INVENTORY_COUNT: '<> 0',
     }
 
     // Se parte por RAMA (`OR`) y no por linea: una rama con cinco tipos no

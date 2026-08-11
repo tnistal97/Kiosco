@@ -424,9 +424,9 @@ describe('Imputaciones', () => {
 // ===========================================================================
 
 describe('El motor entero', () => {
-  it('corre las diecinueve comprobaciones y las nuevas están adentro', async () => {
+  it('corre las veintitrés comprobaciones y las nuevas están adentro', async () => {
     const { COMPROBACIONES } = await import('@/modules/integrity/checks')
-    expect(COMPROBACIONES).toHaveLength(19)
+    expect(COMPROBACIONES).toHaveLength(23)
 
     const nombres = await Promise.all(COMPROBACIONES.map(async (c) => (await c()).nombre))
     expect(nombres).toContain('Devoluciones')
