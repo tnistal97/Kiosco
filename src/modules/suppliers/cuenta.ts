@@ -49,6 +49,14 @@ export interface EntradaDeProveedor {
   receiptId?: number | null
   paymentId?: number | null
   /**
+   * La devolucion que genero este credito. Fase 4C.
+   *
+   * Solo tiene sentido con `PURCHASE_CREDIT` --lo comprueba un CHECK-- y no
+   * puede repetirse: hay un indice unico parcial, asi que un reintento de la
+   * confirmacion choca contra la base y no contra una comprobacion nuestra.
+   */
+  returnId?: number | null
+  /**
    * Quien autoriza dejar el saldo NEGATIVO, es decir pagar de mas.
    *
    * Cuando viene, la comprobacion de sobrepago NO se aplica y el id queda
@@ -228,6 +236,7 @@ export async function applySupplierAccountMovement(
       resultingBalance: saldos.resultante,
       receiptId: entrada.receiptId ?? null,
       paymentId: entrada.paymentId ?? null,
+      returnId: entrada.returnId ?? null,
       userId,
       reason: entrada.reason?.trim() ?? null,
       reference: entrada.reference?.trim() ?? null,

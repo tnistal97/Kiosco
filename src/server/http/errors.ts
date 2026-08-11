@@ -124,6 +124,24 @@ export type ErrorCode =
    * Ver `PurchaseReceipt.debtRecorded`.
    */
   | 'RECEIPT_NOT_TRACKED'
+  // Anticipos y devoluciones a proveedor. Ver docs/PURCHASE_RETURN_FLOW.md.
+  /**
+   * Se quiso imputar mas de lo que le queda disponible a ese pago.
+   *
+   * Distinto de `ALLOCATION_EXCEEDS_PAYMENT`, que mira el reparto de UN pago
+   * contra su propio importe en el momento de registrarlo. Este mira lo que le
+   * queda a un pago YA REGISTRADO, descontando lo que se le imputo antes, y es
+   * el que aparece cuando dos personas reparten el mismo anticipo a la vez.
+   */
+  | 'ALLOCATION_EXCEEDS_AVAILABLE'
+  /** Se quiso devolver mas de lo que entro por esa entrega, o mas de lo que queda. */
+  | 'RETURN_EXCEEDS_RECEIVED'
+  /** La devolucion ya no esta en borrador: no se edita, no se confirma otra vez. */
+  | 'RETURN_NOT_EDITABLE'
+  /** La linea no pertenece a la recepcion que la devolucion dice deshacer. */
+  | 'RETURN_ITEM_MISMATCH'
+  /** Se quiso confirmar una devolucion sin renglones. */
+  | 'RETURN_EMPTY'
 
 /** Forma exacta del cuerpo de error. Compartida con el cliente. */
 export interface ApiErrorBody {

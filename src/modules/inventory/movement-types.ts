@@ -28,6 +28,19 @@ export const TIPOS_MOVIMIENTO = [
    * varias entregas. Ver docs/PURCHASE_RECEIVING.md.
    */
   'PURCHASE_RECEIPT',
+  /**
+   * Mercaderia que vuelve al proveedor. Lo emite la confirmacion de una
+   * devolucion, y NADA MAS: tampoco figura entre los tipos de ajuste manual.
+   *
+   * Tiene tipo propio en vez de ser un ajuste porque un ajuste diria que faltan
+   * ocho unidades, y esto dice que ocho unidades volvieron al proveedor. Esa
+   * diferencia es el unico dato que despues permite preguntar cuanto se devolvio
+   * en el trimestre y separarlo de lo que se perdio --el mismo motivo por el que
+   * `LOSS` y `BREAKAGE` no son el mismo tipo--.
+   *
+   * Su referencia apunta a la DEVOLUCION. Ver docs/PURCHASE_RETURN_FLOW.md.
+   */
+  'PURCHASE_RETURN',
 ] as const
 
 export type TipoMovimiento = (typeof TIPOS_MOVIMIENTO)[number]
@@ -58,15 +71,17 @@ export const SIGNO_DE_TIPO: Record<TipoMovimiento, 'entra' | 'sale' | 'ambos'> =
   BREAKAGE: 'sale',
   INTERNAL_USE: 'sale',
   PURCHASE_RECEIPT: 'entra',
+  PURCHASE_RETURN: 'sale',
 }
 
 /**
  * Tipos que un ajuste manual puede declarar.
  *
  * Subconjunto a proposito: `SALE` y `SALE_CANCEL` los emite la venta,
- * `INITIAL` la migracion y `PURCHASE_RECEIPT` la recepcion de una compra. Si
- * esta lista aceptara cualquier tipo, cualquiera podria escribir una venta
- * falsa --o una entrada de mercaderia sin compra-- desde la pantalla de
+ * `INITIAL` la migracion, `PURCHASE_RECEIPT` la recepcion de una compra y
+ * `PURCHASE_RETURN` la confirmacion de una devolucion. Si esta lista aceptara
+ * cualquier tipo, cualquiera podria escribir una venta falsa --o una entrada de
+ * mercaderia sin compra, o una salida sin devolucion-- desde la pantalla de
  * ajustes.
  */
 export const TIPOS_DE_AJUSTE = [
@@ -87,6 +102,7 @@ const ETIQUETAS: Record<TipoMovimiento, string> = {
   BREAKAGE: 'Rotura',
   INTERNAL_USE: 'Consumo interno',
   PURCHASE_RECEIPT: 'Recepción de compra',
+  PURCHASE_RETURN: 'Devolución a proveedor',
 }
 
 /**

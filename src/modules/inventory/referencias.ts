@@ -15,7 +15,13 @@
  * esquema de la consulta y la pantalla que arma el enlace.
  */
 
-export const REFERENCIAS = ['Sale', 'BranchStock', 'Product', 'PurchaseReceipt'] as const
+export const REFERENCIAS = [
+  'Sale',
+  'BranchStock',
+  'Product',
+  'PurchaseReceipt',
+  'PurchaseReturn',
+] as const
 
 export type Referencia = (typeof REFERENCIAS)[number]
 
@@ -35,6 +41,7 @@ export function enlaceDeReferencia(tipo: string | null, id: number | null): stri
   if (id === null) return null
   if (tipo === 'Sale') return `/ventas?venta=${String(id)}`
   if (tipo === 'PurchaseReceipt') return `/compras/recepcion/${String(id)}`
+  if (tipo === 'PurchaseReturn') return `/devoluciones/${String(id)}`
   return null
 }
 
@@ -44,5 +51,6 @@ export function textoDeReferencia(tipo: string | null, id: number | null): strin
   if (tipo === 'Sale') return `Venta #${String(id)}`
   if (tipo === 'Product') return `Producto #${String(id)}`
   if (tipo === 'PurchaseReceipt') return `Recepción #${String(id)}`
+  if (tipo === 'PurchaseReturn') return `Devolución #${String(id)}`
   return `Ajuste #${String(id)}`
 }
