@@ -205,6 +205,53 @@ export const PERMISSIONS = [
    * resultante.
    */
   'accounts.overrideLimit',
+  // Cuentas por pagar a proveedores. Ver docs/ACCOUNTS_PAYABLE_POLICY.md.
+  //
+  // Cinco permisos, y el prefijo es `supplierAccounts.` --no `accounts.`-- a
+  // proposito: `accounts.view` ya significa "el saldo de UN CLIENTE" y
+  // reutilizarlo aca haria que darle a alguien la cartera de deudores le diera
+  // de regalo la deuda con los proveedores, que es informacion de otra materia
+  // y de otro rol. Compras negocia con proveedores; caja atiende clientes.
+  //
+  // La simetria con el catalogo existente se mantiene en la forma
+  // (`view` / `payment` / `adjust`) para que la matriz se lea de corrido.
+  /** Ver el saldo, el extracto y las deudas abiertas de un proveedor. */
+  'supplierAccounts.view',
+  /** Registrar un pago y elegir a que obligaciones se imputa. */
+  'supplierAccounts.payment',
+  /**
+   * Registrar una nota de credito del proveedor.
+   *
+   * Aparte de `payment` porque no es lo mismo: un pago entrega plata y deja su
+   * rastro en la caja o en el banco; una nota de credito baja la deuda SIN que
+   * salga nada, apoyada solo en un papel que trajo el proveedor. Quien puede
+   * hacer la segunda puede reducir lo que debemos sin mover un peso.
+   */
+  'supplierAccounts.credit',
+  /**
+   * Corregir un saldo con un ajuste manual.
+   *
+   * El equivalente de `accounts.adjust` del otro lado del mostrador, y la misma
+   * separacion: con este permiso se escribe un movimiento que no responde a
+   * ninguna entrega ni a ningun pago. Por eso exige motivo y queda auditado.
+   * Es tambien el camino para cargar la deuda anterior a esta fase, que la
+   * migracion NO inventa.
+   */
+  'supplierAccounts.adjust',
+  /**
+   * Pagarle a un proveedor MAS de lo que se le debe.
+   *
+   * Existe como permiso propio --y no solo como una confirmacion, que es lo que
+   * alcanza del lado del cliente-- porque los dos casos no son simetricos. Que
+   * un cliente pague de mas es un hecho consumado: la plata ya esta sobre el
+   * mostrador y rechazarla seria absurdo. Que nosotros paguemos de mas es una
+   * DECISION, y una que deja plata en manos de un tercero.
+   *
+   * Cuando se usa quedan las cinco cosas, igual que en el override de credito:
+   * quien autorizo (en la fila del libro), el importe, el saldo anterior, el
+   * resultante y el comprobante.
+   */
+  'supplierAccounts.overpay',
 ] as const
 
 export type Permission = (typeof PERMISSIONS)[number]
@@ -299,6 +346,14 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'accounts.payment',
     'accounts.adjust',
     'accounts.overrideLimit',
+    // Cuentas por pagar completas, incluido el sobrepago: es quien responde por
+    // el resultado del local, y por lo tanto por lo que se le debe a cada
+    // proveedor.
+    'supplierAccounts.view',
+    'supplierAccounts.payment',
+    'supplierAccounts.credit',
+    'supplierAccounts.adjust',
+    'supplierAccounts.overpay',
   ],
 
   /**
@@ -392,10 +447,23 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'reports.purchases.view',
     'reports.costs.view',
     'reports.inventory.view',
-    // SIN cuenta corriente, como pide el objetivo 3. Compras negocia con
-    // proveedores; la cuenta corriente es la relacion con los CLIENTES, que es
-    // el otro lado del mostrador. Separar quien compra de quien cobra ya es el
-    // control basico del rol, y darle la cartera de deudores lo desharia.
+    // SIN cuenta corriente DE CLIENTES, como pide el objetivo 3 de la Fase 4A.
+    // Compras negocia con proveedores; la cuenta corriente es la relacion con
+    // los CLIENTES, que es el otro lado del mostrador. Separar quien compra de
+    // quien cobra ya es el control basico del rol, y darle la cartera de
+    // deudores lo desharia.
+    //
+    // CON cuentas por PAGAR, que es exactamente su materia: es quien negocia el
+    // plazo, quien recibe la factura y quien habla con el proveedor cuando
+    // reclama. Ver y pagar, "segun politica operativa" como pide el objetivo 32.
+    //
+    // SIN `credit`, `adjust` ni `overpay`, y es la separacion que da sentido al
+    // reparto: quien negocia con el proveedor no puede bajarle la deuda sin que
+    // salga plata (nota de credito), ni escribir un movimiento que no responde
+    // a nada (ajuste), ni entregarle de mas. Esos tres quedan en el escalon de
+    // arriba, que es quien responde por el dinero.
+    'supplierAccounts.view',
+    'supplierAccounts.payment',
   ],
 
   /**
@@ -428,6 +496,10 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     // revisa no debe poder modificar lo que revisa.
     'clients.view',
     'accounts.view',
+    // Y la otra mitad: lo que se le debe a los proveedores. Solo `view`, por lo
+    // mismo. Sin esto el auditor podria revisar de quien se cobra y no a quien
+    // se le paga, que es la mitad del dinero del negocio.
+    'supplierAccounts.view',
   ],
 }
 

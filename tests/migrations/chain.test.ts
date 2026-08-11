@@ -150,6 +150,11 @@ describe('La cadena oficial', () => {
       '20260810170000_phase4_customer_accounts',
       '20260810180000_phase4_cash_payment_link',
       '20260810190000_phase4_sale_payment_account',
+      '20260811100000_phase4b_supplier_balance',
+      '20260811110000_phase4b_receipt_obligation',
+      '20260811120000_phase4b_supplier_payments',
+      '20260811130000_phase4b_supplier_accounts',
+      '20260811140000_phase4b_payment_allocations',
     ])
   })
 

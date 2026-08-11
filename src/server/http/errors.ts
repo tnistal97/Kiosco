@@ -103,6 +103,27 @@ export type ErrorCode =
    * No deberia ocurrir: existe para no devolver un 500 mudo si ocurre.
    */
   | 'ACCOUNT_NOT_MOVED'
+  // Cuentas por pagar a proveedores. Ver docs/ACCOUNTS_PAYABLE_POLICY.md.
+  /**
+   * El pago deja saldo a favor NUESTRO y nadie lo confirmo todavia.
+   *
+   * Codigo propio y no el `PAYMENT_LEAVES_CREDIT` del cliente, aunque el
+   * mecanismo se parezca: el navegador reacciona distinto a cada uno --alla
+   * alcanza con confirmar, aca ademas hace falta permiso-- y darles el mismo
+   * codigo obligaria a mirar de que endpoint vino para saber que ofrecer.
+   */
+  | 'SUPPLIER_PAYMENT_LEAVES_CREDIT'
+  /** Se quiso imputar a una entrega que no es una obligacion abierta suya. */
+  | 'ALLOCATION_TARGET_INVALID'
+  /** Se quiso imputar a una entrega mas de lo que le falta. */
+  | 'ALLOCATION_EXCEEDS_DEBT'
+  /** El reparto suma mas que el pago. */
+  | 'ALLOCATION_EXCEEDS_PAYMENT'
+  /**
+   * La recepcion es anterior a las cuentas por pagar: no tiene obligacion.
+   * Ver `PurchaseReceipt.debtRecorded`.
+   */
+  | 'RECEIPT_NOT_TRACKED'
 
 /** Forma exacta del cuerpo de error. Compartida con el cliente. */
 export interface ApiErrorBody {

@@ -28,6 +28,8 @@ model Branch {
   clients        Client[]
   accountMoves   CustomerAccountMovement[]
   clientPayments CustomerPayment[]
+  supplierMoves  SupplierAccountMovement[]
+  supplierPays   SupplierPayment[]
 
   /// Efectivo acumulado desde que se instalo el sistema.
   ///
@@ -124,6 +126,7 @@ model CashShift {
   movements      CashRegisterMovement[]
   counts         CashCount[]
   clientPayments CustomerPayment[]
+  supplierPays   SupplierPayment[]
 
   @@index([branchId, openedAt])
   @@index([branchId, status])
@@ -172,6 +175,9 @@ model User {
   accountMoves     CustomerAccountMovement[] @relation("AccountMovementBy")
   accountOverrides CustomerAccountMovement[] @relation("AccountMovementAuthorizedBy")
   clientPayments   CustomerPayment[]
+  supplierMoves    SupplierAccountMovement[] @relation("SupplierMovementBy")
+  supplierApproved SupplierAccountMovement[] @relation("SupplierMovementAuthorizedBy")
+  supplierPays     SupplierPayment[]
 }
 
 model Category {
@@ -515,15 +521,50 @@ model Supplier {
   /// se puede elegir para una compra nueva, pero sigue nombrado en las viejas.
   isActive Boolean @default(true)
 
+  /// Plazo de pago habitual, en dias. Fase 4B.
+  ///
+  /// SUGIERE el vencimiento al recibir: 30 dias sobre una entrega del 10/08 da
+  /// el 09/09. Nada mas que eso. El vencimiento se CONGELA en la recepcion, asi
+  /// que bajarlo despues a 15 dias no adelanta ninguna deuda vieja --que es
+  /// exactamente lo que pide el objetivo 19-- y subirlo tampoco las prorroga.
+  ///
+  /// NULL y 0 vuelven a ser afirmaciones distintas, igual que en el limite de
+  /// credito del cliente:
+  ///
+  ///   NULL  nadie declaro el plazo. No se sugiere vencimiento.
+  ///   0     se le paga contra entrega. Vence el mismo dia.
+  ///
+  /// Ver docs/ACCOUNTS_PAYABLE_POLICY.md.
+  defaultPaymentTermDays Int?
+
+  /// Saldo materializado del libro. POSITIVO = LE DEBEMOS.
+  ///
+  /// El espejo exacto de `Client.balance`, con la misma relacion con su libro:
+  ///
+  ///   para todo proveedor:  suma(SupplierAccountMovement.amount) == balance
+  ///
+  /// Se guarda para que leer un saldo cueste una fila y no la suma de dos anios,
+  /// pero NO es la fuente de la verdad. Y no se edita: lo escribe unicamente
+  /// `applySupplierAccountMovement`. Ver docs/SUPPLIER_ACCOUNT_LEDGER.md.
+  ///
+  /// A diferencia del cliente, el proveedor NO es de una sucursal: el saldo es
+  /// del negocio. Se le compra desde donde haga falta y se le debe una sola vez.
+  balance Decimal @default(0) @db.Decimal(14, 2)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   costChanges ProductCostHistory[]
   catalogo    ProductSupplier[]
   orders      PurchaseOrder[]
+  movements   SupplierAccountMovement[]
+  payments    SupplierPayment[]
 
   /// El listado filtra por activo y ordena por nombre.
   @@index([isActive, name])
+  /// "A quienes les debemos" y "quienes tienen credito nuestro", que son dos
+  /// filtros de la pantalla y del reporte de cuentas por pagar.
+  @@index([balance])
 }
 
 /// Que proveedores venden este producto, y a cual se le compra normalmente.
@@ -695,17 +736,71 @@ model PurchaseReceipt {
 
   notes String?
 
+  /// Lo que ESTA entrega nos costo, al costo REAL de la factura. Fase 4B.
+  ///
+  /// Suma de `receivedQuantity x unitCost` de sus lineas, calculada por el
+  /// servidor. Es el importe de la OBLIGACION: si la orden esperaba $100.000 y
+  /// la factura vino $104.500, aca dice 104.500 y eso es lo que se le debe al
+  /// proveedor. La diferencia contra lo esperado no desaparece --sigue linea
+  /// por linea en `expectedUnitCost`, y el reporte la muestra-- pero no es
+  /// deuda: deuda es lo que hay que pagar.
+  ///
+  /// Se guarda en vez de derivarse en cada lectura porque es el "importe
+  /// original" de la tabla de deudas abiertas, y esa tabla se ordena y se
+  /// filtra por el. `@default(0)` para que la migracion no tenga que inventar
+  /// un valor: las recepciones anteriores a esta fase se recalculan una vez,
+  /// desde sus propias lineas, en la migracion.
+  total Decimal @default(0) @db.Decimal(14, 2)
+
+  /// Cuando vence la obligacion. NULL = sin fecha registrada. Fase 4B.
+  ///
+  /// CONGELADO: se calcula al recibir, sumandole `defaultPaymentTermDays` del
+  /// proveedor al dia comercial de la entrega, o se declara a mano. Despues no
+  /// lo mueve ningun cambio en la ficha del proveedor.
+  ///
+  /// NULL no significa "vence hoy" ni "no vence": significa que nadie lo cargo.
+  /// Una deuda sin vencimiento no aparece nunca como vencida, y aparece ultima
+  /// en la imputacion automatica. Inventarle un plazo seria inventar una fecha
+  /// de reclamo. Esto NO es el vencimiento del producto, que es otra fase.
+  dueDate DateTime?
+
+  /// Si esta entrega entro al libro del proveedor. Fase 4B.
+  ///
+  /// Existe para responder una pregunta que sin ella no tiene respuesta: "esta
+  /// recepcion sin cargo, ¿es anterior al modulo o es un error?". Las dos cosas
+  /// se ven igual --una fila sin ninguna de `SupplierAccountMovement`-- y son
+  /// opuestas: la primera es correcta (en produccion no se genera deuda
+  /// historica) y la segunda es alguien escribiendo una recepcion por fuera del
+  /// servicio.
+  ///
+  /// Con esto, la invariante queda EXACTA y en las DOS direcciones:
+  ///
+  ///   debtRecorded = true  <=>  existe exactamente un PURCHASE_CHARGE suyo
+  ///
+  /// Es dato redundante --se deduce de la otra tabla-- y por eso mismo la
+  /// reconciliacion lo comprueba en los dos sentidos: un booleano que se cree
+  /// sin que nadie lo controle es peor que no tenerlo.
+  ///
+  /// Lo pone en `true` el servicio, en la misma transaccion en la que escribe
+  /// el cargo, y nunca antes.
+  debtRecorded Boolean @default(false)
+
   order      PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
   branch     Branch        @relation(fields: [branchId], references: [id])
   receivedBy User          @relation(fields: [receivedById], references: [id])
 
   items       PurchaseReceiptItem[]
   costChanges ProductCostHistory[]
+  movements   SupplierAccountMovement[]
+  allocations SupplierPaymentAllocation[]
 
   /// Las recepciones de una orden, en orden. Es lo que muestra el detalle.
   @@index([purchaseOrderId, receivedAt])
   @@index([branchId, receivedAt])
   @@index([receivedById])
+  /// Las deudas abiertas, ordenadas por vencimiento. Es la consulta de la
+  /// imputacion automatica y la de la tabla de deudas.
+  @@index([dueDate])
 }
 
 model PurchaseReceiptItem {
@@ -978,6 +1073,192 @@ model CustomerPayment {
   @@index([receivedById])
 }
 
+/// Libro de cuenta con un proveedor. Inmutable. Fase 4B.
+///
+/// El espejo de `CustomerAccountMovement`, y a proposito: el mismo diseno, el
+/// mismo vocabulario de campos y las mismas garantias, con el signo mirando
+/// para el otro lado. Quien entendio uno entiende el otro.
+///
+///   para todo proveedor:  suma(amount) == Supplier.balance
+///
+/// SIGNOS. Positivo aumenta lo que LE DEBEMOS:
+///
+///   PURCHASE_CHARGE     +120.000   llego mercaderia y hay que pagarla
+///   PAYMENT              -40.000   le pagamos
+///   PURCHASE_CREDIT      -10.000   emitio una nota de credito a favor nuestro
+///   MANUAL_ADJUSTMENT     +/-      correccion administrativa, con motivo
+///
+/// Un saldo NEGATIVO es credito NUESTRO con el proveedor: pasa cuando se le
+/// paga de mas y cuando la nota de credito supera lo que quedaba debiendo.
+///
+/// Ninguna fila se edita ni se borra: hay un disparador en la base que lo
+/// impide. Ver docs/SUPPLIER_ACCOUNT_LEDGER.md.
+model SupplierAccountMovement {
+  id Int @id @default(autoincrement())
+
+  /// La sucursal DESDE LA QUE se opero.
+  ///
+  /// Informativa, no particionadora: a diferencia del cliente, el saldo del
+  /// proveedor NO es por sucursal --se le debe una sola vez-- pero saber desde
+  /// donde se recibio y desde donde se pago es lo que permite responder "que
+  /// compro cada local" sin cruzar tres tablas.
+  branchId   Int
+  supplierId Int
+
+  /// PURCHASE_CHARGE | PAYMENT | PURCHASE_CREDIT | MANUAL_ADJUSTMENT.
+  ///
+  /// La base comprueba el tipo Y el signo que le corresponde: un pago que
+  /// aumente la deuda no es un error que haya que buscar, es una fila que
+  /// PostgreSQL rechaza.
+  type String
+
+  /// Delta CON SIGNO, en pesos.
+  amount Decimal @db.Decimal(14, 2)
+
+  /// Saldo antes y despues. Redundantes y guardados igual, para que una fila
+  /// del extracto se lea sin recorrer las anteriores. La base obliga a que los
+  /// tres concuerden.
+  previousBalance  Decimal @db.Decimal(14, 2)
+  resultingBalance Decimal @db.Decimal(14, 2)
+
+  /// De donde vino. Los dos origenes con un hecho detras.
+  receiptId Int?
+  paymentId Int?
+
+  userId Int
+
+  /// Obligatorio en el ajuste manual y en la nota de credito.
+  ///
+  /// La nota de credito lo exige y el cargo de una recepcion no, y la
+  /// diferencia es real: una recepcion tiene mercaderia y un remito detras, y
+  /// una nota de credito es un papel que dice que algo salio mal. Sin el motivo
+  /// no queda registro de QUE salio mal.
+  reason String?
+
+  /// Numero del documento del proveedor, cuando lo hay.
+  ///
+  /// El de SU nota de credito. No es un numero nuestro y no se valida: es lo
+  /// que permite cotejar contra el papel que mando el proveedor. Sin esto,
+  /// discutir una nota de credito por telefono obliga a buscarla por importe.
+  reference String?
+
+  /// Quien autorizo el sobrepago, cuando hizo falta.
+  ///
+  /// Guardarlo en la fila del libro y no solo en la bitacora es deliberado, por
+  /// lo mismo que en el libro del cliente: la autorizacion es parte del hecho
+  /// financiero.
+  authorizedById Int?
+
+  createdAt DateTime @default(now())
+
+  branch       Branch           @relation(fields: [branchId], references: [id])
+  supplier     Supplier         @relation(fields: [supplierId], references: [id])
+  user         User             @relation("SupplierMovementBy", fields: [userId], references: [id])
+  authorizedBy User?            @relation("SupplierMovementAuthorizedBy", fields: [authorizedById], references: [id])
+  receipt      PurchaseReceipt? @relation(fields: [receiptId], references: [id])
+  payment      SupplierPayment? @relation(fields: [paymentId], references: [id])
+
+  /// El extracto del proveedor, que es lo que abre la pestania.
+  @@index([supplierId, createdAt])
+  /// La reconciliacion y el reporte, por sucursal.
+  @@index([branchId, createdAt])
+  /// "Que movio esta recepcion" y "que movio el comprobante PP-00000128".
+  @@index([receiptId])
+  @@index([paymentId])
+  @@index([userId])
+}
+
+/// Un pago que le hacemos a un proveedor. Fase 4B.
+///
+/// Entidad propia y no solo una fila del libro por lo mismo que
+/// `CustomerPayment`: un pago tiene datos que el libro no tiene por que conocer
+/// --con que medio se pago, de que turno salio la plata, que numero de
+/// comprobante interno lleva-- y ademas se imputa a obligaciones concretas.
+///
+/// Ver docs/SUPPLIER_PAYMENT_FLOW.md.
+model SupplierPayment {
+  id Int @id @default(autoincrement())
+
+  /// "PP-00000128". Lo genera el SERVIDOR con una secuencia de PostgreSQL,
+  /// igual que `OC-` y `RC-` y por el mismo motivo: `count()+1` hace que dos
+  /// pagos simultaneos pidan el mismo numero.
+  number String @unique
+
+  branchId   Int
+  supplierId Int
+
+  /// Siempre POSITIVO: un pago de importe negativo seria un cargo disfrazado.
+  /// Lo comprueba la base con un CHECK.
+  amount Decimal @db.Decimal(14, 2)
+
+  /// 'CASH' | 'TRANSFER' | 'CARD' | 'OTHER'.
+  ///
+  /// NO admite 'ACCOUNT': pagarle la cuenta al proveedor con su propia cuenta
+  /// no significa nada. Es la misma exclusion que en el cobro al cliente.
+  method String
+
+  /// Turno del que salio la plata, cuando salio del cajon. Null cuando se pago
+  /// por transferencia: esa plata no sale del cajon y no necesita turno.
+  cashShiftId Int?
+
+  paidById Int
+  paidAt   DateTime @default(now())
+
+  /// Numero de operacion de la transferencia, ultimos digitos del cupon.
+  reference String?
+  notes     String?
+
+  createdAt DateTime @default(now())
+
+  branch        Branch                      @relation(fields: [branchId], references: [id])
+  supplier      Supplier                    @relation(fields: [supplierId], references: [id])
+  shift         CashShift?                  @relation(fields: [cashShiftId], references: [id])
+  paidBy        User                        @relation(fields: [paidById], references: [id])
+  movements     SupplierAccountMovement[]
+  allocations   SupplierPaymentAllocation[]
+  cashMovements CashRegisterMovement[]
+
+  /// Los pagos a un proveedor, en orden. Es lo que muestra la ficha.
+  @@index([supplierId, paidAt])
+  /// El reporte de pagos de la sucursal.
+  @@index([branchId, paidAt])
+  @@index([cashShiftId])
+  @@index([paidById])
+}
+
+/// Que obligacion cancelo cada peso de un pago. Fase 4B.
+///
+/// El saldo del proveedor ya lo lleva el libro; esto responde otra pregunta,
+/// que el saldo no puede responder: "de las cuatro entregas que nos quedaban
+/// sin pagar, ¿cual salda este pago de $50.000?". Sin esto, un proveedor que
+/// reclama la entrega del 12 obliga a reconstruir la imputacion de memoria.
+///
+/// La imputacion es DETALLE, no verdad: el saldo sale del libro y sigue
+/// saliendo del libro aunque un pago quede sin imputar. Esa asimetria es
+/// deliberada y esta documentada en docs/SUPPLIER_PAYMENT_ALLOCATION.md: si la
+/// imputacion fuera la fuente del saldo, un anticipo --plata entregada sin una
+/// obligacion contra la cual imputarse-- no se podria registrar.
+model SupplierPaymentAllocation {
+  id        Int @id @default(autoincrement())
+  paymentId Int
+  receiptId Int
+
+  /// Cuanto de ESTE pago se imputa a ESA obligacion. Siempre positivo.
+  amount Decimal @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now())
+
+  payment SupplierPayment @relation(fields: [paymentId], references: [id])
+  receipt PurchaseReceipt @relation(fields: [receiptId], references: [id])
+
+  /// Un pago imputa UNA VEZ a cada obligacion. Dos filas del mismo par serian
+  /// dos imputaciones parciales que habria que sumar para leer una sola cosa, y
+  /// harian que "cuanto le puso este pago a esta entrega" tenga dos respuestas.
+  @@unique([paymentId, receiptId])
+  /// "Cuanto lleva pagado esta entrega", que es la consulta del pendiente.
+  @@index([receiptId])
+}
+
 model Sale {
   id         Int      @id @default(autoincrement())
   userId     Int
@@ -1178,6 +1459,12 @@ model CashRegisterMovement {
   /// Fase 3. Un `description` es para leer, no para unir tablas.
   customerPaymentId Int?
 
+  /// Vinculo explicito con el pago a un proveedor, cuando el movimiento vino de
+  /// uno. Fase 4B, y por el mismo motivo que los dos de arriba: la
+  /// reconciliacion de "pago en efectivo a proveedor tiene su egreso de caja"
+  /// une las dos tablas por esta columna y no por un LIKE sobre la descripcion.
+  supplierPaymentId Int?
+
   /// Turno en el que ocurrio. Null solo en los movimientos anteriores a que
   /// existieran los turnos, que la migracion cuelga del turno `legacy`.
   shiftId Int?
@@ -1187,10 +1474,12 @@ model CashRegisterMovement {
   sale            Sale?            @relation(fields: [saleId], references: [id])
   shift           CashShift?       @relation(fields: [shiftId], references: [id])
   customerPayment CustomerPayment? @relation(fields: [customerPaymentId], references: [id])
+  supplierPayment SupplierPayment? @relation(fields: [supplierPaymentId], references: [id])
 
   @@index([branchId, date])
   @@index([saleId])
   @@index([customerPaymentId])
+  @@index([supplierPaymentId])
   /// El saldo esperado de un turno suma los movimientos en efectivo de ESE
   /// turno. Es la consulta que se hace en cada venta y en cada cierre.
   @@index([shiftId, paymentMethod])

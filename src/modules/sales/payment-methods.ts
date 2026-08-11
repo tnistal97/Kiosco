@@ -84,6 +84,30 @@ export const MEDIOS_DE_COBRANZA = [
 
 export type MedioDeCobranza = (typeof MEDIOS_DE_COBRANZA)[number]
 
+/**
+ * Los que se pueden usar para PAGARLE a un proveedor. Fase 4B.
+ *
+ * Cuatro, y son distintos de los cuatro con los que se le cobra a un cliente.
+ * Las dos diferencias son deliberadas:
+ *
+ *   · `CARD` en vez de `DEBIT_CARD` y `CREDIT_CARD`. Al proveedor se le paga
+ *     con LA TARJETA DEL NEGOCIO, y quien registra el pago no siempre sabe --ni
+ *     le importa-- cual de las dos era. `CARD` dice lo que se sabe. Del lado
+ *     del cliente si se distinguen, porque ahi la tarjeta es del cliente y el
+ *     debito y el credito acreditan distinto.
+ *
+ *   · sin `ACCOUNT`, igual que en la cobranza: pagarle la cuenta al proveedor
+ *     con su propia cuenta no significa nada.
+ *
+ * `CARD` reaparece aca despues de haber quedado afuera del POS --donde existe
+ * solo para los datos historicos-- y no es una contradiccion: alla se lo excluyo
+ * porque el cajero SI sabe si el cliente paso debito o credito, y guardar
+ * "tarjeta" a secas seria perder un dato que se tiene.
+ */
+export const MEDIOS_DE_PAGO_A_PROVEEDOR = ['CASH', 'TRANSFER', 'CARD', 'OTHER'] as const
+
+export type MedioDePagoAProveedor = (typeof MEDIOS_DE_PAGO_A_PROVEEDOR)[number]
+
 const ETIQUETAS: Record<MedioDePago, string> = {
   CASH: 'Efectivo',
   DEBIT_CARD: 'Débito',

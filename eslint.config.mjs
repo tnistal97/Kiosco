@@ -137,9 +137,18 @@ const PROHIBIDO_ESCRIBIR_STOCK = [
  */
 const PROHIBIDO_ESCRIBIR_SALDO = [
   {
-    // Cualquier `…client.<lo que sea>({ … balance … })`. El descendiente sin
-    // acotar es deliberado: `data: { balance: x }` esta un nivel mas adentro.
-    selector: "CallExpression[callee.object.property.name='client'] Property[key.name='balance']",
+    // `…client.<lo que sea>({ … data: { … balance … } … })`.
+    //
+    // Acotado a `data` a proposito. La version anterior no lo estaba y tambien
+    // marcaba las LECTURAS --un `select: { balance: true }` es legitimo desde
+    // cualquier lado-- lo que no se notaba solo porque los `select` de este
+    // proyecto viven en constantes aparte. Esa es la peor forma de que una
+    // regla "funcione": el dia que alguien escriba el select en linea, la
+    // esquiva extrayendolo a una constante, y de paso deja de protegerlo de
+    // las escrituras. Lo descubrio la Fase 4B al escribir la regla espejo.
+    selector:
+      "CallExpression[callee.object.property.name='client'] " +
+      "Property[key.name='data'] Property[key.name='balance']",
     message:
       'El saldo de un cliente no se escribe directamente. Usa applyAccountMovement() de ' +
       '@/modules/clients/cuenta, que ademas deja la fila en el libro y comprueba el limite. ' +
@@ -152,6 +161,48 @@ const PROHIBIDO_ESCRIBIR_SALDO = [
     message:
       'SQL crudo que escribe sobre Client, fuera del libro de cuenta corriente. ' +
       'Todo cambio de saldo pasa por applyAccountMovement().',
+  },
+]
+
+/**
+ * El saldo de un proveedor tampoco se escribe: se mueve.
+ *
+ * Desde la Fase 4B las cuentas por pagar son el saldo de un libro:
+ *
+ *   para todo proveedor:  suma(SupplierAccountMovement.amount) == Supplier.balance
+ *
+ * Es la misma frontera que la del saldo del cliente, mirada del otro lado, y
+ * protege el caso simetrico: alcanza un `update` suelto con `balance` adentro
+ * para dar por pagada una deuda que nadie pago. El saldo quedaria "bien" y el
+ * libro no lo explicaria, que es justo lo que un proveedor reclama cuando dice
+ * "esa entrega no me la pagaste".
+ *
+ * Editar el NOMBRE, el telefono o el plazo de pago de un proveedor sigue
+ * permitido desde el servicio: lo unico cerrado es la columna del saldo.
+ *
+ * Ver docs/SUPPLIER_ACCOUNT_LEDGER.md. Unico lugar autorizado a escribirlo:
+ * `src/modules/suppliers/cuenta.ts`.
+ */
+const PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR = [
+  {
+    // `…supplier.<lo que sea>({ … data: { … balance … } … })`. Acotado a
+    // `data`: lo que se prohibe es ESCRIBIR el saldo, no leerlo. Ver la nota
+    // equivalente en PROHIBIDO_ESCRIBIR_SALDO.
+    selector:
+      "CallExpression[callee.object.property.name='supplier'] " +
+      "Property[key.name='data'] Property[key.name='balance']",
+    message:
+      'El saldo de un proveedor no se escribe directamente. Usa ' +
+      'applySupplierAccountMovement() de @/modules/suppliers/cuenta, que ademas deja la fila ' +
+      'en el libro. Ver docs/SUPPLIER_ACCOUNT_LEDGER.md.',
+  },
+  {
+    // Solo ESCRITURAS. Un SELECT sobre "Supplier" es legitimo desde cualquier
+    // lado; lo que no puede salir del modulo es la sentencia que mueve el saldo.
+    selector: 'TemplateElement[value.raw=/(UPDATE|DELETE\\s+FROM)\\s+"Supplier"/]',
+    message:
+      'SQL crudo que escribe sobre Supplier, fuera del libro de cuentas por pagar. ' +
+      'Todo cambio de saldo pasa por applySupplierAccountMovement().',
   },
 ]
 
@@ -326,27 +377,35 @@ export default tseslint.config(
     },
   },
 
-  // ------------------------------------ las tres fronteras que no se cruzan
+  // ---------------------------------- las cinco fronteras que no se cruzan
   //
   // `no-restricted-syntax` es UNA regla: cuando dos bloques la configuran para
   // el mismo archivo, el segundo REEMPLAZA al primero en vez de sumarse. Por
   // eso los selectores se declaran arriba (PROHIBIDO_*) y cada bloque de aca
-  // abajo lista el conjunto COMPLETO que le corresponde. Seis bloques, porque
+  // abajo lista el conjunto COMPLETO que le corresponde. Siete bloques, porque
   // cada frontera tiene su propia excepcion:
   //
-  //   1. todo src/                        → stock + saldo
-  //   2. modules, server y api            → los cuatro
-  //   3. src/server/money.ts              → todos menos dinero    (lo cruza)
-  //   4. src/server/cantidad.ts           → todos menos cantidad  (lo cruza)
-  //   5. modules/inventory/service.ts     → todos menos stock     (lo cruza)
-  //   6. modules/clients/cuenta.ts        → todos menos saldo     (lo cruza)
+  //   1. todo src/                        → stock + saldos (cliente y proveedor)
+  //   2. modules, server y api            → los cinco
+  //   3. src/server/money.ts              → todos menos dinero     (lo cruza)
+  //   4. src/server/cantidad.ts           → todos menos cantidad   (lo cruza)
+  //   5. modules/inventory/service.ts     → todos menos stock      (lo cruza)
+  //   6. modules/clients/cuenta.ts        → todos menos saldo      (lo cruza)
+  //   7. modules/suppliers/cuenta.ts      → todos menos proveedor  (lo cruza)
   //
   // Sin este cuidado, agregar una frontera nueva apagaria las anteriores en
   // silencio: los tests seguirian pasando y las reglas no protegerian nada.
+  // Hay una prueba estatica que lo comprueba archivo por archivo, justamente
+  // porque este es el error que no se nota.
   {
     files: ['src/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-syntax': ['error', ...PROHIBIDO_ESCRIBIR_STOCK, ...PROHIBIDO_ESCRIBIR_SALDO],
+      'no-restricted-syntax': [
+        'error',
+        ...PROHIBIDO_ESCRIBIR_STOCK,
+        ...PROHIBIDO_ESCRIBIR_SALDO,
+        ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
+      ],
     },
   },
   {
@@ -356,6 +415,7 @@ export default tseslint.config(
         'error',
         ...PROHIBIDO_ESCRIBIR_STOCK,
         ...PROHIBIDO_ESCRIBIR_SALDO,
+        ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
         ...PROHIBIDO_DINERO_NUMERO,
         ...PROHIBIDO_CANTIDAD_NUMERO,
       ],
@@ -368,6 +428,7 @@ export default tseslint.config(
         'error',
         ...PROHIBIDO_ESCRIBIR_STOCK,
         ...PROHIBIDO_ESCRIBIR_SALDO,
+        ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
         ...PROHIBIDO_CANTIDAD_NUMERO,
       ],
     },
@@ -379,6 +440,7 @@ export default tseslint.config(
         'error',
         ...PROHIBIDO_ESCRIBIR_STOCK,
         ...PROHIBIDO_ESCRIBIR_SALDO,
+        ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
         ...PROHIBIDO_DINERO_NUMERO,
       ],
     },
@@ -389,6 +451,7 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         ...PROHIBIDO_ESCRIBIR_SALDO,
+        ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
         ...PROHIBIDO_DINERO_NUMERO,
         ...PROHIBIDO_CANTIDAD_NUMERO,
       ],
@@ -400,6 +463,19 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         ...PROHIBIDO_ESCRIBIR_STOCK,
+        ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
+        ...PROHIBIDO_DINERO_NUMERO,
+        ...PROHIBIDO_CANTIDAD_NUMERO,
+      ],
+    },
+  },
+  {
+    files: ['src/modules/suppliers/cuenta.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...PROHIBIDO_ESCRIBIR_STOCK,
+        ...PROHIBIDO_ESCRIBIR_SALDO,
         ...PROHIBIDO_DINERO_NUMERO,
         ...PROHIBIDO_CANTIDAD_NUMERO,
       ],
