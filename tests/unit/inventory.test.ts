@@ -341,3 +341,63 @@ describe('Nadie escribe stock fuera del servicio de inventario', () => {
     expect(sql).toContain('BEFORE UPDATE OR DELETE ON "StockMovement"')
   })
 })
+
+// ---------------------------------------------------------------------------
+// La misma puerta, un nivel mas abajo: el stock POR LOTE
+// ---------------------------------------------------------------------------
+
+/**
+ * Fase 4D.
+ *
+ * `BranchLotStock.quantity` tiene exactamente el mismo problema que
+ * `BranchStock.quantity`, `Client.balance` y `Supplier.balance`: es un saldo
+ * materializado que un `update` suelto deja "bien" mientras su libro queda sin
+ * explicarlo. Y `LotAssignment` es el libro, asi que escribir ahi a mano rompe
+ * la reconciliacion desde el otro lado.
+ *
+ * Por eso la frontera es la misma y el archivo autorizado tambien.
+ */
+describe('Nadie escribe el stock por lote fuera del servicio de inventario', () => {
+  const fuentes = archivosDe('src').filter((f) => f.endsWith('.ts') || f.endsWith('.tsx'))
+
+  const ESCRITURA =
+    '(create|createMany|createManyAndReturn|update|updateMany|upsert|delete|deleteMany)'
+
+  it.each(['branchLotStock', 'lotAssignment'])(
+    'ningun archivo usa un metodo de escritura de Prisma sobre %s',
+    (modelo) => {
+      const escritura = new RegExp(`\\b${modelo}\\.${ESCRITURA}\\b`)
+      const culpables = fuentes.filter((f) => f !== PUERTA && escritura.test(leer(f)))
+
+      expect(
+        culpables,
+        `Estos archivos escriben ${modelo} sin pasar por applyStockMovement() ni ` +
+          'applyLotAssignment(). El saldo del lote va a quedar bien y su libro mal, ' +
+          'y nada va a fallar. Ver docs/LOT_TRACKING_DESIGN.md.',
+      ).toEqual([])
+    },
+  )
+
+  it('las LECTURAS del stock por lote siguen permitidas en todos lados', () => {
+    // La frontera es sobre la escritura, no sobre la tabla. Si esta prueba
+    // empieza a fallar es porque alguien endurecio la regla de mas: leer un
+    // saldo no lo corrompe, y prohibirlo obligaria a duplicar consultas.
+    const lectores = fuentes.filter(
+      (f) =>
+        f !== PUERTA &&
+        /\bbranchLotStock\.(findUnique|findFirst|findMany|count|aggregate)\b/.test(leer(f)),
+    )
+
+    expect(
+      lectores.length,
+      'alguien lee el stock por lote desde afuera, y esta bien',
+    ).toBeGreaterThan(0)
+  })
+
+  it('ningun archivo escribe BranchLotStock ni LotAssignment con SQL crudo', () => {
+    const escritura = /(UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+"(BranchLotStock|LotAssignment)"/i
+    const culpables = fuentes.filter((f) => f !== PUERTA && escritura.test(leer(f)))
+
+    expect(culpables, 'SQL crudo que escribe stock por lote fuera del servicio').toEqual([])
+  })
+})

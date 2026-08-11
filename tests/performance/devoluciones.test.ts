@@ -1,9 +1,9 @@
 /**
  * Objetivo 32 — anticipos y devoluciones con volumen de verdad.
  *
- * Dos mil proveedores, diez mil recepciones, diez mil pagos con saldo y cinco
- * mil devoluciones confirmadas. Es donde se ven los problemas que con tres filas
- * no existen.
+ * Dos mil proveedores, diez mil recepciones, dos mil pagos con saldo y seis mil
+ * devoluciones confirmadas. Es donde se ven los problemas que con tres filas no
+ * existen.
  *
  * LO QUE SE MIDE, y por qué cada uno:
  *
@@ -39,7 +39,38 @@ import { GET as ORDEN } from '@/app/api/purchases/[id]/route'
 
 const PROVEEDORES = 2_000
 const POR_PROVEEDOR = 5
-const DEVUELTAS = 5_000
+
+/**
+ * Cuantas de las CINCO entregas de cada proveedor vuelven. Las mas nuevas.
+ *
+ * Es POR PROVEEDOR y no un total, y esa es la correccion del bug de la Fase
+ * 4D.1. La version anterior repartia asi:
+ *
+ *     ORDER BY r."id" DESC LIMIT 5000        -- la mitad "mas nueva" por id
+ *
+ * y eso convertia el resultado del test en una consecuencia del PLAN de
+ * PostgreSQL. Las recepciones se crean con un producto cartesiano:
+ *
+ *     FROM "PurchaseOrder" o, generate_series(1, 5) AS i
+ *
+ * y el planificador elige libremente cual de los dos lados recorre por fuera.
+ * Los dos ordenes son correctos y dan ids distintos:
+ *
+ *   generate_series por fuera   el primer proveedor recibe 1, 2001, 4001,
+ *                               6001, 8001  -> dos caen en la mitad nueva
+ *   PurchaseOrder por fuera     el primer proveedor recibe 1, 2, 3, 4, 5
+ *                               -> NINGUNA cae en la mitad nueva
+ *
+ * El test mira SIEMPRE al primer proveedor, asi que con el segundo plan las
+ * cinco entregas daban `devuelto = 0.00` y tres casos fallaban. Se comprobo
+ * forzando el plan (`SET enable_material = off`), que reproduce exactamente el
+ * `'0.00,0.00,0.00,0.00,0.00'` observado.
+ *
+ * Ahora el reparto lo decide `receivedAt`, que es un VALOR de la fila y no el
+ * orden fisico en que se escribieron: el mismo resultado con cualquier plan.
+ */
+const DEVUELTAS_POR_PROVEEDOR = 3
+const DEVUELTAS = PROVEEDORES * DEVUELTAS_POR_PROVEEDOR
 
 /** Tope generoso: lo que se busca es el orden de magnitud, no el milisegundo. */
 const TOPE_MS = 1_500
@@ -161,18 +192,32 @@ beforeAll(async () => {
      WHERE p."number" LIKE 'PP-4C-%'
   `)
 
-  // Y las devoluciones confirmadas, sobre las entregas más nuevas.
+  // Y las devoluciones confirmadas, sobre las TRES entregas más nuevas de CADA
+  // proveedor.
+  //
+  // "Más nuevas" por `receivedAt`, que es un dato de la entrega. Ordenar por
+  // `id` haría que el reparto dependiera del orden en que se escribieron las
+  // filas, y ese orden lo elige el planificador. Ver el comentario de
+  // DEVUELTAS_POR_PROVEEDOR.
   await prisma.$executeRawUnsafe(`
     INSERT INTO "PurchaseReturn"
       ("number", "branchId", "supplierId", "purchaseReceiptId", "status", "reason",
        "total", "createdById", "createdAt", "confirmedById", "confirmedAt")
     SELECT 'DV-4C-' || lpad(r."id"::text, 8, '0'), ${branch}, o."supplierId", r."id",
            'CONFIRMED', 'DAMAGED', 1000, ${admin}, now(), ${admin}, now()
-      FROM "PurchaseReceipt" r
+      FROM (
+        SELECT r."id",
+               r."purchaseOrderId",
+               row_number() OVER (
+                 PARTITION BY r."purchaseOrderId"
+                     ORDER BY r."receivedAt" DESC, r."id" DESC
+               ) AS puesto
+          FROM "PurchaseReceipt" r
+          JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
+         WHERE o."number" LIKE 'OC-4C-%'
+      ) r
       JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
-     WHERE o."number" LIKE 'OC-4C-%'
-     ORDER BY r."id" DESC
-     LIMIT ${String(DEVUELTAS)}
+     WHERE r."puesto" <= ${String(DEVUELTAS_POR_PROVEEDOR)}
   `)
 
   await prisma.$executeRawUnsafe(`
@@ -225,6 +270,40 @@ describe('anticipos y devoluciones con volumen', () => {
     expect(recepciones).toBeGreaterThanOrEqual(PROVEEDORES * POR_PROVEEDOR)
     expect(devoluciones).toBeGreaterThanOrEqual(DEVUELTAS)
     expect(imputaciones).toBeGreaterThanOrEqual(PROVEEDORES * 2)
+  })
+
+  /**
+   * La regresión de la Fase 4D.1, con nombre propio.
+   *
+   * Las tres mediciones que siguen dan por sentado que el proveedor que miran
+   * tiene devoluciones. Cuando el reparto dependía del plan, ese supuesto se
+   * caía en silencio y las tres fallaban con mensajes que no decían por qué
+   * ("expected '0.00,0.00,0.00,0.00,0.00' to contain '1000.00'").
+   *
+   * Esta comprobación va ANTES y mira el reparto entero: si vuelve a depender
+   * del orden físico de las filas, falla acá, con el número que lo explica.
+   */
+  it('TODOS los proveedores tienen devoluciones, no sólo la mitad más nueva', async () => {
+    const reparto = await prisma.$queryRaw<Array<{ conDevolucion: bigint; proveedores: bigint }>>`
+      SELECT min(t."cuantas") AS "conDevolucion", count(*) AS "proveedores"
+        FROM (
+          SELECT o."supplierId",
+                 count(*) FILTER (WHERE d."id" IS NOT NULL) AS "cuantas"
+            FROM "PurchaseReceipt" r
+            JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
+            LEFT JOIN "PurchaseReturn" d
+                   ON d."purchaseReceiptId" = r."id" AND d."status" = 'CONFIRMED'
+           WHERE o."number" LIKE 'OC-4C-%'
+           GROUP BY o."supplierId"
+        ) t
+    `
+    const fila = reparto[0]
+
+    expect(Number(fila?.proveedores ?? 0), 'están los dos mil proveedores').toBe(PROVEEDORES)
+    expect(
+      Number(fila?.conDevolucion ?? 0),
+      'el proveedor PEOR servido igual tiene devoluciones: el reparto no depende del plan',
+    ).toBe(DEVUELTAS_POR_PROVEEDOR)
   })
 
   it('los pagos sin imputar de un proveedor', async () => {
