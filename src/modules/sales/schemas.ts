@@ -64,6 +64,23 @@ export const crearVentaSchema = z
           .object({
             productId: idSchema,
             quantity: quantitySchema,
+            /**
+             * De que partidas sale esta linea. Fase 4D. OPCIONAL Y RARA.
+             *
+             * Cuando no viene --que es siempre, en el flujo normal-- el servidor
+             * reparte por FEFO. Exige `lots.adjust`: pasarle por encima a la
+             * politica de rotacion es una correccion, no una operacion de
+             * mostrador. Ver docs/FEFO_POLICY.md.
+             *
+             * El servidor NO le cree: comprueba que cada lote exista, tenga
+             * unidades, no este vencido y que el reparto sume exactamente la
+             * cantidad de la linea.
+             */
+            lots: z
+              .array(z.object({ lotId: idSchema, quantity: quantitySchema }).strict())
+              .min(1)
+              .max(20)
+              .optional(),
           })
           .strict(),
       )

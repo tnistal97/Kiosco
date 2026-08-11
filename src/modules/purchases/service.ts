@@ -40,7 +40,12 @@ import {
   type Dinero,
 } from '@/server/money'
 import { CERO_C, aTextoCantidad, cantidad as aCantidad, type Cantidad } from '@/server/cantidad'
-import { applyStockMovement, type TxClient } from '@/modules/inventory/service'
+import {
+  applyStockMovement,
+  type ResultadoMovimiento,
+  type TxClient,
+} from '@/modules/inventory/service'
+import { motivoDeLotesInvalidos, resolverLotesRecibidos } from '@/modules/lots/entrada'
 import { exigirProveedorActivo } from '@/modules/suppliers/service'
 import { registrarCambioDeCosto } from '@/modules/products/costo'
 import {
@@ -1008,7 +1013,17 @@ export async function recibirMercaderia(
         purchaseUnit: true,
         unitsPerPurchaseUnit: true,
         unitCost: true,
-        product: { select: { id: true, name: true, saleUnit: true, cost: true } },
+        product: {
+          select: {
+            id: true,
+            name: true,
+            saleUnit: true,
+            cost: true,
+            // Fase 4D: decide si esta linea tiene que decir de que partidas llego.
+            lotTracking: true,
+            expirationTracking: true,
+          },
+        },
       },
     })
     const porId = new Map(lineas.map((l) => [l.id, l]))
@@ -1051,6 +1066,28 @@ export async function recibirMercaderia(
       }
 
       costos.set(pedido.orderItemId, { esperado, recibido })
+
+      // 5b bis. Las partidas, comprobadas contra la politica del producto. Fase
+      //         4D. Va ACA --antes de crear la cabecera-- para que un rechazo no
+      //         deje media entrega registrada, igual que el permiso de costo.
+      const motivoDeLotes = motivoDeLotesInvalidos(
+        {
+          id: linea.product.id,
+          name: linea.product.name,
+          lotTracking: linea.product.lotTracking,
+          expirationTracking: linea.product.expirationTracking,
+        },
+        pedido.lots,
+        aCantidad(pedido.quantity),
+      )
+      if (motivoDeLotes !== null) throw invalid(motivoDeLotes, undefined, { code: 'LOT_REQUIRED' })
+
+      // Dar de alta una partida es administrar el catalogo de lotes. Sin este
+      // permiso no se puede recibir un producto que los exige, y eso es
+      // deliberado: quien recibe es quien lee el codigo del envase.
+      if (pedido.lots !== undefined && !session.permissions.has('lots.manage')) {
+        throw forbidden('No tenés permiso para cargar partidas al recibir')
+      }
 
       // El importe de LA OBLIGACION, al costo REAL de la factura y no al
       // esperado de la orden (objetivo 6). Se redondea LINEA POR LINEA y
@@ -1136,7 +1173,7 @@ export async function recibirMercaderia(
       }
 
       // 7. La linea de la recepcion.
-      await tx.purchaseReceiptItem.create({
+      const lineaRecibida = await tx.purchaseReceiptItem.create({
         data: {
           purchaseReceiptId: recepcion.id,
           purchaseOrderItemId: linea.id,
@@ -1149,23 +1186,83 @@ export async function recibirMercaderia(
           stockQuantity: calculada.cantidadDeStock,
           stockUnitCost: calculada.costoDeStock,
         },
+        select: { id: true },
       })
 
+      // 7 bis. Las partidas de la linea. Fase 4D.
+      //
+      //         Se resuelven o se crean por CODIGO: la mercaderia que llega trae
+      //         partidas que el sistema no vio nunca. La conversion usa el mismo
+      //         factor que la linea --3 cajas de 8 son 24 unidades-- y por eso el
+      //         stock del lote entra en unidad de VENTA y no de compra.
+      const partes =
+        pedido.lots === undefined
+          ? []
+          : await resolverLotesRecibidos(tx, {
+              producto: {
+                id: linea.product.id,
+                name: linea.product.name,
+                lotTracking: linea.product.lotTracking,
+                expirationTracking: linea.product.expirationTracking,
+              },
+              lotes: pedido.lots,
+              unitsPerPurchaseUnit: linea.unitsPerPurchaseUnit,
+              userId: session.userId,
+            })
+
+      for (const parte of partes) {
+        await tx.purchaseReceiptItemLot.create({
+          data: {
+            purchaseReceiptItemId: lineaRecibida.id,
+            lotId: parte.lotId,
+            quantity: parte.quantity,
+            stockQuantity: parte.stockQuantity,
+          },
+        })
+      }
+
       // 9-10. El stock, por la unica puerta.
-      const movimiento = await applyStockMovement(tx, {
-        branchId: session.branchId,
-        productId: linea.productId,
-        type: 'PURCHASE_RECEIPT',
-        quantity: calculada.cantidadDeStock,
-        saleUnit,
-        userId: session.userId,
-        reason: `Recepción de ${orden.number}`,
-        // A la RECEPCION, no a la orden: una orden puede tener varias entregas
-        // y con la orden como referencia no se sabria cual movio estas
-        // unidades.
-        referenceType: 'PurchaseReceipt',
-        referenceId: recepcion.id,
-      })
+      //
+      //       Con partidas hay un movimiento POR PARTIDA, y la suma de sus
+      //       cantidades es exactamente `stockQuantity` de la linea: lo garantiza
+      //       la comprobacion de arriba, que exige que las partidas sumen lo
+      //       recibido. Sin partidas, un solo movimiento como siempre.
+      const movimientos: ResultadoMovimiento[] = []
+      const aplicar: Array<{ lotId: number | null; cantidad: Cantidad }> =
+        partes.length === 0
+          ? [{ lotId: null, cantidad: calculada.cantidadDeStock }]
+          : partes.map((p) => ({ lotId: p.lotId, cantidad: p.stockQuantity }))
+
+      for (const uno of aplicar) {
+        movimientos.push(
+          await applyStockMovement(tx, {
+            branchId: session.branchId,
+            productId: linea.productId,
+            lotId: uno.lotId,
+            type: 'PURCHASE_RECEIPT',
+            quantity: uno.cantidad,
+            saleUnit,
+            userId: session.userId,
+            reason: `Recepción de ${orden.number}`,
+            // A la RECEPCION, no a la orden: una orden puede tener varias
+            // entregas y con la orden como referencia no se sabria cual movio
+            // estas unidades.
+            referenceType: 'PurchaseReceipt',
+            referenceId: recepcion.id,
+          }),
+        )
+      }
+
+      // El PRIMERO trae el saldo anterior y el ULTIMO el resultante: con varias
+      // partidas, "40 → 64" son los extremos de la linea entera, no los de una
+      // de las partidas. Con una sola son el mismo movimiento.
+      const primero = movimientos[0]
+      const ultimo = movimientos[movimientos.length - 1]
+      const movimiento = {
+        movementId: ultimo?.movementId ?? 0,
+        previousQuantity: primero?.previousQuantity ?? CERO_C,
+        resultingQuantity: ultimo?.resultingQuantity ?? calculada.cantidadDeStock,
+      }
 
       // 11-12. El costo. Politica LAST RECEIVED COST: manda la ultima
       //        recepcion confirmada. Ver docs/PURCHASE_RECEIVING.md.

@@ -30,6 +30,7 @@ import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
 import type { Session } from '@/server/auth/session'
 import type { Monto } from '@/lib/money'
 import type { TextoCantidad } from '@/lib/cantidad'
+import type { FechaLocal } from '@/lib/tiempo'
 import { CERO_D, aMonto, aMontoCosto, multiplicar, redondearPesos, sumar } from '@/server/money'
 import {
   CERO_C,
@@ -37,8 +38,10 @@ import {
   cantidad as aCantidad,
   esPositivaCantidad,
   restarCantidades,
+  sumarCantidades,
   type Cantidad,
 } from '@/server/cantidad'
+import { comoFechaLocal } from '@/modules/lots/fefo'
 import { applyStockMovement, type TxClient } from '@/modules/inventory/service'
 import { applySupplierAccountMovement } from '@/modules/suppliers/cuenta'
 import {
@@ -126,6 +129,20 @@ export interface RenglonRetornable {
   stockActual: TextoCantidad
   /** Costo por unidad de compra, CONGELADO en la recepcion. */
   unitCost: string
+  /**
+   * Las partidas CON LAS QUE LLEGO esta linea. Vacio sin rastreo. Fase 4D.
+   *
+   * Es la lista de la que hay que elegir: devolver de otra partida sacaria
+   * mercaderia que el proveedor nunca mando.
+   */
+  lotes: Array<{
+    lotId: number
+    code: string
+    expirationDate: FechaLocal | null
+    recibido: TextoCantidad
+    devuelto: TextoCantidad
+    disponible: TextoCantidad
+  }>
 }
 
 export interface Retornables {
@@ -202,6 +219,8 @@ export async function retornablesDeRecepcion(
      ORDER BY ri."id"
   `
 
+  const porLinea = await lotesRetornables(prisma, receiptId)
+
   return {
     receiptId: recepcion.id,
     orderNumber: recepcion.order.number,
@@ -219,8 +238,68 @@ export async function retornablesDeRecepcion(
       disponible: aTextoCantidad(restarCantidades(f.recibido, f.devuelto)),
       stockActual: aTextoCantidad(f.stockActual ?? CERO_C),
       unitCost: aMontoCosto(f.unitCost),
+      // Las partidas CON LAS QUE LLEGO esta linea, y cuanto queda de cada una.
+      // Vacio para todo producto sin rastreo, que es el catalogo existente.
+      lotes: (porLinea.get(f.receiptItemId) ?? []).map((l) => ({
+        lotId: l.lotId,
+        code: l.code,
+        expirationDate: comoFechaLocal(l.expirationDate),
+        recibido: aTextoCantidad(l.recibido),
+        devuelto: aTextoCantidad(l.devuelto),
+        disponible: aTextoCantidad(restarCantidades(l.recibido, l.devuelto)),
+      })),
     })),
   }
+}
+
+interface FilaLoteRetornable {
+  receiptItemId: number
+  lotId: number
+  code: string
+  expirationDate: Date | null
+  recibido: Cantidad
+  devuelto: Cantidad
+}
+
+/**
+ * Que partidas trajo cada linea de una entrega, y cuanto queda de cada una.
+ *
+ * En su propia consulta y no como subconsulta de la anterior: son una-a-muchas
+ * contra la linea, y meterlas ahi multiplicaria las filas y obligaria a
+ * desagrupar en JavaScript lo que ya venia agrupado.
+ */
+async function lotesRetornables(
+  cliente: TxClient | typeof prisma,
+  receiptId: number,
+): Promise<Map<number, FilaLoteRetornable[]>> {
+  const filas = await cliente.$queryRaw<FilaLoteRetornable[]>`
+    SELECT ril."purchaseReceiptItemId" AS "receiptItemId",
+           ril."lotId",
+           l."code",
+           l."expirationDate",
+           ril."quantity"              AS "recibido",
+           COALESCE((
+             SELECT sum(di."quantity")
+               FROM "PurchaseReturnItem" di
+               JOIN "PurchaseReturn" d ON d."id" = di."purchaseReturnId"
+              WHERE di."purchaseReceiptItemId" = ril."purchaseReceiptItemId"
+                AND di."lotId" = ril."lotId"
+                AND d."status" = 'CONFIRMED'
+           ), 0)                       AS "devuelto"
+      FROM "PurchaseReceiptItemLot" ril
+      JOIN "PurchaseReceiptItem" ri ON ri."id" = ril."purchaseReceiptItemId"
+      JOIN "ProductLot" l ON l."id" = ril."lotId"
+     WHERE ri."purchaseReceiptId" = ${receiptId}
+     ORDER BY ril."purchaseReceiptItemId", ril."lotId"
+  `
+
+  const mapa = new Map<number, FilaLoteRetornable[]>()
+  for (const f of filas) {
+    const lista = mapa.get(f.receiptItemId) ?? []
+    lista.push(f)
+    mapa.set(f.receiptItemId, lista)
+  }
+  return mapa
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +332,8 @@ async function resolverRenglones(
       purchaseUnit: true,
       unitsPerPurchaseUnit: true,
       unitCost: true,
-      product: { select: { name: true, saleUnit: true } },
+      product: { select: { name: true, saleUnit: true, lotTracking: true } },
+      lots: { select: { lotId: true, quantity: true } },
     },
   })
   const porId = new Map(lineas.map((l) => [l.id, l]))
@@ -262,8 +342,46 @@ async function resolverRenglones(
     tx,
     pedidos.map((p) => p.receiptItemId),
   )
+  const yaDevueltoPorLote = await devueltoPorLote(
+    tx,
+    pedidos.map((p) => p.receiptItemId),
+  )
+
+  // Lo pedido POR LINEA, sumando sus partidas. Desde la Fase 4D una linea puede
+  // venir en varios renglones --uno por lote-- y comprobar cada uno contra el
+  // tope de la linea dejaria pasar dos renglones de 6 sobre una linea de 10.
+  const pedidoPorLinea = new Map<number, Cantidad>()
+  for (const p of pedidos) {
+    const previo = pedidoPorLinea.get(p.receiptItemId) ?? CERO_C
+    pedidoPorLinea.set(p.receiptItemId, sumarCantidades(previo, aCantidad(p.quantity)))
+  }
+
+  for (const [receiptItemId, pedido] of pedidoPorLinea) {
+    const linea = porId.get(receiptItemId)
+    if (!linea) {
+      throw conflict(`El renglón #${String(receiptItemId)} no es de esta entrega.`, {
+        code: 'RETURN_ITEM_MISMATCH',
+      })
+    }
+    const purchaseUnit = unidadDeCompraODefecto(linea.purchaseUnit)
+    const disponible = restarCantidades(
+      linea.receivedQuantity,
+      yaDevuelto.get(receiptItemId) ?? CERO_C,
+    )
+    if (pedido.greaterThan(disponible)) {
+      throw conflict(
+        `De "${linea.product.name}" llegaron ` +
+          `${conUnidadDeCompra(aTextoCantidad(linea.receivedQuantity), purchaseUnit)} y ` +
+          `quedan ${conUnidadDeCompra(aTextoCantidad(disponible), purchaseUnit)} sin ` +
+          `devolver: no se pueden devolver ` +
+          `${conUnidadDeCompra(aTextoCantidad(pedido), purchaseUnit)}.`,
+        { code: 'RETURN_EXCEEDS_RECEIVED' },
+      )
+    }
+  }
 
   return pedidos.map((pedido) => {
+    // La clave existe: el bucle de arriba recorrio exactamente los mismos ids.
     const linea = porId.get(pedido.receiptItemId)
     if (!linea) {
       throw conflict(`El renglón #${String(pedido.receiptItemId)} no es de esta entrega.`, {
@@ -273,20 +391,36 @@ async function resolverRenglones(
 
     const purchaseUnit = unidadDeCompraODefecto(linea.purchaseUnit)
     const cuanto = aCantidad(pedido.quantity)
-    const disponible = restarCantidades(
-      linea.receivedQuantity,
-      yaDevuelto.get(pedido.receiptItemId) ?? CERO_C,
-    )
+    const lotId = pedido.lotId ?? null
 
-    if (cuanto.greaterThan(disponible)) {
-      throw conflict(
-        `De "${linea.product.name}" llegaron ` +
-          `${conUnidadDeCompra(aTextoCantidad(linea.receivedQuantity), purchaseUnit)} y ` +
-          `quedan ${conUnidadDeCompra(aTextoCantidad(disponible), purchaseUnit)} sin ` +
-          `devolver: no se pueden devolver ` +
-          `${conUnidadDeCompra(pedido.quantity, purchaseUnit)}.`,
-        { code: 'RETURN_EXCEEDS_RECEIVED' },
-      )
+    // La partida tiene que ser UNA DE LAS QUE LLEGARON en esta linea. Devolver
+    // de otra sacaria mercaderia que el proveedor nunca mando y dejaria en el
+    // deposito la que hay que sacar. Ver el objetivo 19.
+    if (linea.lots.length > 0 && lotId === null) {
+      throw conflict(`"${linea.product.name}" llegó por partidas: hay que decir de cuál vuelve.`, {
+        code: 'LOT_REQUIRED',
+      })
+    }
+    if (lotId !== null) {
+      const dellote = linea.lots.find((l) => l.lotId === lotId)
+      if (!dellote) {
+        throw conflict(
+          `Esa partida no es una de las que llegaron con esta entrega de ` +
+            `"${linea.product.name}".`,
+          { code: 'LOT_NOT_IN_RECEIPT' },
+        )
+      }
+      const devueltoDelLote =
+        yaDevueltoPorLote.get(`${String(linea.id)}:${String(lotId)}`) ?? CERO_C
+      const disponibleDelLote = restarCantidades(dellote.quantity, devueltoDelLote)
+      if (cuanto.greaterThan(disponibleDelLote)) {
+        throw conflict(
+          `De esa partida de "${linea.product.name}" llegaron ` +
+            `${conUnidadDeCompra(aTextoCantidad(dellote.quantity), purchaseUnit)} y quedan ` +
+            `${conUnidadDeCompra(aTextoCantidad(disponibleDelLote), purchaseUnit)} sin devolver.`,
+          { code: 'RETURN_EXCEEDS_RECEIVED' },
+        )
+      }
     }
 
     // La conversion a unidad de venta, con el factor de LA RECEPCION. Es lo que
@@ -303,6 +437,7 @@ async function resolverRenglones(
       purchaseUnit,
       unitsPerPurchaseUnit: linea.unitsPerPurchaseUnit,
       stockQuantity,
+      lotId,
       unitCost: linea.unitCost,
       // Redondeado A PESOS renglon por renglon y despues sumado, en ese orden:
       // es como se arma cualquier documento con importes, y sumar exacto para
@@ -310,6 +445,27 @@ async function resolverRenglones(
       amount: redondearPesos(multiplicar(linea.unitCost, cuanto)),
     }
   })
+}
+
+/** Lo ya devuelto de cada par (linea, lote), por devoluciones CONFIRMADAS. */
+async function devueltoPorLote(
+  tx: TxClient,
+  receiptItemIds: readonly number[],
+): Promise<Map<string, Cantidad>> {
+  if (receiptItemIds.length === 0) return new Map()
+
+  const filas = await tx.$queryRaw<Array<{ id: number; lotId: number; devuelto: Cantidad }>>`
+    SELECT di."purchaseReceiptItemId" AS "id",
+           di."lotId"                 AS "lotId",
+           sum(di."quantity")         AS "devuelto"
+      FROM "PurchaseReturnItem" di
+      JOIN "PurchaseReturn" d ON d."id" = di."purchaseReturnId"
+     WHERE di."purchaseReceiptItemId" = ANY(${[...receiptItemIds]}::int[])
+       AND di."lotId" IS NOT NULL
+       AND d."status" = 'CONFIRMED'
+     GROUP BY di."purchaseReceiptItemId", di."lotId"
+  `
+  return new Map(filas.map((f) => [`${String(f.id)}:${String(f.lotId)}`, f.devuelto]))
 }
 
 /**
@@ -404,6 +560,7 @@ export async function crearDevolucion(
           create: renglones.map((r) => ({
             productId: r.productId,
             purchaseReceiptItemId: r.receiptItemId,
+            lotId: r.lotId,
             quantity: r.quantity,
             purchaseUnit: r.purchaseUnit,
             unitsPerPurchaseUnit: r.unitsPerPurchaseUnit,
@@ -489,6 +646,7 @@ export async function editarDevolucion(
           create: renglones.map((r) => ({
             productId: r.productId,
             purchaseReceiptItemId: r.receiptItemId,
+            lotId: r.lotId,
             quantity: r.quantity,
             purchaseUnit: r.purchaseUnit,
             unitsPerPurchaseUnit: r.unitsPerPurchaseUnit,
@@ -646,9 +804,12 @@ export async function confirmarDevolucion(
         stockQuantity: true,
         unitCost: true,
         amount: true,
+        lotId: true,
         product: { select: { name: true, saleUnit: true } },
       },
-      orderBy: { purchaseReceiptItemId: 'asc' },
+      // Por linea y, dentro de la linea, por lote: el orden de los bloqueos es
+      // parte del contrato desde la Fase 4D.
+      orderBy: [{ purchaseReceiptItemId: 'asc' }, { lotId: 'asc' }],
     })
 
     if (renglones.length === 0) {
@@ -680,19 +841,29 @@ export async function confirmarDevolucion(
 
     const movimientos: ResultadoDeConfirmacion['movimientos'] = []
 
+    // Lo que ESTA devolucion pide de cada linea, sumando sus partidas. Con dos
+    // renglones de la misma linea --uno por lote-- comprobar cada uno contra el
+    // tope de la linea dejaria pasar dos de 6 sobre una linea de 10.
+    const pideDeLaLinea = new Map<number, Cantidad>()
+    for (const r of renglones) {
+      const previo = pideDeLaLinea.get(r.purchaseReceiptItemId) ?? CERO_C
+      pideDeLaLinea.set(r.purchaseReceiptItemId, sumarCantidades(previo, r.quantity))
+    }
+
     for (const renglon of renglones) {
       const entro = recibidoPorId.get(renglon.purchaseReceiptItemId) ?? CERO_C
       const devuelto = yaDevuelto.get(renglon.purchaseReceiptItemId) ?? CERO_C
       const disponible = restarCantidades(entro, devuelto)
       const purchaseUnit = unidadDeCompraODefecto(renglon.purchaseUnit)
+      const pide = pideDeLaLinea.get(renglon.purchaseReceiptItemId) ?? renglon.quantity
 
-      if (renglon.quantity.greaterThan(disponible)) {
+      if (pide.greaterThan(disponible)) {
         throw conflict(
           `De "${renglon.product.name}" quedan ` +
             `${conUnidadDeCompra(aTextoCantidad(disponible), purchaseUnit)} sin devolver ` +
             `de ${conUnidadDeCompra(aTextoCantidad(entro), purchaseUnit)} recibidas, y ` +
             `esta devolución pide ` +
-            `${conUnidadDeCompra(aTextoCantidad(renglon.quantity), purchaseUnit)}.`,
+            `${conUnidadDeCompra(aTextoCantidad(pide), purchaseUnit)}.`,
           { code: 'RETURN_EXCEEDS_RECEIVED' },
         )
       }
@@ -704,6 +875,9 @@ export async function confirmarDevolucion(
       const movimiento = await applyStockMovement(tx, {
         branchId: session.branchId,
         productId: renglon.productId,
+        // De la MISMA partida con la que llego. Fase 4D, objetivo 19: sacar de
+        // otra partida seria devolver mercaderia que el proveedor nunca mando.
+        lotId: renglon.lotId,
         type: 'PURCHASE_RETURN',
         quantity: renglon.stockQuantity.negated(),
         saleUnit: unidadDeVentaODefecto(renglon.product.saleUnit),

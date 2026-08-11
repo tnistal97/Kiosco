@@ -33,6 +33,15 @@ export const lineaDeDevolucionSchema = z
     receiptItemId: idSchema,
     /** EN UNIDAD DE COMPRA, igual que la recepcion. "2 cajas" es `2`. */
     quantity: quantitySchema,
+    /**
+     * De que PARTIDA vuelve. Fase 4D.
+     *
+     * No se puede elegir cualquiera: tiene que ser uno de los lotes CON LOS QUE
+     * LLEGO esa linea. Devolver del lote equivocado sacaria mercaderia de una
+     * partida que el proveedor nunca mando y dejaria en el deposito la que hay
+     * que sacar. Lo comprueba el servicio contra `PurchaseReceiptItemLot`.
+     */
+    lotId: idSchema.optional(),
   })
   .strict()
 
@@ -41,8 +50,13 @@ const renglones = z
   .min(1, 'Una devolución sin renglones no devuelve nada')
   .max(200)
   .refine(
-    (lista) => new Set(lista.map((l) => l.receiptItemId)).size === lista.length,
-    'Un renglón de la entrega no puede aparecer dos veces',
+    // La clave es (linea, lote) desde la Fase 4D: una linea que llego repartida
+    // en dos partidas se devuelve entera con DOS renglones, uno por lote. Con la
+    // clave anterior habria que armar dos devoluciones para un solo hecho fisico.
+    (lista) =>
+      new Set(lista.map((l) => `${String(l.receiptItemId)}:${String(l.lotId ?? 0)}`)).size ===
+      lista.length,
+    'Un renglón de la entrega no puede aparecer dos veces con la misma partida',
   )
 
 export const crearDevolucionSchema = z

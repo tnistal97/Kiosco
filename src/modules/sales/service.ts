@@ -31,7 +31,9 @@ import type { TextoCantidad } from '@/lib/cantidad'
 import {
   aTextoCantidad,
   cantidad as aCantidad,
+  esCeroCantidad,
   negarCantidad,
+  restarCantidades,
   sumarCantidades,
   type Cantidad,
 } from '@/server/cantidad'
@@ -52,10 +54,21 @@ import type { PagoInput } from './schemas'
 import { turnoAbiertoDe, turnoParaOperar } from '@/modules/cash/service.turnos'
 import { applyStockMovement } from '@/modules/inventory/service'
 import { applyAccountMovement, autorizanteDelLimite } from '@/modules/clients/cuenta'
+import { resolverSalida } from '@/modules/lots/salida'
+import { politicaDeLoteODefecto } from '@/modules/lots/politicas'
+import type { LineaDeReparto } from '@/modules/lots/fefo'
+import { hoyEnSucursal } from '@/server/tiempo'
 
 export interface SaleLineInput {
   productId: number
   quantity: TextoCantidad
+  /**
+   * Reparto por lote DECLARADO. Fase 4D. Opcional y raro.
+   *
+   * Sin esto --que es el flujo normal-- el servidor reparte por FEFO. Con esto
+   * exige `lots.adjust`. Ver docs/FEFO_POLICY.md.
+   */
+  lots?: Array<{ lotId: number; quantity: TextoCantidad }>
 }
 
 /** Un pago ya resuelto: con su importe y su vuelto calculados por el servidor. */
@@ -130,6 +143,8 @@ interface Catalogado {
   /** Para congelarlo en la linea. NUNCA sale hacia la respuesta. */
   cost: Dinero | null
   saleUnit: string
+  /** NONE | OPTIONAL | REQUIRED. Fase 4D. */
+  lotTracking: string
 }
 
 export interface CreateSaleInput {
@@ -221,16 +236,43 @@ export interface CreatedSale {
  * Importa: con dos lineas de 8 unidades y 10 en stock, comprobar linea por
  * linea da "hay stock" dos veces y el resultado final es -6.
  */
-function consolidar(items: SaleLineInput[]): Array<{ productId: number; quantity: Cantidad }> {
+function consolidar(
+  items: SaleLineInput[],
+): Array<{ productId: number; quantity: Cantidad; lots?: LineaDeReparto[] }> {
   const porProducto = new Map<number, Cantidad>()
+  // El reparto declarado se consolida igual que la cantidad, y por el mismo
+  // motivo: dos lineas del mismo producto que eligen la misma partida tienen
+  // que sumar, no pisarse.
+  const lotesPorProducto = new Map<number, Map<number, Cantidad>>()
+
   for (const item of items) {
     const acumulado = porProducto.get(item.productId)
     const cantidad = aCantidad(item.quantity)
     porProducto.set(item.productId, acumulado ? sumarCantidades(acumulado, cantidad) : cantidad)
+
+    if (item.lots !== undefined) {
+      const mapa = lotesPorProducto.get(item.productId) ?? new Map<number, Cantidad>()
+      for (const l of item.lots) {
+        const previo = mapa.get(l.lotId)
+        const c = aCantidad(l.quantity)
+        mapa.set(l.lotId, previo ? sumarCantidades(previo, c) : c)
+      }
+      lotesPorProducto.set(item.productId, mapa)
+    }
   }
+
   return (
     [...porProducto.entries()]
-      .map(([productId, quantity]) => ({ productId, quantity }))
+      .map(([productId, quantity]) => {
+        const mapa = lotesPorProducto.get(productId)
+        return {
+          productId,
+          quantity,
+          ...(mapa === undefined
+            ? {}
+            : { lots: [...mapa.entries()].map(([lotId, q]) => ({ lotId, quantity: q })) }),
+        }
+      })
       // Orden estable por id: dos ventas simultaneas toman los bloqueos de fila
       // en el mismo orden y no pueden quedar en interbloqueo.
       .sort((a, b) => a.productId - b.productId)
@@ -259,14 +301,28 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
       //    cuando el producto no lo tiene cargado.
       const productos = await tx.product.findMany({
         where: { id: { in: lineas.map((l) => l.productId) }, branchId },
-        select: { id: true, name: true, price: true, cost: true, saleUnit: true },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          cost: true,
+          saleUnit: true,
+          // Fase 4D. Se lee siempre --cuesta una columna en una consulta que ya
+          // se hacia-- y decide si esta linea necesita elegir partida.
+          lotTracking: true,
+        },
       })
 
       // Cada linea se empareja con su producto una sola vez. A partir de aca
       // el flujo trabaja con pares ya resueltos, sin volver a consultar el
       // mapa y sin tener que afirmar que el resultado no es nulo.
       const porId = new Map(productos.map((p) => [p.id, p]))
-      const pedido: Array<{ productId: number; quantity: Cantidad; producto: Catalogado }> = []
+      const pedido: Array<{
+        productId: number
+        quantity: Cantidad
+        lots?: LineaDeReparto[]
+        producto: Catalogado
+      }> = []
       const faltantes: number[] = []
 
       for (const linea of lineas) {
@@ -407,8 +463,13 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
             })),
           },
         },
-        select: { id: true, date: true },
+        // Los items vuelven con su id desde la Fase 4D: son la clave foranea de
+        // `SaleItemLotAllocation`, y pedirlos aca sale gratis --la fila ya se
+        // escribio-- mientras que releerlos despues seria una consulta mas.
+        select: { id: true, date: true, items: { select: { id: true, productId: true } } },
       })
+
+      const itemsCreados = new Map(venta.items.map((i) => [i.productId, i.id]))
 
       // 5) El stock, por el libro de inventario.
       //
@@ -428,17 +489,57 @@ export async function createSale(session: Session, input: CreateSaleInput): Prom
       //
       //    Sin auditoria propia: la venta ya se audita entera unas lineas mas
       //    abajo. Ver docs/INVENTORY_LEDGER.md, seccion 6.
+      //
+      //    Fase 4D: cuando el producto tiene lotes, la linea puede salir de
+      //    varias partidas. `SaleItem.quantity` NO se parte --el cliente compro
+      //    cinco yogures, no tres de una cosa y dos de otra-- y el reparto queda
+      //    en `SaleItemLotAllocation`, que es lo que despues lee la anulacion.
+      //
+      //    `resolverSalida` devuelve una sola linea sin lote para todo producto
+      //    con `lotTracking = NONE`, que es el catalogo entero: ni una consulta
+      //    de mas en el camino de siempre.
+      const conLotes = pedido.some((l) => politicaDeLoteODefecto(l.producto.lotTracking) !== 'NONE')
+      const hoy = conLotes ? await hoyEnSucursal(tx, branchId) : ''
+
       for (const linea of pedido) {
-        await applyStockMovement(tx, {
+        if (linea.lots !== undefined && !session.permissions.has('lots.adjust')) {
+          throw forbidden('No tenés permiso para elegir el lote a mano')
+        }
+
+        const salida = await resolverSalida(tx, {
           branchId,
-          productId: linea.productId,
-          type: 'SALE',
-          quantity: negarCantidad(linea.quantity),
-          saleUnit: unidadDeVentaODefecto(linea.producto.saleUnit),
-          userId: session.userId,
-          referenceType: 'Sale',
-          referenceId: venta.id,
+          producto: {
+            id: linea.productId,
+            name: linea.producto.name,
+            saleUnit: unidadDeVentaODefecto(linea.producto.saleUnit),
+            lotTracking: linea.producto.lotTracking,
+          },
+          quantity: linea.quantity,
+          hoy,
+          manual: linea.lots,
         })
+
+        const item = itemsCreados.get(linea.productId)
+
+        for (const parte of salida) {
+          await applyStockMovement(tx, {
+            branchId,
+            productId: linea.productId,
+            lotId: parte.lotId,
+            type: 'SALE',
+            quantity: negarCantidad(parte.quantity),
+            saleUnit: unidadDeVentaODefecto(linea.producto.saleUnit),
+            userId: session.userId,
+            referenceType: 'Sale',
+            referenceId: venta.id,
+          })
+
+          if (parte.lotId !== null && item !== undefined) {
+            await tx.saleItemLotAllocation.create({
+              data: { saleItemId: item, lotId: parte.lotId, quantity: parte.quantity },
+            })
+          }
+        }
       }
 
       // 6) La caja recibe SOLO el efectivo.
@@ -671,23 +772,44 @@ export async function cancelSale(
           quantity: true,
           price: true,
           product: { select: { saleUnit: true } },
+          // Fase 4D: a que partidas hay que devolver. Se LEEN, no se recalculan.
+          lots: { select: { lotId: true, quantity: true }, orderBy: { lotId: 'asc' } },
         },
       })
 
       for (const item of [...items].sort((a, b) => a.productId - b.productId)) {
-        await applyStockMovement(tx, {
-          branchId: venta.branchId,
-          productId: item.productId,
-          type: 'SALE_CANCEL',
-          // La cantidad EXACTA que se vendio, leida de la linea. Restaurar
-          // 0,425 kg devuelve 0,425 kg: sin recalcular y sin redondear.
-          quantity: item.quantity,
-          saleUnit: unidadDeVentaODefecto(item.product.saleUnit),
-          userId: session.userId,
-          reason: motivo,
-          referenceType: 'Sale',
-          referenceId: saleId,
-        })
+        // FEFO NO se recalcula en la anulacion, y es de las decisiones que mas
+        // importan de la fase: diez dias despues, el lote que vencia manana ya
+        // vencio y FEFO elegiria otro. Las tres unidades volverian a una partida
+        // que nunca las tuvo, y el lote vencido quedaria con un faltante que
+        // nadie puede explicar. Ver docs/FEFO_POLICY.md.
+        //
+        // Lo que no salio de ningun lote --el stock sin asignar de un producto
+        // OPTIONAL-- vuelve igual: es la resta entre lo vendido y lo repartido.
+        const repartido = item.lots.reduce((s, l) => sumarCantidades(s, l.quantity), aCantidad(0))
+        const sinLote = restarCantidades(item.quantity, repartido)
+
+        const partes: Array<{ lotId: number | null; quantity: Cantidad }> = [
+          ...(esCeroCantidad(sinLote) ? [] : [{ lotId: null, quantity: sinLote }]),
+          ...item.lots.map((l) => ({ lotId: l.lotId, quantity: l.quantity })),
+        ]
+
+        for (const parte of partes) {
+          await applyStockMovement(tx, {
+            branchId: venta.branchId,
+            productId: item.productId,
+            lotId: parte.lotId,
+            type: 'SALE_CANCEL',
+            // La cantidad EXACTA que se vendio, leida de la linea. Restaurar
+            // 0,425 kg devuelve 0,425 kg: sin recalcular y sin redondear.
+            quantity: parte.quantity,
+            saleUnit: unidadDeVentaODefecto(item.product.saleUnit),
+            userId: session.userId,
+            reason: motivo,
+            referenceType: 'Sale',
+            referenceId: saleId,
+          })
+        }
       }
 
       // Reversion de caja: contramovimiento, no borrado del original.

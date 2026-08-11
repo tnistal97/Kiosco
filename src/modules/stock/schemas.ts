@@ -53,6 +53,19 @@ export const ajusteRelativoSchema = z
      */
     type: z.enum(TIPOS_DE_AJUSTE).default('MANUAL_ADJUSTMENT'),
     reason: motivoSchema,
+    /**
+     * De que partida sale --o entra-- el ajuste. Fase 4D.
+     *
+     * Obligatorio para un producto `REQUIRED`: "se rompieron 2 yogures" tiene
+     * que decir de cual, porque el que se rompio ya no esta y el que quedaba
+     * vence otro dia. Prohibido para un producto sin rastreo.
+     *
+     * Cuando NO viene y el producto tiene lotes opcionales, el ajuste sale del
+     * stock sin asignar. No se elige por FEFO a espaldas de nadie: una perdida
+     * no es una venta, y adivinar de que partida se rompio una botella seria
+     * inventar el dato.
+     */
+    lotId: z.coerce.number().int().positive().optional(),
   })
   .strict()
   .superRefine((v, ctx) => {

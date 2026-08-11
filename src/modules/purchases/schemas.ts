@@ -23,6 +23,15 @@ import {
 } from '@/server/http/validate'
 import { paginationQuerySchema } from '@/server/http/pagination'
 import { UNIDADES_DE_COMPRA } from '@/modules/products/units'
+import { CODIGO_DE_LOTE, LARGO_MAXIMO_DE_CODIGO } from '@/modules/lots/politicas'
+
+/** El codigo de partida, tal cual esta impreso en el envase. */
+const loteCodigoSchema = z
+  .string()
+  .trim()
+  .min(1, 'El código del lote es obligatorio')
+  .max(LARGO_MAXIMO_DE_CODIGO)
+  .regex(CODIGO_DE_LOTE, 'El código admite letras, números, espacios y los signos . _ / -')
 import { MEDIOS_DE_PAGO_A_PROVEEDOR } from '@/modules/sales/payment-methods'
 import { ESTADOS_DE_COMPRA } from './status'
 
@@ -115,6 +124,36 @@ export const lineaDeRecepcionSchema = z
     /** EN UNIDAD DE COMPRA. Lo que llego ahora, no el acumulado. */
     quantity: quantitySchema,
     unitCost: costSchema.optional(),
+    /**
+     * Como se reparte esta linea entre partidas. Fase 4D.
+     *
+     * Las partidas se declaran POR CODIGO y no por id, y no es un descuido: la
+     * mercaderia que esta llegando trae partidas que el sistema no vio nunca. El
+     * operario lee el codigo del envase; pedirle que primero la de de alta en
+     * otra pantalla y despues elija de una lista es el camino que garantiza que
+     * nadie use la funcion.
+     *
+     * Obligatorio y completo para un producto `REQUIRED`: la suma tiene que dar
+     * EXACTAMENTE lo recibido. Una linea a medias asignar deja mercaderia en el
+     * deposito que el sistema no sabe de que partida es --ver el objetivo 41--.
+     *
+     * Las cantidades van EN UNIDAD DE COMPRA, igual que la linea: "6 cajas". La
+     * conversion a unidad de venta la hace el servidor con el factor de la linea.
+     */
+    lots: z
+      .array(
+        z
+          .object({
+            code: loteCodigoSchema,
+            expirationDate: fechaLocalSchema.nullable().optional(),
+            manufacturedAt: fechaLocalSchema.nullable().optional(),
+            quantity: quantitySchema,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(20)
+      .optional(),
   })
   .strict()
 

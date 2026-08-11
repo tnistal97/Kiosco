@@ -203,6 +203,10 @@ export async function ajustarStock(
     const resultado = await applyStockMovement(tx, {
       branchId: session.branchId,
       productId,
+      // La partida, cuando el producto la exige. `applyStockMovement` comprueba
+      // que el lote sea de este producto y que la politica lo admita: no hace
+      // falta repetirlo aca.
+      lotId: input.lotId ?? null,
       type: input.type,
       quantity: aCantidad(input.delta),
       saleUnit,
