@@ -251,7 +251,9 @@ test.describe('cobrar', () => {
     // 19. El comprobante se abre solo: el cliente esta esperando el papel.
     await expect(page.getByText('Comprobante de pago')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('Documento no fiscal')).toBeVisible()
-    await expect(page.getByText(/RC-\d{8}/)).toBeVisible()
+    // Anclado: `/RC-\d{8}/` a secas encuentra tambien el aviso flotante
+    // "Cobro RC-00000003 registrado", que sigue en pantalla unos segundos.
+    await expect(page.getByText(/^RC-\d{8}$/)).toBeVisible()
 
     expect(await saldoDe(page, CLIENTE)).toBe(saldoAntes - 1000)
     expect(await cajaEsperada(page), 'el efectivo cobrado entra al cajon').toBe(cajaAntes + 1000)

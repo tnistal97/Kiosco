@@ -24,6 +24,8 @@
  * Ver docs/PRODUCTION_MIGRATION_REHEARSAL.md.
  */
 
+// Carga `.env.local` al importarse. Ver `scripts/entorno.ts`.
+import './entorno'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

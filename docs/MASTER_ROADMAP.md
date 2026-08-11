@@ -200,19 +200,24 @@ Script suelto en la raíz que hace `deleteMany()` de productos, stock e ítems d
 
 # Fase 4 · Gestión avanzada
 
-| #    | Tarea                                                                                   | Prio | Impacto | Riesgo | Tam. | Depende       |
-| ---- | --------------------------------------------------------------------------------------- | ---- | ------- | ------ | ---- | ------------- |
-| 4.1  | **Clientes mínimos** (nombre, teléfono, saldo) y venta fiada                            | P2   | Alto    | Medio  | M    | 2.3 · **M10** |
-| 4.2  | **Cuenta corriente completa:** límite, vencimientos, pagos parciales, bloqueo por deuda | P3   | Medio   | Medio  | G    | 4.1           |
-| 4.3  | **Reportes del MVP** (§7 de la propuesta de arquitectura)                               | P2   | Alto    | Bajo   | G    | 2.3 · 3.3     |
-| 4.4  | **Reportes de 2.ª etapa**, incluido ventas por hora y margen por producto               | P3   | Medio   | Bajo   | M    | 4.3           |
-| 4.5  | **Pantalla de usuarios y permisos**                                                     | P1   | Alto    | Bajo   | M    | 1.2           |
-| 4.6  | **Pantalla de sucursales**                                                              | P2   | Medio   | Bajo   | P    | 3.2           |
-| 4.7  | **Promociones y combos**                                                                | P3   | Medio   | Medio  | G    | 2.7           |
-| 4.8  | **Precio mayorista por cantidad**                                                       | P3   | Medio   | Bajo   | M    | 3.3           |
-| 4.9  | **Comprobante impreso o PDF** y reimpresión                                             | P2   | Alto    | Medio  | M    | 2.7           |
-| 4.10 | **Configuración del sistema** (umbrales, topes de descuento, datos del negocio)         | P2   | Medio   | Bajo   | M    | 1.2           |
-| 4.11 | **Cambio y recuperación de contraseña**                                                 | P1   | Alto    | Bajo   | P    | 1.2           |
+> **4.1 y casi toda la 4.2 están hechas (Fase 4A).** También la 4.3 (Fase 3D) y
+> la 4.9 para comprobantes de cobranza. Ver
+> [`CUSTOMER_ACCOUNT_LEDGER.md`](CUSTOMER_ACCOUNT_LEDGER.md) y
+> [`CREDIT_POLICY.md`](CREDIT_POLICY.md).
+
+| #       | Tarea                                                                                               | Prio | Impacto | Riesgo | Tam. | Depende       |
+| ------- | --------------------------------------------------------------------------------------------------- | ---- | ------- | ------ | ---- | ------------- |
+| ~~4.1~~ | ~~**Clientes mínimos** (nombre, teléfono, saldo) y venta fiada~~ — **hecho, Fase 4A**               | P2   | Alto    | Medio  | M    | 2.3 · **M10** |
+| 4.2     | **Cuenta corriente completa** — hecho salvo **vencimientos** e **intereses**, deliberadamente fuera | P3   | Medio   | Medio  | G    | 4.1           |
+| ~~4.3~~ | ~~**Reportes del MVP**~~ — **hecho, Fase 3D**, más la cartera de clientes en la 4A                  | P2   | Alto    | Bajo   | G    | 2.3 · 3.3     |
+| 4.4     | **Reportes de 2.ª etapa**, incluido ventas por hora y margen por producto                           | P3   | Medio   | Bajo   | M    | 4.3           |
+| 4.5     | **Pantalla de usuarios y permisos**                                                                 | P1   | Alto    | Bajo   | M    | 1.2           |
+| 4.6     | **Pantalla de sucursales**                                                                          | P2   | Medio   | Bajo   | P    | 3.2           |
+| 4.7     | **Promociones y combos**                                                                            | P3   | Medio   | Medio  | G    | 2.7           |
+| 4.8     | **Precio mayorista por cantidad**                                                                   | P3   | Medio   | Bajo   | M    | 3.3           |
+| 4.9     | **Comprobante impreso o PDF** y reimpresión                                                         | P2   | Alto    | Medio  | M    | 2.7           |
+| 4.10    | **Configuración del sistema** (umbrales, topes de descuento, datos del negocio)                     | P2   | Medio   | Bajo   | M    | 1.2           |
+| 4.11    | **Cambio y recuperación de contraseña**                                                             | P1   | Alto    | Bajo   | P    | 1.2           |
 
 ---
 

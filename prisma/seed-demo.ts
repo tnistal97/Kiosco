@@ -1117,6 +1117,22 @@ async function main() {
   ])
 
   /**
+   * El siguiente numero de comprobante, igual que el servicio real.
+   *
+   * Se pide a la SECUENCIA y no se escribe a mano. Escribirlo a mano fue el
+   * primer intento y lo encontro la suite de extremo a extremo: el seed dejaba
+   * `RC-00000001` en la tabla con la secuencia todavia en 1, y el primer cobro
+   * de verdad chocaba contra el indice unico. La persona que cobra veia
+   * "Ya existe un registro con esos datos" sin haber hecho nada mal.
+   */
+  async function siguienteNumeroDeRecibo(): Promise<string> {
+    const filas = await prisma.$queryRaw<Array<{ n: bigint }>>`
+      SELECT nextval('"CustomerPayment_numero_seq"') AS n
+    `
+    return `RC-${String(filas[0]?.n ?? 1).padStart(8, '0')}`
+  }
+
+  /**
    * Escribe un movimiento de cuenta y deja el saldo del cliente al dia.
    *
    * Es el equivalente de `moverStock` para la cuenta corriente: el seed no
@@ -1286,7 +1302,7 @@ async function main() {
   // Juan paga $8.000 por transferencia: el saldo baja y la caja NO sube.
   const reciboJuan = await prisma.customerPayment.create({
     data: {
-      number: 'RC-00000001',
+      number: await siguienteNumeroDeRecibo(),
       branchId: sucursal.id,
       clientId: juan.id,
       amount: 8_000,
@@ -1332,7 +1348,7 @@ async function main() {
   const pagaMarta = Math.round(ventaDeMarta.aCuenta / 2)
   const reciboMarta = await prisma.customerPayment.create({
     data: {
-      number: 'RC-00000002',
+      number: await siguienteNumeroDeRecibo(),
       branchId: sucursal.id,
       clientId: marta.id,
       amount: pagaMarta,
@@ -1356,7 +1372,7 @@ async function main() {
       userId: cajeroId,
       amount: pagaMarta,
       paymentMethod: 'CASH',
-      description: `Cobro RC-00000002 · ${marta.name}`,
+      description: `Cobro ${reciboMarta.number} · ${marta.name}`,
       type: 'customer_payment',
       customerPaymentId: reciboMarta.id,
       date: haceHoras(2),

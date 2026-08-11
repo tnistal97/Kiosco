@@ -54,6 +54,35 @@ JWT_SECRET=dev-only-not-a-real-secret-0000000000
 
 > **Atención:** el CLI de Prisma **no lee `.env.local`**, solo `.env`. Para correr comandos de Prisma hay que pasar la variable en línea o mantener un `.env` local con el mismo valor. Es una fuente habitual de confusión: la aplicación funciona y `npx prisma …` falla con _"Environment variable not found: DATABASE_URL"_.
 
+### Los guiones del proyecto sí lo leen
+
+Desde la Fase 4A, `npm run integrity:check` y `npm run rehearsal` cargan
+`.env.local` por su cuenta —ver [`scripts/entorno.ts`](../scripts/entorno.ts)— y
+funcionan en una terminal recién abierta sin exportar nada.
+
+Una variable que ya esté en el entorno **gana siempre**, así que
+
+```bash
+DATABASE_URL='...otra_base_dev' npm run integrity:check
+```
+
+sigue apuntando a donde uno dijo. El archivo sólo completa lo que falta, que es
+la misma precedencia que usa Next.
+
+Esto **no cambia** el comportamiento del CLI de Prisma: `npx prisma migrate
+deploy` sigue necesitando la variable en línea o un `.env`.
+
+### `PG_BIN`, para el ensayo de migración
+
+`npm run rehearsal` invoca `pg_dump` y `pg_restore`. Si no están en el `PATH`
+—que es lo normal en Windows— hay que decirle dónde están:
+
+```bash
+PG_BIN='C:\Program Files\PostgreSQL\18\bin' npm run rehearsal
+```
+
+El síntoma sin eso es `spawnSync pg_dump ENOENT`.
+
 ## Esquema
 
 Desde la Fase 1 la cadena se aplica de principio a fin:

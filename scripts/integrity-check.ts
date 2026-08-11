@@ -10,6 +10,11 @@
  * Ver docs/INTEGRITY_CHECK.md.
  */
 
+// Va PRIMERO, y sin llamar a nada: carga `.env.local` como efecto de
+// importarse. `@/lib/prisma` crea el cliente al importarse, y para entonces
+// `DATABASE_URL` tiene que estar. Sin esto, el comando falla en una terminal
+// recien abierta aunque `.env.local` este completo.
+import './entorno'
 import { comprobarIntegridad } from '../src/modules/integrity/service'
 import { prisma } from '../src/lib/prisma'
 
