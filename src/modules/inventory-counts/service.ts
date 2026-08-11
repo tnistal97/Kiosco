@@ -105,6 +105,14 @@ export interface InventarioListado {
     sinResolver: number
     conDiferencia: number
   }
+  /**
+   * Lineas que OTRO inventario ya corrigio. Solo en el detalle: en el listado
+   * seria una consulta por fila y ahi no se decide nada.
+   *
+   * Va en la respuesta y no solo en el error de aplicar porque quien revisa
+   * necesita verlo ANTES de apretar el boton, no como motivo del rechazo.
+   */
+  conflictos?: LineaEnConflicto[]
 }
 
 /**
@@ -244,7 +252,90 @@ async function sesionDeLaSucursal(cliente: TxClient | typeof prisma, session: Se
 
 export async function obtenerInventario(session: Session, id: number): Promise<InventarioListado> {
   const sesion = await sesionDeLaSucursal(prisma, session, id)
-  return conResumen(sesion)
+  const resumen = await conResumen(sesion)
+
+  // Los conflictos se calculan SOLO en el detalle. En el listado serian una
+  // consulta mas por fila, y ahi no se decide nada: la decision --aplicar o
+  // volver a contar-- se toma con la sesion abierta delante.
+  return { ...resumen, conflictos: await conflictosDeInventario(prisma, session, id) }
+}
+
+// ---------------------------------------------------------------------------
+// Dos inventarios sobre el mismo producto
+// ---------------------------------------------------------------------------
+
+/** Una linea cuya diferencia ya la corrigio OTRA sesion. */
+export interface LineaEnConflicto {
+  lineId: number
+  productId: number
+  productName: string
+  lotId: number | null
+  lotCode: string | null
+  /** El inventario ajeno que ya corrigio esta misma partida. */
+  sessionNumber: string
+  correctedAt: Date
+}
+
+/**
+ * Las lineas de esta sesion que OTRO inventario ya corrigio.
+ *
+ * Dos sesiones sobre el mismo producto pueden existir --nada lo impide, y
+ * prohibirlo obligaria a cerrar el deposito para contar una categoria--. Lo que
+ * no puede pasar es que las dos apliquen la MISMA discrepancia fisica: contar
+ * 7 donde habia 8 dos veces daria dos correcciones de -1 y dejaria el stock en
+ * 6 cuando en el estante hay 7.
+ *
+ * DOS decisiones de diseno, las dos deliberadas:
+ *
+ * 1. EL CORTE ES `countedAt`, NO EL SNAPSHOT.
+ *
+ *    Una correccion ajena APLICADA ANTES de que esta sesion contara ya esta
+ *    dentro de lo que esta sesion vio: `expectedAtCount` se lee en el momento
+ *    de contar, asi que la diferencia calculada ya la descuenta. Cortar por el
+ *    snapshot marcaria como conflicto un caso que no lo es, y obligaria a
+ *    recontar sin motivo. Ver docs/INVENTORY_COUNT_CONCURRENCY.md.
+ *
+ * 2. SE COMPARA PRODUCTO **Y LOTE**, no solo producto.
+ *
+ *    Corregir la partida A no cambia el stock de la partida B, asi que una
+ *    sesion que conto B sigue teniendo razon. Comparar solo por producto
+ *    bloquearia esa sesion sin que hubiera doble correccion. `IS NOT DISTINCT
+ *    FROM` porque el lado sin partida es NULL, y `NULL = NULL` no es cierto.
+ *
+ * Se devuelven TODAS, no la primera: quien revisa necesita saber cuantas
+ * lineas hay que volver a contar antes de decidir.
+ */
+export async function conflictosDeInventario(
+  cliente: TxClient | typeof prisma,
+  session: Session,
+  id: number,
+): Promise<LineaEnConflicto[]> {
+  return cliente.$queryRaw<LineaEnConflicto[]>`
+    SELECT DISTINCT ON (cl."id")
+           cl."id"        AS "lineId",
+           cl."productId" AS "productId",
+           p."name"       AS "productName",
+           cl."lotId"     AS "lotId",
+           l."code"       AS "lotCode",
+           s."number"     AS "sessionNumber",
+           sm."createdAt" AS "correctedAt"
+      FROM "InventoryCountLine" cl
+      JOIN "Product" p ON p."id" = cl."productId"
+      LEFT JOIN "ProductLot" l ON l."id" = cl."lotId"
+      JOIN "StockMovement" sm
+        ON sm."productId" = cl."productId"
+       AND sm."lotId" IS NOT DISTINCT FROM cl."lotId"
+       AND sm."branchId" = ${session.branchId}
+       AND sm."type" = 'INVENTORY_COUNT'
+       AND sm."createdAt" > cl."countedAt"
+       AND sm."referenceType" = 'InventoryCountSession'
+       AND sm."referenceId" <> ${id}
+      JOIN "InventoryCountSession" s ON s."id" = sm."referenceId"
+     WHERE cl."sessionId" = ${id}
+       AND cl."variance" <> 0
+       AND cl."countedAt" IS NOT NULL
+     ORDER BY cl."id", sm."createdAt"
+  `
 }
 
 async function conResumen(sesion: {
@@ -837,32 +928,26 @@ export async function aplicarInventario(
       `
 
       // 2. RECIEN AHORA, la busqueda de correcciones ajenas, en su propia
-      //    sentencia y con los bloqueos ya tomados.
-      const pisadas = await tx.$queryRaw<
-        Array<{ productId: number; nombre: string; numero: string }>
-      >`
-        SELECT DISTINCT sm."productId" AS "productId",
-               p."name"                AS "nombre",
-               s."number"              AS "numero"
-          FROM "InventoryCountLine" cl
-          JOIN "StockMovement" sm
-            ON sm."productId" = cl."productId"
-           AND sm."branchId" = ${session.branchId}
-           AND sm."type" = 'INVENTORY_COUNT'
-           AND sm."createdAt" > cl."countedAt"
-           AND sm."referenceId" <> ${id}
-          JOIN "Product" p ON p."id" = sm."productId"
-          JOIN "InventoryCountSession" s ON s."id" = sm."referenceId"
-         WHERE cl."sessionId" = ${id}
-           AND cl."variance" <> 0
-      `
+      //    sentencia y con los bloqueos ya tomados. La condicion de READ
+      //    COMMITTED: la instantanea de una sentencia se toma cuando ESA
+      //    sentencia empieza, asi que preguntar despues de bloquear es lo que
+      //    hace que la respuesta incluya lo que la otra sesion acaba de aplicar.
+      const pisadas = await conflictosDeInventario(tx, session, id)
 
       const primera = pisadas[0]
       if (primera) {
+        const cuantas = pisadas.length
+        const donde =
+          primera.lotCode === null
+            ? `"${primera.productName}"`
+            : `"${primera.productName}" (partida ${primera.lotCode})`
+
         throw conflict(
-          `Otro inventario (${primera.numero}) ya corrigió "${primera.nombre}" después de que ` +
+          `Otro inventario (${primera.sessionNumber}) ya corrigió ${donde} después de que ` +
             'este lo contó: aplicar ahora corregiría dos veces la misma diferencia. ' +
-            'Volvé a contar los productos afectados.',
+            (cuantas === 1
+              ? 'Volvé a contar esa línea.'
+              : `Hay ${String(cuantas)} líneas en esa situación: volvé a contarlas.`),
           { code: 'COUNT_SUPERSEDED' },
         )
       }

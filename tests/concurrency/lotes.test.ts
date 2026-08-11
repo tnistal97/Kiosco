@@ -255,4 +255,83 @@ describe('dos inventarios sobre el mismo producto', () => {
     })
     expect(stock.quantity.toString()).toBe('9')
   })
+
+  /**
+   * La otra mitad de la política, y la que hace que no sea una prohibición.
+   *
+   * Corregir la partida A no cambia el stock de la partida B. Una sesión que
+   * contó B sigue teniendo razón después de que otra corrigió A, así que
+   * bloquearla sería un conflicto inventado: obligaría a recontar mercadería
+   * que nadie tocó.
+   *
+   * Sin comparar por LOTE --sólo por producto-- este caso falla: la segunda
+   * sesión se rechazaría con COUNT_SUPERSEDED y el estante quedaría sin
+   * corregir. Es la prueba que sostiene el `IS NOT DISTINCT FROM` de
+   * `conflictosDeInventario`.
+   */
+  it('dos inventarios sobre PARTIDAS distintas del mismo producto sí se aplican', async () => {
+    await habilitarLotes('OPTIONAL')
+    const loteA = await crearLote('CC-A')
+    const loteB = await crearLote('CC-B')
+    // 10 unidades del producto: 4 en A, 4 en B, 2 sin atribuir.
+    await atribuir(loteA, '4')
+    await atribuir(loteB, '4')
+
+    /** Cuenta UNA sola línea --la del lote pedido-- y deja la sesión en revisión. */
+    async function sesionDeUnLote(lotId: number, contado: string): Promise<number> {
+      const s = await call<{ id: number }>(CREAR_INVENTARIO, '/api/inventarios', {
+        method: 'POST',
+        cookie,
+        body: { scope: 'SELECTION', productIds: [fx.productoA.id], blindCount: true },
+      })
+      const l = await call<{ data: Array<{ id: number; lotId: number | null }> }>(
+        LINEAS,
+        `/api/inventarios/${String(s.body.id)}/lineas?pageSize=100`,
+        { cookie, params: { id: String(s.body.id) } },
+      )
+      // Todas las líneas se cuentan --si no, la sesión queda incompleta-- pero
+      // sólo la del lote pedido tiene diferencia.
+      const lineas = l.body.data.map((x) => ({
+        lineId: x.id,
+        countedQuantity: x.lotId === lotId ? contado : x.lotId === null ? '2' : '4',
+      }))
+      await call(CONTAR, `/api/inventarios/${String(s.body.id)}/conteo`, {
+        method: 'POST',
+        cookie,
+        params: { id: String(s.body.id) },
+        body: { lineas },
+      })
+      await call(REVISAR, `/api/inventarios/${String(s.body.id)}/revision`, {
+        method: 'POST',
+        cookie,
+        params: { id: String(s.body.id) },
+      })
+      return s.body.id
+    }
+
+    // Una encuentra 3 donde había 4 en A; la otra, 3 donde había 4 en B.
+    const deA = await sesionDeUnLote(loteA, '3')
+    const deB = await sesionDeUnLote(loteB, '3')
+
+    const aplicar = (id: number) =>
+      call(APLICAR, `/api/inventarios/${String(id)}/aplicar`, {
+        method: 'POST',
+        cookie,
+        params: { id: String(id) },
+      })
+
+    const a = await aplicar(deA)
+    const b = await aplicar(deB)
+
+    expect([a.status, b.status], 'las dos correcciones son reales y distintas').toEqual([200, 200])
+    expect(await stockDelLote(loteA)).toBe('3')
+    expect(await stockDelLote(loteB)).toBe('3')
+
+    // 4+4+2 menos una unidad de cada partida.
+    const stock = await prisma.branchStock.findFirstOrThrow({
+      where: { productId: fx.productoA.id, branchId: fx.branchA.id },
+      select: { quantity: true },
+    })
+    expect(stock.quantity.toString()).toBe('8')
+  })
 })
