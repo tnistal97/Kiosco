@@ -19,6 +19,7 @@ import type { Permission } from '@/server/authz/permissions'
 import { AppError, forbidden, type ApiErrorBody } from '@/server/http/errors'
 import { ipDe, runWithRequestContext } from '@/server/http/requestContext'
 import { traducirError } from '@/server/http/prismaErrors'
+import { paraLog } from '@/server/http/redaccion'
 import { REQUEST_ID_HEADER, requestIdDe } from '@/server/http/requestId'
 import { parseJsonBody, parseQuery } from '@/server/http/validate'
 
@@ -185,7 +186,7 @@ async function auditarRechazo(
       origin: config.audit,
     })
   } catch (fallo) {
-    console.error('[audit] No se pudo registrar el rechazo:', fallo)
+    console.error('[audit] No se pudo registrar el rechazo:', paraLog(fallo))
   }
 }
 
@@ -241,9 +242,12 @@ function toErrorResponse(error: unknown, origin: string, requestId: string): Res
   // merece ruido en el log; solo se deja rastro de los intentos rechazados
   // por autorizacion, que si interesan.
   if (appError.status >= 500) {
-    console.error(`[${origin}] [${requestId}] ${appError.code}:`, error)
+    // `paraLog` y no el error crudo: un fallo de conexion de Prisma trae la
+    // cadena completa --con la contraseña de la base-- dentro del mensaje, y
+    // el log del servidor lo lee mas gente que la que deberia verla.
+    console.error(`[${origin}] [${requestId}] ${appError.code}:`, paraLog(error))
   } else if (appError.status === 401 || appError.status === 403) {
-    console.warn(`[${origin}] [${requestId}] ${appError.code}: ${appError.message}`)
+    console.warn(`[${origin}] [${requestId}] ${appError.code}: ${paraLog(appError.message)}`)
   }
 
   const cuerpo: ApiErrorBody = {

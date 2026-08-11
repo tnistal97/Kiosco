@@ -1951,6 +1951,11 @@ model SaleItem {
 
   lots SaleItemLotAllocation[]
 
+  /// Abrir una venta, anularla o imprimir su comprobante pide los renglones DE
+  /// esa venta. Es la consulta mas frecuente del sistema y hasta la Fase 5A no
+  /// tenia indice: la clave foranea garantiza que el valor exista en `Sale`,
+  /// no acelera buscarlo. Ver 20260814100000_phase5a_indices_de_lectura.
+  @@index([saleId])
   /// La rentabilidad recorre las lineas de un rango de ventas.
   @@index([productId])
 }

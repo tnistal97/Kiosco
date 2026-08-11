@@ -678,3 +678,38 @@ describe('Los indices de la Fase 3D existen', () => {
     expect(filas.map((f) => f.indexname)).toContain('SaleItem_productId_idx')
   })
 })
+
+describe('El indice de la Fase 5A: los renglones de UNA venta', () => {
+  it('existe el indice por venta, que la clave foranea no crea sola', async () => {
+    // PostgreSQL no indexa las claves foraneas. `SaleItem_saleId_fkey` obliga a
+    // que la venta exista; buscar los renglones DE una venta seguia recorriendo
+    // la tabla entera, en la consulta mas frecuente que hay.
+    const filas = await prisma.$queryRaw<Array<{ indexname: string }>>`
+      SELECT indexname FROM pg_indexes WHERE tablename = 'SaleItem'
+    `
+    expect(filas.map((f) => f.indexname)).toContain('SaleItem_saleId_idx')
+  })
+
+  it('el plan de "los renglones de esta venta" no recorre la tabla', async () => {
+    // Con pocas filas el planificador elige el recorrido igual porque es mas
+    // barato, asi que se lo desactiva para preguntar lo que de verdad importa:
+    // si el indice es APLICABLE a esta consulta. Sin el indice, PostgreSQL no
+    // tiene alternativa y el plan sigue diciendo Seq Scan aunque se lo prohiba.
+    await registrarVentas(40)
+    const venta = await prisma.sale.findFirstOrThrow({ select: { id: true } })
+
+    // Las dos sentencias van en la MISMA transaccion a proposito: `SET LOCAL`
+    // dura lo que dura la transaccion, y fuera de una no hace nada. Con el
+    // pool de Prisma, ademas, un `SET` suelto podria quedar en otra conexion
+    // distinta de la que corre el EXPLAIN.
+    const plan = await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SET LOCAL enable_seqscan = off`)
+      return tx.$queryRawUnsafe<Array<Record<string, string>>>(
+        `EXPLAIN SELECT * FROM "SaleItem" WHERE "saleId" = ${String(venta.id)}`,
+      )
+    })
+    const texto = plan.map((f) => Object.values(f).join(' ')).join(' | ')
+
+    expect(texto, `el plan fue: ${texto}`).toMatch(/Index (Only )?Scan.*SaleItem_saleId_idx/)
+  })
+})

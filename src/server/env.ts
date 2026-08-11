@@ -17,6 +17,16 @@
  * el CI, que es como se terminan filtrando.
  */
 
+/**
+ * Un entorno cualquiera.
+ *
+ * No `NodeJS.ProcessEnv`: ese tipo declara `NODE_ENV` como obligatorio, asi que
+ * las pruebas no podrian armar un entorno a mano sin incluirlo --y probar la
+ * ausencia de una variable es justamente lo que hay que probar--. `process.env`
+ * es asignable a esto.
+ */
+export type Entorno = Record<string, string | undefined>
+
 /** Minimo del secreto de sesion. Coincide con el que exige `auth/token.ts`. */
 export const MIN_JWT_SECRET = 32
 
@@ -38,7 +48,7 @@ export const VARIABLES_REQUERIDAS = ['DATABASE_URL', 'JWT_SECRET'] as const
  * en los logs de PM2, y los logs de PM2 los lee mas gente que la que deberia
  * ver el secreto.
  */
-export function problemasDeEntorno(env: NodeJS.ProcessEnv = process.env): ProblemaDeEntorno[] {
+export function problemasDeEntorno(env: Entorno = process.env): ProblemaDeEntorno[] {
   const problemas: ProblemaDeEntorno[] = []
 
   const url = env.DATABASE_URL
@@ -73,7 +83,7 @@ export function problemasDeEntorno(env: NodeJS.ProcessEnv = process.env): Proble
  * quedar atrapada por un manejador de arriba y dejar el proceso vivo a medias,
  * que es exactamente lo que esto viene a evitar.
  */
-export function exigirEntorno(env: NodeJS.ProcessEnv = process.env): void {
+export function exigirEntorno(env: Entorno = process.env): void {
   const problemas = problemasDeEntorno(env)
   if (problemas.length === 0) return
 

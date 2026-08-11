@@ -163,7 +163,7 @@ describe('Compras NO puede aflojar el rastreo', () => {
     const res = await cambiar(rol('compras'), 'NONE', 'NONE')
 
     expect(errorDe(res).message).toContain('lots.tracking.relax')
-    expect(res.text).not.toMatch(/    at |prisma|node_modules/)
+    expect(res.text).not.toMatch(/ {4}at |prisma|node_modules/)
   })
 })
 

@@ -35,7 +35,8 @@
     "test:a11y": "playwright test accesibilidad",
     "integrity:check": "tsx scripts/integrity-check.ts",
     "reconcile": "tsx scripts/integrity-check.ts",
-    "rehearsal": "tsx scripts/rehearsal.ts"
+    "rehearsal": "tsx scripts/rehearsal.ts",
+    "rehearsal:prodlike": "tsx scripts/rehearsal-produccion.ts"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.4",

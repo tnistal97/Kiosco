@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { buildInfo } from '@/server/build-info'
 import { problemasDeEntorno } from '@/server/env'
+import { paraLog } from '@/server/http/redaccion'
 import { REQUEST_ID_HEADER, requestIdDe } from '@/server/http/requestId'
 
 export const runtime = 'nodejs'
@@ -75,7 +76,7 @@ async function sondearBase(): Promise<{ ok: boolean; latencyMs?: number }> {
   } catch (error) {
     // El detalle va al log del servidor, no a la respuesta: el mensaje de
     // Prisma incluye el host y el usuario de la base.
-    console.error('[health] la base no respondio:', error)
+    console.error('[health] la base no respondio:', paraLog(error))
     return { ok: false }
   }
 }

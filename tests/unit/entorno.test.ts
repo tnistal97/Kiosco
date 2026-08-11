@@ -7,18 +7,23 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { problemasDeEntorno, MIN_JWT_SECRET, VARIABLES_REQUERIDAS } from '@/server/env'
+import {
+  problemasDeEntorno,
+  MIN_JWT_SECRET,
+  VARIABLES_REQUERIDAS,
+  type Entorno,
+} from '@/server/env'
 
-const VALIDO: NodeJS.ProcessEnv = {
+const VALIDO: Entorno = {
   DATABASE_URL: 'postgresql://usuario:clave@localhost:5432/kiosco?schema=public',
   JWT_SECRET: 'x'.repeat(MIN_JWT_SECRET),
 }
 
-function con(cambios: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+function con(cambios: Entorno): Entorno {
   return { ...VALIDO, ...cambios }
 }
 
-function variables(env: NodeJS.ProcessEnv): string[] {
+function variables(env: Entorno): string[] {
   return problemasDeEntorno(env).map((p) => p.variable)
 }
 
