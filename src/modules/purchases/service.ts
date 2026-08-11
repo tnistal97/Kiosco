@@ -28,18 +28,35 @@ import type { Session } from '@/server/auth/session'
 import type { Monto } from '@/lib/money'
 import type { TextoCantidad } from '@/lib/cantidad'
 import {
+  CERO_D,
   aMonto,
   aMontoCosto,
   aMontoCostoOpcional,
   dinero,
   iguales,
+  multiplicar,
+  redondearPesos,
+  sumar,
   type Dinero,
 } from '@/server/money'
 import { aTextoCantidad, cantidad as aCantidad, type Cantidad } from '@/server/cantidad'
 import { applyStockMovement, type TxClient } from '@/modules/inventory/service'
 import { exigirProveedorActivo } from '@/modules/suppliers/service'
 import { registrarCambioDeCosto } from '@/modules/products/costo'
-import { finDelDia, inicioDelDia, zonaDeSucursal } from '@/server/tiempo'
+import {
+  esFechaLocal,
+  finDelDia,
+  hoyEnSucursal,
+  inicioDelDia,
+  sumarDias,
+  zonaDeSucursal,
+  type FechaLocal,
+} from '@/server/tiempo'
+// Fase 4B: la recepcion genera la deuda con el proveedor y, si se paga en el
+// momento, tambien el pago. Las dos cosas por sus unicas puertas.
+import { applySupplierAccountMovement, autorizanteDelSobrepago } from '@/modules/suppliers/cuenta'
+import { inicioDeHoyEnSucursal } from '@/modules/suppliers/service.cuenta'
+import { aplicarPago, siguienteNumeroDePagoAProveedor } from '@/modules/suppliers/service.pagos'
 import {
   unidadDeCompraODefecto,
   unidadDeVentaODefecto,
@@ -791,6 +808,14 @@ export interface ResultadoDeRecepcion {
     costoActualizado: boolean
     diferencia?: DiferenciaDeCosto
   }>
+  /** Lo que esta entrega costo, al costo REAL. Es el importe de la deuda. */
+  total: Monto
+  /** Cuando vence la obligacion. `null` si no se registro ninguno. */
+  dueDate: Date | null
+  /** El saldo del proveedor DESPUES de esta entrega. */
+  saldoProveedor: Monto
+  /** El pago inmediato, si se registro uno. */
+  pago: { id: number; number: string; amount: Monto } | null
 }
 
 /**
@@ -810,6 +835,28 @@ export async function recibirMercaderia(
   input: RecibirInput,
 ): Promise<ResultadoDeRecepcion> {
   const puedeCambiarCosto = session.permissions.has('products.cost.update')
+
+  // Lo del pago inmediato se resuelve ANTES de abrir la transaccion, y las tres
+  // cosas por su propio motivo:
+  //
+  //   · el PERMISO de sobrepago, para rechazar antes de haber escrito nada;
+  //   · el NUMERO, porque `nextval` no se deshace con un ROLLBACK y pedirlo
+  //     adentro solo alargaria la transaccion sin evitar el hueco;
+  //   · el INICIO DE HOY, que necesita una consulta a `Branch` que no tiene por
+  //     que ocurrir con la transaccion abierta.
+  //
+  // El sobrepago NO se puede saber aca --el saldo todavia no incluye esta
+  // entrega, asi que la lectura previa no dice nada util--: por eso el tercer
+  // argumento va en `false`. Lo frena igual la condicion `balance + delta >= 0`
+  // del libro, que corre con el saldo ya cargado.
+  const autorizanteDelPago = autorizanteDelSobrepago(
+    session,
+    input.pago?.acceptCredit ?? false,
+    false,
+  )
+  const numeroDePago = input.pago === undefined ? null : await siguienteNumeroDePagoAProveedor()
+  const inicioDeHoy =
+    input.pago === undefined ? null : await inicioDeHoyEnSucursal(prisma, session.branchId)
 
   return prisma.$transaction(async (tx) => {
     // 1-2. La orden y su estado.
@@ -847,6 +894,67 @@ export async function recibirMercaderia(
       throw invalid('Una línea no puede recibirse dos veces en la misma recepción')
     }
 
+    // 5b. LOS COSTOS Y EL TOTAL, ANTES de crear la cabecera. Fase 4B.
+    //
+    //     Esto era parte del bucle de abajo y subio aca por una razon concreta:
+    //     `PurchaseReceipt` es INMUTABLE, y su importe --que es el de la
+    //     obligacion con el proveedor-- tiene que quedar escrito en el INSERT.
+    //     Rellenarlo despues con un UPDATE es exactamente lo que el disparador
+    //     de la Fase 3C rechaza, y con razon.
+    //
+    //     El costo se resuelve una sola vez y se reusa en el bucle: es el mismo
+    //     calculo, y hacerlo dos veces abriria la puerta a que las dos copias
+    //     dejen de coincidir.
+    const costos = new Map<number, { esperado: Dinero; recibido: Dinero }>()
+    let totalDeLaRecepcion = CERO_D
+
+    for (const pedido of input.items) {
+      const linea = porId.get(pedido.orderItemId)
+      if (!linea) {
+        throw invalid(`La línea #${String(pedido.orderItemId)} no pertenece a esta orden`)
+      }
+
+      // El costo: el de la orden, salvo que se declare otro.
+      const esperado = linea.unitCost
+      const recibido = pedido.unitCost === undefined ? esperado : dinero(pedido.unitCost)
+
+      if (!iguales(esperado, recibido) && !puedeCambiarCosto) {
+        throw forbidden(
+          `No tenés permiso para recibir "${linea.product.name}" a un costo distinto del ` +
+            'pedido. Podés recibirlo al costo de la orden, o pedirle a quien maneja ' +
+            'costos que lo reciba.',
+        )
+      }
+
+      costos.set(pedido.orderItemId, { esperado, recibido })
+
+      // El importe de LA OBLIGACION, al costo REAL de la factura y no al
+      // esperado de la orden (objetivo 6). Se redondea LINEA POR LINEA y
+      // despues se suma, en ese orden y no al reves: es como se arma una
+      // factura, y sumar exacto para redondear al final daria un total que no
+      // coincide con el papel que trajo el proveedor.
+      totalDeLaRecepcion = sumar(
+        totalDeLaRecepcion,
+        redondearPesos(multiplicar(recibido, pedido.quantity)),
+      )
+    }
+
+    // 5c. El vencimiento, CONGELADO. Fase 4B, objetivos 18 y 19.
+    //
+    //     Se calcula ahora y no se vuelve a mirar: si mañana se le baja el plazo
+    //     al proveedor a quince dias, esta deuda sigue venciendo cuando vence.
+    //     `undefined` significa "decidilo vos" y `null`, "que no tenga": son
+    //     distintos y por eso se comprueban distinto.
+    const dueDate =
+      input.dueDate === undefined
+        ? await vencimientoSugerido(tx, session.branchId, proveedor.id)
+        : input.dueDate === null
+          ? null
+          : inicioDelDia(
+              exigirFechaLocal(input.dueDate),
+              await zonaDeSucursal(tx, session.branchId),
+            )
+
     // 6. La cabecera. Se crea antes que las lineas para tener su id, que es la
     //    referencia de los movimientos de stock y del historial de costos.
     const recepcion = await tx.purchaseReceipt.create({
@@ -855,6 +963,11 @@ export async function recibirMercaderia(
         branchId: session.branchId,
         receivedById: session.userId,
         notes: input.notes ?? null,
+        total: totalDeLaRecepcion,
+        dueDate,
+        // Entra al libro del proveedor en esta misma transaccion, unas lineas
+        // mas abajo. Se escribe aca porque la fila es inmutable despues.
+        debtRecorded: true,
       },
       select: { id: true, receivedAt: true },
     })
@@ -871,17 +984,11 @@ export async function recibirMercaderia(
       const purchaseUnit = unidadDeCompraODefecto(linea.purchaseUnit)
       const factor = aTextoCantidad(linea.unitsPerPurchaseUnit)
 
-      // El costo: el de la orden, salvo que se declare otro.
-      const costoEsperado = linea.unitCost
-      const costoRecibido = pedido.unitCost === undefined ? costoEsperado : dinero(pedido.unitCost)
-
-      if (!iguales(costoEsperado, costoRecibido) && !puedeCambiarCosto) {
-        throw forbidden(
-          `No tenés permiso para recibir "${linea.product.name}" a un costo distinto del ` +
-            'pedido. Podés recibirlo al costo de la orden, o pedirle a quien maneja ' +
-            'costos que lo reciba.',
-        )
-      }
+      // Resueltos en la pasada de arriba. `??` por el tipo: la clave existe
+      // siempre, porque el bucle recorre exactamente los mismos elementos.
+      const { esperado: costoEsperado, recibido: costoRecibido } = costos.get(
+        pedido.orderItemId,
+      ) ?? { esperado: linea.unitCost, recibido: linea.unitCost }
 
       // 5. La conversion y los numeros de la linea, de una sola vez.
       const calculada = calcularLinea({
@@ -1009,7 +1116,43 @@ export async function recibirMercaderia(
     // 14. El estado, recalculado sobre TODAS las lineas de la orden.
     const estado = await recalcularEstado(tx, orderId)
 
-    // 15. La bitacora de la recepcion.
+    // 15. LA DEUDA. Fase 4B, objetivos 4, 5 y 6.
+    //
+    //     Nace ACA y no al crear la orden: una orden es un pedido --se cancela,
+    //     llega la mitad, no llega nada-- y nada de eso se debe. Lo que se debe
+    //     es lo que LLEGO.
+    //
+    //     Va por la unica puerta que escribe `Supplier.balance`. Y no puede
+    //     duplicarse: hay un indice unico parcial sobre `receiptId` para
+    //     `PURCHASE_CHARGE`, asi que un reintento que llegara a repetir la
+    //     recepcion chocaria contra la base, no contra una comprobacion.
+    const cargo = await applySupplierAccountMovement(tx, {
+      branchId: session.branchId,
+      supplierId: orden.supplierId,
+      type: 'PURCHASE_CHARGE',
+      amount: totalDeLaRecepcion,
+      userId: session.userId,
+      receiptId: recepcion.id,
+    })
+
+    // 16. El pago inmediato, si lo hubo. Objetivo 17.
+    //
+    //     DESPUES del cargo, siempre. "Pagado al contado" no evita la deuda: la
+    //     crea y la salda, y las dos cosas quedan en el libro. En la MISMA
+    //     transaccion, asi que si el pago falla no queda ni la entrega.
+    const pago =
+      input.pago === undefined
+        ? null
+        : await aplicarPago(tx, session, {
+            supplierId: orden.supplierId,
+            supplierName: proveedor.name,
+            input: { ...input.pago, imputacion: 'automatica' as const },
+            number: numeroDePago ?? '',
+            inicioDeHoy: inicioDeHoy ?? '',
+            autorizante: autorizanteDelPago,
+          })
+
+    // 17. La bitacora de la recepcion.
     await audit(tx, {
       userId: session.userId,
       branchId: session.branchId,
@@ -1022,6 +1165,15 @@ export async function recibirMercaderia(
         supplierId: orden.supplierId,
         lineas: resultado.length,
         status: estado,
+        // Lo financiero, en la misma entrada: quien lee la bitacora de una
+        // recepcion quiere ver de una vez cuanto se le debe al proveedor por
+        // ella y cuando vence.
+        importe: aMonto(totalDeLaRecepcion),
+        vencimiento: dueDate?.toISOString() ?? null,
+        saldoProveedorAnterior: aMonto(cargo.previousBalance),
+        saldoProveedorNuevo: aMonto(cargo.resultingBalance),
+        movimientoId: cargo.movementId,
+        ...(pago === null ? {} : { pagoInmediato: pago.number }),
       },
       origin: 'POST /api/purchases/:id/receive',
     })
@@ -1032,8 +1184,53 @@ export async function recibirMercaderia(
       number: orden.number,
       status: estado,
       lineas: resultado,
+      total: aMonto(totalDeLaRecepcion),
+      dueDate,
+      saldoProveedor: aMonto(cargo.resultingBalance),
+      pago: pago === null ? null : { id: pago.id, number: pago.number, amount: pago.amount },
     }
   })
+}
+
+/**
+ * El vencimiento que le corresponde a una entrega de hoy.
+ *
+ * `Supplier.defaultPaymentTermDays` SUGIERE; esto lo convierte en fecha. NULL y
+ * 0 siguen siendo afirmaciones distintas:
+ *
+ *   NULL  nadie declaro el plazo    -> sin vencimiento
+ *   0     se paga contra entrega    -> vence hoy
+ *
+ * El dia de partida es el DIA COMERCIAL de la sucursal, no el del servidor. Ver
+ * docs/TIMEZONE_POLICY.md.
+ */
+/**
+ * Estrecha una fecha que ya paso por el esquema.
+ *
+ * El esquema comprueba la FORMA (`AAAA-MM-DD`) y esto comprueba que sea una
+ * fecha que existe: `2026-02-30` cumple el patron y no es un dia. Existe ademas
+ * para que TypeScript sepa que a partir de aca el texto es una `FechaLocal`.
+ */
+function exigirFechaLocal(texto: string): FechaLocal {
+  if (!esFechaLocal(texto)) throw invalid('La fecha de vencimiento no es válida')
+  return texto
+}
+
+async function vencimientoSugerido(
+  tx: TxClient,
+  branchId: number,
+  supplierId: number,
+): Promise<Date | null> {
+  const proveedor = await tx.supplier.findUnique({
+    where: { id: supplierId },
+    select: { defaultPaymentTermDays: true },
+  })
+  const plazo = proveedor?.defaultPaymentTermDays
+  if (plazo == null) return null
+
+  const zona = await zonaDeSucursal(tx, branchId)
+  const hoy = await hoyEnSucursal(tx, branchId)
+  return inicioDelDia(sumarDias(hoy, plazo), zona)
 }
 
 /**

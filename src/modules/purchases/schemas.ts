@@ -14,6 +14,7 @@
 
 import { z } from 'zod'
 import {
+  amountSchema,
   costSchema,
   fechaLocalSchema,
   idSchema,
@@ -22,6 +23,7 @@ import {
 } from '@/server/http/validate'
 import { paginationQuerySchema } from '@/server/http/pagination'
 import { UNIDADES_DE_COMPRA } from '@/modules/products/units'
+import { MEDIOS_DE_PAGO_A_PROVEEDOR } from '@/modules/sales/payment-methods'
 import { ESTADOS_DE_COMPRA } from './status'
 
 /**
@@ -116,6 +118,35 @@ export const lineaDeRecepcionSchema = z
   })
   .strict()
 
+/**
+ * Pago inmediato al recibir. Fase 4B, objetivo 17.
+ *
+ * Opcional. Cuando viene, se registra DESPUES del cargo y en la misma
+ * transaccion: primero nace la deuda, despues se paga. Nunca al reves, y nunca
+ * saltando el cargo.
+ *
+ * Esa es la decision entera del objetivo 17: si "pagado al contado" evitara
+ * crear la deuda, la cuenta del proveedor no tendria ni la entrega ni el pago, y
+ * "¿cuanto le compramos este anio?" habria que responderlo desde otra tabla. El
+ * saldo final es el mismo; la historia, no.
+ *
+ * Sin `imputacion`: un pago hecho en el momento de recibir se imputa solo, y a
+ * la entrega que lo motivo --que por ser la mas nueva sin saldar puede no ser la
+ * primera del orden FIFO--. Se deja en automatica y se documenta: repartir a
+ * mano en la pantalla de recepcion, con el camion en la puerta, no es el
+ * momento. Para eso esta la ficha del proveedor.
+ */
+export const pagoAlRecibirSchema = z
+  .object({
+    amount: amountSchema,
+    method: z.enum(MEDIOS_DE_PAGO_A_PROVEEDOR),
+    reference: optionalText(120),
+    notes: optionalText(300),
+    /** Confirma dejar saldo a favor nuestro. Exige `supplierAccounts.overpay`. */
+    acceptCredit: z.boolean().default(false),
+  })
+  .strict()
+
 export const recibirSchema = z
   .object({
     notes: optionalText(1000),
@@ -125,6 +156,24 @@ export const recibirSchema = z
      * registrarlo, hay que no registrarlo.
      */
     items: z.array(lineaDeRecepcionSchema).min(1).max(200),
+    /**
+     * Vencimiento de la obligacion. Fase 4B.
+     *
+     *   ausente   se calcula con el plazo del proveedor, si tiene uno.
+     *   `null`    sin vencimiento, aunque el proveedor tenga plazo.
+     *   fecha     esa, y congelada.
+     *
+     * Los tres casos son distintos y el esquema los distingue: `undefined` es
+     * "no dije nada, decidilo vos" y `null` es "decidi que no tenga". Tratarlos
+     * igual haria imposible recibir sin vencimiento de un proveedor con plazo.
+     */
+    dueDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha va en formato AAAA-MM-DD')
+      .nullable()
+      .optional(),
+    /** Pago en el momento. Ver `pagoAlRecibirSchema`. */
+    pago: pagoAlRecibirSchema.optional(),
   })
   .strict()
 
