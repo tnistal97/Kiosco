@@ -4,11 +4,24 @@ Sistema de gestión para un almacén de barrio: punto de venta, control de caja,
 stock por sucursal y auditoría de operaciones. Funciona como PWA, con lector de
 códigos de barras por cámara y por lector USB.
 
-> **El sitio está fuera de línea.** La versión en producción tiene once
-> vulnerabilidades corregidas en la rama de trabajo pero **todavía no
-> desplegadas**. Antes de volver a levantarlo hay que rotar `JWT_SECRET` y la
-> contraseña de PostgreSQL, y aplicar las migraciones. Ver
-> [docs/DATABASE_MIGRATION_STRATEGY.md](docs/DATABASE_MIGRATION_STRATEGY.md).
+> **El sitio está fuera de línea, y se midió por qué.** El proceso de PM2 figura
+> `stopped`, nada escucha en el puerto y el dominio devuelve 502. Los logs se
+> cortan en febrero de 2026: la aplicación dejó de arrancar cuando el rol de
+> PostgreSQL perdió los privilegios sobre las tablas.
+>
+> La release candidate **`1.0.0-rc.1`** está lista en `release/almacen-v1`, con
+> su artefacto y su checksum, pero el despliegue es **NO-GO** por tres
+> bloqueantes que no son de código y que requieren escribir en el servidor:
+>
+> 1. la contraseña de PostgreSQL estuvo en un repositorio público quince meses;
+> 2. `JWT_SECRET` tiene 9 caracteres —el mínimo es 32— y el login fallaría;
+> 3. el rol de la aplicación no puede crear objetos, así que `migrate deploy`
+>    falla en la primera migración.
+>
+> Todo está medido y escrito en
+> [docs/PRODUCTION_CURRENT_STATE.md](docs/PRODUCTION_CURRENT_STATE.md) y el
+> procedimiento en
+> [docs/PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md).
 
 ## Funcionalidades
 
@@ -113,29 +126,33 @@ Definidas en `.env.example`. Ninguna trae valores reales.
 
 ## Comandos
 
-| Comando                      | Qué hace                                               |
-| ---------------------------- | ------------------------------------------------------ |
-| `npm run dev`                | Servidor de desarrollo                                 |
-| `npm run build`              | Construcción de producción                             |
-| `npm start`                  | Servir la construcción                                 |
-| `npm run lint`               | ESLint. Sin asistentes, apto para CI                   |
-| `npm run lint:fix`           | ESLint corrigiendo lo corregible                       |
-| `npm run format`             | Prettier sobre todo el proyecto                        |
-| `npm run format:check`       | Prettier en modo comprobación                          |
-| `npm run typecheck`          | `tsc --noEmit`                                         |
-| `npm test`                   | Toda la suite unitaria y de integración                |
-| `npm run test:coverage`      | Pruebas con informe de cobertura                       |
-| `npm run test:unit`          | Solo unitarias                                         |
-| `npm run test:integration`   | Solo de integración                                    |
-| `npm run test:authorization` | Solo de autorización                                   |
-| `npm run test:concurrency`   | Solo de concurrencia                                   |
-| `npm run test:migrations`    | Solo la cadena de migraciones                          |
-| `npm run test:performance`   | Solo consultas y tamaño de respuesta                   |
-| `npm run seed`               | Datos de prueba                                        |
-| `npm run seed:demo`          | Datos de demostración (solo bases `_dev`)              |
-| `npm run integrity:check`    | **Comprueba que el sistema cierre.** Solo lectura      |
-| `npm run reconcile`          | El mismo comando, con el otro nombre                   |
-| `npm run rehearsal`          | Ensayo de migración: respaldar, migrar y **restaurar** |
+| Comando                      | Qué hace                                                     |
+| ---------------------------- | ------------------------------------------------------------ |
+| `npm run dev`                | Servidor de desarrollo                                       |
+| `npm run build`              | Construcción de producción                                   |
+| `npm start`                  | Servir la construcción                                       |
+| `npm run lint`               | ESLint. Sin asistentes, apto para CI                         |
+| `npm run lint:fix`           | ESLint corrigiendo lo corregible                             |
+| `npm run format`             | Prettier sobre todo el proyecto                              |
+| `npm run format:check`       | Prettier en modo comprobación                                |
+| `npm run typecheck`          | `tsc --noEmit`                                               |
+| `npm test`                   | Toda la suite unitaria y de integración                      |
+| `npm run test:coverage`      | Pruebas con informe de cobertura                             |
+| `npm run test:unit`          | Solo unitarias                                               |
+| `npm run test:integration`   | Solo de integración                                          |
+| `npm run test:authorization` | Solo de autorización                                         |
+| `npm run test:concurrency`   | Solo de concurrencia                                         |
+| `npm run test:migrations`    | Solo la cadena de migraciones                                |
+| `npm run test:performance`   | Solo consultas y tamaño de respuesta                         |
+| `npm run seed`               | Datos de prueba                                              |
+| `npm run seed:demo`          | Datos de demostración (solo bases `_dev`)                    |
+| `npm run integrity:check`    | **Comprueba que el sistema cierre.** Solo lectura            |
+| `npm run reconcile`          | El mismo comando, con el otro nombre                         |
+| `npm run rehearsal`          | Ensayo de migración: respaldar, migrar y **restaurar**       |
+| `npm run rehearsal:prodlike` | El mismo ensayo, con la **forma y el volumen de producción** |
+| `npm run release:artifact`   | Construye, empaqueta y calcula el **SHA-256** del artefacto  |
+| `npm run smoke:staging`      | Smoke completo contra staging. **Escribe**                   |
+| `npm run smoke:production`   | Smoke **de solo lectura**. No crea ventas ni mueve stock     |
 
 Las pruebas **abortan** si `DATABASE_URL` no apunta a una base cuyo nombre
 termine en `_test`. Nunca corren contra desarrollo ni contra producción.
@@ -231,10 +248,40 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 | [SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md)                                 | Las vulnerabilidades encontradas                     |
 | [MASTER_ROADMAP.md](docs/MASTER_ROADMAP.md)                                 | El plan por fases                                    |
 
+### Preproducción (Fase 5A)
+
+| Documento                                                                   | Qué contesta                                              |
+| --------------------------------------------------------------------------- | --------------------------------------------------------- |
+| [RELEASE_INVENTORY.md](docs/RELEASE_INVENTORY.md)                           | Qué compone la release, hasta el último índice            |
+| [PRODUCTION_CURRENT_STATE.md](docs/PRODUCTION_CURRENT_STATE.md)             | Qué hay **hoy** en el servidor, medido en solo lectura    |
+| [PRODUCTION_DATA_PRECHECK.md](docs/PRODUCTION_DATA_PRECHECK.md)             | Si los datos reales sobreviven a la migración             |
+| [MIGRATION_COMPATIBILITY_MATRIX.md](docs/MIGRATION_COMPATIBILITY_MATRIX.md) | Después de cada migración, ¿alcanza con volver el código? |
+| [PRODUCTION_BACKUP_PLAN.md](docs/PRODUCTION_BACKUP_PLAN.md)                 | Cómo respaldar y, sobre todo, cómo **restaurar**          |
+| [SECRET_ROTATION_PLAN.md](docs/SECRET_ROTATION_PLAN.md)                     | Qué secretos rotar, en qué orden y con qué consecuencia   |
+| [DANGEROUS_ACTIONS_MATRIX.md](docs/DANGEROUS_ACTIONS_MATRIX.md)             | Qué se puede deshacer y qué no                            |
+| [STAGING_RUNBOOK.md](docs/STAGING_RUNBOOK.md)                               | Cómo montar staging sin tocar producción                  |
+| [PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md)                         | El encendido, paso a paso, con puntos de decisión         |
+| [OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)                         | GO/NO-GO, qué mirar después y cómo diagnosticar           |
+
 ## Despliegue
 
 Producción corre con PM2 detrás de Nginx, que hace proxy inverso al puerto
 interno 3099 con TLS de Let's Encrypt.
+
+**Desde la Fase 5A el despliegue es por artefacto**, no por `git pull`. Se
+construye una vez, se calcula su SHA-256 y se despliega **ese**: construir en el
+servidor mete tres variables que nadie controla durante el corte —la red, el
+runtime (el servidor tiene Node 18 y la suite se valida con 20) y la falta de un
+hash con que contestar «¿esto que corre es lo que aprobamos?»—.
+
+```bash
+npm run release:artifact          # en la máquina de desarrollo
+# copiar dist/kiosco-<version>-<commit>.tar.gz* al servidor
+sha256sum -c kiosco-<version>-<commit>.tar.gz.sha256
+```
+
+El procedimiento completo, con sus seis puntos de decisión, está en
+[docs/PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md).
 
 `ecosystem.config.example.js` es la plantilla de PM2. Copiarla a
 `ecosystem.config.js` en el servidor y completar los valores — ese archivo está

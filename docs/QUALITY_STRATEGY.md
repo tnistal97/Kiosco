@@ -736,3 +736,94 @@ tanda de E2E.
 
 Ninguno es un error de lógica de negocio. Los cuatro son de integración real, y
 por eso los E2E no son opcionales aunque el dominio esté bien probado.
+
+## Fase 5A — preproducción
+
+La primera fase cuyo objeto no es el código sino **el despliegue**. La pregunta
+que vino a contestar con evidencia: _¿podemos desplegar sin poner en riesgo la
+base, el stock, las ventas ni la posibilidad de volver atrás?_
+
+|                   | Fase 4D                           | **Fase 5A**                                       |
+| ----------------- | --------------------------------- | ------------------------------------------------- |
+| Pruebas           | 1.421                             | **1.446** en 66 archivos                          |
+| Extremo a extremo | 222                               | 222                                               |
+| Permisos          | 63                                | **64** — se separó `lots.tracking.relax`          |
+| Migraciones       | 42                                | **43**                                            |
+| `npm audit`       | 0                                 | 0                                                 |
+| Integridad        | 23/23                             | 23/23                                             |
+| Cobertura         | 81,1 L · 78,4 S · 78,9 F · 63,9 R | ver el informe de la fase; umbrales **sin tocar** |
+
+Las 25 pruebas nuevas cubren tres cosas que antes no existían: el endpoint de
+salud y sus fugas, la validación del entorno al arrancar, y la separación de
+permisos por dirección.
+
+### Lo que esta fase enseñó
+
+**1. Una migración correcta no es una migración aplicable.**
+
+La cadena de 42 migraciones estaba probada de cuatro maneras: aplicándola sobre
+una base vacía, sobre una con el esquema viejo, con datos de demostración y con
+volumen. Todas verdes durante cuatro fases.
+
+Ninguna comprobaba si **el rol que la va a correr en producción puede
+correrla**. No puede: no tiene `CREATE` sobre el esquema y no es dueño de las
+tablas, así que falla en el primer `CREATE TABLE`.
+
+Se descubrió con una consulta de una línea contra el servidor real. La lección
+no es «hay que mirar los privilegios»: es que **el entorno de destino es parte
+de lo que hay que probar**, y ninguna cantidad de pruebas locales lo sustituye.
+
+**2. El volumen no escala lineal, y hay que medirlo para saberlo.**
+
+`phase3_sale_payments` tarda 113 ms con los datos reales y 31.119 ms con veinte
+veces esos datos. Nadie lo habría notado sin medir con volumen: con los datos de
+producción es instantánea.
+
+La causa —PostgreSQL no indexa las claves foráneas— es de manual y estuvo
+invisible quince meses porque la tabla es chica.
+
+**3. El arreglo correcto no siempre es el que parece.**
+
+El impulso fue corregir aquella migración. Habría cambiado su checksum, y
+`migrate deploy` se niega a seguir cuando un checksum no coincide —en
+desarrollo, en pruebas y en el ensayo, donde ya está aplicada—. Esa negativa es
+una garantía del proyecto y no se afloja para ganar 113 ms en una ventana que se
+corre una sola vez.
+
+El índice fue a una migración nueva. Y se **midió** que eso **no** mejora la
+ventana: 38 s contra 35 s, porque llega después. Lo que sí elimina es el costo
+permanente de abrir, anular o imprimir cada venta. Publicar el número que
+contradice la expectativa vale más que el arreglo.
+
+**4. Una comprobación que se niega dos veces está funcionando.**
+
+El empaquetador del artefacto comprueba lo que quedó **adentro** del `tar`, no
+la lista de exclusiones. Se negó a empaquetar dos veces: por las 43 migraciones
+—que son `.sql` y tienen que viajar— y por `migrations-legacy`, que Prisma no
+lee. Las dos veces la regla estaba mal escrita.
+
+Una comprobación que solo dice que sí no comprueba nada.
+
+**5. Separar un permiso por dirección, no por operación.**
+
+La Fase 4D dejó escrito que compras podía aflojar el rastreo de un producto, con
+el argumento de que juntar las cuatro operaciones era necesario —quien exige
+lotes tiene que poder crearlos—.
+
+El argumento era cierto y estaba incompleto: endurecer y aflojar no son
+simétricos. Endurecer se comprueba solo; aflojar apaga un control y lo apaga
+hacia atrás. Partir el permiso por dirección conserva el argumento original y
+saca exactamente el poder que sobraba.
+
+**«Queda auditado» no es una protección.** La bitácora dice quién apagó el
+control, no lo impide.
+
+**6. Un secreto que estuvo público no se protege rotando el resto.**
+
+La contraseña de la base de producción tiene la misma huella que la que estuvo
+en un repositorio público quince meses. Se comprobó comparando huellas MD5
+calculadas en cada lado: alcanza para saber que son la misma sin mover el
+secreto de sitio, sin imprimirlo y sin probarlo.
+
+Probar una credencial habría sido un intento de acceso, no una lectura. La
+diferencia importa cuando el mandato es «solo lectura».

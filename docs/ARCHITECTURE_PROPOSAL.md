@@ -714,3 +714,98 @@ La reconciliación pasó de diecinueve comprobaciones a **veintitrés**.
   escrito en la pantalla, en [FEFO_POLICY.md](FEFO_POLICY.md) y es el motivo del
   permiso `lots.adjust`.
 - **Un inventario aplicado no se revierte.** Se cuenta de nuevo.
+
+## Fase 5A: la aplicación dice quién es
+
+Tres piezas de arquitectura que no existían y que solo se echan de menos durante
+un incidente.
+
+### Identidad del binario
+
+En producción el checkout **no es un repositorio git** —se copió sin `.git`—,
+así que ahí `git rev-parse` no contesta nada. Y `package.json` solo dice qué
+versión _pretende_ ser el código: dos despliegues seguidos de `1.0.0-rc.1` son
+indistinguibles mirándolo.
+
+El artefacto lleva ahora un `build-info.json` en su raíz, escrito por
+`scripts/release-artifact.mjs` **en el momento de construir**, con el commit
+completo, la hora y si el árbol estaba limpio. `src/server/build-info.ts` lo lee
+una vez y lo deja en memoria.
+
+Si el archivo no está —desarrollo, o un despliegue hecho a mano— `commit` queda
+en `desconocido`. **No se inventa nada**: un commit falso durante un incidente
+es peor que ninguno.
+
+### Un límite entre «arranca» y «funciona»
+
+```
+GET /api/health
+  200  la aplicación responde y la base contesta
+  503  una dependencia crítica está caída
+```
+
+Devuelve versión, commit, hora de construcción, entorno y latencia de la base.
+**Nunca** la cadena de conexión, el host, el usuario, el secreto, rutas del
+sistema de archivos ni stack traces: es un endpoint público —lo consulta el
+monitor sin credenciales— y todo lo que conteste hay que darlo por publicado.
+
+No usa el envoltorio `handler` por tres razones concretas: `handler` resuelve la
+sesión incluso en rutas públicas y eso consulta la base —el endpoint que sirve
+para saber si la base responde no puede depender de que responda—; necesita
+elegir el estado HTTP; y un monitor lo pega cada treinta segundos, así que nada
+de esto debe escribir.
+
+Que el 503 cubra **también** el entorno es deliberado. Una aplicación con
+`JWT_SECRET` inválido levanta, sirve la pantalla de login y falla recién al
+firmar el token. Para el balanceador está sana; para quien tiene que cobrar, no
+existe.
+
+### Fallo ruidoso al arrancar
+
+`src/server/env.ts`, llamado desde `src/instrumentation.ts`, comprueba
+`DATABASE_URL` y `JWT_SECRET` **antes de atender la primera petición**. Si algo
+falta o es débil, `process.exit(1)` con un mensaje que nombra la variable —nunca
+su valor, porque ese mensaje termina en los logs de PM2 y los lee más gente de
+la que debería ver el secreto—.
+
+`process.exit` y no `throw`: una excepción en el arranque de Next puede quedar
+atrapada arriba y dejar el proceso vivo a medias, que es exactamente lo que esto
+viene a evitar.
+
+**Media aplicación levantada es peor que ninguna: parece que anda.** Es lo que
+pasó en el servidor con `JWT_SECRET=change-me`.
+
+### Redacción de logs
+
+El log de un 500 escribe el error original entero, a propósito: sin el stack no
+se diagnostica nada. Pero un fallo de conexión de Prisma trae la cadena
+**completa**, con la contraseña, y en el servidor esos logs viven en un archivo
+legible por cualquier usuario del sistema.
+
+`src/server/http/redaccion.ts` tacha **por valor, no por nombre de campo**:
+buscar claves llamadas `password` no sirve cuando el problema es una cadena de
+conexión dentro de un mensaje de texto. Se conservan usuario, host y base —eso
+es diagnóstico— y se tacha solo la contraseña.
+
+### Aflojar y endurecer no son el mismo permiso
+
+La Fase 4D dejó `lots.manage` como un permiso único, con un argumento correcto:
+quien exige lotes tiene que poder crearlos, o queda un producto imposible de
+recibir.
+
+El argumento estaba incompleto. **Endurecer y aflojar no son simétricos:**
+
+|                    | Endurecer                                             | Aflojar                                            |
+| ------------------ | ----------------------------------------------------- | -------------------------------------------------- |
+| Qué hace           | enciende un control                                   | **apaga** un control                               |
+| Se comprueba solo  | sí — exige atribuir todo el stock antes de `REQUIRED` | no hay nada que lo frene                           |
+| Efecto hacia atrás | ninguno                                               | el producto empieza a aceptar unidades sin partida |
+
+Partir el permiso **por dirección** —y no por operación— conserva el argumento
+original entero y saca exactamente el poder que sobraba. Compras conserva todo
+lo que hacía.
+
+La comprobación vive en el servicio y no en la ruta: `REQUIRED → REQUIRED` y
+`NONE → REQUIRED` llegan con el mismo cuerpo, y solo el estado real del producto
+—leído dentro de la misma transacción que aplica el cambio— distingue cuál
+afloja.

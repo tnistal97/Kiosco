@@ -529,3 +529,91 @@ escribir, y el de demostración tiene su propia guarda `_dev`.
 
 `npm run rehearsal`. Ver
 [PRODUCTION_MIGRATION_REHEARSAL.md](PRODUCTION_MIGRATION_REHEARSAL.md).
+
+## Fase 5A: lo que se midió contra el servidor real
+
+El 11 de agosto de 2026 se auditó producción en **solo lectura**. Tres
+resultados cambian cómo se lee todo lo anterior.
+
+### La cadena arranca donde produccion está, sin conflicto
+
+|                                       |                                               |
+| ------------------------------------- | --------------------------------------------- |
+| Migraciones registradas en producción | **1** — `20250605201717_add_value_to_product` |
+| Checksum en la base                   | `2d0b96ba…bfbd3f0`                            |
+| Checksum del archivo local            | **idéntico**                                  |
+| Pendientes                            | **42**                                        |
+| Deriva de esquema                     | **ninguna**                                   |
+
+El `pg_dump --schema-only` de producción se comparó contra lo que produce esa
+migración: 14 tablas, 13 secuencias, 8 índices únicos, **cero objetos extra**.
+Nadie tocó el esquema a mano en quince meses.
+
+Esto era la incógnita mayor —un checksum distinto habría hecho que `migrate
+deploy` se negara a seguir, y resolverlo en plena ventana es feo— y está
+descartada.
+
+### El bloqueo que sí existe: privilegios
+
+```sql
+SELECT has_schema_privilege('kiosco','public','CREATE');   -- false
+SELECT count(*) FROM pg_tables
+ WHERE schemaname='public' AND tableowner='kiosco';        -- 0
+```
+
+**El rol de la aplicación no puede correr las migraciones.** No puede crear
+objetos, y aunque se le concediera `CREATE`, un no-dueño no puede `ALTER TABLE`
+ni `CREATE TRIGGER` sobre tablas de `postgres` —y la cadena crea 17
+disparadores—.
+
+Es un bloqueante de despliegue, no de código. Las dos salidas posibles, con sus
+consecuencias, están en [`PRODUCTION_CUTOVER.md`](PRODUCTION_CUTOVER.md).
+
+**Regla nueva:** antes de dar por buena una cadena de migraciones, comprobar que
+el rol que la va a correr **puede correrla**. Que las migraciones sean correctas
+y que se puedan aplicar son dos cosas distintas, y esta cadena estuvo cuatro
+fases siendo lo primero sin que nadie comprobara lo segundo.
+
+### El ensayo con volumen de producción
+
+`npm run rehearsal:prodlike` parte del estado exacto de producción —la migración
+1 aplicada, 42 pendientes— y lo carga con la forma real de esos datos antes de
+migrar. Medido:
+
+|                                  |   Volumen real |            20× |
+| -------------------------------- | -------------: | -------------: |
+| Respaldo                         | 0,3 s · 0,1 MB | 0,5 s · 2,1 MB |
+| **Migración (42 pasos)**         |      **1,7 s** |     **35,2 s** |
+| Restauración del respaldo previo |          0,3 s |          0,6 s |
+| `integrity:check`                |         0,10 s |         0,27 s |
+| Base resultante                  |          15 MB |          76 MB |
+
+Y el hallazgo: **`phase3_sale_payments` pasa de 113 ms a 31.119 ms**. Veinte
+veces el volumen, doscientas setenta y cinco veces el tiempo.
+
+La causa es un relleno con subconsulta correlacionada sobre `SaleItem`, que no
+tenía índice por `saleId`: PostgreSQL **no indexa las claves foráneas**. La
+migración `20260814100000_phase5a_indices_de_lectura` lo crea.
+
+**No se corrigió la migración vieja.** Cambiar su checksum haría que `migrate
+deploy` se niegue a seguir en desarrollo, pruebas y el ensayo, donde ya está
+aplicada; en producción son 113 ms. El índice al final de la cadena **no mejora
+la ventana** —se midió: 38 s contra 35 s— y sí elimina el costo permanente de
+abrir, anular o imprimir cada venta.
+
+**Regla nueva:** toda columna por la que se busque en un `WHERE` necesita
+índice, aunque sea clave foránea. Y toda migración con una subconsulta
+correlacionada hay que medirla con volumen antes de darla por barata.
+
+### Expand / contract: cuándo empieza a aplicar
+
+Esta cadena tiene tres pares expand/contract —códigos de barras, proveedor del
+producto, contacto del proveedor— y los tres caen en el **mismo** despliegue.
+
+Es aceptable **solo esta vez**, por dos motivos medidos: la reversibilidad ya se
+pierde en la migración 6, que es anterior a los tres contracts; y no hay código
+viejo que sostener, porque la aplicación está detenida.
+
+**De acá en adelante no.** Con el sistema en marcha, cada `DROP COLUMN` va en un
+despliegue **posterior** al que dejó de usar esa columna. Si no, volver el
+artefacto deja de ser una opción.

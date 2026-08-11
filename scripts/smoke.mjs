@@ -56,12 +56,16 @@ async function paso(nombre, fn) {
 }
 
 async function pedir(ruta, opciones = {}) {
+  // `sinCookie` en vez de vaciar y restaurar la variable global: hacerlo
+  // alrededor de un `await` deja una ventana en la que otra peticion saldria
+  // sin sesion, y ademas no se distingue de haber perdido la cookie.
+  const { sinCookie, ...resto } = opciones
   const res = await fetch(`${BASE}${ruta}`, {
-    ...opciones,
+    ...resto,
     headers: {
-      ...(opciones.body ? { 'content-type': 'application/json' } : {}),
-      ...(cookie ? { cookie } : {}),
-      ...opciones.headers,
+      ...(resto.body ? { 'content-type': 'application/json' } : {}),
+      ...(cookie && !sinCookie ? { cookie } : {}),
+      ...resto.headers,
     },
     redirect: 'manual',
   })
@@ -133,15 +137,9 @@ async function login() {
 }
 
 async function sinSesionNoSeEntra() {
-  const guardada = cookie
-  cookie = ''
-  try {
-    const { res } = await pedir('/api/products?page=1&pageSize=1')
-    exigir(res.status === 401, `estado ${String(res.status)}, se esperaba 401`)
-    return 'sin cookie = 401'
-  } finally {
-    cookie = guardada
-  }
+  const { res } = await pedir('/api/products?page=1&pageSize=1', { sinCookie: true })
+  exigir(res.status === 401, `estado ${String(res.status)}, se esperaba 401`)
+  return 'sin cookie = 401'
 }
 
 async function permisos() {
