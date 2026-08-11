@@ -26,6 +26,10 @@ import { parseArqueos, parseSaldo, type ArqueoDTO } from '@/modules/cash/dto'
 import { parseReposicion, type ReposicionDTO } from '@/modules/inventory/dto'
 import { parseResumenCompras, type ResumenComprasDTO } from '@/modules/purchases/dto'
 import {
+  parseCarteraDeProveedores,
+  type CarteraDeProveedoresDTO,
+} from '@/modules/suppliers/dto.cuenta'
+import {
   parseRentabilidadDelDia,
   parseReporteClientes,
   type ReporteClientesDTO,
@@ -49,6 +53,8 @@ interface Panel {
   ultimoArqueo: ArqueoDTO | null
   /** La cartera de clientes. Null cuando no se puede ver. */
   clientes: ReporteClientesDTO | null
+  /** Las cuentas por pagar. Null cuando no se pueden ver. */
+  proveedores: CarteraDeProveedoresDTO | null
 }
 
 const VACIO: Panel = {
@@ -66,6 +72,7 @@ const VACIO: Panel = {
   compras: { pendientes: 0, parciales: 0, borradores: 0 },
   ultimoArqueo: null,
   clientes: null,
+  proveedores: null,
 }
 
 /**
@@ -93,6 +100,8 @@ export default function InicioPage() {
   const verGanancia = puede('reports.costs.view')
   const verStock = puede('stock.view')
   const verCompras = puede('purchases.view')
+  // Las cuentas por pagar tienen su propio permiso: el cajero NO las ve.
+  const verDeudas = puede('supplierAccounts.view')
   /**
    * La CARTERA, no la cuenta de una persona.
    *
@@ -197,6 +206,20 @@ export default function InicioPage() {
       )
     }
 
+    if (verDeudas) {
+      // Cuanto le debemos al conjunto de proveedores, cuanto esta vencido y
+      // que vence esta semana. Es el tablero del objetivo 31, y por eso NO se
+      // pide sin el permiso: una peticion que va a responder 403 llena la
+      // bitacora de rechazos que no significan nada.
+      tareas.push(
+        apiRequest('/api/suppliers/cartera', { parse: parseCarteraDeProveedores })
+          .then((r) => {
+            salida.proveedores = r
+          })
+          .catch(() => undefined),
+      )
+    }
+
     if (verCartera) {
       // La cartera de clientes: cuanto se debe y cuanto se cobro HOY. El
       // cajero NO la pide --no tiene `reports.clients.view`-- y por eso ni
@@ -216,7 +239,7 @@ export default function InicioPage() {
     await Promise.all(tareas)
     setDatos(salida)
     setCargando(false)
-  }, [verCaja, verVentas, verGanancia, verStock, verCompras, verCartera, hoy])
+  }, [verCaja, verVentas, verGanancia, verStock, verCompras, verCartera, verDeudas, hoy])
 
   useEffect(() => {
     void cargar()
@@ -365,6 +388,28 @@ export default function InicioPage() {
                     : 'Nada a medio recibir'
               }
               tone={datos.compras.parciales > 0 ? 'warning' : 'neutral'}
+            />
+          )}
+
+          {verDeudas && datos.proveedores && (
+            <MetricCard
+              href="/proveedores"
+              label="Cuentas por pagar"
+              value={<Money amount={datos.proveedores.total} size="lg" />}
+              detail={
+                /*
+                  Lo VENCIDO primero, porque es el numero accionable: deber
+                  plata a treinta dias es lo normal; deberla desde hace un mes
+                  es una llamada que va a entrar. Lo que vence en la semana va
+                  segundo, que es lo que hay que preparar.
+                */
+                esPositivo(datos.proveedores.vencido)
+                  ? `${formatMoney(datos.proveedores.vencido)} vencido en ${String(datos.proveedores.deudasVencidas)} entrega(s)`
+                  : esPositivo(datos.proveedores.proximos7Dias)
+                    ? `${formatMoney(datos.proveedores.proximos7Dias)} vence esta semana`
+                    : `${String(datos.proveedores.proveedoresConDeuda)} proveedor(es) con saldo`
+              }
+              tone={esPositivo(datos.proveedores.vencido) ? 'danger' : 'neutral'}
             />
           )}
         </div>

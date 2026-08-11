@@ -349,3 +349,79 @@ export function parseRentabilidadDelDia(d: unknown): {
     lineasSinCosto: numero(o.lineasSinCosto),
   }
 }
+
+// ---------------------------------------------------------------------------
+// Proveedores y cuentas por pagar (Fase 4B)
+// ---------------------------------------------------------------------------
+
+export interface ReporteProveedoresDTO {
+  cuentasPorPagar: {
+    total: Monto
+    proveedores: number
+    vencido: Monto
+    porVencer: Monto
+    sinVencimiento: Monto
+  }
+  periodo: {
+    recibido: Monto
+    cuantasRecepciones: number
+    pagado: Monto
+    cuantosPagos: number
+    pagadoEnEfectivo: Monto
+    notasDeCredito: Monto
+    ajustes: Monto
+  }
+  deudaPorProveedor: Array<{ proveedor: string; saldo: Monto; vencido: Monto }>
+  topPorCompras: Array<{ proveedor: string; comprado: Monto; recepciones: number }>
+  pagosPorMedio: Array<{ medio: string; etiqueta: string; pagado: Monto; cuantos: number }>
+}
+
+export function parseReporteProveedores(d: unknown): ReporteProveedoresDTO {
+  const o = esObjeto(d) ? d : {}
+  const c = esObjeto(o.cuentasPorPagar) ? o.cuentasPorPagar : {}
+  const p = esObjeto(o.periodo) ? o.periodo : {}
+
+  return {
+    cuentasPorPagar: {
+      total: montoODefecto(c.total),
+      proveedores: numero(c.proveedores),
+      vencido: montoODefecto(c.vencido),
+      porVencer: montoODefecto(c.porVencer),
+      sinVencimiento: montoODefecto(c.sinVencimiento),
+    },
+    periodo: {
+      recibido: montoODefecto(p.recibido),
+      cuantasRecepciones: numero(p.cuantasRecepciones),
+      pagado: montoODefecto(p.pagado),
+      cuantosPagos: numero(p.cuantosPagos),
+      pagadoEnEfectivo: montoODefecto(p.pagadoEnEfectivo),
+      notasDeCredito: montoODefecto(p.notasDeCredito),
+      ajustes: montoODefecto(p.ajustes),
+    },
+    deudaPorProveedor: lista(o.deudaPorProveedor, (f) => {
+      const x = esObjeto(f) ? f : {}
+      return {
+        proveedor: texto(x.proveedor, '—'),
+        saldo: montoODefecto(x.saldo),
+        vencido: montoODefecto(x.vencido),
+      }
+    }),
+    topPorCompras: lista(o.topPorCompras, (f) => {
+      const x = esObjeto(f) ? f : {}
+      return {
+        proveedor: texto(x.proveedor, '—'),
+        comprado: montoODefecto(x.comprado),
+        recepciones: numero(x.recepciones),
+      }
+    }),
+    pagosPorMedio: lista(o.pagosPorMedio, (f) => {
+      const x = esObjeto(f) ? f : {}
+      return {
+        medio: texto(x.medio, '—'),
+        etiqueta: texto(x.etiqueta, '—'),
+        pagado: montoODefecto(x.pagado),
+        cuantos: numero(x.cuantos),
+      }
+    }),
+  }
+}

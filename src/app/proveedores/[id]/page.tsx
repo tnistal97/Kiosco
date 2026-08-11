@@ -25,6 +25,7 @@ import {
 } from '@/components/ui'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { DialogoProveedor } from '@/components/proveedores/DialogoProveedor'
+import { CuentaDeProveedor } from '@/components/proveedores/CuentaDeProveedor'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { parseDetalleProveedor, type DetalleProveedorDTO } from '@/modules/suppliers/dto'
 import { etiquetaDeEstado } from '@/modules/purchases/status'
@@ -51,6 +52,9 @@ export default function ProveedorPage() {
 
   const puedeAdministrar = usePermiso('suppliers.manage')
   const puedeVerCompras = usePermiso('purchases.view')
+  // La cuenta corriente es otra materia y tiene otro permiso: quien puede ver a
+  // quien le compramos no necesariamente puede ver cuanto le debemos.
+  const puedeVerCuenta = usePermiso('supplierAccounts.view')
 
   const [proveedor, setProveedor] = useState<DetalleProveedorDTO | null>(null)
   const [cargando, setCargando] = useState(true)
@@ -157,6 +161,13 @@ export default function ProveedorPage() {
           </p>
         )}
       </Card>
+
+      {/*
+        La cuenta corriente va ARRIBA de los productos: cuando alguien abre la
+        ficha de un proveedor lo que quiere saber casi siempre es cuanto le
+        debemos y cuando vence, no que articulos le compramos.
+      */}
+      {puedeVerCuenta && <CuentaDeProveedor supplierId={id} />}
 
       <Card className="p-4">
         <CardHeader

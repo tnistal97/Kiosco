@@ -26,6 +26,7 @@ import { sumarDias } from '@/lib/tiempo'
 import {
   parseReporteCaja,
   parseReporteClientes,
+  parseReporteProveedores,
   parseReporteCompras,
   parseReporteInventario,
   parseReporteProductos,
@@ -33,6 +34,7 @@ import {
   parseReporteVentas,
   type ReporteCajaDTO,
   type ReporteClientesDTO,
+  type ReporteProveedoresDTO,
   type ReporteComprasDTO,
   type ReporteInventarioDTO,
   type ReporteProductosDTO,
@@ -75,6 +77,7 @@ export default function ReportesPage() {
   const [compras, setCompras] = useState<ReporteComprasDTO | null>(null)
   const [caja, setCaja] = useState<ReporteCajaDTO | null>(null)
   const [clientes, setClientes] = useState<ReporteClientesDTO | null>(null)
+  const [proveedores, setProveedores] = useState<ReporteProveedoresDTO | null>(null)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -106,6 +109,14 @@ export default function ReportesPage() {
           : Promise.resolve(),
         verCaja
           ? apiRequest(`/api/reports/caja?${q}`, { parse: parseReporteCaja }).then(setCaja)
+          : Promise.resolve(),
+        // Las cuentas por pagar van bajo el permiso de compras: es la misma
+        // materia --lo que se le compra a cada proveedor-- y quien ya podia
+        // ver cuanto se compro puede ver cuanto de eso falta pagar.
+        verCompras
+          ? apiRequest(`/api/reports/proveedores?${q}`, {
+              parse: parseReporteProveedores,
+            }).then(setProveedores)
           : Promise.resolve(),
         verClientes
           ? apiRequest(`/api/reports/clientes?${q}`, { parse: parseReporteClientes }).then(
@@ -369,6 +380,91 @@ export default function ReportesPage() {
             filas={clientes.cobrosPorMedio.map((m) => [
               m.etiqueta,
               <Money key="c" amount={m.cobrado} size="sm" />,
+              String(m.cuantos),
+            ])}
+          />
+        </Card>
+      )}
+
+      {!cargando && verCompras && proveedores && (
+        <Card>
+          <CardHeader
+            title="Proveedores"
+            description="Lo que se debe es de hoy; lo recibido y lo pagado, del período. Comprar y pagar son dos cosas distintas."
+          />
+
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Dato
+              titulo="Cuentas por pagar"
+              valor={<Money amount={proveedores.cuentasPorPagar.total} size="lg" />}
+              detalle={`${String(proveedores.cuentasPorPagar.proveedores)} proveedor(es) con saldo`}
+            />
+            <Dato
+              titulo="Vencido"
+              valor={<Money amount={proveedores.cuentasPorPagar.vencido} size="lg" />}
+              detalle="Al cierre del período mirado"
+            />
+            <Dato
+              titulo="Por vencer"
+              valor={<Money amount={proveedores.cuentasPorPagar.porVencer} size="lg" />}
+              detalle="Con fecha, todavía en plazo"
+            />
+            <Dato
+              titulo="Sin vencimiento"
+              valor={<Money amount={proveedores.cuentasPorPagar.sinVencimiento} size="lg" />}
+              detalle="Nadie cargó una fecha"
+            />
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Dato
+              titulo="Recibido"
+              valor={<Money amount={proveedores.periodo.recibido} size="lg" />}
+              detalle={`${String(proveedores.periodo.cuantasRecepciones)} entrega(s) en el período`}
+            />
+            <Dato
+              titulo="Pagado"
+              valor={<Money amount={proveedores.periodo.pagado} size="lg" />}
+              detalle={`${String(proveedores.periodo.cuantosPagos)} pago(s)`}
+            />
+            <Dato
+              titulo="De eso, en efectivo"
+              valor={<Money amount={proveedores.periodo.pagadoEnEfectivo} size="lg" />}
+              detalle="Lo único que salió del cajón"
+            />
+            <Dato
+              titulo="Notas de crédito"
+              valor={<Money amount={proveedores.periodo.notasDeCredito} size="lg" />}
+              detalle="Bajan la deuda sin que salga plata"
+            />
+          </div>
+
+          <Tabla
+            titulo="A quiénes se les debe más"
+            cabeceras={['Proveedor', 'Saldo', 'Vencido']}
+            filas={proveedores.deudaPorProveedor.map((d) => [
+              d.proveedor,
+              <Money key="s" amount={d.saldo} size="sm" />,
+              <Money key="v" amount={d.vencido} size="sm" />,
+            ])}
+          />
+
+          <Tabla
+            titulo="A quiénes se les compró más"
+            cabeceras={['Proveedor', 'Comprado', 'Entregas']}
+            filas={proveedores.topPorCompras.map((t) => [
+              t.proveedor,
+              <Money key="c" amount={t.comprado} size="sm" />,
+              String(t.recepciones),
+            ])}
+          />
+
+          <Tabla
+            titulo="Pagos por medio"
+            cabeceras={['Medio', 'Pagado', 'Pagos']}
+            filas={proveedores.pagosPorMedio.map((m) => [
+              m.etiqueta,
+              <Money key="p" amount={m.pagado} size="sm" />,
               String(m.cuantos),
             ])}
           />

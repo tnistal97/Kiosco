@@ -711,6 +711,219 @@ export async function reporteDeCompras(
 }
 
 // ===========================================================================
+// Proveedores y cuentas por pagar (Fase 4B)
+// ===========================================================================
+
+export interface ReporteDeProveedores {
+  /** Foto de HOY. Los saldos son acumulados y no tienen fecha. */
+  cuentasPorPagar: {
+    total: Monto
+    proveedores: number
+    vencido: Monto
+    porVencer: Monto
+    /** Lo que no tiene fecha de vencimiento cargada. No es ni una cosa ni la otra. */
+    sinVencimiento: Monto
+  }
+  /** Lo que paso DENTRO del rango. Lo de arriba es una foto. */
+  periodo: {
+    recibido: Monto
+    cuantasRecepciones: number
+    pagado: Monto
+    cuantosPagos: number
+    /** Cuanto de lo pagado salio del cajon. El resto fue transferencia o tarjeta. */
+    pagadoEnEfectivo: Monto
+    notasDeCredito: Monto
+    ajustes: Monto
+  }
+  deudaPorProveedor: Array<{ proveedor: string; saldo: Monto; vencido: Monto }>
+  topPorCompras: Array<{ proveedor: string; comprado: Monto; recepciones: number }>
+  pagosPorMedio: Array<{ medio: string; etiqueta: string; pagado: Monto; cuantos: number }>
+}
+
+/**
+ * Cuentas por pagar y movimiento con proveedores. El objetivo 30.
+ *
+ * DOS COSAS QUE ESTE REPORTE NO HACE, las mismas que el de clientes y por los
+ * mismos motivos:
+ *
+ *   1. NO MEZCLA COMPRADO CON PAGADO. Son dos columnas distintas y dos
+ *      preguntas distintas: cuanta mercaderia entro, y cuanta plata salio. Una
+ *      entrega a 30 dias suma a la primera y no a la segunda, y sumarlas juntas
+ *      haria pensar que el mes costo el doble.
+ *
+ *   2. NO MEZCLA LA FOTO CON LA PELICULA. `cuentasPorPagar` es el estado de HOY
+ *      --los saldos son acumulados-- y `periodo` es lo que ocurrio dentro del
+ *      rango. Mostrarlos juntos sin distinguirlos haria pensar que la deuda se
+ *      genero toda en esos dias.
+ *
+ * Ver docs/REPORTING_MODEL.md.
+ */
+export async function reporteDeProveedores(
+  session: Session,
+  query: RangoQuery,
+): Promise<ReporteDeProveedores> {
+  const { desde, hasta, branchId } = await preparar(session, query, 'reports.purchases.view')
+
+  // "Hoy" para decidir que esta vencido sale del DIA COMERCIAL de la sucursal,
+  // igual que todo lo demas desde la Fase 3D. Se reusa `desde`/`hasta` para el
+  // periodo y esto solo para el estado.
+  const inicioDeHoy = comoTimestampUTC(
+    (await rangoDeSucursal(prisma, branchId, hoyDe(query), hoyDe(query))).desde,
+  )
+
+  const [saldos, obligaciones, periodo, porProveedor, top, medios] = await Promise.all([
+    filas(
+      `SELECT COALESCE(sum("balance") FILTER (WHERE "balance" > 0), 0)::numeric(14,2)::text AS total,
+              count(*) FILTER (WHERE "balance" > 0)::text                                   AS proveedores
+         FROM "Supplier"`,
+    ),
+    // Vencido, por vencer y sin fecha, en UNA pasada sobre las obligaciones
+    // abiertas. Tres agregados separados serian tres recorridas de lo mismo.
+    filas(
+      `WITH abiertas AS (
+         SELECT r."dueDate",
+                r."total" - COALESCE((
+                  SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
+                   WHERE a."receiptId" = r."id"
+                ), 0) AS pendiente
+           FROM "PurchaseReceipt" r
+          WHERE r."debtRecorded" = true
+       )
+       SELECT COALESCE(sum(pendiente) FILTER (
+                WHERE "dueDate" IS NOT NULL AND "dueDate" < $1::timestamp
+              ), 0)::numeric(14,2)::text AS vencido,
+              COALESCE(sum(pendiente) FILTER (
+                WHERE "dueDate" IS NOT NULL AND "dueDate" >= $1::timestamp
+              ), 0)::numeric(14,2)::text AS "porVencer",
+              COALESCE(sum(pendiente) FILTER (WHERE "dueDate" IS NULL), 0)::numeric(14,2)::text
+                                         AS "sinFecha"
+         FROM abiertas
+        WHERE pendiente > 0`,
+      inicioDeHoy,
+    ),
+    filas(
+      `SELECT
+         COALESCE(sum("amount") FILTER (WHERE "type" = 'PURCHASE_CHARGE'), 0)::numeric(14,2)::text AS recibido,
+         count(*) FILTER (WHERE "type" = 'PURCHASE_CHARGE')::text                    AS "cuantasRecepciones",
+         COALESCE(-sum("amount") FILTER (WHERE "type" = 'PAYMENT'), 0)::numeric(14,2)::text        AS pagado,
+         count(*) FILTER (WHERE "type" = 'PAYMENT')::text                            AS "cuantosPagos",
+         COALESCE(-sum("amount") FILTER (WHERE "type" = 'PURCHASE_CREDIT'), 0)::numeric(14,2)::text AS notas,
+         COALESCE(sum("amount") FILTER (WHERE "type" = 'MANUAL_ADJUSTMENT'), 0)::numeric(14,2)::text AS ajustes,
+         COALESCE((
+           SELECT sum(p."amount") FROM "SupplierPayment" p
+            WHERE p."branchId" = $1 AND p."paidAt" >= $2::timestamp AND p."paidAt" <= $3::timestamp
+              AND p."method" = 'CASH'
+         ), 0)::numeric(14,2)::text                                                  AS "enEfectivo"
+       FROM "SupplierAccountMovement"
+       WHERE "branchId" = $1 AND "createdAt" >= $2::timestamp AND "createdAt" <= $3::timestamp`,
+      branchId,
+      desde,
+      hasta,
+    ),
+    filas(
+      `WITH vencido AS (
+         SELECT o."supplierId",
+                sum(r."total" - COALESCE((
+                  SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
+                   WHERE a."receiptId" = r."id"
+                ), 0)) AS monto
+           FROM "PurchaseReceipt" r
+           JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
+          WHERE r."debtRecorded" = true
+            AND r."dueDate" IS NOT NULL AND r."dueDate" < $1::timestamp
+          GROUP BY o."supplierId"
+       )
+       SELECT s."name"                                     AS proveedor,
+              s."balance"::numeric(14,2)::text              AS saldo,
+              COALESCE(v.monto, 0)::numeric(14,2)::text     AS vencido
+         FROM "Supplier" s
+         LEFT JOIN vencido v ON v."supplierId" = s."id"
+        WHERE s."balance" > 0
+        ORDER BY s."balance" DESC
+        LIMIT ${String(TOPE_RANKING)}`,
+      inicioDeHoy,
+    ),
+    filas(
+      `SELECT s."name"                                AS proveedor,
+              sum(r."total")::numeric(14,2)::text      AS comprado,
+              count(*)::text                           AS recepciones
+         FROM "PurchaseReceipt" r
+         JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
+         JOIN "Supplier" s ON s."id" = o."supplierId"
+        WHERE r."branchId" = $1 AND r."receivedAt" >= $2::timestamp AND r."receivedAt" <= $3::timestamp
+        GROUP BY s."id", s."name"
+        ORDER BY sum(r."total") DESC
+        LIMIT ${String(TOPE_RANKING)}`,
+      branchId,
+      desde,
+      hasta,
+    ),
+    filas(
+      `SELECT "method"                           AS medio,
+              sum("amount")::numeric(14,2)::text AS pagado,
+              count(*)::text                     AS cuantos
+         FROM "SupplierPayment"
+        WHERE "branchId" = $1 AND "paidAt" >= $2::timestamp AND "paidAt" <= $3::timestamp
+        GROUP BY "method" ORDER BY sum("amount") DESC`,
+      branchId,
+      desde,
+      hasta,
+    ),
+  ])
+
+  const s = saldos[0]
+  const o = obligaciones[0]
+  const p = periodo[0]
+
+  return {
+    cuentasPorPagar: {
+      total: monto(s?.total),
+      proveedores: Number(s?.proveedores ?? '0'),
+      vencido: monto(o?.vencido),
+      porVencer: monto(o?.porVencer),
+      sinVencimiento: monto(o?.sinFecha),
+    },
+    periodo: {
+      recibido: monto(p?.recibido),
+      cuantasRecepciones: Number(p?.cuantasRecepciones ?? '0'),
+      pagado: monto(p?.pagado),
+      cuantosPagos: Number(p?.cuantosPagos ?? '0'),
+      pagadoEnEfectivo: monto(p?.enEfectivo),
+      notasDeCredito: monto(p?.notas),
+      ajustes: monto(p?.ajustes),
+    },
+    deudaPorProveedor: porProveedor.map((f) => ({
+      proveedor: f.proveedor ?? '—',
+      saldo: monto(f.saldo),
+      vencido: monto(f.vencido),
+    })),
+    topPorCompras: top.map((f) => ({
+      proveedor: f.proveedor ?? '—',
+      comprado: monto(f.comprado),
+      recepciones: Number(f.recepciones ?? '0'),
+    })),
+    pagosPorMedio: medios.map((f) => ({
+      medio: f.medio ?? '—',
+      etiqueta: etiquetaDeMedio(f.medio ?? ''),
+      pagado: monto(f.pagado),
+      cuantos: Number(f.cuantos ?? '0'),
+    })),
+  }
+}
+
+/**
+ * El dia contra el que se decide si una obligacion vencio.
+ *
+ * Es el FINAL del rango que se esta mirando, no el reloj de hoy, y esa
+ * diferencia importa: un reporte de marzo consultado en agosto tiene que decir
+ * que estaba vencido AL CIERRE DE MARZO. Usar la fecha de hoy convertiria todo
+ * marzo en "vencido" y el reporte diria algo que no ocurrio.
+ */
+function hoyDe(query: RangoQuery): string {
+  return query.hasta
+}
+
+// ===========================================================================
 // Caja
 // ===========================================================================
 
