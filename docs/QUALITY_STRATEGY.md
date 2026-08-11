@@ -28,7 +28,7 @@
 
 |                |                                                              |
 | -------------- | ------------------------------------------------------------ |
-| Pruebas        | **1.130** en vitest + **135** de extremo a extremo           |
+| Pruebas        | **1.130** en vitest + **141** de extremo a extremo           |
 | axe            | **+ cuatro pantallas**: clientes, ficha, cobro y comprobante |
 | ESLint         | **+ una cuarta frontera**: el saldo de un cliente            |
 | Reconciliación | **trece** invariantes (nueve + cuatro de cuenta corriente)   |
@@ -42,6 +42,31 @@ ventas con `now()` y corría antes de las 21:00.
 La lección quedó escrita en el diseño de la prueba: **una prueba que depende del
 reloj no prueba nada tres cuartos del día.** La nueva fija la fecha de la venta
 a mano.
+
+#### La prueba intermitente de los diálogos
+
+La Fase 4A también cerró una falla intermitente que venía de la 3C: el análisis
+de axe sobre el alta de proveedor fallaba una corrida de cada cuatro con
+diecisiete faltas de contraste que no existían. **axe mide el contraste sobre la
+opacidad que hay en ese instante**, y los diálogos entran con una transición: a
+mitad de camino, todo el diálogo parece ilegible.
+
+El primer arreglo estuvo mal, y vale más anotado que borrado: esperar a que
+**todos** los descendientes llegaran a opacidad 1. Nunca ocurre. Un botón
+deshabilitado vive en `opacity-45` a propósito y un paso de cantidad en el
+mínimo, en `opacity-40`; en los dos diálogos que los tienen, la condición era
+imposible y la prueba pasó de intermitente a muerta por tiempo agotado.
+
+La condición de verdad no era «todo opaco» sino «la transición terminó», y la
+biblioteca ya la publica: `data-closed` mientras no entró, `data-transition`
+mientras corre, y ninguna `CSSTransition` sin terminar. `esperarDialogoEstable`
+pregunta eso, y se salta las animaciones infinitas —el girador de un botón, el
+latido de un esqueleto— que por diseño no terminan nunca.
+
+Dos lecciones, y la segunda es la cara: **una condición de espera que aproxima
+lo que se quiere saber convierte una prueba intermitente en otra**, y hay que
+mirar qué falló, no suponerlo —las dos pruebas parecían el mismo fallo de
+contraste de antes y eran un tiempo agotado.
 
 ### Las cuatro fronteras que ESLint hace cumplir
 

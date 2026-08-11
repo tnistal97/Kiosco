@@ -39,29 +39,43 @@ async function analizar(page: Page) {
  * SIN ESTO, LAS PRUEBAS DE DIALOGO SON INTERMITENTES. Los dialogos entran con
  * una transicion de opacidad, y axe mide el contraste CON LA OPACIDAD QUE HAY
  * en ese instante: a mitad de camino, TODOS los elementos del dialogo fallan y
- * el informe trae quince faltas que no existen.
+ * el informe trae quince faltas que no existen. Lo encontro la Fase 4A: la
+ * prueba del alta de proveedor, de la Fase 3C, fallo una vez de cada cuatro
+ * corridas con diecisiete faltas de contraste.
  *
  * Esperar a que aparezca un titulo no alcanza --el titulo ya esta en el DOM
  * cuando la transicion arranca-- y esperar un tiempo fijo cambia una prueba
- * intermitente por otra. Lo que se espera es la condicion de verdad: que la
- * opacidad de todos los contenedores del dialogo haya llegado a 1.
+ * intermitente por otra.
  *
- * Lo encontro la Fase 4A: la prueba del alta de proveedor, de la Fase 3C,
- * fallo una vez de cada cuatro corridas con diecisiete faltas de contraste.
+ * PRIMER INTENTO, EQUIVOCADO: exigir opacidad 1 a todos los descendientes. No
+ * termina nunca. Un boton deshabilitado vive en `opacity-45` a proposito, y un
+ * paso de cantidad en el minimo, en `opacity-40`: la condicion era imposible
+ * en los dos dialogos que los tienen y la prueba moria por tiempo agotado.
+ * "Todo opaco" no era la condicion de verdad; era una aproximacion que confundia
+ * translucidez deliberada con transicion en curso.
+ *
+ * Lo que se espera es lo que la propia biblioteca considera terminado: que no
+ * queden marcas de transicion y que ninguna `CSSTransition` siga corriendo.
  */
 async function esperarDialogoEstable(page: Page): Promise<void> {
   await page.waitForFunction(() => {
     const dialogo = document.querySelector('[role="dialog"]')
     if (!dialogo) return false
 
-    // La opacidad puede estar en el propio dialogo o en cualquiera de sus
-    // envoltorios --Headless UI la aplica en el panel, no en la raiz-- asi que
-    // se comprueban todos.
-    const candidatos = [dialogo, ...Array.from(dialogo.querySelectorAll('*'))]
-    return candidatos.every((el) => {
-      const opacidad = Number(getComputedStyle(el).opacity)
-      return Number.isNaN(opacidad) || opacidad === 1
-    })
+    // Headless UI marca con `data-closed` lo que todavia no entro y con
+    // `data-transition` lo que esta a mitad de camino. Que no quede ninguno de
+    // los dos dice que el dialogo termino de aparecer y --lo que importa
+    // igual-- que EMPEZO: preguntar solo por las animaciones deja pasar el
+    // instante anterior al primer fotograma, cuando todavia no hay ninguna.
+    if (dialogo.matches('[data-closed], [data-transition]')) return false
+    if (dialogo.querySelector('[data-closed], [data-transition]')) return false
+
+    // Y que no quede ninguna transicion corriendo. Se miran las transiciones y
+    // no las animaciones: `animate-spin` y `animate-pulse` son infinitas por
+    // diseño. Es el mismo filtro que usa Headless UI para darse por terminada.
+    return !dialogo
+      .getAnimations({ subtree: true })
+      .some((a) => a instanceof CSSTransition && a.playState !== 'finished')
   })
 }
 

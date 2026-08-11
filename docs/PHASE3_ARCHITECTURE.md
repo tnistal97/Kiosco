@@ -93,7 +93,8 @@ Desde la Fase 4A, además:
 npm run integrity:check
 ```
 
-Nueve invariantes, calculadas **por otro camino** que el que las escribió: SQL
+Trece invariantes —nueve de la Fase 3 y cuatro de cuenta corriente—, calculadas
+**por otro camino** que el que las escribió: SQL
 sobre las tablas contra `Decimal.js` en la aplicación. Sólo lectura, sin
 corregir nada. Ver [INTEGRITY_CHECK.md](INTEGRITY_CHECK.md).
 

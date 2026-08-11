@@ -55,20 +55,26 @@ Comparar dos bases entera por entera es caro y frágil (los ids de secuencia, lo
 timestamps de sistema). La huella compara lo que importa:
 
 ```
-CashRegisterMovement:     26 filas, suma  71100.00
-Client:                    3 filas, suma  17940.00
-CustomerAccountMovement:   6 filas, suma  17940.00
-CustomerPayment:           2 filas, suma  10000.00
-Product:                  43 filas, suma 187430.00
-Sale:                     15 filas, suma  93250.00
-SaleItem:                 41 filas, suma    128.500
-StockMovement:            73 filas, suma   1204.000
-PurchaseReceiptItem:       5 filas, suma     64.000
+CashRegisterMovement:     21 filas, suma 145520.00
+Client:                    3 filas, suma  19060.00
+CustomerAccountMovement:   6 filas, suma  19060.00
+CustomerPayment:           2 filas, suma   9120.00
+Product:                  43 filas, suma 161970.00
+PurchaseReceiptItem:       3 filas, suma     32.000
+Sale:                     15 filas, suma 164770.00
+SaleItem:                 32 filas, suma     57.000
+StockMovement:            78 filas, suma    878.000
 ```
 
 Cantidad de filas **y suma de la columna que importa** de cada tabla. Un
 `pg_restore` truncado cambia el conteo; uno que perdió precisión cambia la suma.
 Las dos juntas son difíciles de pasar por casualidad.
+
+> Esos números son la salida real de una corrida sobre el seed de
+> demostración, no un ejemplo inventado. Se pueden reproducir: el seed fija los
+> importes y sólo mueve las fechas, así que dos corridas dan la misma huella.
+> Un número copiado a ojo en un documento como éste es peor que no ponerlo —
+> invita a comparar contra algo que nunca fue cierto.
 
 Las tres tablas de cuenta corriente entraron en la Fase 4A. Sin ellas, un
 respaldo que perdiera el libro de clientes se restauraría y la comparación diría

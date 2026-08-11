@@ -14,6 +14,11 @@
  * Se niega a correr si la base no termina en `_dev`. Es la misma guarda que
  * usan los tests: impide vaciar por accidente algo que no sea descartable.
  */
+// Carga `.env.local` al importarse, como los demas guiones que corren fuera de
+// Next. Sin esto, `npm run seed:demo` en una terminal recien abierta no ve
+// `DATABASE_URL` y la guarda del `_dev` rechaza una base "(vacio)" — un mensaje
+// que hace pensar en la guarda cuando el problema es el entorno.
+import '../scripts/entorno'
 import { Prisma, PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
 
