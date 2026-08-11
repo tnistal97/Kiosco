@@ -743,17 +743,17 @@ La primera fase cuyo objeto no es el código sino **el despliegue**. La pregunta
 que vino a contestar con evidencia: _¿podemos desplegar sin poner en riesgo la
 base, el stock, las ventas ni la posibilidad de volver atrás?_
 
-|                   | Fase 4D                           | **Fase 5A**                                       |
-| ----------------- | --------------------------------- | ------------------------------------------------- |
-| Pruebas           | 1.421                             | **1.446** en 66 archivos                          |
-| Extremo a extremo | 222                               | 222                                               |
-| Permisos          | 63                                | **64** — se separó `lots.tracking.relax`          |
-| Migraciones       | 42                                | **43**                                            |
-| `npm audit`       | 0                                 | 0                                                 |
-| Integridad        | 23/23                             | 23/23                                             |
-| Cobertura         | 81,1 L · 78,4 S · 78,9 F · 63,9 R | ver el informe de la fase; umbrales **sin tocar** |
+|                   | Fase 4D                           | **Fase 5A**                                           |
+| ----------------- | --------------------------------- | ----------------------------------------------------- |
+| Pruebas           | 1.421                             | **1.478** en 68 archivos                              |
+| Extremo a extremo | 222                               | 222                                                   |
+| Permisos          | 63                                | **64** — se separó `lots.tracking.relax`              |
+| Migraciones       | 42                                | **43**                                                |
+| `npm audit`       | 0                                 | 0                                                     |
+| Integridad        | 23/23                             | 23/23                                                 |
+| Cobertura         | 81,1 L · 78,4 S · 78,9 F · 63,9 R | **81,3 L · 79,0 F · 64,3 R** — umbrales **sin tocar** |
 
-Las 25 pruebas nuevas cubren tres cosas que antes no existían: el endpoint de
+Las 57 pruebas nuevas cubren tres cosas que antes no existían: el endpoint de
 salud y sus fugas, la validación del entorno al arrancar, y la separación de
 permisos por dirección.
 

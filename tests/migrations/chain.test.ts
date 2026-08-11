@@ -55,23 +55,32 @@ async function conAdmin<T>(fn: (c: Client) => Promise<T>): Promise<T> {
 async function crearBase(nombre: string): Promise<string> {
   if (!nombre.endsWith(SUFIJO)) throw new Error(`Nombre inseguro: ${nombre}`)
   await conAdmin(async (c) => {
-    await c.query(`DROP DATABASE IF EXISTS "${nombre}"`)
+    await c.query(`DROP DATABASE IF EXISTS "${nombre}" WITH (FORCE)`)
     await c.query(`CREATE DATABASE "${nombre}"`)
   })
   creadas.push(nombre)
   return urlDe(nombre)
 }
 
+/**
+ * `WITH (FORCE)` en vez de terminar los backends a mano.
+ *
+ * La version anterior hacia `pg_terminate_backend` sobre todo lo conectado a
+ * esa base y despues el DROP. Falla de dos maneras que se vieron de verdad:
+ * `permission denied to terminate process` cuando alguna de esas conexiones no
+ * es del mismo rol --el usuario de pruebas no es superusuario-- y una carrera
+ * cuando PostgreSQL todavia no libero la que acaba de cortar.
+ *
+ * `WITH (FORCE)` --PostgreSQL 13 en adelante-- hace las dos cosas en una sola
+ * sentencia atomica, y es lo que ya usaban los guiones de ensayo. Que la
+ * limpieza de una prueba falle deja bases colgadas que hacen fallar la
+ * siguiente corrida por un motivo distinto al real, que es exactamente lo que
+ * paso.
+ */
 async function borrarBase(nombre: string): Promise<void> {
   if (!nombre.endsWith(SUFIJO)) throw new Error(`Nombre inseguro: ${nombre}`)
   await conAdmin(async (c) => {
-    // Cerrar conexiones abiertas o el DROP falla.
-    await c.query(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-       WHERE datname = $1 AND pid <> pg_backend_pid()`,
-      [nombre],
-    )
-    await c.query(`DROP DATABASE IF EXISTS "${nombre}"`)
+    await c.query(`DROP DATABASE IF EXISTS "${nombre}" WITH (FORCE)`)
   })
 }
 
@@ -168,6 +177,7 @@ describe('La cadena oficial', () => {
       '20260813120000_phase4d_lot_receiving',
       '20260813130000_phase4d_lot_sales',
       '20260813140000_phase4d_inventory_counts',
+      '20260814100000_phase5a_indices_de_lectura',
     ])
   })
 

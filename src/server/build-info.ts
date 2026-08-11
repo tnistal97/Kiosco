@@ -43,6 +43,17 @@ export const BUILD_INFO_FILE = 'build-info.json'
 let cache: ArchivoDeConstruccion | null = null
 
 /**
+ * Desde donde se lee. Normalmente el directorio del proceso.
+ *
+ * Se puede fijar SOLO para las pruebas, y existe por un motivo que se descubrio
+ * probando: la prueba de "sin archivo dice desconocido" dependia de que el
+ * archivo NO existiera en el arbol, y `npm run release:artifact` lo crea. Pasaba
+ * en un clon recien hecho y fallaba despues de construir un artefacto. Una
+ * prueba que depende de un archivo sin versionar no prueba nada estable.
+ */
+let raiz: string | null = null
+
+/**
  * Lee el archivo si esta. Cualquier fallo --no existe, no es JSON, le faltan
  * campos-- se resuelve con `desconocido`, nunca lanzando: el endpoint de salud
  * tiene que responder incluso cuando el artefacto esta mal armado, porque
@@ -58,7 +69,7 @@ function leerArchivo(): ArchivoDeConstruccion {
   }
 
   try {
-    const crudo = readFileSync(join(process.cwd(), BUILD_INFO_FILE), 'utf8')
+    const crudo = readFileSync(join(raiz ?? process.cwd(), BUILD_INFO_FILE), 'utf8')
     const dato = JSON.parse(crudo) as Partial<ArchivoDeConstruccion>
     cache = {
       version: typeof dato.version === 'string' ? dato.version : DESCONOCIDO,
@@ -83,7 +94,11 @@ export function buildInfo(): BuildInfo {
   }
 }
 
-/** Solo para las pruebas: obliga a releer el archivo. */
-export function olvidarBuildInfo(): void {
+/**
+ * Solo para las pruebas: obliga a releer, y opcionalmente desde otro
+ * directorio. Sin argumento vuelve al directorio del proceso.
+ */
+export function olvidarBuildInfo(directorio?: string): void {
   cache = null
+  raiz = directorio ?? null
 }

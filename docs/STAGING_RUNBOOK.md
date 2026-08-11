@@ -10,7 +10,7 @@ Staging responde una pregunta que la suite no puede: **¿este artefacto, con est
 configuración, en esta máquina, funciona?**
 
 La suite valida el código. Staging valida el **despliegue**. Una variable de
-entorno mal puesta pasa las 1.446 pruebas y rompe el login.
+entorno mal puesta pasa las 1.478 pruebas y rompe el login.
 
 Y para este proyecto tiene un uso más concreto: es donde se corre la migración
 de 42 pasos **por primera vez sobre un servidor de verdad**, con el Node y el

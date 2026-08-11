@@ -12,7 +12,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { call } from '../helpers/http'
 import { prisma } from '../helpers/db'
-import { olvidarBuildInfo } from '@/server/build-info'
+import { olvidarBuildInfo, BUILD_INFO_FILE } from '@/server/build-info'
+import { join } from 'node:path'
 import { REQUEST_ID_HEADER } from '@/server/http/requestId'
 import type { HealthBody } from '@/app/api/health/route'
 
@@ -57,9 +58,55 @@ describe('GET /api/health', () => {
   })
 
   it('sin build-info.json dice "desconocido" en vez de inventar un commit', async () => {
+    // Se apunta a un directorio VACIO, no se confia en que el archivo falte en
+    // el arbol: `npm run release:artifact` lo crea, y la primera version de
+    // esta prueba pasaba en un clon recien hecho y fallaba despues de construir
+    // un artefacto. Una prueba que depende de un archivo sin versionar mide el
+    // estado del disco, no el comportamiento del codigo.
+    const { mkdtempSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const vacio = mkdtempSync(join(tmpdir(), 'sin-build-info-'))
+    olvidarBuildInfo(vacio)
+
     const res = await salud()
-    // En el arbol de desarrollo el archivo no existe: lo escribe el script de
-    // release. Un commit inventado durante un incidente es peor que ninguno.
+
+    // Un commit inventado durante un incidente es peor que ninguno.
+    expect(res.body.commit).toBe('desconocido')
+    expect(res.body.version).toBe('desconocido')
+    expect(res.body.buildTime).toBe('desconocido')
+    // El entorno NO sale del archivo: se lee siempre, aunque el archivo falte.
+    expect(res.body.environment).not.toBe('desconocido')
+  })
+
+  it('con build-info.json devuelve exactamente lo que dice el archivo', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const carpeta = mkdtempSync(join(tmpdir(), 'con-build-info-'))
+    writeFileSync(
+      join(carpeta, BUILD_INFO_FILE),
+      JSON.stringify({ version: '9.9.9', commit: 'abc123', buildTime: '2026-01-01T00:00:00.000Z' }),
+    )
+    olvidarBuildInfo(carpeta)
+
+    const res = await salud()
+
+    expect(res.body.version).toBe('9.9.9')
+    expect(res.body.commit).toBe('abc123')
+    expect(res.body.buildTime).toBe('2026-01-01T00:00:00.000Z')
+  })
+
+  it('con un build-info.json roto no revienta: dice desconocido', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const carpeta = mkdtempSync(join(tmpdir(), 'build-info-roto-'))
+    writeFileSync(join(carpeta, BUILD_INFO_FILE), '{ esto no es json')
+    olvidarBuildInfo(carpeta)
+
+    const res = await salud()
+
+    // El endpoint de salud tiene que responder incluso cuando el artefacto
+    // esta mal armado: justamente sirve para descubrirlo.
+    expect(res.status).toBe(200)
     expect(res.body.commit).toBe('desconocido')
   })
 
