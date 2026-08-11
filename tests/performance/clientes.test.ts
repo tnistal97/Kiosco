@@ -41,10 +41,25 @@ const TOPE_MS = 1_500
 let fx: Fixture
 let clienteConHistorial = 0
 
+/**
+ * Lo medido, para imprimirlo al final.
+ *
+ * Una prueba de rendimiento que solo dice "por debajo del tope" obliga a
+ * romperla para saber cuanto tarda en realidad. Los numeros se juntan aca y se
+ * imprimen: sirven para el informe y para notar una subida que todavia pasa.
+ */
+const MEDIDO: Array<{ que: string; ms: number; tope: number }> = []
+
 async function cuantoTarda(que: () => Promise<unknown>): Promise<number> {
   const arranque = Date.now()
   await que()
   return Date.now() - arranque
+}
+
+/** Comprueba el tope y deja anotado el numero. */
+function anotar(que: string, ms: number, tope: number = TOPE_MS): void {
+  MEDIDO.push({ que, ms, tope })
+  expect(ms, `${que}: ${String(ms)} ms`).toBeLessThan(tope)
 }
 
 beforeAll(async () => {
@@ -137,7 +152,7 @@ describe('la cartera con diez mil clientes', () => {
       expect(res.body.pagination.total).toBeGreaterThanOrEqual(CLIENTES)
     })
 
-    expect(ms, `el listado tardo ${String(ms)} ms`).toBeLessThan(TOPE_MS)
+    anotar('listado paginado (25 de 10.000)', ms)
   })
 
   it('el filtro "con deuda" no recorre la tabla entera', async () => {
@@ -154,7 +169,7 @@ describe('la cartera con diez mil clientes', () => {
       for (const c of res.body.data) expect(Number(c.balance)).toBeGreaterThan(0)
     })
 
-    expect(ms, `el filtro por deuda tardo ${String(ms)} ms`).toBeLessThan(TOPE_MS)
+    anotar('filtro "con deuda"', ms)
   })
 
   it('la busqueda del mostrador responde rapido y devuelve poco', async () => {
@@ -169,7 +184,7 @@ describe('la cartera con diez mil clientes', () => {
     })
 
     // Es la consulta que se hace con el cliente enfrente: si tarda, se nota.
-    expect(ms, `la busqueda tardo ${String(ms)} ms`).toBeLessThan(TOPE_MS)
+    anotar('busqueda del mostrador', ms)
   })
 
   it('el saldo NO se calcula sumando el libro', async () => {
@@ -186,7 +201,7 @@ describe('la cartera con diez mil clientes', () => {
       expect(res.status).toBe(200)
     })
 
-    expect(ms, `leer el saldo tardo ${String(ms)} ms`).toBeLessThan(TOPE_MS)
+    anotar('leer el saldo de un cliente', ms)
   })
 
   it('el extracto de un cliente con treinta mil movimientos se pagina', async () => {
@@ -203,7 +218,7 @@ describe('la cartera con diez mil clientes', () => {
       expect(res.body.pagination.total).toBeGreaterThan(1000)
     })
 
-    expect(ms, `el extracto tardo ${String(ms)} ms`).toBeLessThan(TOPE_MS)
+    anotar('extracto paginado (20 de 30.000)', ms)
   })
 
   it('el reporte de cartera agrega en la base', async () => {
@@ -223,7 +238,7 @@ describe('la cartera con diez mil clientes', () => {
 
     // Si el reporte trajera los clientes para sumarlos en JavaScript, diez mil
     // filas no cabrian en este tope.
-    expect(ms, `el reporte tardo ${String(ms)} ms`).toBeLessThan(TOPE_MS * 2)
+    anotar('reporte de cartera', ms, TOPE_MS * 2)
   })
 
   it('y el libro sigue cuadrando con treinta mil movimientos', async () => {
@@ -240,5 +255,42 @@ describe('la cartera con diez mil clientes', () => {
     `)
 
     expect(Number(descuadres[0]?.n ?? 0), 'la carga masiva dejo el libro descuadrado').toBe(0)
+  })
+
+  /**
+   * Va al final y no en un `afterAll`: lo que se escribe desde un gancho
+   * posterior no llega al informe.
+   *
+   * PARA VERLO hay que pedirselo a vitest, que por omision se guarda la
+   * consola de los casos que pasan:
+   *
+   *   npx vitest run tests/performance/clientes.test.ts --reporter=verbose --disable-console-intercept
+   *
+   * Medicion del cierre de la Fase 4A, con 10.000 clientes y 30.000
+   * movimientos, sobre una portatil y con el resto de la suite alrededor:
+   *
+   *   listado paginado (25 de 10.000)    62 ms
+   *   filtro "con deuda"                 14 ms
+   *   busqueda del mostrador             13 ms
+   *   leer el saldo de un cliente        17 ms
+   *   extracto paginado (20 de 30.000)   22 ms
+   *   reporte de cartera                 14 ms
+   */
+  it('deja los tiempos por escrito', () => {
+    const ancho = Math.max(...MEDIDO.map((m) => m.que.length))
+    const lineas = MEDIDO.map(
+      (m) =>
+        `    ${m.que.padEnd(ancho)}  ${String(m.ms).padStart(5)} ms   (tope ${String(m.tope)})`,
+    )
+
+    console.log(
+      `\n  CARTERA CON ${String(CLIENTES)} CLIENTES Y ${String(MOVIMIENTOS)} MOVIMIENTOS\n\n` +
+        lineas.join('\n') +
+        '\n',
+    )
+
+    // Que esten los seis: si alguien agrega una medicion y olvida anotarla,
+    // esto lo dice en vez de dejar el informe corto sin avisar.
+    expect(MEDIDO).toHaveLength(6)
   })
 })
