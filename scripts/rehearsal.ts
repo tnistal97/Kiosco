@@ -165,6 +165,21 @@ async function huella(url: string): Promise<string> {
       UNION ALL
       SELECT 'SupplierPaymentAllocation', count(*)::text, COALESCE(sum("amount"), 0)::text
         FROM "SupplierPaymentAllocation"
+      UNION ALL
+      -- Y las devoluciones, desde la Fase 4C. Entran las DOS tablas y no solo la
+      -- cabecera: el importe de una devolucion es la suma de sus renglones, y un
+      -- respaldo que perdiera los renglones dejaria la cabecera con un total que
+      -- nada respalda --exactamente lo que la reconciliacion marca-- sin que la
+      -- huella lo notara.
+      --
+      -- De la cabecera se suma el IMPORTE, que es el credito que genero; de los
+      -- renglones, la CANTIDAD, que es la mercaderia que salio del deposito. Los
+      -- dos numeros contestan preguntas distintas y por eso van los dos.
+      SELECT 'PurchaseReturn', count(*)::text, COALESCE(sum("total"), 0)::text
+        FROM "PurchaseReturn"
+      UNION ALL
+      SELECT 'PurchaseReturnItem', count(*)::text, COALESCE(sum("quantity"), 0)::text
+        FROM "PurchaseReturnItem"
       ORDER BY 1
     `)
     return rows.map((r) => `${r.tabla}: ${r.filas} filas, suma ${r.suma}`).join('\n')

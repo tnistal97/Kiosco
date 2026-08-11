@@ -58,11 +58,11 @@ function haceDias(d: number): Date {
 async function moverStock(m: {
   branchId: number
   productId: number
-  type: 'SALE' | 'SALE_CANCEL' | 'PURCHASE_RECEIPT'
+  type: 'SALE' | 'SALE_CANCEL' | 'PURCHASE_RECEIPT' | 'PURCHASE_RETURN'
   delta: number
   userId: number
-  /** A que apunta: una venta o una RECEPCION. Nunca a la orden de compra. */
-  referenceType?: 'Sale' | 'PurchaseReceipt'
+  /** A que apunta: una venta, una RECEPCION o una DEVOLUCION. Nunca la orden. */
+  referenceType?: 'Sale' | 'PurchaseReceipt' | 'PurchaseReturn'
   referenceId: number
   reason?: string
   fecha: Date
@@ -130,6 +130,8 @@ async function moverCuentaDeProveedor(m: {
   userId: number
   receiptId?: number
   paymentId?: number
+  /** La devolucion que genero este credito. Fase 4C. */
+  returnId?: number
   reason?: string
   reference?: string
   fecha: Date
@@ -156,6 +158,7 @@ async function moverCuentaDeProveedor(m: {
       resultingBalance: despues,
       receiptId: m.receiptId ?? null,
       paymentId: m.paymentId ?? null,
+      returnId: m.returnId ?? null,
       userId: m.userId,
       reason: m.reason ?? null,
       reference: m.reference ?? null,
@@ -405,6 +408,19 @@ async function main() {
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "SupplierAccountMovement" CASCADE')
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "SupplierPayment" CASCADE')
   await prisma.$executeRawUnsafe('ALTER SEQUENCE "SupplierPayment_numero_seq" RESTART WITH 1')
+
+  // Y las devoluciones de la Fase 4C.
+  //
+  // A esta altura ya estan vacias: el `TRUNCATE ... CASCADE` de las recepciones,
+  // unas lineas mas arriba, las arrastro por la clave foranea. Se escriben igual
+  // --y no se mueven arriba-- porque un truncado que depende de un CASCADE ajeno
+  // es exactamente lo que deja de funcionar el dia que alguien reordena el
+  // archivo, y porque la secuencia SI hay que reiniciarla a mano: un DV-
+  // heredado haria que la primera devolucion real chocara contra el indice
+  // unico. Es el error que la Fase 4A cometio con los recibos.
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "PurchaseReturnItem" CASCADE')
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "PurchaseReturn" CASCADE')
+  await prisma.$executeRawUnsafe('ALTER SEQUENCE "PurchaseReturn_numero_seq" RESTART WITH 1')
 
   await prisma.stockCheck.deleteMany()
   await prisma.saleItem.deleteMany()
@@ -864,10 +880,242 @@ async function main() {
           paymentId: pago.id,
           receiptId: primeraEntrega.id,
           amount: primeraEntrega.total,
+          // Fase 4C: quien imputo. En la 4B era siempre quien pagaba, porque no
+          // habia otro camino; ahora la columna existe y hay que decirlo.
+          createdById: compradorId,
           createdAt: haceDias(2),
         },
       })
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Fase 4C — dos casos que sin datos no se pueden mirar en pantalla
+  //
+  //   A) UN ANTICIPO que se aplica despues. $15.000 entregados sin nada que
+  //      cancelar, una entrega posterior de $10.000, y $5.000 que siguen a
+  //      favor. Es el circuito entero del objetivo 30 en tres pasos.
+  //
+  //   B) UNA DEVOLUCION sobre una entrega que ya estaba en el libro. Baja el
+  //      stock, acredita al proveedor y corrige el saldo, sin tocar ni la
+  //      recepcion ni el pago que ya existian.
+  //
+  // Todo con las mismas reglas del servicio: el numero sale de la secuencia, el
+  // importe se calcula, el stock entra por el libro y el saldo por el suyo. Si
+  // el seed se apartara, la reconciliacion lo marcaria.
+  // -------------------------------------------------------------------------
+  const proveedorAnticipo = proveedores.get('Bebidas Andinas') ?? 0
+  const productoAnticipo = productos[3]
+
+  if (proveedorAnticipo !== 0 && productoAnticipo !== undefined) {
+    // A.1 — El anticipo. Sin recepcion y sin imputacion: nace suelto.
+    const anticipo = await prisma.supplierPayment.create({
+      data: {
+        number: `PP-${String(2).padStart(8, '0')}`,
+        branchId: sucursal.id,
+        supplierId: proveedorAnticipo,
+        amount: 15_000,
+        method: 'TRANSFER',
+        paidById: compradorId,
+        paidAt: haceDias(9),
+        reference: 'Transferencia 0051-33107',
+        notes: 'Anticipo para asegurar la entrega de gaseosas.',
+        createdAt: haceDias(9),
+      },
+    })
+    await prisma.$executeRawUnsafe(`SELECT setval('"SupplierPayment_numero_seq"', 2, true)`)
+
+    // El saldo queda NEGATIVO: le pagamos sin deberle nada.
+    await moverCuentaDeProveedor({
+      branchId: sucursal.id,
+      supplierId: proveedorAnticipo,
+      type: 'PAYMENT',
+      monto: -15_000,
+      userId: compradorId,
+      paymentId: anticipo.id,
+      fecha: haceDias(9),
+    })
+
+    // A.2 — La entrega posterior, de $10.000. Nace la obligacion.
+    const cantidadAnticipo = 10
+    const costoAnticipo = Math.round((10_000 / cantidadAnticipo) * 100) / 100
+    const ordenAnticipo = await prisma.purchaseOrder.create({
+      data: {
+        number: await siguienteNumeroDeOrden(),
+        branchId: sucursal.id,
+        supplierId: proveedorAnticipo,
+        createdById: compradorId,
+        status: 'RECEIVED',
+        createdAt: haceDias(7),
+        orderedAt: haceDias(7),
+        notes: 'Contra el anticipo de la semana pasada.',
+        expectedTotal: 10_000,
+        items: {
+          create: [
+            {
+              productId: productoAnticipo.id,
+              orderedQuantity: cantidadAnticipo,
+              receivedQuantity: cantidadAnticipo,
+              purchaseUnit: 'UNIT',
+              unitsPerPurchaseUnit: 1,
+              unitCost: costoAnticipo,
+              subtotal: 10_000,
+            },
+          ],
+        },
+      },
+      include: { items: true },
+    })
+    const lineaAnticipo = ordenAnticipo.items[0]
+
+    if (lineaAnticipo) {
+      const entregaAnticipo = await prisma.purchaseReceipt.create({
+        data: {
+          purchaseOrderId: ordenAnticipo.id,
+          branchId: sucursal.id,
+          receivedById: compradorId,
+          receivedAt: haceDias(6),
+          notes: 'Entregado completo.',
+          total: 10_000,
+          dueDate: new Date(haceDias(6).getTime() + 30 * 24 * 60 * 60 * 1000),
+          debtRecorded: true,
+        },
+      })
+
+      await moverCuentaDeProveedor({
+        branchId: sucursal.id,
+        supplierId: proveedorAnticipo,
+        type: 'PURCHASE_CHARGE',
+        monto: 10_000,
+        userId: compradorId,
+        receiptId: entregaAnticipo.id,
+        fecha: haceDias(6),
+      })
+
+      await prisma.purchaseReceiptItem.create({
+        data: {
+          purchaseReceiptId: entregaAnticipo.id,
+          purchaseOrderItemId: lineaAnticipo.id,
+          productId: productoAnticipo.id,
+          receivedQuantity: cantidadAnticipo,
+          purchaseUnit: 'UNIT',
+          unitsPerPurchaseUnit: 1,
+          unitCost: costoAnticipo,
+          expectedUnitCost: costoAnticipo,
+          stockQuantity: cantidadAnticipo,
+          stockUnitCost: costoAnticipo,
+        },
+      })
+
+      await moverStock({
+        branchId: sucursal.id,
+        productId: productoAnticipo.id,
+        type: 'PURCHASE_RECEIPT',
+        delta: cantidadAnticipo,
+        userId: compradorId,
+        referenceType: 'PurchaseReceipt',
+        referenceId: entregaAnticipo.id,
+        reason: `Recepcion de ${ordenAnticipo.number}`,
+        fecha: haceDias(6),
+      })
+
+      // A.3 — LA IMPUTACION DIFERIDA. Los $10.000 del anticipo se aplican a esta
+      //       entrega, y NO se toca el saldo: ya habia bajado al entregarlos.
+      //       Quedan $5.000 disponibles para la proxima compra.
+      await prisma.supplierPaymentAllocation.create({
+        data: {
+          paymentId: anticipo.id,
+          receiptId: entregaAnticipo.id,
+          amount: 10_000,
+          createdById: compradorId,
+          createdAt: haceDias(6),
+        },
+      })
+    }
+  }
+
+  // B — La devolucion, sobre la segunda entrega de la orden de arriba.
+  //
+  // Se elige la SEGUNDA a proposito: la primera esta paga y saldada, y devolver
+  // de ella dejaria el caso "credito a favor por mercaderia ya pagada", que es
+  // valioso pero mas dificil de leer en una demostracion. Sobre la segunda, que
+  // esta pendiente, se ve lo que hay que ver: baja el stock, baja la deuda.
+  const entregaADevolver = await prisma.purchaseReceipt.findFirst({
+    where: { order: { supplierId: proveedorCompra } },
+    orderBy: { id: 'desc' },
+    select: {
+      id: true,
+      branchId: true,
+      items: { select: { id: true, productId: true, unitCost: true }, take: 1 },
+    },
+  })
+  const renglonADevolver = entregaADevolver?.items[0]
+
+  if (entregaADevolver && renglonADevolver) {
+    const cantidadDevuelta = 2
+    const importeDevuelto =
+      Math.round(Number(renglonADevolver.unitCost) * cantidadDevuelta * 100) / 100
+
+    const devolucion = await prisma.purchaseReturn.create({
+      data: {
+        number: `DV-${String(1).padStart(8, '0')}`,
+        branchId: sucursal.id,
+        supplierId: proveedorCompra,
+        purchaseReceiptId: entregaADevolver.id,
+        status: 'CONFIRMED',
+        reason: 'DAMAGED',
+        notes: 'Dos paquetes llegaron abiertos.',
+        total: importeDevuelto,
+        createdById: compradorId,
+        createdAt: haceDias(1),
+        confirmedById: compradorId,
+        confirmedAt: haceDias(1),
+        items: {
+          create: [
+            {
+              productId: renglonADevolver.productId,
+              purchaseReceiptItemId: renglonADevolver.id,
+              quantity: cantidadDevuelta,
+              purchaseUnit: 'UNIT',
+              unitsPerPurchaseUnit: 1,
+              stockQuantity: cantidadDevuelta,
+              // EL COSTO DE LA RECEPCION, no el de hoy. Es el objetivo 10, y en
+              // esta entrega se nota: llego con un aumento del 8 %.
+              unitCost: renglonADevolver.unitCost,
+              amount: importeDevuelto,
+            },
+          ],
+        },
+      },
+    })
+    await prisma.$executeRawUnsafe(`SELECT setval('"PurchaseReturn_numero_seq"', 1, true)`)
+
+    // La mercaderia sale, por el libro de inventario.
+    await moverStock({
+      branchId: sucursal.id,
+      productId: renglonADevolver.productId,
+      type: 'PURCHASE_RETURN',
+      delta: -cantidadDevuelta,
+      userId: compradorId,
+      referenceType: 'PurchaseReturn',
+      referenceId: devolucion.id,
+      reason: `Devolucion ${devolucion.number}`,
+      fecha: haceDias(1),
+    })
+
+    // Y el credito, por el libro del proveedor. Con `returnId`: la
+    // reconciliacion comprueba que el importe coincida con el de la devolucion.
+    await moverCuentaDeProveedor({
+      branchId: sucursal.id,
+      supplierId: proveedorCompra,
+      type: 'PURCHASE_CREDIT',
+      monto: -importeDevuelto,
+      userId: compradorId,
+      returnId: devolucion.id,
+      reason: `Devolución ${devolucion.number} · Llegó dañada`,
+      reference: devolucion.number,
+      fecha: haceDias(1),
+    })
   }
 
   // Y una orden confirmada que todavia no llego: el panel tiene que mostrar

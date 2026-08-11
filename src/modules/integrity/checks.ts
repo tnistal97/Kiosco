@@ -1347,6 +1347,27 @@ export async function imputacionesContraSusTopes(): Promise<Comprobacion> {
      ORDER BY p."number"
   `)
 
+  // EL TOPE DE UNA ENTREGA ES SU IMPORTE ORIGINAL, NO EL NETO, y esa eleccion
+  // es el objetivo 24 entero.
+  //
+  // La obligacion neta puede quedar por DEBAJO de lo ya imputado, y es
+  // legitimo: una entrega de $100.000 que se pago entera y despues se devolvio
+  // por $20.000 queda con $100.000 imputados sobre una obligacion neta de
+  // $80.000. Las imputaciones no se mueven hacia atras --son inmutables-- y ese
+  // exceso ES el credito a favor, que el libro ya refleja como saldo negativo.
+  //
+  // Y LA REGLA QUE PARECIA FALTAR NO FALTA: "el exceso sobre el neto tiene que
+  // estar explicado por devoluciones, y no superarlas" es EXACTAMENTE esta misma
+  // comprobacion escrita de otra forma. La cuenta lo dice en una linea:
+  //
+  //     exceso        = imputado - (total - devuelto)
+  //     exceso > devuelto  <=>  imputado - total + devuelto > devuelto
+  //                        <=>  imputado > total
+  //
+  // Escribirlas como dos reglas daria una que no puede fallar nunca --el mismo
+  // codigo inalcanzable disfrazado de defensa que la Fase 4B tuvo que borrar del
+  // pago-- y ademas informaria dos veces el mismo descuadre. Ver
+  // docs/PURCHASE_RETURN_ACCOUNTING.md.
   const sobreObligacion = await buscar(`
     SELECT r."id"::text                                      AS id,
            o."number"                                        AS orden,
@@ -1402,6 +1423,208 @@ export async function imputacionesContraSusTopes(): Promise<Comprobacion> {
   }
 }
 
+// ===========================================================================
+// Devoluciones a proveedor
+// ===========================================================================
+
+/**
+ * Toda devolucion confirmada movio stock y emitio su credito.
+ *
+ * TRES reglas, y las tres son igualdades:
+ *
+ *   el importe de la devolucion  ==  suma de sus renglones
+ *   lo que salio del deposito    ==  lo que la devolucion dice que sale
+ *   el credito al proveedor      ==  el importe de la devolucion
+ *
+ * Es el equivalente de `recepcionesContraElStock` del otro lado del camion. Sin
+ * la primera, un renglon editado por fuera del servicio dejaria un credito que
+ * no corresponde a la mercaderia. Sin la segunda, una devolucion podria acreditar
+ * plata sin que nada saliera del deposito. Sin la tercera, la mercaderia se iria
+ * sin que el proveedor nos acredite nada.
+ *
+ * Solo mira las CONFIRMADAS: un borrador no tiene que haber movido nada, y una
+ * cancelada tampoco.
+ */
+export async function devolucionesContraSusEfectos(): Promise<Comprobacion> {
+  const revisadas = await contar(
+    `SELECT count(*)::bigint AS n FROM "PurchaseReturn" WHERE "status" = 'CONFIRMED'`,
+  )
+
+  const importes = await buscar(`
+    SELECT d."number"                                        AS numero,
+           d."total"::numeric(14,2)::text                     AS anotado,
+           COALESCE(sum(di."amount"), 0)::numeric(14,2)::text AS calculado
+      FROM "PurchaseReturn" d
+      LEFT JOIN "PurchaseReturnItem" di ON di."purchaseReturnId" = d."id"
+     WHERE d."status" = 'CONFIRMED'
+     GROUP BY d."id", d."number", d."total"
+    HAVING d."total" <> COALESCE(sum(di."amount"), 0)
+     ORDER BY d."number"
+  `)
+
+  // Por producto: una devolucion de tres renglones tiene tres movimientos, y
+  // agrupar solo por devolucion dejaria pasar que dos de ellos se hayan cruzado.
+  const stock = await buscar(`
+    SELECT d."number"                        AS numero,
+           p."name"                          AS producto,
+           (-sum(di."stockQuantity"))::text  AS esperado,
+           COALESCE((
+             SELECT sum(m."quantity") FROM "StockMovement" m
+              WHERE m."referenceType" = 'PurchaseReturn'
+                AND m."referenceId" = d."id"
+                AND m."productId" = di."productId"
+                AND m."type" = 'PURCHASE_RETURN'
+           ), 0)::text                       AS movido
+      FROM "PurchaseReturn" d
+      JOIN "PurchaseReturnItem" di ON di."purchaseReturnId" = d."id"
+      JOIN "Product" p ON p."id" = di."productId"
+     WHERE d."status" = 'CONFIRMED'
+     GROUP BY d."id", d."number", p."name", di."productId"
+    HAVING -sum(di."stockQuantity") <> COALESCE((
+             SELECT sum(m."quantity") FROM "StockMovement" m
+              WHERE m."referenceType" = 'PurchaseReturn'
+                AND m."referenceId" = d."id"
+                AND m."productId" = di."productId"
+                AND m."type" = 'PURCHASE_RETURN'
+           ), 0)
+     ORDER BY d."number"
+  `)
+
+  const credito = await buscar(`
+    SELECT d."number"                              AS numero,
+           (-d."total")::numeric(14,2)::text        AS esperado,
+           COALESCE((
+             SELECT sum(m."amount") FROM "SupplierAccountMovement" m
+              WHERE m."returnId" = d."id" AND m."type" = 'PURCHASE_CREDIT'
+           ), 0)::numeric(14,2)::text              AS encontrado
+      FROM "PurchaseReturn" d
+     WHERE d."status" = 'CONFIRMED'
+       AND -d."total" <> COALESCE((
+             SELECT sum(m."amount") FROM "SupplierAccountMovement" m
+              WHERE m."returnId" = d."id" AND m."type" = 'PURCHASE_CREDIT'
+           ), 0)
+     ORDER BY d."number"
+  `)
+
+  // Y al reves: un credito que apunta a una devolucion que NO esta confirmada
+  // seria plata acreditada por mercaderia que nunca salio.
+  const creditoSinDevolucion = await buscar(`
+    SELECT m."id"::text  AS id,
+           d."number"    AS numero,
+           d."status"    AS estado
+      FROM "SupplierAccountMovement" m
+      JOIN "PurchaseReturn" d ON d."id" = m."returnId"
+     WHERE d."status" <> 'CONFIRMED'
+     ORDER BY m."id"
+  `)
+
+  return {
+    nombre: 'Devoluciones',
+    revisadas,
+    inconsistencias: [
+      ...importes.map((f): Inconsistencia => ({
+        entidad: `Devolución ${String(f.numero)}`,
+        regla: 'el importe es la suma de sus renglones',
+        esperado: String(f.calculado),
+        encontrado: String(f.anotado),
+        diferencia: restar(String(f.anotado), String(f.calculado)),
+      })),
+      ...stock.map((f): Inconsistencia => ({
+        entidad: `Devolución ${String(f.numero)} — ${String(f.producto)}`,
+        regla: 'toda devolucion confirmada saco su mercaderia',
+        esperado: String(f.esperado),
+        encontrado: String(f.movido),
+        diferencia: restar(String(f.movido), String(f.esperado)),
+      })),
+      ...credito.map((f): Inconsistencia => ({
+        entidad: `Devolución ${String(f.numero)}`,
+        regla: 'toda devolucion confirmada acredita al proveedor',
+        esperado: String(f.esperado),
+        encontrado: String(f.encontrado),
+        diferencia: restar(String(f.encontrado), String(f.esperado)),
+      })),
+      ...creditoSinDevolucion.map((f): Inconsistencia => ({
+        entidad: `Movimiento #${String(f.id)} — ${String(f.numero)}`,
+        regla: 'un credito de devolucion viene de una devolucion confirmada',
+        esperado: 'CONFIRMED',
+        encontrado: String(f.estado),
+        diferencia: null,
+      })),
+    ],
+  }
+}
+
+/**
+ * No se devolvio mas de lo que llego, ni a un costo distinto del que entro.
+ *
+ * La primera regla es una DESIGUALDAD: devolver menos de lo recibido es lo
+ * normal, y devolver todo tambien. Lo que no puede pasar es devolver mas, que es
+ * lo que aparece si dos confirmaciones simultaneas se pasaran el tope entre las
+ * dos --el caso del objetivo 28--.
+ *
+ * La segunda es una IGUALDAD y es la del objetivo 10: el costo de cada renglon
+ * tiene que ser el CONGELADO en la recepcion. Un renglon con el costo de hoy en
+ * vez del original acreditaria plata que el proveedor nunca cobro, y ninguna otra
+ * comprobacion lo notaria: los importes cerrarian entre si.
+ */
+export async function devolucionesContraLoRecibido(): Promise<Comprobacion> {
+  const revisadas = await contar(`
+    SELECT count(*)::bigint AS n
+      FROM "PurchaseReturnItem" di
+      JOIN "PurchaseReturn" d ON d."id" = di."purchaseReturnId"
+     WHERE d."status" = 'CONFIRMED'
+  `)
+
+  const cantidades = await buscar(`
+    SELECT ri."id"::text                   AS id,
+           p."name"                        AS producto,
+           ri."receivedQuantity"::text     AS recibido,
+           sum(di."quantity")::text        AS devuelto
+      FROM "PurchaseReceiptItem" ri
+      JOIN "Product" p ON p."id" = ri."productId"
+      JOIN "PurchaseReturnItem" di ON di."purchaseReceiptItemId" = ri."id"
+      JOIN "PurchaseReturn" d ON d."id" = di."purchaseReturnId"
+     WHERE d."status" = 'CONFIRMED'
+     GROUP BY ri."id", p."name", ri."receivedQuantity"
+    HAVING sum(di."quantity") > ri."receivedQuantity"
+     ORDER BY ri."id"
+  `)
+
+  const costos = await buscar(`
+    SELECT d."number"                      AS numero,
+           p."name"                        AS producto,
+           ri."unitCost"::text             AS original,
+           di."unitCost"::text             AS usado
+      FROM "PurchaseReturnItem" di
+      JOIN "PurchaseReturn" d ON d."id" = di."purchaseReturnId"
+      JOIN "PurchaseReceiptItem" ri ON ri."id" = di."purchaseReceiptItemId"
+      JOIN "Product" p ON p."id" = di."productId"
+     WHERE di."unitCost" <> ri."unitCost"
+     ORDER BY d."number", p."name"
+  `)
+
+  return {
+    nombre: 'Cantidades devueltas',
+    revisadas,
+    inconsistencias: [
+      ...cantidades.map((f): Inconsistencia => ({
+        entidad: `Recepción línea #${String(f.id)} — ${String(f.producto)}`,
+        regla: 'no se devuelve mas de lo que llego',
+        esperado: `<= ${String(f.recibido)}`,
+        encontrado: String(f.devuelto),
+        diferencia: restar(String(f.devuelto), String(f.recibido)),
+      })),
+      ...costos.map((f): Inconsistencia => ({
+        entidad: `Devolución ${String(f.numero)} — ${String(f.producto)}`,
+        regla: 'se devuelve al costo congelado en la recepcion',
+        esperado: String(f.original),
+        encontrado: String(f.usado),
+        diferencia: restar(String(f.usado), String(f.original)),
+      })),
+    ],
+  }
+}
+
 /** Todas las comprobaciones, en el orden en que se informan. */
 export const COMPROBACIONES: Array<() => Promise<Comprobacion>> = [
   ventasContraSusLineas,
@@ -1421,4 +1644,6 @@ export const COMPROBACIONES: Array<() => Promise<Comprobacion>> = [
   recepcionesContraLaDeuda,
   pagosAProveedoresContraElLibro,
   imputacionesContraSusTopes,
+  devolucionesContraSusEfectos,
+  devolucionesContraLoRecibido,
 ]
