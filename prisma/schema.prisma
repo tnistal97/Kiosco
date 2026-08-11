@@ -31,6 +31,9 @@ model Branch {
   supplierMoves  SupplierAccountMovement[]
   supplierPays   SupplierPayment[]
   returns        PurchaseReturn[]
+  lotStocks      BranchLotStock[]
+  lotAssignments LotAssignment[]
+  countSessions  InventoryCountSession[]
 
   /// Efectivo acumulado desde que se instalo el sistema.
   ///
@@ -183,12 +186,19 @@ model User {
   returnsCreated   PurchaseReturn[]            @relation("PurchaseReturnCreatedBy")
   returnsConfirmed PurchaseReturn[]            @relation("PurchaseReturnConfirmedBy")
   returnsCancelled PurchaseReturn[]            @relation("PurchaseReturnCancelledBy")
+  lotsCreated      ProductLot[]
+  lotAssignments   LotAssignment[]
+  countsStarted    InventoryCountSession[]     @relation("CountStartedBy")
+  countsApplied    InventoryCountSession[]     @relation("CountAppliedBy")
+  countsCancelled  InventoryCountSession[]     @relation("CountCancelledBy")
+  countLines       InventoryCountLine[]
 }
 
 model Category {
-  id       Int       @id @default(autoincrement())
-  name     String    @unique
-  products Product[]
+  id            Int                     @id @default(autoincrement())
+  name          String                  @unique
+  products      Product[]
+  countSessions InventoryCountSession[]
 }
 
 model Product {
@@ -272,6 +282,34 @@ model Product {
   /// docs/INVENTORY_LEDGER.md.
   minimumStock Decimal @default(0) @db.Decimal(14, 3)
 
+  /// Si este producto se sigue por lote: NONE | OPTIONAL | REQUIRED.
+  ///
+  /// TODO EL CATALOGO EXISTENTE ARRANCA EN `NONE`, y con `NONE` el producto se
+  /// comporta exactamente igual que antes de la Fase 4D: ni una consulta mas, ni
+  /// una columna distinta, ni un lote vacio. Obligar a lotes a todo el catalogo
+  /// convertiria la venta de una esponja en un tramite.
+  ///
+  ///   NONE      no se rastrea. No se le pueden crear lotes.
+  ///   OPTIONAL  puede tener lotes y puede tener stock sin asignar a ninguno.
+  ///   REQUIRED  todo movimiento lleva lote, y el stock sin asignar es cero.
+  ///
+  /// Pasar a `REQUIRED` con stock existente NO se puede hacer de un tiron: hay
+  /// que decir de que lotes son esas unidades. Ver `LotAssignment` y
+  /// docs/LOT_TRACKING_DESIGN.md.
+  lotTracking String @default("NONE")
+
+  /// Si se controla el vencimiento: NONE | OPTIONAL | REQUIRED.
+  ///
+  /// SEPARADA de `lotTracking` a proposito, y no es una bandera de mas. Una
+  /// lavandina necesita numero de partida --para poder retirarla si sale mal--
+  /// y no tiene vencimiento que valga la pena controlar; con una sola bandera,
+  /// rastrearla obligaria a inventarle una fecha. Ver
+  /// docs/LOT_EXPIRATION_POLICY.md.
+  ///
+  /// Al reves no: la fecha vive en el lote, asi que exigir vencimiento sin
+  /// rastrear lotes no tiene donde guardarse. Lo impide un CHECK.
+  expirationTracking String @default("NONE")
+
   stocks       BranchStock[]
   saleItems    SaleItem[]
   movements    StockMovement[]
@@ -281,11 +319,293 @@ model Product {
   orderItems   PurchaseOrderItem[]
   receiptItems PurchaseReceiptItem[]
   returnItems  PurchaseReturnItem[]
+  lots         ProductLot[]
+  assignments  LotAssignment[]
+  countLines   InventoryCountLine[]
   category     Category              @relation(fields: [categoryId], references: [id])
   branch       Branch                @relation(fields: [branchId], references: [id])
 
   /// La caja busca por sucursal y por estado en cada tecla.
   @@index([branchId, isActive])
+  /// El listado de lotes filtra el catalogo por politica.
+  @@index([branchId, lotTracking])
+}
+
+/// Una PARTIDA de un producto: su codigo, su vencimiento y su elaboracion.
+///
+/// El lote es la partida, no la cantidad: cuanto hay de ella en cada sucursal lo
+/// dice `BranchLotStock`. Es la misma separacion que hay entre `Product` y
+/// `BranchStock`, y por el mismo motivo: la misma partida fisica puede estar
+/// repartida en dos depositos.
+///
+/// Ver docs/LOT_TRACKING_DESIGN.md.
+model ProductLot {
+  id        Int @id @default(autoincrement())
+  productId Int
+
+  /// El codigo tal cual lo trae el envase. Obligatorio: un lote sin codigo no
+  /// sirve para lo unico que sirve un lote, que es poder decir "esta partida".
+  code String
+
+  /// El mismo codigo normalizado --mayusculas, sin espacios de mas-- y UNICO por
+  /// producto. Se guarda en vez de calcularse en la consulta para que el indice
+  /// unico exista de verdad: `L-001` y `l-001 ` son la misma partida, y sin esto
+  /// el sistema aceptaria las dos y despues no sabria cual tiene el stock.
+  codeNormalized String
+
+  /// FECHA de vencimiento, sin hora y sin zona. `2026-09-05`, no
+  /// `2026-09-05T00:00Z`.
+  ///
+  /// `@db.Date` y no `timestamp`, y es la decision que evita reintroducir los
+  /// errores horarios de las Fases 3C, 3D y 4A: un instante de medianoche UTC
+  /// formateado en Buenos Aires se lee como el DIA ANTERIOR, y un producto
+  /// vencido el 5 aparecerian vencido el 4. Una fecha de vencimiento es un dato
+  /// de calendario impreso en un envase, no un momento.
+  ///
+  /// Nula cuando el lote no vence. Ver docs/LOT_EXPIRATION_POLICY.md.
+  expirationDate DateTime? @db.Date
+
+  /// Cuando se elaboro, si el envase lo dice. Misma naturaleza que la anterior.
+  manufacturedAt DateTime? @db.Date
+
+  /// Lo que el codigo no puede decir. Opcional y libre.
+  notes String?
+
+  createdById Int
+  createdAt   DateTime @default(now())
+
+  product     Product                  @relation(fields: [productId], references: [id])
+  createdBy   User                     @relation(fields: [createdById], references: [id])
+  stocks      BranchLotStock[]
+  movements   StockMovement[]
+  assignments LotAssignment[]
+  receiptLots PurchaseReceiptItemLot[]
+  saleLots    SaleItemLotAllocation[]
+  returnItems PurchaseReturnItem[]
+  countLines  InventoryCountLine[]
+
+  /// Un codigo, una partida, dentro del producto. Entre productos distintos el
+  /// mismo codigo es normal: dos proveedores numeran sus partidas como quieren.
+  @@unique([productId, codeNormalized])
+  /// Composicion para las claves foraneas compuestas: es lo que impide que un
+  /// movimiento apunte al lote de OTRO producto.
+  @@unique([productId, id])
+  @@index([productId])
+  /// El tablero de vencimientos ordena por fecha sobre todo el catalogo.
+  @@index([expirationDate])
+}
+
+/// Cuanto hay de un lote en una sucursal. El `BranchStock` de los lotes.
+///
+/// Materializado a proposito, y por el mismo motivo que `BranchStock` existe
+/// desde antes de este proyecto: la alternativa --sumar el libro del lote en
+/// cada venta-- es el camino caliente de la caja y crece con el HISTORIAL, no
+/// con el stock. Ver la comparacion de modelos en docs/LOT_TRACKING_DESIGN.md.
+///
+/// Lo escribe UNICAMENTE `applyStockMovement()`, igual que `BranchStock`. Hay
+/// una regla de ESLint que lo impide desde cualquier otro lado.
+model BranchLotStock {
+  id       Int @id @default(autoincrement())
+  branchId Int
+  lotId    Int
+
+  /// EN LA UNIDAD DE VENTA del producto, con la misma escala que el inventario:
+  /// `Decimal(14,3)`. 3,250 kg de queso del lote ABC son tres kilos y cuarto.
+  quantity Decimal @db.Decimal(14, 3)
+
+  branch Branch     @relation(fields: [branchId], references: [id])
+  lot    ProductLot @relation(fields: [lotId], references: [id])
+
+  @@unique([branchId, lotId])
+  @@index([lotId])
+}
+
+/// Atribucion de stock existente a un lote. El SEGUNDO libro.
+///
+/// Existe por una operacion que no es un movimiento de stock: activar el rastreo
+/// sobre un producto que ya tiene 20 unidades obliga a decir de que lotes son, y
+/// eso NO CAMBIA EL STOCK --habia 20 y siguen habiendo 20--. Lo que cambia es la
+/// atribucion.
+///
+/// Fabricar un `StockMovement` de +20 seguido de otro de -20 para representarlo
+/// seria escribir en el libro de inventario dos operaciones que nunca ocurrieron,
+/// y contaminaria todo reporte de movimientos por tipo.
+///
+/// Es un hecho propio y merece una fila propia: el 11 de agosto, Ana declaro que
+/// 8 de las 20 unidades pertenecen al lote YG-260801. Con autor, fecha y motivo,
+/// como todo lo demas en este sistema.
+///
+/// `quantity` va CON SIGNO, igual que el libro de inventario: una atribucion
+/// equivocada no se edita ni se borra, se compensa con su opuesta. La fila es
+/// inmutable, con disparador.
+model LotAssignment {
+  id        Int @id @default(autoincrement())
+  branchId  Int
+  productId Int
+  lotId     Int
+
+  /// Delta CON SIGNO, en la unidad de venta. Nunca cero.
+  quantity Decimal @db.Decimal(14, 3)
+
+  /// Por que se atribuyo. Obligatorio: es la unica explicacion que va a quedar.
+  reason String
+
+  userId    Int
+  createdAt DateTime @default(now())
+
+  branch  Branch  @relation(fields: [branchId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  /// Clave foranea COMPUESTA, y no es decorativa: es lo que impide
+  /// estructuralmente que una atribucion apunte al lote de otro producto. Sin
+  /// ella, ocho unidades de yogur podrian quedar atribuidas a una partida de
+  /// lavandina y ninguna suma se quejaria.
+  lot ProductLot @relation(fields: [productId, lotId], references: [productId, id])
+
+  @@index([branchId, productId])
+  @@index([lotId])
+  @@index([userId])
+}
+
+/// Un inventario fisico: contar el deposito y corregir lo que no coincide.
+///
+/// La diferencia con el ajuste manual de la Fase 3A es que aquel es UN producto y
+/// UNA persona diciendo "quedan 30"; esto es un recorrido con estados, con
+/// conteo a ciegas, con la posibilidad de contar mientras el local vende, y con
+/// una aplicacion que corrige TODO junto o no corrige nada.
+///
+/// Ver docs/PHYSICAL_INVENTORY.md y docs/INVENTORY_COUNT_CONCURRENCY.md.
+model InventoryCountSession {
+  id       Int    @id @default(autoincrement())
+  /// `IF-00000012`, desde una secuencia. Es la etiqueta para decir "el
+  /// inventario 12" en voz alta, no un contador de nada.
+  number   String
+  branchId Int
+
+  /// DRAFT | COUNTING | REVIEW | APPLIED | CANCELLED.
+  ///
+  /// REVIEW es el estado que hace util todo lo demas: el conteo termino y
+  /// TODAVIA NO TOCO EL STOCK. Sin el, contar y corregir serian el mismo acto y
+  /// nadie podria mirar las diferencias antes de que existieran.
+  status String @default("DRAFT")
+
+  /// ALL | CATEGORY | SELECTION. Que se cuenta.
+  ///
+  /// No hay ubicaciones ni posiciones fisicas: este sistema no tiene un modelo de
+  /// deposito, y fabricar uno para poder decir "pasillo 3" seria inventar datos.
+  scope String @default("ALL")
+
+  /// La categoria, cuando el alcance es CATEGORY.
+  categoryId Int?
+
+  /// Si el operario ve lo que el sistema espera mientras cuenta.
+  ///
+  /// VERDADERO POR OMISION, y es medio punto de todo el mecanismo: ver "el
+  /// sistema espera 18" antes de contar hace que la respuesta sea 18. Un conteo
+  /// influido por el numero esperado no es un conteo, es una confirmacion.
+  blindCount Boolean @default(true)
+
+  /// Diferencia absoluta a partir de la cual la linea exige un segundo conteo.
+  ///
+  /// Nula significa sin doble conteo. Es un numero y una comprobacion, no un
+  /// motor de reglas: el mismo criterio que `Branch.cashDifferenceThreshold`.
+  recountThreshold Decimal? @db.Decimal(14, 3)
+
+  notes String?
+
+  startedById Int
+  startedAt   DateTime @default(now())
+
+  /// Cuando paso a REVIEW: el conteo termino. Distinto de `appliedAt`, que es
+  /// cuando el stock se movio. Entre los dos puede pasar un dia.
+  completedAt DateTime?
+
+  appliedById Int?
+  appliedAt   DateTime?
+
+  cancelledById Int?
+  cancelledAt   DateTime?
+  cancelReason  String?
+
+  branch      Branch    @relation(fields: [branchId], references: [id])
+  category    Category? @relation(fields: [categoryId], references: [id])
+  startedBy   User      @relation("CountStartedBy", fields: [startedById], references: [id])
+  appliedBy   User?     @relation("CountAppliedBy", fields: [appliedById], references: [id])
+  cancelledBy User?     @relation("CountCancelledBy", fields: [cancelledById], references: [id])
+
+  lines InventoryCountLine[]
+
+  @@unique([number])
+  @@index([branchId, status, startedAt])
+  @@index([startedById])
+}
+
+/// Una linea de conteo: un producto --o un producto y un lote-- de una sesion.
+///
+/// `lotId` nulo significa DOS cosas distintas segun el producto, y las dos son
+/// correctas: en un producto sin rastreo es "el producto"; en uno con lotes es
+/// "lo que no esta asignado a ninguno".
+model InventoryCountLine {
+  id        Int  @id @default(autoincrement())
+  sessionId Int
+  productId Int
+  lotId     Int?
+
+  /// PENDING | COUNTED | RECOUNT | UNRESOLVED.
+  ///
+  /// UNRESOLVED es el caso del objetivo 31: aparecieron tres unidades fisicas de
+  /// un producto que exige lote y nadie sabe de que partida son. NO se inventa un
+  /// codigo: la linea queda marcada y la sesion NO SE PUEDE APLICAR hasta que
+  /// alguien diga de que lote es o acepte que no hay.
+  status String @default("PENDING")
+
+  /// Cuanto habia CUANDO EMPEZO la sesion. Informativo: sirve para leer la
+  /// linea, no para calcular la diferencia.
+  snapshotQuantity Decimal @db.Decimal(14, 3)
+
+  /// Lo que se conto fisicamente. Nulo mientras nadie haya contado.
+  countedQuantity Decimal? @db.Decimal(14, 3)
+
+  /// Lo que decia el PRIMER conteo, cuando hubo un segundo.
+  ///
+  /// No se pisa: es evidencia. Si el primero dijo 4 y el segundo 17, esa
+  /// diferencia es informacion sobre el conteo, no ruido.
+  firstCountQuantity Decimal? @db.Decimal(14, 3)
+
+  /// Cuanto esperaba el sistema EN EL MOMENTO DE CONTAR, no al empezar.
+  ///
+  /// Es la columna que permite contar sin cerrar el local. Si la sesion empezo
+  /// con 10, se vendieron 2 y el operario conto 8, la diferencia es CERO: lo
+  /// esperado cuando conto eran 8. Ver docs/INVENTORY_COUNT_CONCURRENCY.md.
+  expectedAtCount Decimal? @db.Decimal(14, 3)
+
+  /// countedQuantity - expectedAtCount. Guardada, con un CHECK que obliga a que
+  /// los tres numeros concuerden, igual que en `StockMovement`.
+  variance Decimal? @db.Decimal(14, 3)
+
+  countedById Int?
+  countedAt   DateTime?
+
+  /// Lo que dijo quien conto. "Estaban en el fondo", "faltaba una caja".
+  notes String?
+
+  session   InventoryCountSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  product   Product               @relation(fields: [productId], references: [id])
+  countedBy User?                 @relation(fields: [countedById], references: [id])
+
+  /// RESTRICT, no el `SetNull` de Prisma: si el lote desapareciera, la linea
+  /// pasaria a decir "lo no asignado" en vez de "la partida ABC", que es una
+  /// afirmacion distinta sobre lo que alguien conto con la mano.
+  lot ProductLot? @relation(fields: [lotId], references: [id], onDelete: Restrict)
+
+  /// Una linea por (sesion, producto, lote). El caso sin lote lo cubre un indice
+  /// unico PARCIAL en la migracion, porque para PostgreSQL dos NULL son
+  /// distintos entre si.
+  @@unique([sessionId, productId, lotId], map: "InventoryCountLine_sesion_producto_lote_key")
+  @@index([sessionId, status])
+  @@index([productId])
+  @@index([lotId])
 }
 
 /// Codigos de barras de un producto. Uno principal y los alternativos.
@@ -395,8 +715,23 @@ model StockMovement {
   branchId  Int
   productId Int
 
+  /// De que LOTE salieron o entraron estas unidades. Fase 4D.
+  ///
+  /// Nulo en todo el historial anterior y en todo producto con
+  /// `lotTracking = NONE`, que es como arranca el catalogo entero. NO se rellena
+  /// hacia atras: nadie sabe de que partida eran las unidades que se vendieron el
+  /// año pasado, y un lote inventado se ve igual que uno real.
+  ///
+  /// Para un producto `REQUIRED` es obligatorio, y esa regla NO la puede hacer
+  /// cumplir un CHECK --vive en `Product.lotTracking`, en otra tabla--: la impone
+  /// `applyStockMovement()` y la comprueba la reconciliacion.
+  ///
+  /// La suma de los movimientos de un lote, mas sus atribuciones, es
+  /// `BranchLotStock.quantity`. Ver docs/LOT_TRACKING_DESIGN.md.
+  lotId Int?
+
   /// INITIAL | SALE | SALE_CANCEL | MANUAL_ADJUSTMENT | LOSS | BREAKAGE |
-  /// INTERNAL_USE | PURCHASE_RECEIPT | PURCHASE_RETURN.
+  /// INTERNAL_USE | PURCHASE_RECEIPT | PURCHASE_RETURN | INVENTORY_COUNT.
   ///
   /// La base comprueba el tipo Y el signo que le corresponde: una venta que
   /// aumente el stock no es un error que haya que buscar, es una fila que
@@ -445,8 +780,19 @@ model StockMovement {
   product Product @relation(fields: [productId], references: [id])
   user    User    @relation(fields: [userId], references: [id])
 
+  /// Clave foranea COMPUESTA. Es lo que impide estructuralmente que un
+  /// movimiento de yogur descuente de una partida de lavandina: PostgreSQL
+  /// comprueba el par (producto, lote), no el lote suelto.
+  ///
+  /// Con `lotId` nulo la restriccion se satisface sola --MATCH SIMPLE-- que es
+  /// exactamente lo que hace falta para el historial anterior y para los
+  /// productos sin rastreo.
+  lot ProductLot? @relation(fields: [productId, lotId], references: [productId, id])
+
   /// El historial de la sucursal, que es lo que abre la pantalla.
   @@index([branchId, createdAt])
+  /// El libro de UN lote, que es lo que reconstruye su saldo.
+  @@index([lotId, createdAt])
   /// La ficha de un producto.
   @@index([productId, createdAt])
   /// Filtrar por tipo dentro de una sucursal.
@@ -850,10 +1196,45 @@ model PurchaseReceiptItem {
   product   Product           @relation(fields: [productId], references: [id])
 
   returnItems PurchaseReturnItem[]
+  lots        PurchaseReceiptItemLot[]
 
   @@index([purchaseReceiptId])
   @@index([purchaseOrderItemId])
   @@index([productId])
+}
+
+/// Como se reparte UNA linea de recepcion entre lotes. Fase 4D.
+///
+/// Un pedido de 10 cajas puede llegar en dos partidas --6 que vencen el 5 de
+/// septiembre y 4 el 18--, y eso es una sola linea de recepcion con dos filas
+/// aca. La linea sigue diciendo cuanto llego y a que costo; esto dice de que
+/// partidas era.
+///
+/// Es una entidad y no una columna en la linea justamente porque el reparto es
+/// uno-a-muchos. Con una columna `lotId` en la linea habria que partir la
+/// recepcion en dos lineas del mismo producto, y entonces el costo, la
+/// conversion y el tope de lo pedido tendrian que repartirse tambien.
+model PurchaseReceiptItemLot {
+  id                    Int @id @default(autoincrement())
+  purchaseReceiptItemId Int
+  lotId                 Int
+
+  /// EN UNIDAD DE COMPRA, igual que la linea. "6 cajas".
+  quantity Decimal @db.Decimal(14, 3)
+
+  /// EN UNIDAD DE VENTA: quantity x unitsPerPurchaseUnit de la linea.
+  /// Es lo que entra al stock del lote, y se guarda por lo mismo que en la
+  /// linea: el movimiento tiene que explicarse desde esta fila sin rehacer la
+  /// conversion con un factor que quiza cambio.
+  stockQuantity Decimal @db.Decimal(14, 3)
+
+  receiptItem PurchaseReceiptItem @relation(fields: [purchaseReceiptItemId], references: [id], onDelete: Cascade)
+  lot         ProductLot          @relation(fields: [lotId], references: [id])
+
+  /// Un lote una sola vez por linea. Dos filas del mismo lote habria que
+  /// sumarlas para leer una sola.
+  @@unique([purchaseReceiptItemId, lotId])
+  @@index([lotId])
 }
 
 /// Un cliente del almacen.
@@ -1444,18 +1825,39 @@ model PurchaseReturnItem {
   /// quantity x unitCost, redondeado a pesos. El credito de esta linea.
   amount Decimal @db.Decimal(14, 2)
 
+  /// De que LOTE vuelve la mercaderia. Fase 4D.
+  ///
+  /// Nulo para los productos sin rastreo, que son todos los de antes de la Fase
+  /// 4D. Obligatorio para los `REQUIRED`, y NO se puede elegir cualquiera: tiene
+  /// que ser uno de los lotes CON LOS QUE LLEGO ESA LINEA. Devolver del lote
+  /// equivocado sacaria mercaderia de una partida que el proveedor nunca mando y
+  /// dejaria en el deposito la que hay que sacar.
+  lotId Int?
+
   return      PurchaseReturn      @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
   product     Product             @relation(fields: [productId], references: [id])
   receiptItem PurchaseReceiptItem @relation(fields: [purchaseReceiptItemId], references: [id])
 
-  /// Un producto no puede estar dos veces en la misma devolucion: serian dos
-  /// renglones del mismo articulo que habria que sumar para leer uno solo, y la
-  /// pantalla los mostraria como si fueran dos cosas distintas.
-  @@unique([purchaseReturnId, purchaseReceiptItemId])
+  /// RESTRICT y no el `SetNull` que Prisma pone por omision en una relacion
+  /// opcional. Con `SetNull`, borrar un lote dejaria el renglon en pie diciendo
+  /// que devolvio "algo" sin decir de que partida: el credito al proveedor
+  /// seguiria ahi y la trazabilidad no. Un lote referenciado no se borra.
+  lot ProductLot? @relation(fields: [lotId], references: [id], onDelete: Restrict)
+
+  /// Un renglon por (linea de recepcion, lote).
+  ///
+  /// En la Fase 4C esto era `(devolucion, linea)` a secas, y tuvo que aflojarse:
+  /// una linea que llego repartida en dos partidas se devuelve entera con DOS
+  /// renglones, uno por lote. Con la clave anterior, devolver las dos partidas
+  /// obligaria a armar dos devoluciones distintas para una sola devolucion
+  /// fisica. El caso con `lotId` nulo lo cubre un indice unico parcial, porque
+  /// PostgreSQL considera dos NULL distintos entre si.
+  @@unique([purchaseReturnId, purchaseReceiptItemId, lotId], map: "PurchaseReturnItem_devolucion_linea_lote_key")
   @@index([purchaseReturnId])
   @@index([productId])
   /// "Cuanto se devolvio ya de esta linea", que es el tope de lo retornable.
   @@index([purchaseReceiptItemId])
+  @@index([lotId])
 }
 
 model Sale {
@@ -1547,8 +1949,34 @@ model SaleItem {
   sale    Sale    @relation(fields: [saleId], references: [id])
   product Product @relation(fields: [productId], references: [id])
 
+  lots SaleItemLotAllocation[]
+
   /// La rentabilidad recorre las lineas de un rango de ventas.
   @@index([productId])
+}
+
+/// De que lotes salio una linea de venta. Fase 4D.
+///
+/// Una venta de 5 yogures puede tomar 3 del lote que vence manana y 2 del que
+/// vence en diez dias. `SaleItem.quantity` sigue diciendo 5 --NO se parte en dos
+/// lineas de ticket-- y esto dice de donde salieron.
+///
+/// Es lo que hace posible la anulacion honesta: devolver a los MISMOS lotes de
+/// los que se saco, sin recalcular FEFO diez dias despues, cuando el lote que
+/// vencia manana ya vencio.
+model SaleItemLotAllocation {
+  id         Int @id @default(autoincrement())
+  saleItemId Int
+  lotId      Int
+
+  /// EN UNIDAD DE VENTA, positiva. El signo lo pone el movimiento de stock.
+  quantity Decimal @db.Decimal(14, 3)
+
+  saleItem SaleItem   @relation(fields: [saleItemId], references: [id])
+  lot      ProductLot @relation(fields: [lotId], references: [id])
+
+  @@unique([saleItemId, lotId])
+  @@index([lotId])
 }
 
 /// Un pago de una venta. Una venta puede tener varios.

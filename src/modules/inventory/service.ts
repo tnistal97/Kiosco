@@ -23,12 +23,16 @@ import type { Session } from '@/server/auth/session'
 import type { TextoCantidad } from '@/lib/cantidad'
 import {
   CANTIDAD_MAX,
+  CERO_C,
   aTextoCantidad,
   absolutoCantidad,
+  cantidad as aCantidad,
   esCeroCantidad,
   esNegativaCantidad,
   esPositivaCantidad,
+  restarCantidades,
   sumaCantidadODefecto,
+  sumarCantidades,
   type Cantidad,
 } from '@/server/cantidad'
 import {
@@ -60,6 +64,21 @@ export interface EntradaMovimiento {
    * no cuesta ninguna consulta y el compilador garantiza que nadie la saltee.
    */
   saleUnit: UnidadDeVenta
+  /**
+   * De que LOTE salen o entran estas unidades. Fase 4D.
+   *
+   * Nulo para todo producto con `lotTracking = NONE`, que es como arranca el
+   * catalogo entero, y para el stock sin asignar de los `OPTIONAL`.
+   *
+   * La politica NO se comprueba con una consulta aparte: viaja DENTRO de la
+   * sentencia que mueve el stock, junto a la comprobacion de sucursal. Un
+   * movimiento sin lote sobre un producto `REQUIRED` --o con lote sobre uno
+   * `NONE`-- no aplica, y el camino de error explica cual de las dos cosas fue.
+   *
+   * Que el lote pertenezca al producto lo garantiza la base con una clave
+   * foranea COMPUESTA: no hay comprobacion nuestra que se pueda saltear.
+   */
+  lotId?: number | null
   userId: number
   reason?: string | null
   referenceType?: Referencia | null
@@ -78,6 +97,8 @@ export interface ResultadoMovimiento {
   movementId: number
   previousQuantity: Cantidad
   resultingQuantity: Cantidad
+  /** Los saldos DEL LOTE, cuando el movimiento llevaba uno. */
+  lote: { previousQuantity: Cantidad; resultingQuantity: Cantidad } | null
 }
 
 /** Nombre para el mensaje de error. Se lee solo cuando algo falla. */
@@ -158,6 +179,7 @@ export async function applyStockMovement(
   entrada: EntradaMovimiento,
 ): Promise<ResultadoMovimiento> {
   const { branchId, productId, type, quantity, saleUnit, userId } = entrada
+  const lotId = entrada.lotId ?? null
 
   validarMovimiento(type, quantity, saleUnit)
 
@@ -212,6 +234,13 @@ export async function applyStockMovement(
   //    La union con `Product` repite la comprobacion de sucursal: la fila de
   //    stock podria existir de antes, y sin esto un id de otra sucursal la
   //    moveria.
+  //
+  //    La condicion de POLITICA DE LOTE viaja adentro, igual que la de
+  //    sucursal, y por el mismo motivo: una comprobacion que vive en otra
+  //    sentencia es una comprobacion que alguien puede saltear o que puede
+  //    quedar obsoleta entre las dos. Un movimiento sin lote sobre un producto
+  //    `REQUIRED` --o con lote sobre uno `NONE`-- no afecta ninguna fila, y el
+  //    camino de error de abajo dice cual de las dos cosas fue.
   const filas = await tx.$queryRaw<Array<{ previo: Cantidad; resultante: Cantidad }>>`
     UPDATE "BranchStock" bs
        SET "quantity" = bs."quantity" + ${delta}::numeric
@@ -221,6 +250,8 @@ export async function applyStockMovement(
        AND bs."branchId" = ${branchId}
        AND bs."productId" = ${productId}
        AND bs."quantity" + ${delta}::numeric >= 0
+       AND CASE WHEN ${lotId}::int IS NULL THEN p."lotTracking" <> 'REQUIRED'
+                ELSE p."lotTracking" <> 'NONE' END
     RETURNING (bs."quantity" - ${delta}::numeric)::numeric(14,3) AS previo,
               bs."quantity"::numeric(14,3)                       AS resultante
   `
@@ -229,34 +260,53 @@ export async function applyStockMovement(
   if (!saldos) {
     // Camino de error, no camino caliente: recien aca se paga por averiguar
     // por que no se aplico.
+    const producto = await tx.product.findFirst({
+      where: { id: productId, branchId },
+      select: { lotTracking: true },
+    })
+    // Mismo trato que "no existe": no se confirma que el producto exista en
+    // otra sucursal.
+    if (!producto) throw notFound('Producto no encontrado')
+
+    if (lotId === null && producto.lotTracking === 'REQUIRED') {
+      throw conflict(
+        `"${await nombreDe(tx, productId)}" se sigue por lote: todo movimiento ` +
+          'tiene que decir de que partida es.',
+        { code: 'LOT_REQUIRED' },
+      )
+    }
+    if (lotId !== null && producto.lotTracking === 'NONE') {
+      throw conflict(
+        `"${await nombreDe(tx, productId)}" no se sigue por lote. Activá el ` +
+          'seguimiento por lote antes de moverle partidas.',
+        { code: 'LOT_NOT_TRACKED' },
+      )
+    }
+
     const actual = await tx.branchStock.findUnique({
       where: { branchId_productId: { branchId, productId } },
       select: { quantity: true },
     })
 
-    if (!actual) {
-      const delaSucursal = await tx.product.findFirst({
-        where: { id: productId, branchId },
-        select: { id: true },
-      })
-      // Mismo trato que "no existe": no se confirma que el producto exista en
-      // otra sucursal.
-      if (!delaSucursal) throw notFound('Producto no encontrado')
-
-      throw conflict(
-        `No hay stock de "${await nombreDe(tx, productId)}": se pidieron ` +
-          `${pedido(quantity, saleUnit)} y hay ${formatearCantidadConUnidad('0.000', saleUnit)}`,
-        { code: 'INSUFFICIENT_STOCK' },
-      )
-    }
-
     throw conflict(
       `Stock insuficiente de "${await nombreDe(tx, productId)}": se pidieron ` +
         `${pedido(quantity, saleUnit)} y hay ` +
-        `${formatearCantidadConUnidad(aTextoCantidad(actual.quantity), saleUnit)}`,
+        `${formatearCantidadConUnidad(aTextoCantidad(actual?.quantity ?? CERO_C), saleUnit)}`,
       { code: 'INSUFFICIENT_STOCK' },
     )
   }
+
+  // 3) El mismo delta, sobre el saldo DEL LOTE.
+  //
+  //    Va DESPUES del agregado y nunca antes: el orden de los bloqueos es parte
+  //    del contrato --primero `BranchStock`, despues `BranchLotStock`-- y como
+  //    todos los caminos pasan por aca, todas las transacciones lo toman igual.
+  //    Ver docs/LOT_TRACKING_DESIGN.md.
+  //
+  //    La condicion `quantity + delta >= 0` se repite acá porque el tope del
+  //    lote es SUYO: el producto puede tener 50 unidades y el lote 2.
+  const lote =
+    lotId === null ? null : await aplicarSaldoDeLote(tx, branchId, productId, lotId, delta)
 
   // Los saldos salen del RETURNING, no de una lectura posterior. Entre la
   // escritura y una segunda lectura otra transaccion puede mover el stock, y
@@ -265,6 +315,7 @@ export async function applyStockMovement(
     data: {
       branchId,
       productId,
+      lotId,
       type,
       quantity,
       previousQuantity: saldos.previo,
@@ -293,9 +344,11 @@ export async function applyStockMovement(
       after: {
         tipo: type,
         productId,
+        lotId,
         delta,
         unidad: saleUnit,
         quantity: aTextoCantidad(saldos.resultante),
+        ...(lote === null ? {} : { loteQuantity: aTextoCantidad(lote.resultingQuantity) }),
         motivo: entrada.reason ?? null,
         branchId,
       },
@@ -307,7 +360,235 @@ export async function applyStockMovement(
     movementId: movimiento.id,
     previousQuantity: saldos.previo,
     resultingQuantity: saldos.resultante,
+    lote,
   }
+}
+
+/**
+ * El delta sobre el saldo de UN lote. Solo la llama `applyStockMovement`.
+ *
+ * Dos sentencias, las mismas dos que para el producto y por los mismos motivos:
+ * asegurar la fila y despues aplicar el delta comprobando el no-negativo EN LA
+ * MISMA SENTENCIA que escribe.
+ *
+ * El `SELECT ... FROM "ProductLot"` de la primera no es decorativo: si el lote
+ * no es de este producto, no se crea la fila y la segunda no encuentra nada. La
+ * clave foranea compuesta ya lo impide del lado de la base; esto hace que el
+ * mensaje sea legible en vez de un error de restriccion.
+ */
+async function aplicarSaldoDeLote(
+  tx: TxClient,
+  branchId: number,
+  productId: number,
+  lotId: number,
+  delta: TextoCantidad,
+): Promise<{ previousQuantity: Cantidad; resultingQuantity: Cantidad }> {
+  await tx.$executeRaw`
+    INSERT INTO "BranchLotStock" ("branchId", "lotId", "quantity")
+    SELECT ${branchId}, ${lotId}, 0
+      FROM "ProductLot" l
+     WHERE l."id" = ${lotId}
+       AND l."productId" = ${productId}
+    ON CONFLICT ("branchId", "lotId") DO NOTHING
+  `
+
+  const filas = await tx.$queryRaw<Array<{ previo: Cantidad; resultante: Cantidad }>>`
+    UPDATE "BranchLotStock" bls
+       SET "quantity" = bls."quantity" + ${delta}::numeric
+     WHERE bls."branchId" = ${branchId}
+       AND bls."lotId" = ${lotId}
+       AND bls."quantity" + ${delta}::numeric >= 0
+    RETURNING (bls."quantity" - ${delta}::numeric)::numeric(14,3) AS previo,
+              bls."quantity"::numeric(14,3)                       AS resultante
+  `
+
+  const saldos = filas[0]
+  if (saldos) return { previousQuantity: saldos.previo, resultingQuantity: saldos.resultante }
+
+  const lote = await tx.productLot.findFirst({
+    where: { id: lotId, productId },
+    select: { code: true },
+  })
+  if (!lote) throw notFound('El lote no existe o no es de este producto')
+
+  const actual = await tx.branchLotStock.findUnique({
+    where: { branchId_lotId: { branchId, lotId } },
+    select: { quantity: true },
+  })
+
+  throw conflict(
+    `El lote ${lote.code} no tiene suficiente: quedan ` +
+      `${aTextoCantidad(actual?.quantity ?? CERO_C)} y se pidieron ` +
+      `${aTextoCantidad(absolutoCantidad(aCantidad(delta)))}.`,
+    { code: 'INSUFFICIENT_LOT_STOCK' },
+  )
+}
+
+export interface EntradaAtribucion {
+  branchId: number
+  productId: number
+  lotId: number
+  /** Delta CON SIGNO. Una atribucion equivocada se compensa con su opuesta. */
+  quantity: Cantidad
+  saleUnit: UnidadDeVenta
+  userId: number
+  /** Obligatorio: es la unica explicacion que va a quedar. */
+  reason: string
+  audit?: { origin: string } | null
+}
+
+export interface ResultadoAtribucion {
+  assignmentId: number
+  previousQuantity: Cantidad
+  resultingQuantity: Cantidad
+  /** Lo que sigue sin pertenecer a ningun lote, DESPUES de esta atribucion. */
+  sinAsignar: Cantidad
+}
+
+/**
+ * Atribuye stock EXISTENTE a un lote. La otra funcion de la unica puerta.
+ *
+ * NO ES UN MOVIMIENTO DE STOCK, y esa es toda la razon de que exista: activar el
+ * rastreo sobre un producto que ya tiene 20 unidades obliga a decir de que lotes
+ * son, y el stock no cambia --habia 20 y siguen habiendo 20--. Lo que cambia es
+ * la ATRIBUCION.
+ *
+ * Fabricar un movimiento de +20 seguido de otro de -20 para representarlo seria
+ * escribir en el libro de inventario dos operaciones que nunca ocurrieron.
+ *
+ * EL TOPE, y por que necesita bloqueo. La suma de lo atribuido no puede superar
+ * el stock del producto, y esa condicion NO cabe dentro de la sentencia que
+ * escribe: el tope es la suma de OTRA tabla. Son DOS sentencias:
+ *
+ *   1. `SELECT ... FOR UPDATE` sobre la fila de `BranchStock`. Nada mas.
+ *   2. RECIEN DESPUES, la suma de lo ya atribuido, en su propia sentencia.
+ *
+ * Que sean dos importa: bajo READ COMMITTED la instantanea se toma al EMPEZAR la
+ * sentencia, asi que la transaccion que espera el bloqueo sumaria con una foto
+ * anterior a la escritura de la que estaba esperando. PostgreSQL reevalua la
+ * FILA bloqueada, no las subconsultas. Es la misma leccion que la Fase 4C
+ * aprendio en las imputaciones. Ver docs/SUPPLIER_ADVANCES.md.
+ */
+export async function applyLotAssignment(
+  tx: TxClient,
+  entrada: EntradaAtribucion,
+): Promise<ResultadoAtribucion> {
+  const { branchId, productId, lotId, quantity, saleUnit, userId } = entrada
+
+  if (esCeroCantidad(quantity)) {
+    throw invalid('Una atribución de cero unidades no atribuye nada')
+  }
+  const motivoUnidad = motivoDeCantidadInvalida(
+    saleUnit,
+    aTextoCantidad(absolutoCantidad(quantity)),
+  )
+  if (motivoUnidad !== null) throw invalid(motivoUnidad)
+  if (entrada.reason.trim() === '') {
+    throw invalid('El motivo de la atribución es obligatorio')
+  }
+
+  const delta: TextoCantidad = aTextoCantidad(quantity)
+
+  const producto = await tx.product.findFirst({
+    where: { id: productId, branchId },
+    select: { name: true, lotTracking: true },
+  })
+  if (!producto) throw notFound('Producto no encontrado')
+  if (producto.lotTracking === 'NONE') {
+    throw conflict(
+      `"${producto.name}" no se sigue por lote: no se le puede atribuir stock a partidas.`,
+      { code: 'LOT_NOT_TRACKED' },
+    )
+  }
+
+  // 1. EL BLOQUEO, Y NADA MAS.
+  await tx.$queryRaw`
+    SELECT bs."id"
+      FROM "BranchStock" bs
+     WHERE bs."branchId" = ${branchId}
+       AND bs."productId" = ${productId}
+     FOR UPDATE
+  `
+
+  // 2. RECIEN AHORA la suma, en su propia sentencia.
+  const topes = await tx.$queryRaw<Array<{ total: Cantidad; asignado: Cantidad }>>`
+    SELECT COALESCE(bs."quantity", 0)::numeric(14,3)     AS total,
+           COALESCE(sum(bls."quantity"), 0)::numeric(14,3) AS asignado
+      FROM "Product" p
+      LEFT JOIN "BranchStock" bs
+        ON bs."productId" = p."id" AND bs."branchId" = ${branchId}
+      LEFT JOIN "ProductLot" l
+        ON l."productId" = p."id"
+      LEFT JOIN "BranchLotStock" bls
+        ON bls."lotId" = l."id" AND bls."branchId" = ${branchId}
+     WHERE p."id" = ${productId}
+     GROUP BY bs."quantity"
+  `
+
+  const tope = topes[0] ?? { total: CERO_C, asignado: CERO_C }
+  const asignadoDespues = sumarCantidades(tope.asignado, quantity)
+
+  if (asignadoDespues.greaterThan(tope.total)) {
+    throw conflict(
+      `No se puede atribuir ${formatearCantidadConUnidad(aTextoCantidad(absolutoCantidad(quantity)), saleUnit)} ` +
+        `de "${producto.name}": hay ${formatearCantidadConUnidad(aTextoCantidad(tope.total), saleUnit)} ` +
+        `en total y ya se atribuyeron ${formatearCantidadConUnidad(aTextoCantidad(tope.asignado), saleUnit)}.`,
+      { code: 'LOT_ASSIGNMENT_EXCEEDS_STOCK' },
+    )
+  }
+
+  const saldos = await aplicarSaldoDeLote(tx, branchId, productId, lotId, delta)
+
+  const atribucion = await tx.lotAssignment.create({
+    data: { branchId, productId, lotId, quantity, reason: entrada.reason.trim(), userId },
+    select: { id: true },
+  })
+
+  if (entrada.audit) {
+    await escribirAuditoria(tx, {
+      userId,
+      branchId,
+      table: 'LotAssignment',
+      recordId: atribucion.id,
+      action: 'create',
+      reason: entrada.reason.trim(),
+      before: { loteQuantity: aTextoCantidad(saldos.previousQuantity) },
+      after: {
+        productId,
+        lotId,
+        delta,
+        unidad: saleUnit,
+        loteQuantity: aTextoCantidad(saldos.resultingQuantity),
+        branchId,
+      },
+      origin: entrada.audit.origin,
+    })
+  }
+
+  return {
+    assignmentId: atribucion.id,
+    previousQuantity: saldos.previousQuantity,
+    resultingQuantity: saldos.resultingQuantity,
+    sinAsignar: restarCantidades(tope.total, asignadoDespues),
+  }
+}
+
+/**
+ * Reconstruye el saldo de un lote sumando su libro MAS sus atribuciones.
+ *
+ * Es la invariante hecha consulta, y son dos sumas y no una porque el saldo de
+ * un lote tiene dos origenes: la mercaderia que se movio y el stock que se le
+ * atribuyo al activar el rastreo. Ver docs/LOT_TRACKING_DESIGN.md.
+ */
+export async function reconstruirStockDeLote(branchId: number, lotId: number): Promise<Cantidad> {
+  const [movimientos, atribuciones] = await Promise.all([
+    prisma.stockMovement.aggregate({ where: { branchId, lotId }, _sum: { quantity: true } }),
+    prisma.lotAssignment.aggregate({ where: { branchId, lotId }, _sum: { quantity: true } }),
+  ])
+  return sumarCantidades(
+    sumaCantidadODefecto(movimientos._sum.quantity),
+    sumaCantidadODefecto(atribuciones._sum.quantity),
+  )
 }
 
 /**

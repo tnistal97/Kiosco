@@ -293,6 +293,69 @@ export const PERMISSIONS = [
    * que el papel que alguien dice haber recibido.
    */
   'purchaseReturns.confirm',
+  // Lotes y vencimientos. Ver docs/LOT_TRACKING_DESIGN.md.
+  /**
+   * Ver las partidas, su stock y sus vencimientos.
+   *
+   * Aparte de `stock.view` y NO incluido en el perfil de caja. Son dos preguntas
+   * distintas: el cajero necesita saber CUANTO hay para poder vender --y eso lo
+   * sigue contestando `BranchStock`, sin este permiso-- mientras que de que
+   * partida es cada unidad y cuando vence es informacion de deposito.
+   *
+   * La caja igual no vende vencido: esa comprobacion la hace el servidor con o
+   * sin este permiso.
+   */
+  'lots.view',
+  /**
+   * Crear partidas, corregir su vencimiento, atribuirles stock existente y
+   * cambiar la politica de rastreo de un producto.
+   *
+   * Las cuatro cosas juntas y no cuatro permisos, porque son la misma decision
+   * mirada en distintos momentos: quien puede decidir que un producto se sigue
+   * por lote es quien va a cargar sus partidas. Partirlo daria roles que pueden
+   * exigir lotes y no crearlos, que es un producto que no se puede recibir.
+   *
+   * El CODIGO de una partida con historial no lo cambia nadie: eso no es un
+   * permiso, es un disparador en la base.
+   */
+  'lots.manage',
+  /**
+   * Elegir el lote A MANO donde el sistema elegiria por FEFO.
+   *
+   * Separado de `manage` porque no es administrar el catalogo de partidas: es
+   * pasar por encima de la politica de rotacion en una operacion concreta. Es lo
+   * que permite corregir cuando lo que se llevaron no era del lote que el
+   * sistema descontó. Ver docs/FEFO_POLICY.md.
+   *
+   * NO esta en el flujo normal de la caja: sin este permiso el POS no muestra la
+   * eleccion, y con el la muestra solo para productos con lotes.
+   */
+  'lots.adjust',
+  // Inventario fisico. Ver docs/PHYSICAL_INVENTORY.md.
+  //
+  // CINCO permisos, y no es exceso: un inventario tiene cuatro momentos que casi
+  // nunca hace la misma persona --armarlo, contar, revisar las diferencias y
+  // aplicarlas-- y el sentido entero del mecanismo es que quien cuenta no sea
+  // quien decide que la diferencia se aplique.
+  'inventoryCounts.view',
+  /** Armar la sesion: alcance, conteo a ciegas, umbral de segundo conteo. */
+  'inventoryCounts.create',
+  /** Cargar conteos. Es el permiso del operario que recorre el deposito. */
+  'inventoryCounts.count',
+  /** Cerrar el conteo y mirar las diferencias antes de que existan. */
+  'inventoryCounts.review',
+  /**
+   * Aplicar: convertir las diferencias en movimientos de stock.
+   *
+   * Es el permiso que importa de los cinco. Aplicar mueve el inventario sin que
+   * haya entrado ni salido mercaderia, que es exactamente el poder que
+   * `stock.adjust` protege producto por producto --acá son cientos de una vez--.
+   *
+   * Por eso NO lo tiene quien cuenta: si contar y aplicar fueran el mismo
+   * permiso, cualquiera podria hacer desaparecer mercaderia escribiendo un
+   * numero mas chico y aplicandolo.
+   */
+  'inventoryCounts.apply',
 ] as const
 
 export type Permission = (typeof PERMISSIONS)[number]
@@ -401,6 +464,15 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'purchaseReturns.view',
     'purchaseReturns.create',
     'purchaseReturns.confirm',
+    // Lotes e inventario fisico, todo: es quien responde por el deposito.
+    'lots.view',
+    'lots.manage',
+    'lots.adjust',
+    'inventoryCounts.view',
+    'inventoryCounts.create',
+    'inventoryCounts.count',
+    'inventoryCounts.review',
+    'inventoryCounts.apply',
   ],
 
   /**
@@ -441,6 +513,21 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     // de arriba.
     'clients.manage',
     'accounts.overrideLimit',
+    // Lotes: ve y puede elegir a mano. NO administra el catalogo de partidas ni
+    // cambia la politica de un producto: eso es una decision de catalogo, y el
+    // supervisor esta en el mostrador. Elegir el lote a mano SI, porque es la
+    // correccion que aparece justo en el mostrador --lo que se llevaron no era
+    // del lote que el sistema descontó-- y es el mismo escalon que autorizar un
+    // exceso de limite.
+    'lots.view',
+    'lots.adjust',
+    // Del inventario fisico: revisa y aplica, NO cuenta. Es exactamente la
+    // separacion que hace util el mecanismo --quien cuenta no decide que la
+    // diferencia se aplique-- y es el escalon que hoy falta: sin el, cada
+    // inventario necesita al administrador.
+    'inventoryCounts.view',
+    'inventoryCounts.review',
+    'inventoryCounts.apply',
   ],
 
   cajero: PERFIL_CAJA,
@@ -477,6 +564,20 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'stock.adjust',
     'inventory.movements.view',
     'purchaseReturns.view',
+    // Lotes: VE y no administra. Ver es su trabajo --es quien mira que vence y
+    // quien saca de la gondola lo vencido-- pero crear partidas y cambiar la
+    // politica de un producto es una decision de catalogo.
+    //
+    // SIN `lots.adjust`: elegir el lote a mano es pasar por encima de la
+    // rotacion, y el repositor es justamente quien tiene que respetarla.
+    'lots.view',
+    // Del inventario fisico: arma y cuenta, NO revisa ni aplica. Es el reparto
+    // del objetivo 37 y el que da sentido al conteo a ciegas: quien recorre el
+    // deposito con el papel no es quien decide que la diferencia se convierta en
+    // un movimiento de stock.
+    'inventoryCounts.view',
+    'inventoryCounts.create',
+    'inventoryCounts.count',
   ],
 
   /**
@@ -546,6 +647,23 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'purchaseReturns.view',
     'purchaseReturns.create',
     'purchaseReturns.confirm',
+    // Lotes: ve Y ADMINISTRA. `manage` no es un exceso: recibir mercaderia de un
+    // producto que exige lote significa cargar la partida que llego --con su
+    // codigo y su vencimiento, leidos del envase-- y sin este permiso compras no
+    // podria recibir ese producto en absoluto.
+    //
+    // Incluye poder cambiar la politica de rastreo, y eso hay que decirlo: quien
+    // recibe puede aflojar el rastreo de un producto. Queda auditado y es
+    // coherente con lo que el rol ya puede --crear deuda, fijar costos-- pero es
+    // un poder real y no un detalle.
+    //
+    // SIN `lots.adjust`: elegir el lote a mano es una operacion de mostrador.
+    'lots.view',
+    'lots.manage',
+    // Del inventario fisico solo VE. Contar el deposito es del almacen, y
+    // aplicar diferencias es la corrección de stock que compras no hace: quien
+    // recibe la mercaderia no debe poder ajustar cuanta hay.
+    'inventoryCounts.view',
   ],
 
   /**
@@ -586,6 +704,12 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     // `supplierAccounts.allocate`: quien revisa no debe poder modificar lo que
     // revisa, y una imputacion cambia que entrega figura como saldada.
     'purchaseReturns.view',
+    // Lotes e inventarios, solo lectura. Es material de auditoria de primera
+    // linea: un inventario aplicado es una correccion de stock sin mercaderia
+    // detras, y quien revisa tiene que poder verla. Sin `manage`, sin `adjust`,
+    // sin `count`, sin `review` y sin `apply`.
+    'lots.view',
+    'inventoryCounts.view',
   ],
 }
 

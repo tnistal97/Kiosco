@@ -115,6 +115,39 @@ const PROHIBIDO_ESCRIBIR_STOCK = [
       'SQL crudo que escribe sobre BranchStock, fuera del servicio de inventario. ' +
       'Toda modificacion de stock pasa por applyStockMovement().',
   },
+  // Desde la Fase 4D la frontera cubre TAMBIEN el stock por lote y el libro de
+  // atribuciones. Es la misma invariante un nivel mas abajo:
+  //
+  //   BranchLotStock.quantity == suma(movimientos del lote) + suma(atribuciones)
+  //
+  // Sin esto, un `update` suelto sobre BranchLotStock dejaria el stock del lote
+  // "bien" y su libro sin explicarlo, que es el caso que hace imposible contestar
+  // "de que partida salieron estas ocho unidades".
+  {
+    selector:
+      "CallExpression > MemberExpression[object.property.name='branchLotStock']" +
+      '[property.name=/^(create|createMany|createManyAndReturn|update|updateMany|upsert|delete|deleteMany)$/]',
+    message:
+      'El stock por lote no se escribe directamente. Usa applyStockMovement() o ' +
+      'applyLotAssignment() de @/modules/inventory/service. ' +
+      'Ver docs/LOT_TRACKING_DESIGN.md.',
+  },
+  {
+    selector:
+      "CallExpression > MemberExpression[object.property.name='lotAssignment']" +
+      '[property.name=/^(create|createMany|createManyAndReturn|update|updateMany|upsert|delete|deleteMany)$/]',
+    message:
+      'Las atribuciones de lote no se escriben directamente. Usa applyLotAssignment() ' +
+      'de @/modules/inventory/service, que comprueba el tope bajo bloqueo. ' +
+      'Ver docs/LOT_TRACKING_DESIGN.md.',
+  },
+  {
+    selector:
+      'TemplateElement[value.raw=/(UPDATE|INSERT\\s+INTO|DELETE\\s+FROM)\\s+"(BranchLotStock|LotAssignment)"/]',
+    message:
+      'SQL crudo que escribe sobre el stock por lote, fuera del servicio de inventario. ' +
+      'Ver docs/LOT_TRACKING_DESIGN.md.',
+  },
 ]
 
 /**

@@ -41,6 +41,21 @@ export const TIPOS_MOVIMIENTO = [
    * Su referencia apunta a la DEVOLUCION. Ver docs/PURCHASE_RETURN_FLOW.md.
    */
   'PURCHASE_RETURN',
+  /**
+   * La diferencia de un inventario fisico. Lo emite la APLICACION de una sesion
+   * de conteo, y NADA MAS: tampoco figura entre los tipos de ajuste manual.
+   *
+   * Su signo es 'ambos' porque una diferencia puede ir para los dos lados, y esa
+   * es exactamente la razon de no llamarlo `LOSS`: un sobrante contado no es una
+   * perdida negativa, es un sobrante, y el reporte de mermas mentiria si los
+   * mezclara. Ver el objetivo 50.
+   *
+   * Es distinto de `MANUAL_ADJUSTMENT` --que tambien nace de un recuento-- porque
+   * este viene de un recorrido con conteo a ciegas, revision y aplicacion en
+   * bloque, y se puede rastrear hasta su sesion. Su referencia apunta a la SESION.
+   * Ver docs/PHYSICAL_INVENTORY.md.
+   */
+  'INVENTORY_COUNT',
 ] as const
 
 export type TipoMovimiento = (typeof TIPOS_MOVIMIENTO)[number]
@@ -72,17 +87,19 @@ export const SIGNO_DE_TIPO: Record<TipoMovimiento, 'entra' | 'sale' | 'ambos'> =
   INTERNAL_USE: 'sale',
   PURCHASE_RECEIPT: 'entra',
   PURCHASE_RETURN: 'sale',
+  INVENTORY_COUNT: 'ambos',
 }
 
 /**
  * Tipos que un ajuste manual puede declarar.
  *
  * Subconjunto a proposito: `SALE` y `SALE_CANCEL` los emite la venta,
- * `INITIAL` la migracion, `PURCHASE_RECEIPT` la recepcion de una compra y
- * `PURCHASE_RETURN` la confirmacion de una devolucion. Si esta lista aceptara
- * cualquier tipo, cualquiera podria escribir una venta falsa --o una entrada de
- * mercaderia sin compra, o una salida sin devolucion-- desde la pantalla de
- * ajustes.
+ * `INITIAL` la migracion, `PURCHASE_RECEIPT` la recepcion de una compra,
+ * `PURCHASE_RETURN` la confirmacion de una devolucion e `INVENTORY_COUNT` la
+ * aplicacion de un inventario fisico. Si esta lista aceptara cualquier tipo,
+ * cualquiera podria escribir una venta falsa --o una entrada de mercaderia sin
+ * compra, o una salida sin devolucion, o la diferencia de un inventario que
+ * nadie conto-- desde la pantalla de ajustes.
  */
 export const TIPOS_DE_AJUSTE = [
   'MANUAL_ADJUSTMENT',
@@ -103,6 +120,7 @@ const ETIQUETAS: Record<TipoMovimiento, string> = {
   INTERNAL_USE: 'Consumo interno',
   PURCHASE_RECEIPT: 'Recepción de compra',
   PURCHASE_RETURN: 'Devolución a proveedor',
+  INVENTORY_COUNT: 'Inventario físico',
 }
 
 /**

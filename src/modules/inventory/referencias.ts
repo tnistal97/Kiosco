@@ -21,6 +21,7 @@ export const REFERENCIAS = [
   'Product',
   'PurchaseReceipt',
   'PurchaseReturn',
+  'InventoryCountSession',
 ] as const
 
 export type Referencia = (typeof REFERENCIAS)[number]
@@ -42,6 +43,7 @@ export function enlaceDeReferencia(tipo: string | null, id: number | null): stri
   if (tipo === 'Sale') return `/ventas?venta=${String(id)}`
   if (tipo === 'PurchaseReceipt') return `/compras/recepcion/${String(id)}`
   if (tipo === 'PurchaseReturn') return `/devoluciones/${String(id)}`
+  if (tipo === 'InventoryCountSession') return `/inventarios/${String(id)}`
   return null
 }
 
@@ -52,5 +54,6 @@ export function textoDeReferencia(tipo: string | null, id: number | null): strin
   if (tipo === 'Product') return `Producto #${String(id)}`
   if (tipo === 'PurchaseReceipt') return `Recepción #${String(id)}`
   if (tipo === 'PurchaseReturn') return `Devolución #${String(id)}`
+  if (tipo === 'InventoryCountSession') return `Inventario físico #${String(id)}`
   return `Ajuste #${String(id)}`
 }

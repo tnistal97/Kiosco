@@ -142,6 +142,41 @@ export type ErrorCode =
   | 'RETURN_ITEM_MISMATCH'
   /** Se quiso confirmar una devolucion sin renglones. */
   | 'RETURN_EMPTY'
+  // Lotes, vencimientos e inventario fisico. Ver docs/LOT_TRACKING_DESIGN.md.
+  /** El producto se sigue por lote y el movimiento no dice de cual. */
+  | 'LOT_REQUIRED'
+  /** El producto NO se sigue por lote: no se le pueden mover partidas. */
+  | 'LOT_NOT_TRACKED'
+  /**
+   * Al lote no le quedan unidades suficientes.
+   *
+   * Distinto de `INSUFFICIENT_STOCK`, que habla del producto entero: el producto
+   * puede tener 50 unidades y la partida que se pidio, 2. El navegador ofrece
+   * cosas distintas en cada caso --alla no hay nada que hacer, aca se puede
+   * elegir otra partida-- y darles el mismo codigo obligaria a leer el texto.
+   */
+  | 'INSUFFICIENT_LOT_STOCK'
+  /** Se quiso atribuir a lotes mas stock del que tiene el producto. */
+  | 'LOT_ASSIGNMENT_EXCEEDS_STOCK'
+  /** El lote esta vencido: no se vende. Ver docs/LOT_EXPIRATION_POLICY.md. */
+  | 'LOT_EXPIRED'
+  /** Hay stock, pero no vendible: lo que queda esta vencido. */
+  | 'INSUFFICIENT_SELLABLE_STOCK'
+  /** Se quiso exigir lotes dejando stock sin atribuir a ninguno. */
+  | 'LOT_TRACKING_NEEDS_ASSIGNMENT'
+  /** La partida no es una de las que llegaron en esa entrega. */
+  | 'LOT_NOT_IN_RECEIPT'
+  /** El estado del inventario fisico no admite lo que se pidio. */
+  | 'COUNT_NOT_EDITABLE'
+  /** Quedan lineas sin resolver: no se puede aplicar. */
+  | 'COUNT_HAS_UNRESOLVED'
+  /** Quedan lineas sin contar o pendientes de segundo conteo. */
+  | 'COUNT_INCOMPLETE'
+  /**
+   * Otro inventario ya corrigio este producto DESPUES de que esta sesion lo
+   * conto: aplicar ahora corregiria dos veces la misma diferencia.
+   */
+  | 'COUNT_SUPERSEDED'
 
 /** Forma exacta del cuerpo de error. Compartida con el cliente. */
 export interface ApiErrorBody {
