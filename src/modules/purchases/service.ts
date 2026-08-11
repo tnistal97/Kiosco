@@ -385,7 +385,19 @@ export async function obtenerOrden(session: Session, id: number) {
           unitsPerPurchaseUnit: true,
           unitCost: true,
           subtotal: true,
-          product: { select: { id: true, name: true, saleUnit: true } },
+          // La politica viaja al navegador porque la pantalla de recepcion la
+          // necesita para decidir si pide partidas. El servidor la vuelve a
+          // comprobar igual --la de aca es para no dejar escribir un remito
+          // entero y rechazarlo al final--.
+          product: {
+            select: {
+              id: true,
+              name: true,
+              saleUnit: true,
+              lotTracking: true,
+              expirationTracking: true,
+            },
+          },
         },
         orderBy: { id: 'asc' },
       },

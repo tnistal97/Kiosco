@@ -48,6 +48,22 @@ export interface RenglonRetornableDTO {
   /** Lo que hay hoy en el deposito, en unidad de venta. El otro tope. */
   stockActual: TextoCantidad
   unitCost: string
+  /**
+   * Las partidas CON LAS QUE LLEGO esta linea. Vacio sin rastreo. Fase 4D.
+   *
+   * Cada una con SU disponible: devolver de otra partida sacaria del deposito
+   * mercaderia que el proveedor nunca mando.
+   */
+  lotes: RenglonDeLoteDTO[]
+}
+
+export interface RenglonDeLoteDTO {
+  lotId: number
+  code: string
+  expirationDate: string | null
+  recibido: TextoCantidad
+  devuelto: TextoCantidad
+  disponible: TextoCantidad
 }
 
 export interface RetornablesDTO {
@@ -80,6 +96,17 @@ export function parseRetornables(raw: unknown): RetornablesDTO {
         disponible: cantidadODefecto(l.disponible),
         stockActual: cantidadODefecto(l.stockActual),
         unitCost: texto(l.unitCost, '0.0000'),
+        lotes: lista(l.lotes ?? [], (p): RenglonDeLoteDTO => {
+          if (!esObjeto(p)) throw new Error('Partida inválida')
+          return {
+            lotId: numero(p.lotId),
+            code: texto(p.code, '—'),
+            expirationDate: textoOpcional(p.expirationDate),
+            recibido: cantidadODefecto(p.recibido),
+            devuelto: cantidadODefecto(p.devuelto),
+            disponible: cantidadODefecto(p.disponible),
+          }
+        }),
       }
     }),
   }

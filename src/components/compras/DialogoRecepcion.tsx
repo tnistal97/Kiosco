@@ -14,7 +14,7 @@ import {
 } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { usePermiso } from '@/components/shell/SessionProvider'
-import { cantidadDesdeTexto, compararCantidades } from '@/lib/cantidad'
+import { aMilesimas, cantidadDesdeTexto, compararCantidades } from '@/lib/cantidad'
 import { esPositivo, montoDesdeTexto, type Monto } from '@/lib/money'
 import { parseResumenDeCuenta } from '@/modules/suppliers/dto.cuenta'
 import { descripcionDeConversion } from '@/modules/purchases/conversion'
@@ -37,9 +37,33 @@ import type { DetalleOrdenDTO, LineaDTO } from '@/modules/purchases/dto'
  * Ver docs/PURCHASE_RECEIVING.md.
  */
 
+interface PartidaEscrita {
+  code: string
+  quantity: string
+  expirationDate: string
+}
+
 interface EntradaLinea {
   cantidad: string
   costo: string
+  /**
+   * Las partidas declaradas para esta línea, EN UNIDAD DE COMPRA.
+   *
+   * Vacío significa "sin partidas", que es lo normal en un producto `NONE` y es
+   * una elección explícita en uno `OPTIONAL`. En un `REQUIRED` no puede quedar
+   * vacío ni sumar distinto de lo recibido.
+   */
+  partidas: PartidaEscrita[]
+}
+
+const SIN_PARTIDAS: EntradaLinea = { cantidad: '', costo: '', partidas: [] }
+
+/** Cuánto suman las partidas escritas, en milésimas para comparar sin punto flotante. */
+function sumaDePartidas(partidas: PartidaEscrita[]): number {
+  return partidas.reduce(
+    (s, p) => s + aMilesimas(cantidadDesdeTexto(p.quantity === '' ? '0' : p.quantity) ?? '0.000'),
+    0,
+  )
 }
 
 export function DialogoRecepcion({
@@ -88,6 +112,13 @@ export function DialogoRecepcion({
         // Lo pendiente entero: es lo que pasa la mayoria de las veces.
         cantidad: i.pendingQuantity,
         costo: i.unitCost ?? '',
+        // Un producto que EXIGE partidas arranca con una fila puesta: sin ella
+        // la pantalla mostraría "faltan partidas" y un botón para agregarlas,
+        // que es un paso de más para el caso normal --una entrega, una partida--.
+        partidas:
+          i.product.lotTracking === 'REQUIRED'
+            ? [{ code: '', quantity: i.pendingQuantity, expirationDate: '' }]
+            : [],
       }
     }
     setEntradas(inicial)
@@ -118,28 +149,79 @@ export function DialogoRecepcion({
   }, [abierto, orden, puedeVerCuenta])
 
   function set(id: number, cambio: Partial<EntradaLinea>) {
-    setEntradas((e) => ({ ...e, [id]: { ...(e[id] ?? { cantidad: '', costo: '' }), ...cambio } }))
+    setEntradas((e) => ({ ...e, [id]: { ...(e[id] ?? SIN_PARTIDAS), ...cambio } }))
+  }
+
+  function setPartida(id: number, i: number, cambio: Partial<PartidaEscrita>) {
+    setEntradas((e) => {
+      const actual = e[id] ?? SIN_PARTIDAS
+      return {
+        ...e,
+        [id]: {
+          ...actual,
+          partidas: actual.partidas.map((p, j) => (j === i ? { ...p, ...cambio } : p)),
+        },
+      }
+    })
   }
 
   /** Que pasa con una linea segun lo que se escribio. */
   function estado(linea: LineaDTO) {
-    const entrada = entradas[linea.id] ?? { cantidad: '', costo: '' }
+    const entrada = entradas[linea.id] ?? SIN_PARTIDAS
     const cantidad = cantidadDesdeTexto(entrada.cantidad)
     const costo = montoDesdeTexto(entrada.costo)
+    const partidas = entrada.partidas
+
+    // Las partidas, contra lo que se está recibiendo AHORA. La suma tiene que
+    // cerrar exacta: una línea a medias asignar deja mercadería en el depósito
+    // que el sistema no sabe de qué partida es.
+    const asignado = sumaDePartidas(partidas)
+    const recibiendo = cantidad === null ? 0 : aMilesimas(cantidad)
+    const exigePartidas = linea.product.lotTracking === 'REQUIRED'
+    const exigeFecha = linea.product.expirationTracking === 'REQUIRED'
+    const partidasIncompletas = partidas.some(
+      (p) =>
+        p.code.trim() === '' || p.quantity.trim() === '' || (exigeFecha && p.expirationDate === ''),
+    )
+    const codigosRepetidos =
+      new Set(partidas.map((p) => p.code.trim().toUpperCase()).filter((c) => c !== '')).size <
+      partidas.filter((p) => p.code.trim() !== '').length
+    const partidasMalSumadas = partidas.length > 0 && asignado !== recibiendo
+    const faltanPartidas = exigePartidas && partidas.length === 0
 
     if (entrada.cantidad.trim() === '') {
-      return { cantidad: null, costo, excede: false, vacia: true }
-    }
-    if (cantidad === null) {
-      return { cantidad: null, costo, excede: false, vacia: false }
+      return {
+        cantidad: null,
+        costo,
+        excede: false,
+        vacia: true,
+        partidas,
+        asignado,
+        recibiendo,
+        exigePartidas,
+        exigeFecha,
+        partidasIncompletas,
+        codigosRepetidos,
+        partidasMalSumadas: false,
+        faltanPartidas: false,
+      }
     }
     return {
       cantidad,
       costo,
       // Se avisa ACA, no despues del 409: quien recibe tiene el camion en la
       // puerta y necesita saber el numero que si entra.
-      excede: compararCantidades(cantidad, linea.pendingQuantity) > 0,
+      excede: cantidad !== null && compararCantidades(cantidad, linea.pendingQuantity) > 0,
       vacia: false,
+      partidas,
+      asignado,
+      recibiendo,
+      exigePartidas,
+      exigeFecha,
+      partidasIncompletas,
+      codigosRepetidos,
+      partidasMalSumadas,
+      faltanPartidas,
     }
   }
 
@@ -147,7 +229,12 @@ export function DialogoRecepcion({
   const aRecibir = evaluadas.filter((e) => e.cantidad !== null && !e.excede)
   const hayExcesos = evaluadas.some((e) => e.excede)
   const hayInvalidas = evaluadas.some((e) => !e.vacia && e.cantidad === null)
-  const valido = aRecibir.length > 0 && !hayExcesos && !hayInvalidas
+  const hayPartidasMal = evaluadas.some(
+    (e) =>
+      !e.vacia &&
+      (e.faltanPartidas || e.partidasMalSumadas || e.partidasIncompletas || e.codigosRepetidos),
+  )
+  const valido = aRecibir.length > 0 && !hayExcesos && !hayInvalidas && !hayPartidasMal
 
   async function confirmar() {
     if (!orden || enviando || !valido) return
@@ -167,6 +254,18 @@ export function DialogoRecepcion({
             // quien no cambió nada.
             ...(puedeCambiarCosto && e.costo !== null && e.costo !== e.linea.unitCost
               ? { unitCost: e.costo }
+              : {}),
+            // Las partidas viajan sólo si hay: `lots: []` no es lo mismo que
+            // no mandar el campo, y el servidor distingue "sin partidas" de
+            // "partidas vacías".
+            ...(e.partidas.length > 0
+              ? {
+                  lots: e.partidas.map((p) => ({
+                    code: p.code.trim(),
+                    quantity: p.quantity,
+                    ...(p.expirationDate === '' ? {} : { expirationDate: p.expirationDate }),
+                  })),
+                }
               : {}),
           })),
         },
@@ -282,6 +381,153 @@ export function DialogoRecepcion({
                   </Field>
                 )}
               </div>
+
+              {/*
+                Las partidas de la línea. Fase 4D.
+
+                Se declaran POR CÓDIGO y no eligiendo de una lista, y no es un
+                descuido: la mercadería que está llegando trae partidas que el
+                sistema no vio nunca. El operario lee el código del envase.
+                Obligarlo a darlas de alta antes en otra pantalla es el camino
+                seguro a que nadie use la función.
+
+                En un producto `NONE` este bloque no existe. En uno `OPTIONAL`
+                aparece con "Sin partida" ya elegido, y agregar partidas es una
+                decisión explícita.
+              */}
+              {e.linea.product.lotTracking !== 'NONE' && !e.vacia && (
+                <div className="flex flex-col gap-2 rounded-md border border-line-strong bg-raised p-2.5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
+                      Partidas
+                    </span>
+                    <span className="text-xs text-ink-faint" data-numeric="">
+                      Asignado {(e.asignado / 1000).toFixed(3)} · Pendiente{' '}
+                      <strong
+                        className={
+                          e.recibiendo - e.asignado === 0 ? 'text-success' : 'text-warning'
+                        }
+                      >
+                        {((e.recibiendo - e.asignado) / 1000).toFixed(3)}
+                      </strong>{' '}
+                      {NOMBRE_DE_UNIDAD_DE_COMPRA[e.linea.purchaseUnit].toLowerCase()}
+                    </span>
+                  </div>
+
+                  {e.partidas.length === 0 && (
+                    <p className="text-xs text-ink-faint">
+                      Sin partida. Esta entrega entra al stock sin identificar de qué lote es.
+                    </p>
+                  )}
+
+                  {e.partidas.map((p, i) => (
+                    <div
+                      // La posición ES la identidad: las filas se agregan y se
+                      // quitan por índice y no tienen ninguna clave propia.
+                      // eslint-disable-next-line react/no-array-index-key
+                      key={i}
+                      className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_7rem_9rem_auto]"
+                    >
+                      <Field label={`Código de la partida ${String(i + 1)}`} labelHidden>
+                        <Input
+                          value={p.code}
+                          placeholder="Código del lote"
+                          className="font-mono"
+                          disabled={enviando}
+                          onChange={(ev) => {
+                            setPartida(e.linea.id, i, { code: ev.target.value })
+                          }}
+                        />
+                      </Field>
+                      <Field label={`Cantidad de la partida ${String(i + 1)}`} labelHidden>
+                        <Input
+                          inputMode="decimal"
+                          value={p.quantity}
+                          placeholder={NOMBRE_DE_UNIDAD_DE_COMPRA[e.linea.purchaseUnit]}
+                          disabled={enviando}
+                          onChange={(ev) => {
+                            setPartida(e.linea.id, i, {
+                              quantity: ev.target.value.replace(/[^0-9.,]/g, ''),
+                            })
+                          }}
+                        />
+                      </Field>
+                      <Field label={`Vencimiento de la partida ${String(i + 1)}`} labelHidden>
+                        <Input
+                          type="date"
+                          value={p.expirationDate}
+                          disabled={enviando || e.linea.product.expirationTracking === 'NONE'}
+                          onChange={(ev) => {
+                            setPartida(e.linea.id, i, { expirationDate: ev.target.value })
+                          }}
+                        />
+                      </Field>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={enviando}
+                        onClick={() => {
+                          set(e.linea.id, {
+                            partidas: e.partidas.filter((_, j) => j !== i),
+                          })
+                        }}
+                      >
+                        Quitar
+                      </Button>
+                    </div>
+                  ))}
+
+                  <div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={enviando || e.partidas.length >= 20}
+                      onClick={() => {
+                        set(e.linea.id, {
+                          partidas: [
+                            ...e.partidas,
+                            {
+                              code: '',
+                              // La primera propone todo lo que se recibe; las
+                              // siguientes, lo que falta.
+                              quantity:
+                                e.partidas.length === 0
+                                  ? (entradas[e.linea.id]?.cantidad ?? '')
+                                  : ((e.recibiendo - e.asignado) / 1000).toFixed(3),
+                              expirationDate: '',
+                            },
+                          ],
+                        })
+                      }}
+                    >
+                      Agregar partida
+                    </Button>
+                  </div>
+
+                  {e.faltanPartidas && (
+                    <p role="alert" className="text-xs font-medium text-danger">
+                      Este producto exige partidas: no se puede recibir sin decir de cuál es.
+                    </p>
+                  )}
+                  {e.partidasMalSumadas && (
+                    <p role="alert" className="text-xs font-medium text-danger">
+                      Las partidas tienen que sumar exactamente lo que se recibe.
+                    </p>
+                  )}
+                  {e.partidasIncompletas && (
+                    <p role="alert" className="text-xs font-medium text-danger">
+                      {e.exigeFecha
+                        ? 'Cada partida necesita código, cantidad y vencimiento.'
+                        : 'Cada partida necesita código y cantidad.'}
+                    </p>
+                  )}
+                  {e.codigosRepetidos && (
+                    <p role="alert" className="text-xs font-medium text-danger">
+                      Hay dos partidas con el mismo código: sumalas en una sola línea.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           ))}
 

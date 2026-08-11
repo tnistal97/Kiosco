@@ -17,6 +17,12 @@ import {
   type UnidadDeCompra,
   type UnidadDeVenta,
 } from '@/modules/products/units'
+import {
+  politicaDeLoteODefecto,
+  politicaDeVencimientoODefecto,
+  type PoliticaDeLote,
+  type PoliticaDeVencimiento,
+} from '@/modules/lots/politicas'
 import { esEstadoDeCompra, etiquetaDeEstado, type EstadoDeCompra } from './status'
 import type { Pagination } from '@/server/http/pagination'
 
@@ -96,7 +102,14 @@ export function parsePaginaOrdenes(raw: unknown): PaginaOrdenes {
 
 export interface LineaDTO {
   id: number
-  product: { id: number; name: string; saleUnit: UnidadDeVenta }
+  product: {
+    id: number
+    name: string
+    saleUnit: UnidadDeVenta
+    /** Fase 4D: decide si la recepción tiene que pedir partidas. */
+    lotTracking: PoliticaDeLote
+    expirationTracking: PoliticaDeVencimiento
+  }
   purchaseUnit: UnidadDeCompra
   unitsPerPurchaseUnit: TextoCantidad
   orderedQuantity: TextoCantidad
@@ -116,6 +129,12 @@ function parseLinea(raw: unknown): LineaDTO {
       id: numero(prod.id),
       name: texto(prod.name),
       saleUnit: unidadDeVentaODefecto(prod.saleUnit),
+      lotTracking: politicaDeLoteODefecto(
+        typeof prod.lotTracking === 'string' ? prod.lotTracking : null,
+      ),
+      expirationTracking: politicaDeVencimientoODefecto(
+        typeof prod.expirationTracking === 'string' ? prod.expirationTracking : null,
+      ),
     },
     purchaseUnit: unidadDeCompraODefecto(raw.purchaseUnit),
     unitsPerPurchaseUnit: cantidadODefecto(raw.unitsPerPurchaseUnit, '1.000'),

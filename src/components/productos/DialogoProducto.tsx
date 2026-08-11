@@ -32,6 +32,7 @@ import {
 } from '@/modules/products/units'
 import { ActividadReciente } from './ActividadReciente'
 import { CodigosDeBarras } from './CodigosDeBarras'
+import { Trazabilidad } from './Trazabilidad'
 
 /**
  * Alta y edicion de un producto.
@@ -534,6 +535,22 @@ export function DialogoProducto({
             />
           </div>
         </Seccion>
+
+        {/*
+          Trazabilidad SOLO al editar, y con su propio botón.
+
+          No al dar de alta porque un producto que todavía no existe no tiene
+          stock que repartir ni id al que colgarle partidas. Y con botón propio
+          porque cambiar la política NO es un campo más del formulario: activar
+          lotes obligatorios sobre un producto con stock exige antes decir de
+          qué partida es cada unidad, y eso es una operación con su motivo y su
+          fila en el libro de atribuciones.
+        */}
+        {!esAlta && (
+          <Seccion titulo="Trazabilidad">
+            <Trazabilidad productId={producto.id} deshabilitado={enviando} />
+          </Seccion>
+        )}
 
         {!esAlta && <ActividadReciente productId={producto.id} abierto={abierto} />}
       </div>

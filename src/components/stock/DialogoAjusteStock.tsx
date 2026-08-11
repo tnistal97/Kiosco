@@ -18,6 +18,11 @@ import {
   formatearCantidadConUnidad,
   politicaDe,
 } from '@/modules/products/units'
+import {
+  etiquetaDeVencimiento,
+  type EstadoDeVencimiento,
+  type PoliticaDeLote,
+} from '@/modules/lots/politicas'
 
 /**
  * Ajuste de inventario.
@@ -68,6 +73,19 @@ function restaUnidades(tipo: TipoDeAjuste): boolean {
   return SIGNO_DE_TIPO[tipo] === 'sale'
 }
 
+/** Lo que devuelve `GET /api/productos/:id/lotes`, en lo que este diálogo usa. */
+interface DesglosePorLote {
+  lotTracking: PoliticaDeLote
+  sinAsignar: string
+  lotes: Array<{
+    id: number
+    code: string
+    quantity: string
+    expirationDate: string | null
+    estado: EstadoDeVencimiento
+  }>
+}
+
 export function DialogoAjusteStock({
   producto,
   onCerrar,
@@ -83,6 +101,16 @@ export function DialogoAjusteStock({
   const [motivo, setMotivo] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * Las partidas del producto. Fase 4D.
+   *
+   * Se piden al abrir y no antes: la mayoría de los productos no lleva lotes, y
+   * una consulta por cada fila de la pantalla de stock sería pagar por el caso
+   * raro. Si falla, el bloque no aparece y el ajuste sigue funcionando como
+   * antes --el servidor rechaza igual un `REQUIRED` sin partida--.
+   */
+  const [partidas, setPartidas] = useState<DesglosePorLote | null>(null)
+  const [lote, setLote] = useState('')
 
   useEffect(() => {
     if (!producto) return
@@ -92,6 +120,20 @@ export function DialogoAjusteStock({
     setMotivo('')
     setError(null)
     setEnviando(false)
+    setPartidas(null)
+    setLote('')
+
+    let vivo = true
+    void apiRequest(`/api/productos/${String(producto.id)}/lotes`, {
+      parse: (raw) => raw as DesglosePorLote,
+    })
+      .then((d) => {
+        if (vivo) setPartidas(d)
+      })
+      .catch(() => undefined)
+    return () => {
+      vivo = false
+    }
   }, [producto])
 
   const unidad = producto?.saleUnit ?? 'UNIT'
@@ -130,7 +172,17 @@ export function DialogoAjusteStock({
   // aplica el servidor, con la misma tabla: `1.235` en un producto por unidad
   // no llega a viajar.
   const enPaso = !numeroValido || n % aMilesimas(politica.paso) === 0
-  const valido = cambia && alcanza && enPaso && motivo.trim().length >= 3
+
+  // La partida. Fase 4D.
+  //
+  // Sólo en modo delta: el recuento (PUT) no lleva lote a propósito --contar
+  // por partida es un inventario físico, que es otra pantalla con sus estados,
+  // su conteo a ciegas y su revisión--.
+  const pideLote = modo === 'delta' && (partidas?.lotTracking ?? 'NONE') !== 'NONE'
+  const exigeLote = modo === 'delta' && partidas?.lotTracking === 'REQUIRED'
+  const falta = exigeLote && lote === ''
+
+  const valido = cambia && alcanza && enPaso && !falta && motivo.trim().length >= 3
 
   async function guardar() {
     if (!producto || enviando || !valido) return
@@ -140,7 +192,15 @@ export function DialogoAjusteStock({
       // Las cantidades viajan como cadena decimal, igual que los importes.
       const cuerpo =
         modo === 'delta'
-          ? { delta: desdeMilesimas(delta), type: tipo, reason: motivo.trim() }
+          ? {
+              delta: desdeMilesimas(delta),
+              type: tipo,
+              reason: motivo.trim(),
+              // Sin partida elegida el campo no viaja: `lotId: null` no es lo
+              // mismo que no mandarlo, y en un producto OPTIONAL "sin partida"
+              // significa que sale del stock no atribuido.
+              ...(lote === '' ? {} : { lotId: Number(lote) }),
+            }
           : { quantity: desdeMilesimas(nuevoTotal), reason: motivo.trim() }
 
       await apiRequest(`/api/stock/${producto.id}`, {
@@ -222,6 +282,50 @@ export function DialogoAjusteStock({
                 {TIPOS_DE_AJUSTE.map((t) => (
                   <option key={t} value={t}>
                     {etiquetaDeTipo(t)} — {AYUDA_DE_AJUSTE[t]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+
+          {/*
+            La partida. Fase 4D.
+
+            "Se rompieron 2 yogures" tiene que decir de cuál: el que se rompió
+            ya no está y el que quedaba vence otro día. Por eso un producto
+            `REQUIRED` no deja guardar sin elegir.
+
+            NO se elige por FEFO en silencio. Una pérdida no es una venta:
+            adivinar de qué partida se rompió una botella sería inventar el
+            dato, y el número de lote quedaría escrito como si alguien lo
+            hubiera leído.
+          */}
+          {pideLote && partidas && (
+            <Field
+              label="De qué partida"
+              required={exigeLote}
+              error={falta ? 'Este producto exige decir de qué partida sale.' : null}
+              hint={
+                exigeLote
+                  ? undefined
+                  : `Sin elegir, sale del stock sin asignar (${partidas.sinAsignar} ${politica.simbolo}).`
+              }
+            >
+              <Select
+                value={lote}
+                disabled={enviando}
+                onChange={(e) => {
+                  setLote(e.target.value)
+                }}
+              >
+                <option value="">
+                  {exigeLote ? 'Elegí una partida…' : 'Sin partida (stock sin asignar)'}
+                </option>
+                {partidas.lotes.map((l) => (
+                  <option key={l.id} value={String(l.id)}>
+                    {l.code} — {l.quantity} {politica.simbolo}
+                    {l.expirationDate === null ? '' : ` · vence ${l.expirationDate}`} (
+                    {etiquetaDeVencimiento(l.estado)})
                   </option>
                 ))}
               </Select>

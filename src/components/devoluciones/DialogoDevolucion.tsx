@@ -69,7 +69,15 @@ export function DialogoDevolucion({
   const router = useRouter()
 
   const [datos, setDatos] = useState<RetornablesDTO | null>(null)
-  const [cantidades, setCantidades] = useState<Record<number, string>>({})
+  /**
+   * Lo que se devuelve, por RENGLÓN Y PARTIDA. Fase 4D.
+   *
+   * La clave es `"receiptItemId:lotId"` --con `0` para "sin partida"-- y no el
+   * renglón solo: una misma línea de recepción pudo llegar en dos partidas, y
+   * cada una se devuelve por separado. Es la misma clave que usa el servidor
+   * para comprobar que no se repita un par.
+   */
+  const [cantidades, setCantidades] = useState<Record<string, string>>({})
   const [motivo, setMotivo] = useState<MotivoDeDevolucion>('DAMAGED')
   const [nota, setNota] = useState('')
   const [cargando, setCargando] = useState(false)
@@ -103,8 +111,32 @@ export function DialogoDevolucion({
 
   const lineas = datos?.lineas ?? []
 
-  const elegidas = lineas
-    .map((l) => ({ linea: l, cantidad: (cantidades[l.receiptItemId] ?? '').trim() }))
+  /**
+   * Cada casilla que se puede llenar: una por partida, o UNA sola sin partida.
+   *
+   * Una línea sin rastreo tiene exactamente una casilla, igual que antes de la
+   * Fase 4D. Una con dos partidas tiene dos, con sus propios topes: devolver de
+   * otra partida sacaría mercadería que el proveedor nunca mandó.
+   */
+  const casillas = lineas.flatMap((l) =>
+    l.lotes.length === 0
+      ? [{ linea: l, lotId: 0, code: null as string | null, disponible: l.disponible }]
+      : l.lotes.map((p) => ({
+          linea: l,
+          lotId: p.lotId,
+          code: p.code,
+          disponible: p.disponible,
+        })),
+  )
+
+  const clave = (receiptItemId: number, lotId: number) =>
+    `${String(receiptItemId)}:${String(lotId)}`
+
+  const elegidas = casillas
+    .map((c) => ({
+      ...c,
+      cantidad: (cantidades[clave(c.linea.receiptItemId, c.lotId)] ?? '').trim(),
+    }))
     .filter((x) => x.cantidad !== '' && Number(x.cantidad) > 0)
 
   const credito = elegidas.reduce(
@@ -121,21 +153,23 @@ export function DialogoDevolucion({
    * ya se sabe que no entra.
    */
   const problema = elegidas
-    .map(({ linea, cantidad }) => {
+    .map(({ linea, cantidad, code, disponible }) => {
+      const de = code === null ? `"${linea.productName}"` : `"${linea.productName}" (${code})`
       const n = Number(cantidad)
-      if (!Number.isFinite(n)) return `"${linea.productName}": esa cantidad no es un número.`
-      if (n > Number(linea.disponible)) {
+      if (!Number.isFinite(n)) return `${de}: esa cantidad no es un número.`
+      if (n > Number(disponible)) {
         return (
-          `De "${linea.productName}" quedan ${limpia(linea.disponible)} sin devolver de ` +
-          `${limpia(linea.recibido)} recibidas.`
+          `De ${de} quedan ${limpia(disponible)} sin devolver de ` +
+          `${limpia(code === null ? linea.recibido : (linea.lotes.find((p) => p.code === code)?.recibido ?? linea.recibido))} recibidas.`
         )
       }
       // El otro tope: lo que hay HOY. En unidad de venta, que es como se guarda
-      // el stock, convertido con el factor de esta entrega.
+      // el stock, convertido con el factor de esta entrega. Se mira POR LÍNEA:
+      // el stock del producto es uno solo aunque haya varias partidas.
       const sale = n * Number(linea.unitsPerPurchaseUnit)
       if (sale > Number(linea.stockActual)) {
         return (
-          `De "${linea.productName}" quedan ${limpia(linea.stockActual)} en el depósito y esta ` +
+          `De ${de} quedan ${limpia(linea.stockActual)} en el depósito y esta ` +
           `devolución saca ${limpia(String(sale))}.`
         )
       }
@@ -164,6 +198,8 @@ export function DialogoDevolucion({
           items: elegidas.map((x) => ({
             receiptItemId: x.linea.receiptItemId,
             quantity: x.cantidad,
+            // `lotId: 0` es la casilla "sin partida": no viaja.
+            ...(x.lotId === 0 ? {} : { lotId: x.lotId }),
           })),
         },
         parse: (raw) => {
@@ -223,7 +259,7 @@ export function DialogoDevolucion({
           <div className="flex flex-col gap-3">
             {lineas.map((l) => {
               const unidad = unidadDeCompraODefecto(l.purchaseUnit)
-              const cantidad = cantidades[l.receiptItemId] ?? ''
+              const cantidad = cantidades[clave(l.receiptItemId, 0)] ?? ''
               const sinNada = Number(l.disponible) <= 0
               return (
                 <div
@@ -266,36 +302,104 @@ export function DialogoDevolucion({
                     </div>
                   </dl>
 
-                  <div className="mt-3 flex flex-wrap items-end gap-3">
-                    <Field label="Devolver ahora" className="w-32">
-                      <Input
-                        value={cantidad}
-                        inputMode="decimal"
-                        disabled={enviando || sinNada}
-                        aria-label={`Cantidad a devolver de ${l.productName}`}
-                        onChange={(e) => {
-                          setCantidades((prev) => ({
-                            ...prev,
-                            [l.receiptItemId]: e.target.value,
-                          }))
-                        }}
-                      />
-                    </Field>
+                  {/*
+                    Sin partidas: una sola casilla, como antes de la Fase 4D.
 
-                    <div className="text-sm">
-                      <div className="text-xs text-ink-faint">Costo original</div>
-                      <div className="text-ink" data-numeric="">
-                        <Money amount={Number(l.unitCost).toFixed(2)} />
+                    Con partidas: una por cada una, con SU disponible. Devolver
+                    de otra partida sacaría del depósito mercadería que el
+                    proveedor nunca mandó, y el costo histórico dejaría de
+                    corresponder con lo que se devuelve.
+                  */}
+                  {l.lotes.length === 0 ? (
+                    <div className="mt-3 flex flex-wrap items-end gap-3">
+                      <Field label="Devolver ahora" className="w-32">
+                        <Input
+                          value={cantidad}
+                          inputMode="decimal"
+                          disabled={enviando || sinNada}
+                          aria-label={`Cantidad a devolver de ${l.productName}`}
+                          onChange={(e) => {
+                            setCantidades((prev) => ({
+                              ...prev,
+                              [clave(l.receiptItemId, 0)]: e.target.value,
+                            }))
+                          }}
+                        />
+                      </Field>
+
+                      <div className="text-sm">
+                        <div className="text-xs text-ink-faint">Costo original</div>
+                        <div className="text-ink" data-numeric="">
+                          <Money amount={Number(l.unitCost).toFixed(2)} />
+                        </div>
+                      </div>
+
+                      <div className="text-sm">
+                        <div className="text-xs text-ink-faint">Crédito</div>
+                        <div className="font-medium text-ink" data-numeric="">
+                          <Money amount={creditoDe(l, cantidad)} />
+                        </div>
                       </div>
                     </div>
+                  ) : (
+                    <ul className="mt-3 flex flex-col gap-2">
+                      {l.lotes.map((p) => {
+                        const escrito = cantidades[clave(l.receiptItemId, p.lotId)] ?? ''
+                        const agotada = Number(p.disponible) <= 0
+                        return (
+                          <li
+                            key={p.lotId}
+                            className="flex flex-wrap items-end gap-3 rounded-md border border-line bg-sunken p-2.5"
+                            data-testid="renglon-partida"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-baseline gap-2">
+                                <span className="font-mono text-sm text-ink">{p.code}</span>
+                                {p.expirationDate !== null && (
+                                  <span className="text-xs text-ink-faint">
+                                    vence {p.expirationDate}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-ink-faint" data-numeric="">
+                                Recibido {limpia(p.recibido)} · Devuelto {limpia(p.devuelto)} ·{' '}
+                                <strong className="text-ink-muted">
+                                  Disponible {limpia(p.disponible)}
+                                </strong>
+                              </div>
+                            </div>
 
-                    <div className="text-sm">
-                      <div className="text-xs text-ink-faint">Crédito</div>
-                      <div className="font-medium text-ink" data-numeric="">
-                        <Money amount={creditoDe(l, cantidad)} />
-                      </div>
-                    </div>
-                  </div>
+                            <Field label={`Devolver de ${p.code}`} labelHidden className="w-28">
+                              <Input
+                                value={escrito}
+                                inputMode="decimal"
+                                disabled={enviando || agotada}
+                                aria-label={`Cantidad a devolver de ${l.productName}, partida ${p.code}`}
+                                onChange={(e) => {
+                                  setCantidades((prev) => ({
+                                    ...prev,
+                                    [clave(l.receiptItemId, p.lotId)]: e.target.value,
+                                  }))
+                                }}
+                              />
+                            </Field>
+
+                            <div className="text-sm">
+                              <div className="text-xs text-ink-faint">Crédito</div>
+                              <div className="font-medium text-ink" data-numeric="">
+                                <Money amount={creditoDe(l, escrito)} />
+                              </div>
+                            </div>
+                          </li>
+                        )
+                      })}
+                      <li className="text-xs text-ink-faint">
+                        Costo original <Money amount={Number(l.unitCost).toFixed(2)} /> por{' '}
+                        {NOMBRE_DE_UNIDAD_DE_COMPRA[unidad].toLowerCase()}. No cambia: se devuelve
+                        al costo con el que entró.
+                      </li>
+                    </ul>
+                  )}
 
                   {sinNada && (
                     <p className="mt-2 text-xs text-ink-muted">
