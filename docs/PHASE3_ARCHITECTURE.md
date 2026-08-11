@@ -46,6 +46,16 @@ y ninguno se puede saltear:
 | `handler`                | Toda ruta declara su permiso                     | `tests/authorization/permissions-matrix.test.ts` |
 | `audit`                  | La bitácora tiene una sola forma                 | Convención + pruebas                             |
 | `rangoDeSucursal`        | Todo filtro por fecha usa la zona del local      | [TIMEZONE_POLICY.md](TIMEZONE_POLICY.md)         |
+| `applyAccountMovement`   | Nadie más escribe `Client.balance`               | Regla de ESLint (Fase 4A)                        |
+
+> **Sexta puerta, Fase 4A.** El saldo de un cliente sigue la misma regla que el
+> stock: no se escribe, se mueve. Ver
+> [CUSTOMER_ACCOUNT_LEDGER.md](CUSTOMER_ACCOUNT_LEDGER.md).
+>
+> Y `rangoDeSucursal` resultó tener una segunda mitad que la Fase 3D no cubrió:
+> calcular bien el rango no alcanza si la comparación en SQL lo convierte con la
+> zona de la sesión. Ver la corrección al principio de
+> [TIMEZONE_POLICY.md](TIMEZONE_POLICY.md).
 
 ## Lo que la base garantiza por sí sola
 
@@ -62,6 +72,20 @@ valiendo aunque alguien escriba con `psql`:
   (índices únicos parciales).
 - Una sucursal tiene **un** turno abierto (índice único parcial).
 - El número de orden sale de una **secuencia**, no de `count() + 1`.
+
+Desde la Fase 4A, además:
+
+- El libro de cuenta corriente y los cobros **no se editan ni se borran**
+  (disparadores).
+- `previousBalance + amount = resultingBalance` (`CHECK`).
+- Un pago no puede aumentar la deuda, ni un cargo bajarla (`CHECK` de tipo y
+  signo).
+- Un ajuste manual **sin motivo** no se puede escribir (`CHECK`).
+- Cada tipo de movimiento apunta a lo que le corresponde y a nada más: una
+  venta, un cobro, o ninguno de los dos (`CHECK`).
+- `ACCOUNT` es válido en `SalePayment` y **rechazado** en `CashRegisterMovement`
+  y en `CustomerPayment` (`CHECK`).
+- El número de comprobante sale de una **secuencia**.
 
 ## Cómo se comprueba que todo eso es cierto
 

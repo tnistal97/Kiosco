@@ -133,6 +133,18 @@ async function huella(url: string): Promise<string> {
       UNION ALL
       SELECT 'PurchaseReceiptItem', count(*)::text, COALESCE(sum("stockQuantity"), 0)::text
         FROM "PurchaseReceiptItem"
+      UNION ALL
+      -- La cuenta corriente entra en la huella desde la Fase 4A. Sin estas
+      -- tres, un respaldo que perdiera el libro de clientes se restauraria y
+      -- la comparacion diria que todo esta bien: la deuda de cada persona
+      -- habria desaparecido sin que nada avisara.
+      SELECT 'Client', count(*)::text, COALESCE(sum("balance"), 0)::text FROM "Client"
+      UNION ALL
+      SELECT 'CustomerAccountMovement', count(*)::text, COALESCE(sum("amount"), 0)::text
+        FROM "CustomerAccountMovement"
+      UNION ALL
+      SELECT 'CustomerPayment', count(*)::text, COALESCE(sum("amount"), 0)::text
+        FROM "CustomerPayment"
       ORDER BY 1
     `)
     return rows.map((r) => `${r.tabla}: ${r.filas} filas, suma ${r.suma}`).join('\n')

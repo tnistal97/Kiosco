@@ -34,6 +34,38 @@ async function analizar(page: Page) {
 }
 
 /**
+ * Espera a que un dialogo termine de aparecer, no solo a que exista.
+ *
+ * SIN ESTO, LAS PRUEBAS DE DIALOGO SON INTERMITENTES. Los dialogos entran con
+ * una transicion de opacidad, y axe mide el contraste CON LA OPACIDAD QUE HAY
+ * en ese instante: a mitad de camino, TODOS los elementos del dialogo fallan y
+ * el informe trae quince faltas que no existen.
+ *
+ * Esperar a que aparezca un titulo no alcanza --el titulo ya esta en el DOM
+ * cuando la transicion arranca-- y esperar un tiempo fijo cambia una prueba
+ * intermitente por otra. Lo que se espera es la condicion de verdad: que la
+ * opacidad de todos los contenedores del dialogo haya llegado a 1.
+ *
+ * Lo encontro la Fase 4A: la prueba del alta de proveedor, de la Fase 3C,
+ * fallo una vez de cada cuatro corridas con diecisiete faltas de contraste.
+ */
+async function esperarDialogoEstable(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const dialogo = document.querySelector('[role="dialog"]')
+    if (!dialogo) return false
+
+    // La opacidad puede estar en el propio dialogo o en cualquiera de sus
+    // envoltorios --Headless UI la aplica en el panel, no en la raiz-- asi que
+    // se comprueban todos.
+    const candidatos = [dialogo, ...Array.from(dialogo.querySelectorAll('*'))]
+    return candidatos.every((el) => {
+      const opacidad = Number(getComputedStyle(el).opacity)
+      return Number.isNaN(opacidad) || opacidad === 1
+    })
+  })
+}
+
+/**
  * Formatea las faltas para que el fallo diga QUE arreglar y DONDE.
  *
  * El objeto crudo de axe es enorme y en la consola se corta. Esto deja una
@@ -89,6 +121,7 @@ test.describe('accesibilidad automatizada', () => {
     // un contenedor de tamanio cero --lo que se ve es el panel de adentro--.
     await expect(page.getByRole('dialog')).toBeAttached()
     await expect(page.getByRole('button', { name: /^cobrar/i }).last()).toBeVisible()
+    await esperarDialogoEstable(page)
 
     const { violations } = await analizar(page)
     expect(detalle(violations)).toBe('sin faltas')
@@ -152,6 +185,7 @@ test.describe('accesibilidad automatizada', () => {
     await page.getByRole('button', { name: 'Ajustar' }).first().click()
     const dialogo = page.getByRole('dialog')
     await expect(dialogo.getByLabel(/qué pasó/i)).toBeVisible()
+    await esperarDialogoEstable(page)
 
     const { violations } = await analizar(page)
     expect(detalle(violations)).toBe('sin faltas')
@@ -214,13 +248,9 @@ test.describe('accesibilidad automatizada', () => {
       .click()
     await page.getByRole('button', { name: 'Registrar pago' }).click()
 
-    // Se espera a que el CONTENIDO sea visible, no a que el dialogo este
-    // adjunto. Con `attached` a secas, axe corre durante la transicion de
-    // entrada: con la opacidad a medio camino, TODO el dialogo falla el
-    // contraste y el informe trae catorce faltas que no existen.
     const dialogo = page.getByRole('dialog')
     await expect(dialogo.getByRole('combobox', { name: 'Medio' })).toBeVisible()
-    await expect(dialogo.getByRole('button', { name: 'Registrar pago' })).toBeVisible()
+    await esperarDialogoEstable(page)
 
     const { violations } = await analizar(page)
     expect(detalle(violations)).toBe('sin faltas')
@@ -268,6 +298,7 @@ test.describe('accesibilidad automatizada', () => {
     await page.goto('/proveedores')
     await page.getByRole('button', { name: 'Nuevo proveedor' }).click()
     await page.getByRole('heading', { name: 'Nuevo proveedor' }).waitFor()
+    await esperarDialogoEstable(page)
 
     const { violations } = await analizar(page)
     expect(detalle(violations)).toBe('sin faltas')
