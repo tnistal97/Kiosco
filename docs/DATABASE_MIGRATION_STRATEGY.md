@@ -92,13 +92,13 @@ antes de borrar una columna en un servidor con datos.
 ### Columnas congeladas
 
 Una columna que dejó de usarse pero todavía no se borró está marcada
-`/// CONGELADA` en `schema.prisma`. Hoy son tres:
+`/// CONGELADA` en `schema.prisma`. Hoy queda una:
 
-| Columna              | Reemplazo                       | Muere en                      |
-| -------------------- | ------------------------------- | ----------------------------- |
-| `Product.supplierId` | `ProductSupplier`               | Fase 3D                       |
-| `Supplier.contact`   | `contactName`, `phone`, `email` | Fase 3D                       |
-| `Product.value`      | ninguno: nunca significó nada   | sin fecha; no molesta a nadie |
+| Columna                  | Reemplazo                       | Muere en                      |
+| ------------------------ | ------------------------------- | ----------------------------- |
+| ~~`Product.supplierId`~~ | `ProductSupplier`               | **borrada en la Fase 3D**     |
+| ~~`Supplier.contact`~~   | `contactName`, `phone`, `email` | **borrada en la Fase 3D**     |
+| `Product.value`          | ninguno: nunca significó nada   | sin fecha; no molesta a nadie |
 
 `tests/unit/columnas-muertas.test.ts` comprueba que no se escriban, y también
 que **toda columna marcada `CONGELADA` figure en esa prueba**: congelar una y
@@ -267,6 +267,41 @@ restaurar deja la base en un estado que nadie puede describir.
    columna nueva vacía que alguien va a completar después nunca se completa.
 6. **Probarla desde cero y sobre una copia con datos.** Las dos pruebas están
    automatizadas; agregar el caso nuevo a `tests/migrations/chain.test.ts`.
+7. **Append-only: una migración aplicada no se edita.** Cambiarla altera su
+   checksum y deja la base de cualquiera que ya la haya corrido en un estado
+   que Prisma no reconoce. Si hace falta corregir algo, va en una migración
+   nueva. La Fase 4A lo aprendió dos veces: el vínculo de la caja con el cobro
+   y la ampliación de los medios de pago tuvieron que salir aparte de las
+   migraciones que conceptualmente los contenían.
+8. **Una restricción que se borra se vuelve a poner en la misma migración.**
+   `DROP CONSTRAINT` no borra datos —por eso no está en la lista de
+   destructivas— pero puede borrar una **garantía**. Ampliar una lista blanca
+   se escribe necesariamente como `DROP` + `ADD` con el mismo nombre, y eso es
+   legítimo; un `DROP` suelto no lo es. Lo comprueba
+   `tests/migrations/chain.test.ts`, que exige el `ADD` correspondiente.
+
+### Las migraciones de la Fase 4A
+
+Seis, separadas por dominio y en el orden en que se pueden aplicar: cada una
+sólo referencia lo que las anteriores ya crearon.
+
+| Migración                     | Qué hace                                           |
+| ----------------------------- | -------------------------------------------------- |
+| `phase4_clients`              | La tabla `Client`                                  |
+| `phase4_sale_client`          | `Sale.clientId`, nullable                          |
+| `phase4_customer_payments`    | `CustomerPayment` y su secuencia                   |
+| `phase4_customer_accounts`    | El libro, sus cinco `CHECK` y los dos disparadores |
+| `phase4_cash_payment_link`    | `CashRegisterMovement.customerPaymentId`           |
+| `phase4_sale_payment_account` | Amplía los medios de `SalePayment` con `ACCOUNT`   |
+
+**Ninguna es destructiva.** Las cinco primeras son puramente aditivas; la sexta
+reemplaza una lista blanca por una más amplia, y ninguna fila existente puede
+dejar de cumplirla.
+
+**No hay una migración de permisos.** Los permisos viven en
+`src/server/authz/permissions.ts`, no en la base: no hay nada que migrar. El día
+que se muevan a tablas `Permission`/`RolePermission` —que es lo que anticipa ese
+archivo— esa sí será una migración.
 
 ## Qué comprueba la prueba automatizada
 

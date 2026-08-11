@@ -24,10 +24,29 @@
 > cubren los caminos que importan, no cada rama de cada DTO. Los cuatro
 > números siguen por encima de los umbrales, que son la alarma.
 
-### Las tres fronteras que ESLint hace cumplir
+### Fase 4A
+
+|                |                                                              |
+| -------------- | ------------------------------------------------------------ |
+| Pruebas        | **1.130** en vitest + **135** de extremo a extremo           |
+| axe            | **+ cuatro pantallas**: clientes, ficha, cobro y comprobante |
+| ESLint         | **+ una cuarta frontera**: el saldo de un cliente            |
+| Reconciliación | **trece** invariantes (nueve + cuatro de cuenta corriente)   |
+
+Y una prueba nueva que no mide alcance sino honestidad: `LA REGRESION: una venta
+de las 21:30 no desaparece de su dia`. La Fase 4A encontró que el error de las
+21:00 —que la 3C descubrió y la 3D dio por cerrado— **seguía vivo en el SQL
+crudo de los reportes**. Sobrevivió a una fase entera porque la suite crea sus
+ventas con `now()` y corría antes de las 21:00.
+
+La lección quedó escrita en el diseño de la prueba: **una prueba que depende del
+reloj no prueba nada tres cuartos del día.** La nueva fija la fecha de la venta
+a mano.
+
+### Las cuatro fronteras que ESLint hace cumplir
 
 No son reglas de estilo: son las invariantes que sostienen el sistema, y las
-tres se rompen sin que nada falle.
+cuatro se rompen sin que nada falle.
 
 | Frontera                               | Qué prohíbe                                                    | Único lugar autorizado             |
 | -------------------------------------- | -------------------------------------------------------------- | ---------------------------------- |

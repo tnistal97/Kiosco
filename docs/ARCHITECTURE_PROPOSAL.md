@@ -159,6 +159,30 @@ Un almacén de barrio fía. Pero la cuenta corriente completa (límites, vencimi
 
 Para la 2.ª etapa: límite de crédito, bloqueo por deuda, vencimientos, pagos parciales, historial, notas internas.
 
+### Estado tras la Fase 4A: hecho, y por encima de lo propuesto
+
+Se implementó todo menos los **vencimientos** y los **intereses**, que siguen
+fuera a propósito: un almacén de barrio no cobra intereses, y una deuda vencida
+sin política de qué hacer con ella es una columna que no decide nada.
+
+Lo que existe hoy:
+
+| Propuesto                                | Estado                                                          |
+| ---------------------------------------- | --------------------------------------------------------------- |
+| Cliente mínimo (nombre, teléfono, saldo) | Sí, y **sólo el nombre es obligatorio**                         |
+| Venta fiada que suma al saldo            | Sí, y también **parcial**: efectivo + cuenta en el mismo ticket |
+| Límite de crédito                        | Sí, comprobado **dentro de la transacción**                     |
+| Bloqueo por deuda                        | Sí, como `isCreditEnabled`, separado de la baja                 |
+| Pagos parciales                          | Sí, con comprobante numerado y reimprimible                     |
+| Historial                                | Sí, y **inmutable**: un libro, no una columna                   |
+| Notas internas                           | Sí                                                              |
+| Vencimientos, intereses                  | **No.** Fuera de alcance                                        |
+
+Y una decisión que la propuesta no anticipaba: **el saldo no es un número
+editable**. Es el saldo materializado de `CustomerAccountMovement`, con las
+mismas tres garantías que el libro de inventario y dos disparadores que impiden
+editar lo escrito. Ver [`CUSTOMER_ACCOUNT_LEDGER.md`](CUSTOMER_ACCOUNT_LEDGER.md).
+
 ## 7. Reportes
 
 Hoy hay uno: ventas por rango de fechas.
