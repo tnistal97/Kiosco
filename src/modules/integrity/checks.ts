@@ -1625,6 +1625,358 @@ export async function devolucionesContraLoRecibido(): Promise<Comprobacion> {
   }
 }
 
+// ===========================================================================
+// Lotes e inventario fisico (Fase 4D)
+// ===========================================================================
+
+/**
+ * El stock de cada lote contra su libro, y contra el del producto.
+ *
+ * CUATRO reglas, y las cuatro son el modelo escrito como consulta:
+ *
+ *   1. la cifra materializada del lote es la suma de sus movimientos MAS la de
+ *      sus atribuciones. Son dos libros y no uno porque atribuir stock existente
+ *      a una partida no mueve mercaderia;
+ *   2. lo que los lotes explican no puede superar el stock del producto: es una
+ *      DESIGUALDAD, porque los lotes explican PARTE del stock;
+ *   3. ningun lote en negativo;
+ *   4. un producto que EXIGE lotes no puede tener stock sin atribuir. Es lo que
+ *      hace que `REQUIRED` signifique algo.
+ *
+ * Ver docs/LOT_TRACKING_DESIGN.md.
+ */
+export async function lotesContraSuLibro(): Promise<Comprobacion> {
+  const revisadas = await contar('SELECT count(*)::bigint AS n FROM "BranchLotStock"')
+
+  const saldos = await buscar(`
+    SELECT l."code"                              AS lote,
+           p."name"                              AS producto,
+           bls."quantity"::text                  AS materializado,
+           (COALESCE(m.suma, 0) + COALESCE(a.suma, 0))::text AS libro
+      FROM "BranchLotStock" bls
+      JOIN "ProductLot" l ON l."id" = bls."lotId"
+      JOIN "Product" p    ON p."id" = l."productId"
+      LEFT JOIN (
+        SELECT "lotId", "branchId", sum("quantity") AS suma
+          FROM "StockMovement" WHERE "lotId" IS NOT NULL GROUP BY 1, 2
+      ) m ON m."lotId" = bls."lotId" AND m."branchId" = bls."branchId"
+      LEFT JOIN (
+        SELECT "lotId", "branchId", sum("quantity") AS suma
+          FROM "LotAssignment" GROUP BY 1, 2
+      ) a ON a."lotId" = bls."lotId" AND a."branchId" = bls."branchId"
+     WHERE bls."quantity" <> COALESCE(m.suma, 0) + COALESCE(a.suma, 0)
+     ORDER BY p."name", l."code"
+  `)
+
+  const excedidos = await buscar(`
+    SELECT p."name"                        AS producto,
+           b."name"                        AS sucursal,
+           COALESCE(bs."quantity", 0)::text AS stock,
+           sum(bls."quantity")::text       AS "enLotes"
+      FROM "BranchLotStock" bls
+      JOIN "ProductLot" l ON l."id" = bls."lotId"
+      JOIN "Product" p    ON p."id" = l."productId"
+      JOIN "Branch" b     ON b."id" = bls."branchId"
+      LEFT JOIN "BranchStock" bs
+        ON bs."productId" = p."id" AND bs."branchId" = bls."branchId"
+     GROUP BY p."name", b."name", bs."quantity"
+    HAVING sum(bls."quantity") > COALESCE(bs."quantity", 0)
+     ORDER BY p."name"
+  `)
+
+  const negativos = await buscar(`
+    SELECT l."code" AS lote, p."name" AS producto, bls."quantity"::text AS cantidad
+      FROM "BranchLotStock" bls
+      JOIN "ProductLot" l ON l."id" = bls."lotId"
+      JOIN "Product" p    ON p."id" = l."productId"
+     WHERE bls."quantity" < 0
+     ORDER BY p."name", l."code"
+  `)
+
+  const sinAtribuir = await buscar(`
+    SELECT p."name"                        AS producto,
+           b."name"                        AS sucursal,
+           (COALESCE(bs."quantity", 0) - COALESCE(sum(bls."quantity"), 0))::text
+                                           AS "sinAsignar"
+      FROM "Product" p
+      JOIN "BranchStock" bs ON bs."productId" = p."id"
+      JOIN "Branch" b       ON b."id" = bs."branchId"
+      LEFT JOIN "ProductLot" l ON l."productId" = p."id"
+      LEFT JOIN "BranchLotStock" bls
+        ON bls."lotId" = l."id" AND bls."branchId" = bs."branchId"
+     WHERE p."lotTracking" = 'REQUIRED'
+     GROUP BY p."name", b."name", bs."quantity"
+    HAVING COALESCE(bs."quantity", 0) - COALESCE(sum(bls."quantity"), 0) <> 0
+     ORDER BY p."name"
+  `)
+
+  return {
+    nombre: 'Lotes',
+    revisadas,
+    inconsistencias: [
+      ...saldos.map((f): Inconsistencia => ({
+        entidad: `Lote ${String(f.lote)} — ${String(f.producto)}`,
+        regla: 'el stock del lote es la suma de su libro mas sus atribuciones',
+        esperado: String(f.libro),
+        encontrado: String(f.materializado),
+        diferencia: restar(String(f.materializado), String(f.libro)),
+      })),
+      ...excedidos.map((f): Inconsistencia => ({
+        entidad: `${String(f.producto)} — ${String(f.sucursal)}`,
+        regla: 'los lotes no explican mas stock del que hay',
+        esperado: `<= ${String(f.stock)}`,
+        encontrado: String(f.enLotes),
+        diferencia: restar(String(f.enLotes), String(f.stock)),
+      })),
+      ...negativos.map((f): Inconsistencia => ({
+        entidad: `Lote ${String(f.lote)} — ${String(f.producto)}`,
+        regla: 'ningun lote en negativo',
+        esperado: '>= 0',
+        encontrado: String(f.cantidad),
+        diferencia: String(f.cantidad),
+      })),
+      ...sinAtribuir.map((f): Inconsistencia => ({
+        entidad: `${String(f.producto)} — ${String(f.sucursal)}`,
+        regla: 'un producto que exige lotes no deja stock sin atribuir',
+        esperado: '0',
+        encontrado: String(f.sinAsignar),
+        diferencia: String(f.sinAsignar),
+      })),
+    ],
+  }
+}
+
+/**
+ * El reparto por lote de una venta contra su linea. Objetivo 40.
+ *
+ * DESIGUALDAD y no igualdad: un producto `OPTIONAL` puede vender parte de sus
+ * unidades desde el stock sin atribuir, y esas no tienen reparto. Lo que no
+ * puede pasar es que el reparto diga MAS de lo que se vendio.
+ *
+ * La segunda regla es la que ninguna suma detectaria: que el lote pertenezca al
+ * producto de la linea. En `StockMovement` lo impide una clave foranea compuesta;
+ * aca no hay columna de producto donde apoyarla, asi que se comprueba leyendo.
+ */
+export async function ventasContraSusLotes(): Promise<Comprobacion> {
+  const revisadas = await contar('SELECT count(*)::bigint AS n FROM "SaleItemLotAllocation"')
+
+  const excedidas = await buscar(`
+    SELECT si."saleId"::text        AS venta,
+           p."name"                 AS producto,
+           si."quantity"::text      AS vendido,
+           sum(a."quantity")::text  AS repartido
+      FROM "SaleItem" si
+      JOIN "Product" p ON p."id" = si."productId"
+      JOIN "SaleItemLotAllocation" a ON a."saleItemId" = si."id"
+     GROUP BY si."id", si."saleId", p."name", si."quantity"
+    HAVING sum(a."quantity") > si."quantity"
+     ORDER BY si."saleId"
+  `)
+
+  const ajenos = await buscar(`
+    SELECT si."saleId"::text AS venta,
+           p."name"          AS producto,
+           l."code"          AS lote,
+           pl."name"         AS "delProducto"
+      FROM "SaleItemLotAllocation" a
+      JOIN "SaleItem" si  ON si."id" = a."saleItemId"
+      JOIN "Product" p    ON p."id" = si."productId"
+      JOIN "ProductLot" l ON l."id" = a."lotId"
+      JOIN "Product" pl   ON pl."id" = l."productId"
+     WHERE l."productId" <> si."productId"
+     ORDER BY si."saleId"
+  `)
+
+  return {
+    nombre: 'Ventas por lote',
+    revisadas,
+    inconsistencias: [
+      ...excedidas.map((f): Inconsistencia => ({
+        entidad: `Venta #${String(f.venta)} — ${String(f.producto)}`,
+        regla: 'el reparto por lote no supera lo vendido',
+        esperado: `<= ${String(f.vendido)}`,
+        encontrado: String(f.repartido),
+        diferencia: restar(String(f.repartido), String(f.vendido)),
+      })),
+      ...ajenos.map((f): Inconsistencia => ({
+        entidad: `Venta #${String(f.venta)} — ${String(f.producto)}`,
+        regla: 'el lote pertenece al producto de la linea',
+        esperado: String(f.producto),
+        encontrado: `${String(f.lote)} (${String(f.delProducto)})`,
+        diferencia: null,
+      })),
+    ],
+  }
+}
+
+/**
+ * El reparto por lote de una recepcion contra su linea. Objetivo 41.
+ *
+ * IGUALDAD, a diferencia de la venta: una linea repartida a medias deja
+ * mercaderia en el deposito que el sistema no sabe de que partida es, y como la
+ * recepcion es inmutable desde la Fase 3C eso no se puede completar despues. O
+ * la linea tiene reparto completo, o no tiene ninguno.
+ */
+export async function recepcionesContraSusLotes(): Promise<Comprobacion> {
+  const revisadas = await contar('SELECT count(*)::bigint AS n FROM "PurchaseReceiptItemLot"')
+
+  const parciales = await buscar(`
+    SELECT ri."id"::text                 AS linea,
+           p."name"                      AS producto,
+           ri."stockQuantity"::text      AS recibido,
+           sum(ril."stockQuantity")::text AS repartido
+      FROM "PurchaseReceiptItem" ri
+      JOIN "Product" p ON p."id" = ri."productId"
+      JOIN "PurchaseReceiptItemLot" ril ON ril."purchaseReceiptItemId" = ri."id"
+     GROUP BY ri."id", p."name", ri."stockQuantity"
+    HAVING sum(ril."stockQuantity") <> ri."stockQuantity"
+     ORDER BY ri."id"
+  `)
+
+  const ajenos = await buscar(`
+    SELECT ri."id"::text AS linea,
+           p."name"      AS producto,
+           l."code"      AS lote,
+           pl."name"     AS "delProducto"
+      FROM "PurchaseReceiptItemLot" ril
+      JOIN "PurchaseReceiptItem" ri ON ri."id" = ril."purchaseReceiptItemId"
+      JOIN "Product" p    ON p."id" = ri."productId"
+      JOIN "ProductLot" l ON l."id" = ril."lotId"
+      JOIN "Product" pl   ON pl."id" = l."productId"
+     WHERE l."productId" <> ri."productId"
+     ORDER BY ri."id"
+  `)
+
+  const devueltosDeOtraPartida = await buscar(`
+    SELECT d."number"  AS devolucion,
+           p."name"    AS producto,
+           l."code"    AS lote
+      FROM "PurchaseReturnItem" di
+      JOIN "PurchaseReturn" d ON d."id" = di."purchaseReturnId"
+      JOIN "Product" p    ON p."id" = di."productId"
+      JOIN "ProductLot" l ON l."id" = di."lotId"
+     WHERE di."lotId" IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM "PurchaseReceiptItemLot" ril
+          WHERE ril."purchaseReceiptItemId" = di."purchaseReceiptItemId"
+            AND ril."lotId" = di."lotId"
+       )
+     ORDER BY d."number"
+  `)
+
+  return {
+    nombre: 'Recepciones por lote',
+    revisadas,
+    inconsistencias: [
+      ...parciales.map((f): Inconsistencia => ({
+        entidad: `Recepción línea #${String(f.linea)} — ${String(f.producto)}`,
+        regla: 'una linea con partidas queda repartida entera',
+        esperado: String(f.recibido),
+        encontrado: String(f.repartido),
+        diferencia: restar(String(f.repartido), String(f.recibido)),
+      })),
+      ...ajenos.map((f): Inconsistencia => ({
+        entidad: `Recepción línea #${String(f.linea)} — ${String(f.producto)}`,
+        regla: 'el lote pertenece al producto de la linea',
+        esperado: String(f.producto),
+        encontrado: `${String(f.lote)} (${String(f.delProducto)})`,
+        diferencia: null,
+      })),
+      ...devueltosDeOtraPartida.map((f): Inconsistencia => ({
+        entidad: `Devolución ${String(f.devolucion)} — ${String(f.producto)}`,
+        regla: 'se devuelve de una partida que llego con esa entrega',
+        esperado: 'una de las partidas de la entrega',
+        encontrado: String(f.lote),
+        diferencia: null,
+      })),
+    ],
+  }
+}
+
+/**
+ * Las diferencias de un inventario aplicado contra sus movimientos. Objetivo 42.
+ *
+ * Detecta las cuatro formas de que la aplicacion salga mal: la diferencia que no
+ * se aplico, el movimiento duplicado, el importe distinto y la sesion aplicada
+ * dos veces. Las cuatro dan la misma desigualdad --la suma no coincide-- y por
+ * eso alcanza con una regla y no hacen falta cuatro.
+ *
+ * La comparacion es por (sesion, producto, lote) y no por sesion: dos lineas del
+ * mismo producto que se compensaran entre si darian una suma correcta con los
+ * dos movimientos mal.
+ *
+ * La segunda regla mira el otro lado: un movimiento `INVENTORY_COUNT` que
+ * referencia una sesion que NO esta aplicada es stock movido por un inventario
+ * que nadie aprobo.
+ */
+export async function inventariosContraSusMovimientos(): Promise<Comprobacion> {
+  const revisadas = await contar(`
+    SELECT count(*)::bigint AS n
+      FROM "InventoryCountLine" cl
+      JOIN "InventoryCountSession" s ON s."id" = cl."sessionId"
+     WHERE s."status" = 'APPLIED'
+  `)
+
+  const descuadres = await buscar(`
+    SELECT s."number"                        AS inventario,
+           p."name"                          AS producto,
+           COALESCE(l."code", 'sin lote')    AS lote,
+           COALESCE(sum(cl."variance"), 0)::text AS diferencia,
+           COALESCE(m.suma, 0)::text         AS movido
+      FROM "InventoryCountLine" cl
+      JOIN "InventoryCountSession" s ON s."id" = cl."sessionId"
+      JOIN "Product" p ON p."id" = cl."productId"
+      LEFT JOIN "ProductLot" l ON l."id" = cl."lotId"
+      LEFT JOIN LATERAL (
+        SELECT sum(sm."quantity") AS suma
+          FROM "StockMovement" sm
+         WHERE sm."type" = 'INVENTORY_COUNT'
+           AND sm."referenceType" = 'InventoryCountSession'
+           AND sm."referenceId" = s."id"
+           AND sm."productId" = cl."productId"
+           AND sm."lotId" IS NOT DISTINCT FROM cl."lotId"
+      ) m ON true
+     WHERE s."status" = 'APPLIED'
+     GROUP BY s."number", p."name", l."code", cl."lotId", m.suma
+    HAVING COALESCE(sum(cl."variance"), 0) <> COALESCE(m.suma, 0)
+     ORDER BY s."number", p."name"
+  `)
+
+  const huerfanos = await buscar(`
+    SELECT s."number"   AS inventario,
+           s."status"   AS estado,
+           count(*)::text AS movimientos
+      FROM "StockMovement" sm
+      JOIN "InventoryCountSession" s ON s."id" = sm."referenceId"
+     WHERE sm."type" = 'INVENTORY_COUNT'
+       AND sm."referenceType" = 'InventoryCountSession'
+       AND s."status" <> 'APPLIED'
+     GROUP BY s."number", s."status"
+     ORDER BY s."number"
+  `)
+
+  return {
+    nombre: 'Inventarios físicos',
+    revisadas,
+    inconsistencias: [
+      ...descuadres.map((f): Inconsistencia => ({
+        entidad: `${String(f.inventario)} — ${String(f.producto)} (${String(f.lote)})`,
+        regla: 'la diferencia contada es lo que se movio',
+        esperado: String(f.diferencia),
+        encontrado: String(f.movido),
+        diferencia: restar(String(f.movido), String(f.diferencia)),
+      })),
+      ...huerfanos.map((f): Inconsistencia => ({
+        entidad: `Inventario ${String(f.inventario)}`,
+        regla: 'solo un inventario aplicado mueve stock',
+        esperado: 'APPLIED',
+        encontrado: `${String(f.estado)} con ${String(f.movimientos)} movimiento(s)`,
+        diferencia: null,
+      })),
+    ],
+  }
+}
+
 /** Todas las comprobaciones, en el orden en que se informan. */
 export const COMPROBACIONES: Array<() => Promise<Comprobacion>> = [
   ventasContraSusLineas,
@@ -1646,4 +1998,8 @@ export const COMPROBACIONES: Array<() => Promise<Comprobacion>> = [
   imputacionesContraSusTopes,
   devolucionesContraSusEfectos,
   devolucionesContraLoRecibido,
+  lotesContraSuLibro,
+  ventasContraSusLotes,
+  recepcionesContraSusLotes,
+  inventariosContraSusMovimientos,
 ]
