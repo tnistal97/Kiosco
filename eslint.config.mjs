@@ -206,6 +206,43 @@ const PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR = [
   },
 ]
 
+/**
+ * SEXTA frontera: la imputacion de pagos a obligaciones. Fase 4C.
+ *
+ * Es distinta de las cinco anteriores y conviene decir en que. Aquellas protegen
+ * un SALDO --stock, cuenta de cliente, cuenta de proveedor-- de que alguien lo
+ * escriba sin dejar la fila del libro que lo explica. Esta protege una tabla que
+ * no tiene saldo detras: `SupplierPaymentAllocation` no mueve nada.
+ *
+ * Lo que protege es LA COMPROBACION. Los dos topes de una imputacion --no
+ * pasarse del pago, no pasarse de la obligacion neta-- no se pueden expresar en
+ * una restriccion de la base, porque cada uno es la suma de OTRA tabla. Se hacen
+ * cumplir tomando bloqueos en un orden preciso, y eso solo existe dentro de
+ * `imputacion.ts`. Un `create` escrito en cualquier otro lado los saltearia sin
+ * que nada se queje: la fila entraria, la reconciliacion la encontraria semanas
+ * despues, y para entonces habria un proveedor con dos entregas marcadas como
+ * pagadas por la misma plata.
+ *
+ * Unico lugar autorizado: `src/modules/suppliers/imputacion.ts`.
+ * Ver docs/SUPPLIER_PAYMENT_ALLOCATION.md.
+ */
+const PROHIBIDO_IMPUTAR = [
+  {
+    selector: "CallExpression[callee.object.property.name='supplierPaymentAllocation']",
+    message:
+      'Las imputaciones no se escriben directamente. Usa imputar() de ' +
+      '@/modules/suppliers/imputacion, que comprueba los dos topes bajo bloqueo de fila. ' +
+      'Ver docs/SUPPLIER_PAYMENT_ALLOCATION.md.',
+  },
+  {
+    selector:
+      'TemplateElement[value.raw=/(INSERT\\s+INTO|UPDATE|DELETE\\s+FROM)\\s+"SupplierPaymentAllocation"/]',
+    message:
+      'SQL crudo que escribe imputaciones, fuera de imputacion.ts. Los dos topes se ' +
+      'comprueban bajo bloqueo y ese bloqueo solo existe ahi.',
+  },
+]
+
 export default tseslint.config(
   // ---------------------------------------------------------------- ignorados
   {
@@ -385,13 +422,14 @@ export default tseslint.config(
   // abajo lista el conjunto COMPLETO que le corresponde. Siete bloques, porque
   // cada frontera tiene su propia excepcion:
   //
-  //   1. todo src/                        → stock + saldos (cliente y proveedor)
-  //   2. modules, server y api            → los cinco
-  //   3. src/server/money.ts              → todos menos dinero     (lo cruza)
-  //   4. src/server/cantidad.ts           → todos menos cantidad   (lo cruza)
-  //   5. modules/inventory/service.ts     → todos menos stock      (lo cruza)
-  //   6. modules/clients/cuenta.ts        → todos menos saldo      (lo cruza)
-  //   7. modules/suppliers/cuenta.ts      → todos menos proveedor  (lo cruza)
+  //   1. todo src/                        → stock + saldos + imputacion
+  //   2. modules, server y api            → las seis
+  //   3. src/server/money.ts              → todas menos dinero     (la cruza)
+  //   4. src/server/cantidad.ts           → todas menos cantidad   (la cruza)
+  //   5. modules/inventory/service.ts     → todas menos stock      (la cruza)
+  //   6. modules/clients/cuenta.ts        → todas menos saldo      (la cruza)
+  //   7. modules/suppliers/cuenta.ts      → todas menos proveedor  (la cruza)
+  //   8. modules/suppliers/imputacion.ts  → todas menos imputacion (la cruza)
   //
   // Sin este cuidado, agregar una frontera nueva apagaria las anteriores en
   // silencio: los tests seguirian pasando y las reglas no protegerian nada.
@@ -405,6 +443,7 @@ export default tseslint.config(
         ...PROHIBIDO_ESCRIBIR_STOCK,
         ...PROHIBIDO_ESCRIBIR_SALDO,
         ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
+        ...PROHIBIDO_IMPUTAR,
       ],
     },
   },
@@ -416,6 +455,7 @@ export default tseslint.config(
         ...PROHIBIDO_ESCRIBIR_STOCK,
         ...PROHIBIDO_ESCRIBIR_SALDO,
         ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
+        ...PROHIBIDO_IMPUTAR,
         ...PROHIBIDO_DINERO_NUMERO,
         ...PROHIBIDO_CANTIDAD_NUMERO,
       ],
@@ -429,6 +469,7 @@ export default tseslint.config(
         ...PROHIBIDO_ESCRIBIR_STOCK,
         ...PROHIBIDO_ESCRIBIR_SALDO,
         ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
+        ...PROHIBIDO_IMPUTAR,
         ...PROHIBIDO_CANTIDAD_NUMERO,
       ],
     },
@@ -441,6 +482,7 @@ export default tseslint.config(
         ...PROHIBIDO_ESCRIBIR_STOCK,
         ...PROHIBIDO_ESCRIBIR_SALDO,
         ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
+        ...PROHIBIDO_IMPUTAR,
         ...PROHIBIDO_DINERO_NUMERO,
       ],
     },
@@ -452,6 +494,7 @@ export default tseslint.config(
         'error',
         ...PROHIBIDO_ESCRIBIR_SALDO,
         ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
+        ...PROHIBIDO_IMPUTAR,
         ...PROHIBIDO_DINERO_NUMERO,
         ...PROHIBIDO_CANTIDAD_NUMERO,
       ],
@@ -464,6 +507,7 @@ export default tseslint.config(
         'error',
         ...PROHIBIDO_ESCRIBIR_STOCK,
         ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
+        ...PROHIBIDO_IMPUTAR,
         ...PROHIBIDO_DINERO_NUMERO,
         ...PROHIBIDO_CANTIDAD_NUMERO,
       ],
@@ -476,6 +520,23 @@ export default tseslint.config(
         'error',
         ...PROHIBIDO_ESCRIBIR_STOCK,
         ...PROHIBIDO_ESCRIBIR_SALDO,
+        ...PROHIBIDO_IMPUTAR,
+        ...PROHIBIDO_DINERO_NUMERO,
+        ...PROHIBIDO_CANTIDAD_NUMERO,
+      ],
+    },
+  },
+
+  // La octava excepcion: la unica puerta de las imputaciones cruza SU propia
+  // frontera y ninguna otra.
+  {
+    files: ['src/modules/suppliers/imputacion.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...PROHIBIDO_ESCRIBIR_STOCK,
+        ...PROHIBIDO_ESCRIBIR_SALDO,
+        ...PROHIBIDO_ESCRIBIR_SALDO_PROVEEDOR,
         ...PROHIBIDO_DINERO_NUMERO,
         ...PROHIBIDO_CANTIDAD_NUMERO,
       ],

@@ -19,6 +19,7 @@ import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
 import type { Session } from '@/server/auth/session'
 import type { Monto } from '@/lib/money'
 import { CERO_D, aMonto, dinero, negar, restar, type Dinero } from '@/server/money'
+import { etiquetaDeMedio } from '@/modules/sales/payment-methods'
 import {
   comoTimestampUTC,
   esFechaLocal,
@@ -93,9 +94,22 @@ export interface Deuda {
   orderNumber: string
   receivedAt: Date
   dueDate: Date | null
+  /** Lo que la entrega costo. NUNCA cambia: es el importe original. */
   total: Monto
+  /** Lo devuelto al proveedor, al costo historico. `"0.00"` si no hubo. Fase 4C. */
+  devuelto: Monto
+  /** `total - devuelto`. Lo que realmente se debe por esta entrega. Fase 4C. */
+  neto: Monto
   pagado: Monto
   pendiente: Monto
+  /**
+   * Lo pagado POR ENCIMA de la obligacion neta. `"0.00"` en el caso normal.
+   *
+   * Solo puede aparecer devolviendo mercaderia que ya se habia pagado: las
+   * imputaciones no se mueven hacia atras, asi que la entrega queda con mas
+   * imputado que lo que debe. Ver docs/PURCHASE_RETURN_ACCOUNTING.md.
+   */
+  exceso: Monto
   estado: EstadoDeDeuda
 }
 
@@ -107,8 +121,11 @@ interface FilaDeuda {
   receivedAt: Date
   dueDate: Date | null
   total: string
+  devuelto: string
+  neto: string
   pagado: string
   pendiente: string
+  exceso: string
   vencida: boolean
 }
 
@@ -153,6 +170,16 @@ export function estadoDeDeuda(total: Dinero, pagado: Dinero, vencida: boolean): 
  *
  * Solo mira recepciones con `debtRecorded`: las anteriores a esta fase no
  * entraron al libro y no son obligaciones. Ver docs/ACCOUNTS_PAYABLE_POLICY.md.
+ *
+ * LO DEVUELTO SE DESCUENTA, desde la Fase 4C. Una entrega de $100.000 con una
+ * devolucion confirmada de $20.000 debe $80.000, y es contra esos $80.000 que se
+ * mide lo pagado, lo pendiente y el vencimiento. Solo cuentan las devoluciones
+ * CONFIRMADAS: un borrador no saco mercaderia ni emitio credito.
+ *
+ * `pendiente` nunca es negativo y `exceso` es su contracara. Los dos numeros van
+ * por separado a proposito: un pendiente negativo se suma mal --restaria de lo
+ * que se debe por otras entregas-- y ademas se lee como si faltara plata cuando
+ * lo que sobra es credito.
  */
 export async function deudasDeProveedor(
   cliente: Cliente,
@@ -164,31 +191,52 @@ export async function deudasDeProveedor(
   const take = opciones.take ?? 500
 
   const filas = await cliente.$queryRaw<FilaDeuda[]>`
-    SELECT r."id"                                    AS "receiptId",
-           o."id"                                    AS "orderId",
-           o."number"                                AS "orderNumber",
-           r."receivedAt"                            AS "receivedAt",
-           r."dueDate"                               AS "dueDate",
-           r."total"::numeric(14,2)::text            AS "total",
-           COALESCE(a.pagado, 0)::numeric(14,2)::text AS "pagado",
-           (r."total" - COALESCE(a.pagado, 0))::numeric(14,2)::text AS "pendiente",
-           (r."dueDate" IS NOT NULL
-            AND r."dueDate" < ${inicioDeHoy}::timestamp
-            AND r."total" - COALESCE(a.pagado, 0) > 0)             AS "vencida"
-      FROM "PurchaseReceipt" r
-      JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
-      LEFT JOIN (
-        SELECT "receiptId", sum("amount") AS pagado
-          FROM "SupplierPaymentAllocation"
-         GROUP BY "receiptId"
-      ) a ON a."receiptId" = r."id"
-     WHERE o."supplierId" = ${supplierId}
-       AND r."debtRecorded" = true
-       AND (${!soloAbiertas} OR r."total" - COALESCE(a.pagado, 0) > 0)
-       AND (${!soloVencidas} OR (r."dueDate" IS NOT NULL
-                                 AND r."dueDate" < ${inicioDeHoy}::timestamp
-                                 AND r."total" - COALESCE(a.pagado, 0) > 0))
-     ORDER BY r."dueDate" ASC NULLS LAST, r."receivedAt" ASC, r."id" ASC
+    WITH obligaciones AS (
+      SELECT r."id"          AS "receiptId",
+             o."id"          AS "orderId",
+             o."number"      AS "orderNumber",
+             r."receivedAt",
+             r."dueDate",
+             r."total",
+             COALESCE(d.devuelto, 0) AS devuelto,
+             COALESCE(a.pagado, 0)   AS pagado,
+             r."total" - COALESCE(d.devuelto, 0) AS neto
+        FROM "PurchaseReceipt" r
+        JOIN "PurchaseOrder" o ON o."id" = r."purchaseOrderId"
+        LEFT JOIN (
+          SELECT "receiptId", sum("amount") AS pagado
+            FROM "SupplierPaymentAllocation"
+           GROUP BY "receiptId"
+        ) a ON a."receiptId" = r."id"
+        LEFT JOIN (
+          SELECT "purchaseReceiptId", sum("total") AS devuelto
+            FROM "PurchaseReturn"
+           WHERE "status" = 'CONFIRMED'
+           GROUP BY "purchaseReceiptId"
+        ) d ON d."purchaseReceiptId" = r."id"
+       WHERE o."supplierId" = ${supplierId}
+         AND r."debtRecorded" = true
+    )
+    SELECT "receiptId",
+           "orderId",
+           "orderNumber",
+           "receivedAt",
+           "dueDate",
+           "total"::numeric(14,2)::text                       AS "total",
+           devuelto::numeric(14,2)::text                      AS "devuelto",
+           neto::numeric(14,2)::text                          AS "neto",
+           pagado::numeric(14,2)::text                        AS "pagado",
+           GREATEST(neto - pagado, 0)::numeric(14,2)::text    AS "pendiente",
+           GREATEST(pagado - neto, 0)::numeric(14,2)::text    AS "exceso",
+           ("dueDate" IS NOT NULL
+            AND "dueDate" < ${inicioDeHoy}::timestamp
+            AND neto - pagado > 0)                            AS "vencida"
+      FROM obligaciones
+     WHERE (${!soloAbiertas} OR neto - pagado > 0)
+       AND (${!soloVencidas} OR ("dueDate" IS NOT NULL
+                                 AND "dueDate" < ${inicioDeHoy}::timestamp
+                                 AND neto - pagado > 0))
+     ORDER BY "dueDate" ASC NULLS LAST, "receivedAt" ASC, "receiptId" ASC
      LIMIT ${take}
   `
 
@@ -199,9 +247,14 @@ export async function deudasDeProveedor(
     receivedAt: f.receivedAt,
     dueDate: f.dueDate,
     total: f.total,
+    devuelto: f.devuelto,
+    neto: f.neto,
     pagado: f.pagado,
     pendiente: f.pendiente,
-    estado: estadoDeDeuda(dinero(f.total), dinero(f.pagado), f.vencida),
+    exceso: f.exceso,
+    // Contra el NETO, no contra el original: una entrega devuelta entera y
+    // pagada entera esta saldada, no pendiente por lo que costo.
+    estado: estadoDeDeuda(dinero(f.neto), dinero(f.pagado), f.vencida),
   }))
 }
 
@@ -242,9 +295,24 @@ export interface ResumenDeCuenta {
   ultimaCompra: Date | null
   ultimoPago: Date | null
   deudasAbiertas: number
+  /** Plata ya entregada que todavia no se aplico a ninguna entrega. Fase 4C. */
+  sinImputar: Monto
+  /** Cuantos pagos tienen saldo disponible. Fase 4C. */
+  pagosConSaldo: number
+  /** Cuanto se le devolvio, al costo historico. Fase 4C. */
+  devuelto: Monto
+  devoluciones: number
 }
 
-/** Los cinco numeros de la cabecera del objetivo 25, en una sola pasada. */
+/**
+ * Los numeros de la cabecera de la ficha, en una sola pasada.
+ *
+ * `balance` y `sinImputar` NO son lo mismo y conviven a proposito. El saldo dice
+ * cuanto se le debe al proveedor en total; lo sin imputar dice cuanta plata ya
+ * entregada no esta aplicada a ninguna entrega concreta. Con un saldo de $0 y
+ * $15.000 sin imputar --un anticipo que todavia no encontro su compra-- las dos
+ * cifras son ciertas y dicen cosas distintas.
+ */
 export async function resumenDeCuenta(
   session: Session,
   supplierId: number,
@@ -252,7 +320,7 @@ export async function resumenDeCuenta(
   const proveedor = await proveedorDeCuenta(supplierId)
   const inicioDeHoy = await inicioDeHoyEnSucursal(prisma, session.branchId)
 
-  const [abiertas, ultimaCompra, ultimoPago] = await Promise.all([
+  const [abiertas, ultimaCompra, ultimoPago, anticipos, devoluciones] = await Promise.all([
     deudasDeProveedor(prisma, supplierId, { soloAbiertas: true, inicioDeHoy }),
     prisma.purchaseReceipt.findFirst({
       where: { order: { supplierId } },
@@ -263,6 +331,12 @@ export async function resumenDeCuenta(
       where: { supplierId },
       select: { paidAt: true },
       orderBy: { paidAt: 'desc' },
+    }),
+    creditoDisponible(prisma, supplierId),
+    prisma.purchaseReturn.aggregate({
+      where: { supplierId, status: 'CONFIRMED' },
+      _sum: { total: true },
+      _count: { _all: true },
     }),
   ])
 
@@ -284,7 +358,126 @@ export async function resumenDeCuenta(
     ultimaCompra: ultimaCompra?.receivedAt ?? null,
     ultimoPago: ultimoPago?.paidAt ?? null,
     deudasAbiertas: abiertas.length,
+    sinImputar: aMonto(anticipos.total),
+    pagosConSaldo: anticipos.cuantos,
+    devuelto: aMonto(devoluciones._sum.total ?? CERO_D),
+    devoluciones: devoluciones._count._all,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Anticipos: plata entregada que todavia no se aplico
+// ---------------------------------------------------------------------------
+
+/**
+ * Cuanto credito hay disponible con un proveedor, y en cuantos pagos.
+ *
+ * "Disponible" es `importe - imputado`, pago por pago. La suma se hace EN LA
+ * BASE: un proveedor de dos anios tiene cientos de pagos, y traerlos para sumar
+ * en JavaScript es exactamente lo que este proyecto no hace.
+ *
+ * NO es lo mismo que un saldo negativo. El saldo puede estar en cero --se le
+ * debe justo lo que se le pago-- y haber igual un anticipo sin imputar, porque
+ * la deuda que lo compensa esta en otra entrega. Son dos preguntas distintas y
+ * se contestan por separado.
+ */
+export async function creditoDisponible(
+  cliente: Cliente,
+  supplierId: number,
+): Promise<{ total: Dinero; cuantos: number }> {
+  const filas = await cliente.$queryRaw<Array<{ total: string; cuantos: bigint }>>`
+    SELECT COALESCE(sum(disponible), 0)::numeric(14,2)::text AS total,
+           count(*)                                          AS cuantos
+      FROM (
+        SELECT p."amount" - COALESCE((
+                 SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
+                  WHERE a."paymentId" = p."id"
+               ), 0) AS disponible
+          FROM "SupplierPayment" p
+         WHERE p."supplierId" = ${supplierId}
+      ) x
+     WHERE disponible > 0
+  `
+  const f = filas[0]
+  return { total: dinero(f?.total ?? '0.00'), cuantos: Number(f?.cuantos ?? 0) }
+}
+
+export interface PagoSinImputar {
+  paymentId: number
+  number: string
+  paidAt: Date
+  method: string
+  methodLabel: string
+  amount: Monto
+  allocatedAmount: Monto
+  unallocatedAmount: Monto
+  reference: string | null
+}
+
+/**
+ * Los pagos de un proveedor con saldo sin imputar. La lista del objetivo 5.
+ *
+ * Ordenada por FIFO de pagos: el mas antiguo primero, y el id como desempate.
+ * Es el mismo orden que usa la aplicacion automatica de anticipos, y vive aca
+ * una sola vez para que la pantalla y el servidor no puedan discrepar sobre cual
+ * se consume primero.
+ */
+export async function pagosSinImputar(
+  supplierId: number,
+  query: { page: number; pageSize: number },
+): Promise<Paginated<PagoSinImputar>> {
+  await proveedorDeCuenta(supplierId)
+
+  const { skip, take } = toSkipTake(query)
+
+  const [totales, filas] = await Promise.all([
+    creditoDisponible(prisma, supplierId),
+    prisma.$queryRaw<
+      Array<{
+        id: number
+        number: string
+        paidAt: Date
+        method: string
+        reference: string | null
+        amount: string
+        imputado: string
+        disponible: string
+      }>
+    >`
+      SELECT p."id",
+             p."number",
+             p."paidAt",
+             p."method",
+             p."reference",
+             p."amount"::numeric(14,2)::text AS "amount",
+             imputado::numeric(14,2)::text   AS "imputado",
+             (p."amount" - imputado)::numeric(14,2)::text AS "disponible"
+        FROM "SupplierPayment" p
+        CROSS JOIN LATERAL (
+          SELECT COALESCE(sum(a."amount"), 0) AS imputado
+            FROM "SupplierPaymentAllocation" a
+           WHERE a."paymentId" = p."id"
+        ) s
+       WHERE p."supplierId" = ${supplierId}
+         AND p."amount" - imputado > 0
+       ORDER BY p."paidAt" ASC, p."id" ASC
+       LIMIT ${take} OFFSET ${skip}
+    `,
+  ])
+
+  const data = filas.map((f) => ({
+    paymentId: f.id,
+    number: f.number,
+    paidAt: f.paidAt,
+    method: f.method,
+    methodLabel: etiquetaDeMedio(f.method),
+    amount: f.amount,
+    allocatedAmount: f.imputado,
+    unallocatedAmount: f.disponible,
+    reference: f.reference,
+  }))
+
+  return paginado(data, totales.cuantos, query)
 }
 
 // ---------------------------------------------------------------------------
@@ -327,10 +520,17 @@ export async function carteraDeProveedores(session: Session): Promise<CarteraDeP
       WITH abiertas AS (
         SELECT r."id",
                r."dueDate",
-               r."total" - COALESCE((
-                 SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
-                  WHERE a."receiptId" = r."id"
-               ), 0) AS pendiente
+               -- Lo devuelto se descuenta, igual que en la tabla de deudas: una
+               -- entrega devuelta no se reclama, aunque nunca se haya pagado.
+               r."total"
+                 - COALESCE((
+                     SELECT sum(d."total") FROM "PurchaseReturn" d
+                      WHERE d."purchaseReceiptId" = r."id" AND d."status" = 'CONFIRMED'
+                   ), 0)
+                 - COALESCE((
+                     SELECT sum(a."amount") FROM "SupplierPaymentAllocation" a
+                      WHERE a."receiptId" = r."id"
+                   ), 0) AS pendiente
           FROM "PurchaseReceipt" r
          WHERE r."debtRecorded" = true
       )

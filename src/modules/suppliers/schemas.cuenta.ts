@@ -83,8 +83,58 @@ export const pagarProveedorSchema = z
           ),
       })
       .strict(),
+    /**
+     * ANTICIPO: plata que se entrega sin aplicarla a nada. Fase 4C, objetivo 1.
+     *
+     * Es una tercera opcion y no un 'manual' con la lista vacia, aunque el
+     * resultado sea el mismo, porque son dos intenciones distintas y solo una de
+     * las dos se puede leer despues. Con la lista vacia, la bitacora dice
+     * "imputacion manual, cero lineas" y no se sabe si fue un anticipo
+     * deliberado o alguien que se olvido de repartir. Con esto, dice `ninguna`.
+     *
+     * Y hay una diferencia real de comportamiento: 'automatica' consumiria las
+     * deudas abiertas que hubiera, que es exactamente lo que un anticipo NO
+     * quiere hacer.
+     *
+     * No crea ninguna recepcion ni ninguna imputacion ficticia: crea el pago, su
+     * movimiento del libro y nada mas. El saldo queda a favor nuestro y se aplica
+     * despues. Ver docs/SUPPLIER_ADVANCES.md.
+     */
+    z
+      .object({
+        imputacion: z.literal('ninguna'),
+        amount: amountSchema.refine(esPositivo, 'Un anticipo de cero no es un anticipo'),
+        method: z.enum(MEDIOS_DE_PAGO_A_PROVEEDOR),
+        reference: optionalText(120),
+        notes: optionalText(300),
+        acceptCredit: z.boolean().default(false),
+      })
+      .strict(),
   ])
   .describe('Pago a proveedor')
+
+/**
+ * Imputacion DIFERIDA: aplicar un pago ya registrado a obligaciones. Fase 4C.
+ *
+ * No lleva importe total: el importe lo pone el pago, y lo que se decide aca es
+ * el reparto. Mandar tambien el total permitiria declarar uno que no coincide
+ * con la suma, y alguien tendria que elegir cual gana.
+ *
+ * NO mueve el saldo del proveedor, y esa es la regla del objetivo 3: el saldo ya
+ * bajo cuando se registro el pago. Esto solo explica a que obligacion se aplico.
+ */
+export const imputarPagoSchema = z
+  .object({
+    allocations: z
+      .array(imputacionSchema)
+      .min(1, 'Elegí al menos una entrega')
+      .max(100)
+      .refine(
+        (lista) => new Set(lista.map((a) => a.receiptId)).size === lista.length,
+        'Una entrega no puede aparecer dos veces en el reparto',
+      ),
+  })
+  .strict()
 
 /**
  * Nota de credito del proveedor.
@@ -201,6 +251,7 @@ export const listarDeudasQuerySchema = paginationQuerySchema.extend({
 
 export type ImputacionInput = z.infer<typeof imputacionSchema>
 export type PagarProveedorInput = z.infer<typeof pagarProveedorSchema>
+export type ImputarPagoInput = z.infer<typeof imputarPagoSchema>
 export type NotaDeCreditoInput = z.infer<typeof notaDeCreditoSchema>
 export type AjustarProveedorInput = z.infer<typeof ajustarProveedorSchema>
 export type CambiarVencimientoInput = z.infer<typeof cambiarVencimientoSchema>

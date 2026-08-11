@@ -31,6 +31,18 @@ export interface ResumenDeCuentaDTO {
   ultimaCompra: string | null
   ultimoPago: string | null
   deudasAbiertas: number
+  /**
+   * Plata ya entregada que todavia no se aplico a ninguna entrega. Fase 4C.
+   *
+   * NO es lo mismo que un saldo negativo, y las dos cifras conviven. El saldo
+   * puede estar en cero --se le debe justo lo que se le pago-- y haber igual un
+   * anticipo sin imputar, porque la deuda que lo compensa esta en otra entrega.
+   */
+  sinImputar: Monto
+  pagosConSaldo: number
+  /** Lo devuelto al proveedor, al costo historico. Fase 4C. */
+  devuelto: Monto
+  devoluciones: number
 }
 
 export function parseResumenDeCuenta(raw: unknown): ResumenDeCuentaDTO {
@@ -44,6 +56,10 @@ export function parseResumenDeCuenta(raw: unknown): ResumenDeCuentaDTO {
     ultimaCompra: textoOpcional(raw.ultimaCompra),
     ultimoPago: textoOpcional(raw.ultimoPago),
     deudasAbiertas: numero(raw.deudasAbiertas),
+    sinImputar: montoODefecto(raw.sinImputar),
+    pagosConSaldo: numero(raw.pagosConSaldo),
+    devuelto: montoODefecto(raw.devuelto),
+    devoluciones: numero(raw.devoluciones),
   }
 }
 
@@ -63,9 +79,16 @@ export interface DeudaDTO {
   orderId: number
   receivedAt: string
   dueDate: string | null
+  /** Lo que la entrega costo. NUNCA cambia: es el importe original. */
   total: Monto
+  /** Lo devuelto al proveedor, al costo historico. `"0.00"` si no hubo. Fase 4C. */
+  devuelto: Monto
+  /** `total - devuelto`. Lo que realmente se debe por esta entrega. Fase 4C. */
+  neto: Monto
   pagado: Monto
   pendiente: Monto
+  /** Lo pagado POR ENCIMA de la obligacion neta. `"0.00"` en el caso normal. */
+  exceso: Monto
   estado: EstadoDeDeuda
 }
 
@@ -85,8 +108,13 @@ export function parseDeuda(raw: unknown): DeudaDTO {
     receivedAt: texto(raw.receivedAt),
     dueDate: textoOpcional(raw.dueDate),
     total: montoODefecto(raw.total),
+    devuelto: montoODefecto(raw.devuelto),
+    // Sin `neto`, el importe original: una respuesta anterior a la Fase 4C no
+    // lo trae, y en ese mundo el neto ERA el total.
+    neto: montoODefecto(raw.neto, montoODefecto(raw.total)),
     pagado: montoODefecto(raw.pagado),
     pendiente: montoODefecto(raw.pendiente),
+    exceso: montoODefecto(raw.exceso),
     estado: estadoDeDeuda(raw.estado),
   }
 }

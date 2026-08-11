@@ -30,6 +30,7 @@ model Branch {
   clientPayments CustomerPayment[]
   supplierMoves  SupplierAccountMovement[]
   supplierPays   SupplierPayment[]
+  returns        PurchaseReturn[]
 
   /// Efectivo acumulado desde que se instalo el sistema.
   ///
@@ -158,26 +159,30 @@ model User {
 
   logs             AuditLog[]
   costChanges      ProductCostHistory[]
-  sales            Sale[]                    @relation("SaleCreatedBy")
-  canceledSales    Sale[]                    @relation("SaleCanceledBy")
+  sales            Sale[]                      @relation("SaleCreatedBy")
+  canceledSales    Sale[]                      @relation("SaleCanceledBy")
   stockChecks      StockCheck[]
   stockMovements   StockMovement[]
-  ordersCreated    PurchaseOrder[]           @relation("PurchaseOrderCreatedBy")
-  ordersCancelled  PurchaseOrder[]           @relation("PurchaseOrderCancelledBy")
+  ordersCreated    PurchaseOrder[]             @relation("PurchaseOrderCreatedBy")
+  ordersCancelled  PurchaseOrder[]             @relation("PurchaseOrderCancelledBy")
   receipts         PurchaseReceipt[]
   cashMovements    CashRegisterMovement[] // ← relación inversa agregada
-  shiftsOpened     CashShift[]               @relation("ShiftOpenedBy")
-  shiftsClosed     CashShift[]               @relation("ShiftClosedBy")
-  shiftsAuthorized CashShift[]               @relation("ShiftAuthorizedBy")
-  branch           Branch                    @relation(fields: [branchId], references: [id])
-  role             Role                      @relation(fields: [roleId], references: [id])
+  shiftsOpened     CashShift[]                 @relation("ShiftOpenedBy")
+  shiftsClosed     CashShift[]                 @relation("ShiftClosedBy")
+  shiftsAuthorized CashShift[]                 @relation("ShiftAuthorizedBy")
+  branch           Branch                      @relation(fields: [branchId], references: [id])
+  role             Role                        @relation(fields: [roleId], references: [id])
   cashCounts       CashCount[]
-  accountMoves     CustomerAccountMovement[] @relation("AccountMovementBy")
-  accountOverrides CustomerAccountMovement[] @relation("AccountMovementAuthorizedBy")
+  accountMoves     CustomerAccountMovement[]   @relation("AccountMovementBy")
+  accountOverrides CustomerAccountMovement[]   @relation("AccountMovementAuthorizedBy")
   clientPayments   CustomerPayment[]
-  supplierMoves    SupplierAccountMovement[] @relation("SupplierMovementBy")
-  supplierApproved SupplierAccountMovement[] @relation("SupplierMovementAuthorizedBy")
+  supplierMoves    SupplierAccountMovement[]   @relation("SupplierMovementBy")
+  supplierApproved SupplierAccountMovement[]   @relation("SupplierMovementAuthorizedBy")
   supplierPays     SupplierPayment[]
+  allocations      SupplierPaymentAllocation[]
+  returnsCreated   PurchaseReturn[]            @relation("PurchaseReturnCreatedBy")
+  returnsConfirmed PurchaseReturn[]            @relation("PurchaseReturnConfirmedBy")
+  returnsCancelled PurchaseReturn[]            @relation("PurchaseReturnCancelledBy")
 }
 
 model Category {
@@ -275,6 +280,7 @@ model Product {
   suppliers    ProductSupplier[]
   orderItems   PurchaseOrderItem[]
   receiptItems PurchaseReceiptItem[]
+  returnItems  PurchaseReturnItem[]
   category     Category              @relation(fields: [categoryId], references: [id])
   branch       Branch                @relation(fields: [branchId], references: [id])
 
@@ -390,7 +396,7 @@ model StockMovement {
   productId Int
 
   /// INITIAL | SALE | SALE_CANCEL | MANUAL_ADJUSTMENT | LOSS | BREAKAGE |
-  /// INTERNAL_USE | PURCHASE_RECEIPT.
+  /// INTERNAL_USE | PURCHASE_RECEIPT | PURCHASE_RETURN.
   ///
   /// La base comprueba el tipo Y el signo que le corresponde: una venta que
   /// aumente el stock no es un error que haya que buscar, es una fila que
@@ -416,8 +422,9 @@ model StockMovement {
   resultingQuantity Decimal @db.Decimal(14, 3)
 
   /// De donde vino: 'Sale' + id de la venta, 'BranchStock' + id del ajuste,
-  /// 'PurchaseReceipt' + id de la recepcion. No es clave foranea --apunta a
-  /// tablas distintas segun el tipo-- y por eso solo la escribe el servidor.
+  /// 'PurchaseReceipt' + id de la recepcion, 'PurchaseReturn' + id de la
+  /// devolucion. No es clave foranea --apunta a tablas distintas segun el
+  /// tipo-- y por eso solo la escribe el servidor.
   ///
   /// Una entrada de mercaderia apunta a la RECEPCION y no a la orden: una
   /// orden puede tener varias entregas, y con la orden como referencia no se
@@ -559,6 +566,7 @@ model Supplier {
   orders      PurchaseOrder[]
   movements   SupplierAccountMovement[]
   payments    SupplierPayment[]
+  returns     PurchaseReturn[]
 
   /// El listado filtra por activo y ordena por nombre.
   @@index([isActive, name])
@@ -793,6 +801,7 @@ model PurchaseReceipt {
   costChanges ProductCostHistory[]
   movements   SupplierAccountMovement[]
   allocations SupplierPaymentAllocation[]
+  returns     PurchaseReturn[]
 
   /// Las recepciones de una orden, en orden. Es lo que muestra el detalle.
   @@index([purchaseOrderId, receivedAt])
@@ -839,6 +848,8 @@ model PurchaseReceiptItem {
   receipt   PurchaseReceipt   @relation(fields: [purchaseReceiptId], references: [id])
   orderItem PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id])
   product   Product           @relation(fields: [productId], references: [id])
+
+  returnItems PurchaseReturnItem[]
 
   @@index([purchaseReceiptId])
   @@index([purchaseOrderItemId])
@@ -1121,9 +1132,23 @@ model SupplierAccountMovement {
   previousBalance  Decimal @db.Decimal(14, 2)
   resultingBalance Decimal @db.Decimal(14, 2)
 
-  /// De donde vino. Los dos origenes con un hecho detras.
+  /// De donde vino. Los tres origenes con un hecho detras.
   receiptId Int?
   paymentId Int?
+
+  /// La devolucion que genero este credito. Fase 4C.
+  ///
+  /// Es una CLAVE FORANEA y no un texto en `reason`, que es lo que pide el
+  /// objetivo 14: con el texto, "¿que credito emitio la devolucion DV-00000124?"
+  /// se responde leyendo frases; con esto se responde con una union. Y la
+  /// reconciliacion puede comprobar que el importe del movimiento coincida con
+  /// el de la devolucion, que con un texto seria imposible.
+  ///
+  /// Un `PURCHASE_CREDIT` puede seguir sin devolucion --una nota de credito del
+  /// proveedor por una diferencia de facturacion no devuelve mercaderia-- y por
+  /// eso es opcional. Lo que NO puede es haber dos creditos de la misma
+  /// devolucion: hay un indice unico parcial que lo impide.
+  returnId Int?
 
   userId Int
 
@@ -1157,6 +1182,7 @@ model SupplierAccountMovement {
   authorizedBy User?            @relation("SupplierMovementAuthorizedBy", fields: [authorizedById], references: [id])
   receipt      PurchaseReceipt? @relation(fields: [receiptId], references: [id])
   payment      SupplierPayment? @relation(fields: [paymentId], references: [id])
+  return       PurchaseReturn?  @relation(fields: [returnId], references: [id])
 
   /// El extracto del proveedor, que es lo que abre la pestania.
   @@index([supplierId, createdAt])
@@ -1165,6 +1191,7 @@ model SupplierAccountMovement {
   /// "Que movio esta recepcion" y "que movio el comprobante PP-00000128".
   @@index([receiptId])
   @@index([paymentId])
+  @@index([returnId])
   @@index([userId])
 }
 
@@ -1246,17 +1273,189 @@ model SupplierPaymentAllocation {
   /// Cuanto de ESTE pago se imputa a ESA obligacion. Siempre positivo.
   amount Decimal @db.Decimal(14, 2)
 
+  /// Quien la escribio. Fase 4C.
+  ///
+  /// En la Fase 4B no hacia falta: toda imputacion nacia dentro de la
+  /// transaccion de su pago, asi que quien imputaba era siempre quien pagaba.
+  /// La imputacion DIFERIDA rompe eso --un anticipo de marzo se aplica a una
+  /// entrega de agosto, y puede hacerlo otra persona-- y sin esta columna la
+  /// fila no dice quien tomo esa decision.
+  ///
+  /// La migracion rellena las filas anteriores con `SupplierPayment.paidById`,
+  /// que es exactamente quien las escribio.
+  createdById Int
+
   createdAt DateTime @default(now())
 
-  payment SupplierPayment @relation(fields: [paymentId], references: [id])
-  receipt PurchaseReceipt @relation(fields: [receiptId], references: [id])
+  payment   SupplierPayment @relation(fields: [paymentId], references: [id])
+  receipt   PurchaseReceipt @relation(fields: [receiptId], references: [id])
+  createdBy User            @relation(fields: [createdById], references: [id])
 
-  /// Un pago imputa UNA VEZ a cada obligacion. Dos filas del mismo par serian
-  /// dos imputaciones parciales que habria que sumar para leer una sola cosa, y
-  /// harian que "cuanto le puso este pago a esta entrega" tenga dos respuestas.
-  @@unique([paymentId, receiptId])
-  /// "Cuanto lleva pagado esta entrega", que es la consulta del pendiente.
+  /// "Cuanto puso este pago" y "cuanto lleva pagado esta entrega", que son las
+  /// dos preguntas del modulo.
+  ///
+  /// El primero era UNICO hasta la Fase 4C, y dejo de serlo por la imputacion
+  /// diferida: un anticipo de $50.000 puede cubrir $30.000 de una entrega hoy y
+  /// los $20.000 restantes de la misma entrega la semana que viene, cuando el
+  /// proveedor mande la nota que faltaba. Con el par unico, esa segunda
+  /// imputacion era imposible --y el dinero quedaba varado sin forma de
+  /// aplicarlo-- porque una imputacion no se edita.
+  ///
+  /// Lo que se pierde: "cuanto le puso este pago a esta entrega" pasa a ser una
+  /// suma en vez de una fila. Lo que se gana: cada fila sigue siendo un hecho
+  /// inmutable con su fecha y su autor, que es exactamente como este sistema
+  /// responde el saldo de un proveedor y el stock de un producto. Ver
+  /// docs/SUPPLIER_PAYMENT_ALLOCATION.md.
+  @@index([paymentId])
   @@index([receiptId])
+  @@index([createdById])
+}
+
+/// Una devolucion de mercaderia al proveedor. Fase 4C.
+///
+/// Es UN HECHO FISICO con consecuencias financieras, y por eso es una entidad y
+/// no un movimiento del libro: sale mercaderia del deposito, y lo que sale hay
+/// que poder decirlo producto por producto y a que costo.
+///
+/// SIEMPRE APUNTA A UNA RECEPCION, y no es una limitacion sino la definicion:
+/// devolver es deshacer parte de una entrega concreta. De ahi salen las tres
+/// cosas que hacen falta y que no se pueden inventar: el costo con el que entro,
+/// cuanto entro --que es el tope de lo que puede volver-- y en que unidad. Una
+/// correccion financiera SIN mercaderia --una diferencia de facturacion, un
+/// descuento pactado despues-- ya tiene su camino desde la Fase 4B y se llama
+/// nota de credito.
+///
+/// Ver docs/PURCHASE_RETURN_FLOW.md y docs/PURCHASE_RETURN_ACCOUNTING.md.
+model PurchaseReturn {
+  id Int @id @default(autoincrement())
+
+  /// "DV-00000124". Lo genera el SERVIDOR con una secuencia de PostgreSQL,
+  /// igual que `OC-`, `RC-`, `PP-` y `CB-`, y por el mismo motivo:
+  /// `count() + 1` hace que dos devoluciones simultaneas pidan el mismo numero.
+  number String @unique
+
+  branchId   Int
+  supplierId Int
+
+  /// La entrega que se esta deshaciendo. Ver arriba: nunca es nula.
+  ///
+  /// Redundante con `PurchaseReturnItem.purchaseReceiptItemId` --las lineas
+  /// apuntan a las de la recepcion-- y guardada igual, porque es la cabecera la
+  /// que se lista, se filtra y se enlaza. Que las lineas sean de ESTA recepcion
+  /// lo comprueba el servicio.
+  purchaseReceiptId Int
+
+  /// DRAFT | CONFIRMED | CANCELLED.
+  ///
+  /// DRAFT no mueve NADA: ni stock ni saldo. Es un papel que se esta armando, y
+  /// por eso dos borradores pueden pedir la misma mercaderia sin chocar: el tope
+  /// de lo retornable se consume al CONFIRMAR, que es cuando la mercaderia sale.
+  ///
+  /// CONFIRMED es inmutable, con disparador. CANCELLED solo se alcanza desde
+  /// DRAFT: una devolucion confirmada no se cancela, se compensa con una
+  /// recepcion nueva si el proveedor la devuelve.
+  status String @default("DRAFT")
+
+  /// DAMAGED | WRONG_PRODUCT | QUALITY | OVER_DELIVERY | OTHER. Obligatorio.
+  ///
+  /// El enum es para poder PREGUNTAR --"cuanto devolvimos por rotura este
+  /// trimestre"-- y `notes` es para lo que el enum no puede decir. Los dos, y no
+  /// uno: solo el enum obliga a elegir "OTHER" y perder el motivo real; solo el
+  /// texto hace que la pregunta se conteste leyendo.
+  reason String
+
+  notes String?
+
+  /// Lo que esta devolucion vale, AL COSTO HISTORICO de la recepcion original.
+  ///
+  /// Suma de `amount` de sus lineas. Lo calcula el servidor. Es el importe del
+  /// `PURCHASE_CREDIT` que se emite al confirmar, y se guarda por lo mismo que
+  /// `PurchaseReceipt.total`: es el numero por el que se lista y se ordena.
+  ///
+  /// En DRAFT se recalcula con cada cambio de lineas; al confirmar queda
+  /// congelado con la fila entera.
+  total Decimal @default(0) @db.Decimal(14, 2)
+
+  createdById Int
+  createdAt   DateTime @default(now())
+
+  confirmedById Int?
+  confirmedAt   DateTime?
+
+  cancelledById Int?
+  cancelledAt   DateTime?
+  cancelReason  String?
+
+  branch      Branch          @relation(fields: [branchId], references: [id])
+  supplier    Supplier        @relation(fields: [supplierId], references: [id])
+  receipt     PurchaseReceipt @relation(fields: [purchaseReceiptId], references: [id])
+  createdBy   User            @relation("PurchaseReturnCreatedBy", fields: [createdById], references: [id])
+  confirmedBy User?           @relation("PurchaseReturnConfirmedBy", fields: [confirmedById], references: [id])
+  cancelledBy User?           @relation("PurchaseReturnCancelledBy", fields: [cancelledById], references: [id])
+
+  items     PurchaseReturnItem[]
+  movements SupplierAccountMovement[]
+
+  /// El listado de la sucursal, filtrando por estado.
+  @@index([branchId, status, createdAt])
+  /// "Que le devolvimos a este proveedor", que es la seccion de su ficha.
+  @@index([supplierId, createdAt])
+  /// "Que se devolvio de esta entrega", que es el tope de lo retornable y el
+  /// descuento de la obligacion.
+  @@index([purchaseReceiptId])
+  @@index([createdById])
+}
+
+/// Un renglon de una devolucion: que producto vuelve, cuanto y a que costo.
+model PurchaseReturnItem {
+  id               Int @id @default(autoincrement())
+  purchaseReturnId Int
+  productId        Int
+
+  /// La linea de la recepcion que se esta deshaciendo. Nunca nula.
+  ///
+  /// De aca salen las tres cosas que esta fila NO inventa: el costo unitario
+  /// congelado, la unidad de compra y el tope de lo retornable.
+  purchaseReceiptItemId Int
+
+  /// EN UNIDAD DE COMPRA. "2 cajas".
+  quantity Decimal @db.Decimal(14, 3)
+
+  /// Copiadas de la linea de la recepcion, que a su vez las congelo del
+  /// producto. Guardadas y no leidas al vuelo por lo mismo que en la recepcion:
+  /// si el producto cambia de "caja de 8" a "caja de 12", esta devolucion siguio
+  /// siendo de cajas de 8.
+  purchaseUnit         String
+  unitsPerPurchaseUnit Decimal @db.Decimal(14, 3)
+
+  /// EN UNIDAD DE VENTA: quantity x unitsPerPurchaseUnit. Es lo que SALE del
+  /// stock, y por eso se guarda: el movimiento de inventario tiene que poder
+  /// explicarse desde esta fila sin rehacer la conversion.
+  stockQuantity Decimal @db.Decimal(14, 3)
+
+  /// Costo por unidad de compra, COPIADO DE LA RECEPCION ORIGINAL.
+  ///
+  /// NO de `Product.cost`, que es el costo de hoy. Si la caja entro a $1.100 y
+  /// hoy sale $1.350, devolverla vale $1.100: el proveedor acredita lo que
+  /// cobro. Usar el costo actual seria reescribir el pasado, y ademas
+  /// convertiria cada aumento de precios en una ganancia por devolver.
+  unitCost Decimal @db.Decimal(14, 4)
+
+  /// quantity x unitCost, redondeado a pesos. El credito de esta linea.
+  amount Decimal @db.Decimal(14, 2)
+
+  return      PurchaseReturn      @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
+  product     Product             @relation(fields: [productId], references: [id])
+  receiptItem PurchaseReceiptItem @relation(fields: [purchaseReceiptItemId], references: [id])
+
+  /// Un producto no puede estar dos veces en la misma devolucion: serian dos
+  /// renglones del mismo articulo que habria que sumar para leer uno solo, y la
+  /// pantalla los mostraria como si fueran dos cosas distintas.
+  @@unique([purchaseReturnId, purchaseReceiptItemId])
+  @@index([purchaseReturnId])
+  @@index([productId])
+  /// "Cuanto se devolvio ya de esta linea", que es el tope de lo retornable.
+  @@index([purchaseReceiptItemId])
 }
 
 model Sale {
