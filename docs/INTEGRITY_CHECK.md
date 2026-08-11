@@ -79,9 +79,10 @@ de control que deja rastro en lo que controla es una mala herramienta.
 
 Se evaluó agregar `Sistema > Integridad` y se decidió que no, por evidencia:
 
-- Las trece comprobaciones tardan **~73 ms sobre 43 productos, 15 ventas y 3 clientes**, que
-  es una base de demostración. Escalan con el volumen: son recorridos completos
-  de `Sale`, `SaleItem`, `StockMovement` y `CashRegisterMovement`.
+- Las trece comprobaciones tardan **~73 ms sobre 43 productos, 15 ventas y 3
+  clientes**, que es una base de demostración. Escalan con el volumen: son
+  recorridos completos de `Sale`, `SaleItem`, `StockMovement`,
+  `CashRegisterMovement` y —desde la Fase 4A— `CustomerAccountMovement`.
 - Una pantalla que ejecuta eso **en cada render** es un recorrido completo de la
   base cada vez que alguien entra por curiosidad, y desde el navegador de un
   celular en el mostrador.

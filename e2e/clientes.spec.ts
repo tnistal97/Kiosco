@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
-import { entrar, PRODUCTOS } from './ayudantes'
+import { execFileSync } from 'node:child_process'
+import { entrar, escanear, PRODUCTOS } from './ayudantes'
+
+/** La misma base que usa el servidor de las pruebas. Ver playwright.config.ts. */
+const BASE_DE_DATOS =
+  process.env.E2E_DATABASE_URL ??
+  'postgresql://kiosco_dev:kiosco_dev@127.0.0.1:5433/kiosco_dev?schema=public'
 
 /**
  * El circuito de fiado, de punta a punta y en una sola sesion del navegador.
@@ -553,26 +559,88 @@ test.describe('fiado cortado y permisos', () => {
 })
 
 // ===========================================================================
-// 21. El cierre: todo tiene que cuadrar
+// 21. Alta rapida desde el checkout, clic por clic
+// ===========================================================================
+
+test.describe('el mostrador', () => {
+  test('21. se fia a un cliente que no existe todavia, sin salir de la venta', async ({ page }) => {
+    // Es el flujo del objetivo 22, y el unico que se prueba enteramente con el
+    // raton: escanear, cobrar, elegir "A cuenta", crear el cliente ahi mismo y
+    // confirmar. Lo demas de esta suite pasa por la API porque lo que
+    // comprueba es que el circuito cierre; esto comprueba que se pueda HACER.
+    const nuevo = `Fiado Rapido ${String(Date.now() % 100000)}`
+
+    await entrar(page, 'cajero')
+    await page.goto('/venta')
+    await escanear(page, PRODUCTOS.yerba.codigo)
+
+    await page.getByRole('button', { name: /^cobrar/i }).click()
+    const dialogo = page.getByRole('dialog')
+    await expect(dialogo).toBeAttached()
+
+    // Al elegir "A cuenta", el selector de cliente se abre SOLO: sin cliente la
+    // venta no se puede registrar, y hacerlo descubrir al confirmar seria
+    // hacerle perder el tiempo con el cliente enfrente.
+    await dialogo.getByRole('combobox', { name: 'Medio' }).selectOption({ label: 'A cuenta' })
+    await expect(dialogo.getByRole('searchbox', { name: /Buscar cliente/i })).toBeVisible()
+
+    // No aparece nadie con ese nombre, y se crea desde ahi.
+    await dialogo.getByRole('searchbox', { name: /Buscar cliente/i }).fill(nuevo)
+    await dialogo.getByRole('button', { name: '+ Nuevo cliente' }).click()
+
+    // El nombre ya viene puesto con lo que se habia tipeado en el buscador.
+    await expect(dialogo.getByLabel('Nombre')).toHaveValue(nuevo)
+    await dialogo.getByLabel('Teléfono').fill('11-7777-0000')
+    await dialogo.getByRole('button', { name: 'Crear y usar' }).click()
+
+    // Queda seleccionado solo: quien lo acaba de crear lo hizo para usarlo.
+    await expect(dialogo.getByText(nuevo).first()).toBeVisible({ timeout: 15_000 })
+
+    // Y el aviso de credito muestra a cuanto va a quedar ANTES de confirmar.
+    await expect(dialogo.getByText('Saldo resultante')).toBeVisible()
+
+    await dialogo.getByRole('button', { name: /^cobrar/i }).click()
+    await expect(page.getByText('Venta registrada')).toBeVisible({ timeout: 15_000 })
+
+    // El cliente quedo debiendo lo que se le fio.
+    const saldo = await saldoDe(page, nuevo)
+    expect(saldo, 'la venta fiada no cargo la cuenta del cliente recien creado').toBeGreaterThan(0)
+  })
+})
+
+// ===========================================================================
+// 22. El cierre: todo tiene que cuadrar
 // ===========================================================================
 
 test.describe('el cierre', () => {
-  test('21. la reconciliacion no encuentra nada despues de todo el circuito', async ({ page }) => {
+  test('22. la reconciliacion no encuentra nada despues de todo el circuito', () => {
     // Es el cierre de la simulacion. Despues de fiar, cobrar en dos medios,
     // pasarse del limite con autorizacion, anular una venta ya pagada y
     // consumir el saldo a favor, las TRECE invariantes tienen que seguir dando.
-    await entrar(page, 'admin')
+    //
+    // Se corre el GUION y no la funcion, igual que en `operacion.spec.ts`: es
+    // lo que de verdad va a ejecutar alguien, con su codigo de salida y su
+    // salida por pantalla. Importar el modulo desde aca ni siquiera funciona
+    // --Playwright no resuelve el alias `@/`-- pero aunque funcionara, esto
+    // prueba mas.
+    const salida = execFileSync(
+      process.execPath,
+      ['node_modules/tsx/dist/cli.mjs', 'scripts/integrity-check.ts'],
+      { encoding: 'utf8', env: { ...process.env, DATABASE_URL: BASE_DE_DATOS } },
+    )
 
-    const { comprobarIntegridad } = await import('../src/modules/integrity/service')
-    const informe = await comprobarIntegridad()
+    expect(salida, 'el circuito de cuenta corriente dejo el sistema descuadrado').toContain(
+      'Sin inconsistencias',
+    )
 
-    expect(
-      informe.comprobaciones
-        .filter((c) => c.inconsistencias.length > 0)
-        .map((c) => `${c.nombre}: ${JSON.stringify(c.inconsistencias.slice(0, 2))}`),
-      'el circuito de cuenta corriente dejo el sistema descuadrado',
-    ).toEqual([])
-
-    expect(informe.comprobaciones).toHaveLength(13)
+    // Y las cuatro comprobaciones nuevas corrieron de verdad, no se saltearon.
+    for (const nombre of [
+      'Clientes',
+      'Venta a cuenta',
+      'Cobros a clientes',
+      'Anulaciones de cuenta',
+    ]) {
+      expect(salida, `la comprobacion "${nombre}" no figura en la salida`).toContain(nombre)
+    }
   })
 })

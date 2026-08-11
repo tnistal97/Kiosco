@@ -213,7 +213,14 @@ test.describe('accesibilidad automatizada', () => {
       .first()
       .click()
     await page.getByRole('button', { name: 'Registrar pago' }).click()
-    await page.getByRole('dialog').waitFor({ state: 'attached' })
+
+    // Se espera a que el CONTENIDO sea visible, no a que el dialogo este
+    // adjunto. Con `attached` a secas, axe corre durante la transicion de
+    // entrada: con la opacidad a medio camino, TODO el dialogo falla el
+    // contraste y el informe trae catorce faltas que no existen.
+    const dialogo = page.getByRole('dialog')
+    await expect(dialogo.getByRole('combobox', { name: 'Medio' })).toBeVisible()
+    await expect(dialogo.getByRole('button', { name: 'Registrar pago' })).toBeVisible()
 
     const { violations } = await analizar(page)
     expect(detalle(violations)).toBe('sin faltas')
