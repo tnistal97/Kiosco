@@ -133,14 +133,38 @@ describe('Tipos de movimiento', () => {
     expect(TIPOS_DE_AJUSTE as readonly string[]).not.toContain('PURCHASE_RECEIPT')
   })
 
+  it('PURCHASE_RETURN lo emite la confirmacion de una devolucion, y NADIE mas', () => {
+    expect(esTipoValido('PURCHASE_RETURN')).toBe(true)
+
+    const emisores = archivosDe('src/modules')
+      .filter((f) => f.endsWith('.ts'))
+      .filter((f) => leer(f).includes("type: 'PURCHASE_RETURN'"))
+
+    // El espejo exacto de `PURCHASE_RECEIPT`: un solo emisor es lo que
+    // garantiza que toda salida de mercaderia al proveedor tenga una devolucion
+    // que la respalde, con su costo historico y su credito.
+    expect(
+      emisores,
+      'la salida al proveedor sale de una devolucion confirmada, de ningun otro lado',
+    ).toEqual(['src/modules/purchases/service.returns.ts'])
+  })
+
+  it('PURCHASE_RETURN tampoco figura entre los tipos de ajuste manual', () => {
+    // Si estuviera, cualquiera con `stock.adjust` podria sacar mercaderia
+    // "devuelta al proveedor" sin devolucion, sin costo y sin credito.
+    expect(TIPOS_DE_AJUSTE as readonly string[]).not.toContain('PURCHASE_RETURN')
+    expect(esTipoDeAjuste('PURCHASE_RETURN')).toBe(false)
+  })
+
   it('el catalogo de TypeScript y la restriccion de PostgreSQL dicen lo mismo', () => {
     // Dos definiciones de la misma verdad, en dos lenguajes. Si se separan, la
     // base rechaza filas que el servicio considera validas --o peor, al reves--.
-    const sql = leer('prisma/migrations/20260807130000_phase3_stock_ledger/migration.sql')
-    const restriccion = sql.slice(
-      sql.indexOf('StockMovement_tipo_signo_check'),
-      sql.indexOf('StockMovement_referencia_check'),
-    )
+    //
+    // Se lee la ULTIMA definicion de la restriccion, no la de la Fase 3A: la
+    // tabla de signos se reescribe entera cada vez que aparece un tipo nuevo
+    // --lo hizo la 4C con `PURCHASE_RETURN`-- y anclar la prueba a la primera
+    // version la volvia una prueba sobre historia, no sobre la regla vigente.
+    const restriccion = ultimaTablaDeSignos()
 
     for (const tipo of TIPOS_MOVIMIENTO) {
       expect(restriccion, `${tipo} no figura en la restriccion de la base`).toContain(`'${tipo}'`)
@@ -162,10 +186,16 @@ describe('Tipos de movimiento', () => {
       BREAKAGE: '< 0',
       INTERNAL_USE: '< 0',
       PURCHASE_RECEIPT: '> 0',
+      PURCHASE_RETURN: '< 0',
     }
 
+    // Se parte por RAMA (`OR`) y no por linea: una rama con cinco tipos no
+    // entra en un renglon, y buscar el signo en la linea del tipo devolvia
+    // "sin rama" para los que quedaban arriba del salto.
+    const ramas = restriccion.split(/\bOR\b/)
+
     const discrepancias = TIPOS_MOVIMIENTO.map((tipo) => {
-      const rama = restriccion.split('\n').find((l) => l.includes(`'${tipo}'`)) ?? ''
+      const rama = ramas.find((r) => r.includes(`'${tipo}'`)) ?? ''
       const enLaBase = /(<=|>=|<>|<|>)\s*0/.exec(rama)?.[0].replace(/\s+/g, ' ') ?? 'sin rama'
       return { tipo, esperado: EXIGIDO_POR_LA_BASE[tipo], enLaBase }
     }).filter((f) => f.esperado !== f.enLaBase)
@@ -223,6 +253,38 @@ function archivosDe(carpeta: string): string[] {
 
 function leer(ruta: string): string {
   return readFileSync(join(RAIZ, ruta), 'utf8')
+}
+
+/**
+ * La ULTIMA definicion de la tabla de signos del libro de inventario.
+ *
+ * Recorre las migraciones en orden y se queda con la definicion mas nueva. Las
+ * lineas comentadas se descartan antes de buscar: el bloque ROLLBACK de la
+ * migracion que reescribe la restriccion contiene una copia de la ANTERIOR, y
+ * sin filtrar comentarios la prueba terminaria midiendo la version vieja.
+ */
+function ultimaTablaDeSignos(): string {
+  const carpetas = readdirSync(join(RAIZ, 'prisma/migrations'), { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)
+    .sort()
+
+  let ultima = ''
+  for (const carpeta of carpetas) {
+    const sql = leer(`prisma/migrations/${carpeta}/migration.sql`)
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('--'))
+      .join('\n')
+
+    const desde = sql.lastIndexOf('ADD CONSTRAINT "StockMovement_tipo_signo_check"')
+    if (desde === -1) continue
+
+    const hasta = sql.indexOf(');', desde)
+    ultima = sql.slice(desde, hasta === -1 ? undefined : hasta)
+  }
+
+  if (ultima === '') throw new Error('no se encontro la tabla de signos en ninguna migracion')
+  return ultima
 }
 
 /** El unico archivo autorizado a escribir sobre BranchStock. */

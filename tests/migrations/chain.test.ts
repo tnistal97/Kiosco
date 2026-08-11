@@ -155,6 +155,10 @@ describe('La cadena oficial', () => {
       '20260811120000_phase4b_supplier_payments',
       '20260811130000_phase4b_supplier_accounts',
       '20260811140000_phase4b_payment_allocations',
+      '20260812100000_phase4c_supplier_advances',
+      '20260812110000_phase4c_purchase_returns',
+      '20260812120000_phase4c_purchase_return_finance',
+      '20260812130000_phase4c_purchase_return_stock',
     ])
   })
 

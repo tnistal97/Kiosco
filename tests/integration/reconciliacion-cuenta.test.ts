@@ -104,7 +104,7 @@ async function cobrar(monto: string, method = 'CASH') {
 // ---------------------------------------------------------------------------
 
 describe('una base sana no reporta nada', () => {
-  it('la fixture con clientes cierra en las diecisiete comprobaciones', async () => {
+  it('la fixture con clientes cierra en las diecinueve comprobaciones', async () => {
     const informe = await comprobarIntegridad()
     expect(
       informe.comprobaciones.filter((c) => c.inconsistencias.length > 0).map((c) => c.nombre),
@@ -113,7 +113,7 @@ describe('una base sana no reporta nada', () => {
     // El numero se fija a proposito: si alguien agrega una comprobacion y se
     // olvida de actualizarlo, esta prueba lo dice. Trece de la Fase 4A, mas
     // las cuatro de cuentas por pagar de la 4B.
-    expect(informe.comprobaciones).toHaveLength(17)
+    expect(informe.comprobaciones).toHaveLength(19)
   })
 
   it('despues de fiar, cobrar y anular sigue cerrando', async () => {

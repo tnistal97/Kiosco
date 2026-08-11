@@ -159,8 +159,8 @@ beforeAll(async () => {
   `)
 
   await prisma.$executeRawUnsafe(`
-    INSERT INTO "SupplierPaymentAllocation" ("paymentId", "receiptId", "amount")
-    SELECT p."id", r."id", 1000
+    INSERT INTO "SupplierPaymentAllocation" ("paymentId", "receiptId", "amount", "createdById")
+    SELECT p."id", r."id", 1000, ${String(fx.admin.id)}
       FROM "SupplierPayment" p
       JOIN "PurchaseOrder" o ON o."supplierId" = p."supplierId" AND o."number" LIKE 'OC-VOL-%'
       JOIN LATERAL (

@@ -391,6 +391,91 @@ test.describe('accesibilidad automatizada', () => {
     expect(detalle(violations)).toBe('sin faltas')
   })
 
+  // ---- Fase 4C: anticipos y devoluciones -------------------------------
+  //
+  // Mismo riesgo que la cuenta corriente, y uno mas: el dialogo de devolucion
+  // pone CUATRO numeros por renglon --recibido, devuelto, disponible y stock--
+  // y un campo de cantidad. Sin etiqueta propia, ese campo es "un cuadro de
+  // texto" para un lector de pantalla, en una fila donde hay cuatro numeros.
+
+  test('/devoluciones no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/devoluciones')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el detalle de una devolución no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+
+    // La devolución que deja el seed, buscada por la API: depender de que otro
+    // fichero de pruebas haya creado una lo volvería order-dependent, que es
+    // exactamente el error que este archivo ya cometió una vez.
+    const id = await page.evaluate(async () => {
+      const r = await fetch('/api/devoluciones?pageSize=1')
+      const p = (await r.json()) as { data: Array<{ id: number }> }
+      const d = p.data[0]?.id
+      if (d === undefined) throw new Error('el seed no dejó ninguna devolución')
+      return d
+    })
+
+    await page.goto(`/devoluciones/${String(id)}`)
+    await page.getByRole('heading', { name: 'Renglones' }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el diálogo de devolver mercadería no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+
+    // La orden de la demostración que tiene entregas: de ahí sale el botón.
+    const ordenId = await page.evaluate(async () => {
+      const r = await fetch('/api/purchases?status=RECEIVED&pageSize=10')
+      const p = (await r.json()) as { data: Array<{ id: number; recepciones: number }> }
+      const o = p.data.find((x) => x.recepciones > 0)
+      if (!o) throw new Error('el seed no dejó ninguna orden recibida')
+      return o.id
+    })
+
+    await page.goto(`/compras/${String(ordenId)}`)
+    await page.getByRole('button', { name: 'Devolver mercadería' }).first().click()
+    await page.getByRole('heading', { name: /Devolver de/ }).waitFor()
+    await esperarDialogoEstable(page)
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el diálogo de imputar un anticipo no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+
+    // El proveedor con anticipo del seed: $15.000 entregados, $10.000
+    // aplicados, $5.000 disponibles.
+    const id = await page.evaluate(async () => {
+      const r = await fetch('/api/suppliers?q=Bebidas Andinas&pageSize=10')
+      const p = (await r.json()) as { data: Array<{ id: number }> }
+      const s = p.data[0]?.id
+      if (s === undefined) throw new Error('falta el proveedor de la demostración')
+      return s
+    })
+
+    await page.goto(`/proveedores/${String(id)}`)
+    await page.getByRole('heading', { name: 'Pagos sin imputar' }).waitFor()
+
+    const boton = page.getByRole('button', { name: 'Imputar' }).first()
+    if (await boton.isVisible()) {
+      await boton.click()
+      await page.getByRole('heading', { name: /Imputar PP-/ }).waitFor()
+      await esperarDialogoEstable(page)
+    }
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
   test('/compras no tiene faltas', async ({ page }) => {
     await entrar(page, 'duenio')
     await page.goto('/compras')

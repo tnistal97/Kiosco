@@ -709,6 +709,7 @@ describe('Diferencia de costo', () => {
       recibirMercaderia(sesionSinCosto, orden.id, {
         notes: null,
         items: [{ orderItemId: item.id, quantity: '3', unitCost: '8900' }],
+        aplicarAnticipos: false,
       }),
     ).rejects.toThrow(/permiso/i)
 
@@ -716,6 +717,7 @@ describe('Diferencia de costo', () => {
     const ok = await recibirMercaderia(sesionSinCosto, orden.id, {
       notes: null,
       items: [{ orderItemId: item.id, quantity: '3' }],
+      aplicarAnticipos: false,
     })
     expect(ok.status).toBe('PARTIALLY_RECEIVED')
     expect(await stockExacto(fx.branchA.id, fx.productoCaja.id)).toBe('124.000')
