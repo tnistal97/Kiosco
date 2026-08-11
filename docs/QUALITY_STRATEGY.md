@@ -303,30 +303,35 @@ Este es el único que exige infraestructura real: transacciones concurrentes con
 
 ## 3. Alcance por capa
 
-> **Estado.** Cubierto: servicios de dominio, rutas de API, transacciones,
-> esquemas, permisos, migraciones y rendimiento de consultas. **Pendientes:
-> componentes y extremo a extremo**, que dependen del rediseño de la interfaz
-> y por eso van con la Fase 2.
+> **Estado al cierre de la Fase 4D.** Cubierto: servicios de dominio, rutas de
+> API, transacciones, esquemas, permisos, migraciones, concurrencia,
+> rendimiento con volumen, accesibilidad, responsive y extremo a extremo.
 >
-> Las 354 pruebas, por categoría:
+> **1.421 pruebas en 63 archivos**, más **222 de extremo a extremo** con
+> Playwright.
 >
-> | Categoría             | Cuántas | Qué cubre                                                                                                     |
-> | --------------------- | ------: | ------------------------------------------------------------------------------------------------------------- |
-> | `tests/authorization` |     189 | Anónimo, permisos por rol, aislamiento por sucursal, endpoints retirados, matriz documentada contra el código |
-> | `tests/integration`   |      82 | Ventas, anulación, login, auditoría, contrato de error                                                        |
-> | `tests/unit`          |      55 | Permisos, validación, política de caché                                                                       |
-> | `tests/migrations`    |      16 | Cadena desde cero y sobre copia con datos                                                                     |
-> | `tests/performance`   |       8 | Paginación, N+1, escrituras por venta                                                                         |
-> | `tests/concurrency`   |       4 | Ventas simultáneas, sobreventa, coherencia de caja                                                            |
+> | Categoría             | Qué cubre                                                                                         |
+> | --------------------- | ------------------------------------------------------------------------------------------------- |
+> | `tests/authorization` | Anónimo, permisos por rol, aislamiento por sucursal, matriz documentada contra el código          |
+> | `tests/integration`   | Ventas, compras, cuentas, devoluciones, lotes, inventario físico, reportes, reconciliación        |
+> | `tests/unit`          | Permisos, validación, dinero, cantidades, política de caché, fronteras de escritura, FEFO         |
+> | `tests/migrations`    | Cadena desde cero y sobre copia con datos, guardia destructiva                                    |
+> | `tests/performance`   | Paginación, N+1, volumen de clientes, proveedores, devoluciones y lotes; **planes de consulta**   |
+> | `tests/concurrency`   | Ventas simultáneas, sobreventa, saldos, imputaciones, lotes en negativo, dos inventarios a la vez |
+> | `e2e/`                | Operación completa, almacén, compras, clientes, devoluciones, lotes, accesibilidad, 375 px        |
 >
-> **Cobertura sobre el código de servidor:** 84,1 % líneas · 82,0 % sentencias
-> · 85,4 % funciones · 61,8 % ramas. Los umbrales están unos puntos por debajo
-> (75 / 73 / 75 / 50). No son una meta: son una alarma, para que una caída se
-> note sin que el número oscile por un par de líneas.
+> **Cobertura sobre el código de servidor y los componentes probados:** 81,1 %
+> líneas · 78,4 % sentencias · 78,9 % funciones · 63,9 % ramas. Los umbrales
+> están unos puntos por debajo (78 / 75 / 76 / 63). No son una meta: son una
+> alarma, para que una caída se note sin que el número oscile por un par de
+> líneas — **y no se bajan para que una fase pase.** La 4D.1 quedó 0,65 puntos
+> por debajo en ramas y se cubrieron ramas reales (las tres políticas de lote,
+> vencido, sin fecha, FEFO, reparto manual) hasta superarlo.
 >
-> Las pantallas quedan fuera de la medición a propósito: sin pruebas de
-> interfaz, incluirlas daría un porcentaje que no dice nada y que escondería
-> una caída real en el código que sí está probado.
+> Las pantallas quedan fuera de la medición a propósito: las cubren las pruebas
+> de extremo a extremo, que corren en otro proceso y cuya cobertura vitest no
+> puede medir. Incluirlas daría un porcentaje bajo que no dice nada y que
+> escondería una caída real en el código que sí está medido.
 
 | Capa                     | Qué se prueba                                                                                               | Cómo                       | Prioridad  |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------- | ---------- |
