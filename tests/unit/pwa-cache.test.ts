@@ -88,6 +88,10 @@ describe('Politica de cache del service worker', () => {
     '/api/reports/vencimientos',
     '/api/reports/mermas?desde=2026-08-01&hasta=2026-08-11',
     '/api/reports/inventarios?desde=2026-08-01&hasta=2026-08-11',
+    // El endpoint del alta rapida de la Fase 5A.1. Lo cubre el prefijo `/api/`,
+    // y se nombra igual: una respuesta suya guardada en disco seria un producto
+    // que aparece creado sin haberlo creado.
+    '/api/products/quick',
     // Y las pantallas de la fase.
     '/stock/lotes',
     '/stock/lotes/7',

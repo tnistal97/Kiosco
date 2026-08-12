@@ -14,6 +14,7 @@ import {
 import { paginationQuerySchema, sortSchema } from '@/server/http/pagination'
 import { CANTIDAD_MAX } from '@/lib/cantidad'
 import { UNIDADES_DE_COMPRA, UNIDADES_DE_VENTA } from './units'
+import { LARGO_MAXIMO_CODIGO, motivoDeCodigoInvalido } from './barcode'
 
 /**
  * Tope de unidades por producto.
@@ -38,13 +39,22 @@ export const minimoSchema = quantityOrZeroSchema
  * Se recorta y nada mas. NO se pasa a mayusculas: para un lector, dos codigos
  * que difieren en mayusculas son dos codigos distintos, y normalizarlos aca
  * haria que un producto quedara inalcanzable con su propia etiqueta.
+ *
+ * La regla en si vive en `./barcode`, sin Zod, para que la caja pueda aplicar
+ * exactamente la misma antes de mandar nada: es lo que le permite distinguir un
+ * codigo INVALIDO --que no tiene sentido ofrecerse a crear-- de uno valido y NO
+ * REGISTRADO. Que fueran dos definiciones distintas es justo lo que haria que
+ * las dos puntas discrepen.
  */
 export const codigoSchema = z
   .string()
   .trim()
   .min(1, 'El codigo de barras no puede estar vacio')
-  .max(64)
-  .regex(/^[0-9A-Za-z-]+$/, 'Codigo de barras invalido')
+  .max(LARGO_MAXIMO_CODIGO)
+  .superRefine((valor, ctx) => {
+    const motivo = motivoDeCodigoInvalido(valor)
+    if (motivo !== null) ctx.addIssue({ code: 'custom', message: motivo })
+  })
 
 /**
  * Codigo de barras PRINCIPAL.
@@ -241,7 +251,47 @@ export const cambiarCostoSchema = z
   })
   .strict()
 
+/**
+ * Alta RAPIDA desde la caja. Fase 5A.1.
+ *
+ * Seis campos y `.strict()`. Lo que NO declara es tan importante como lo que
+ * declara:
+ *
+ *   `branchId`   sale de la sesion. Declararlo permitiria dar de alta un
+ *                producto en otra sucursal desde el mostrador.
+ *   `isActive`   un producto que nace de baja no tiene ningun uso.
+ *   `totalStock` se llama `initialStock` a proposito: `totalStock` es el campo
+ *                de la EDICION, donde significa "dejalo en este numero" y
+ *                escribe un ajuste. Aca no hay ajuste, hay un saldo de partida.
+ *   `lotTracking` / `expirationTracking`  se configuran en la ficha, con el
+ *                flujo de inicializacion de la Fase 4D. Desde la caja no.
+ *   `supplierId`, `description`, `minimumStock`, `purchaseUnit`,
+ *   `unitsPerPurchaseUnit`, `alternateBarcodes`  se completan despues.
+ *
+ * `barcode` es OPCIONAL porque el mismo formulario sirve para el alta manual de
+ * un producto sin codigo --el artesanal, el fraccionado--. El flujo que nace de
+ * un escaneo siempre lo lleva: eso lo garantiza la pantalla, que lo prellena y
+ * no lo deja borrar.
+ *
+ * `cost` viaja pero el servicio lo rechaza sin `products.cost.update`. Esta en
+ * el esquema y no afuera para que mandarlo sin permiso de un 403 explicito en
+ * vez de un "campo no reconocido", que es un mensaje que no ayuda a nadie.
+ */
+export const crearProductoRapidoSchema = z
+  .object({
+    barcode: codigoSchema.nullable().optional(),
+    name: shortText(150),
+    price: amountSchema,
+    categoryId: idSchema,
+    saleUnit: unidadDeVentaSchema.default('UNIT'),
+    /** Lo que hay para vender AHORA. Entra al libro como `INITIAL`. */
+    initialStock: stockInicialSchema.default('0.000'),
+    cost: costSchema.nullable().optional(),
+  })
+  .strict()
+
 export type CrearProductoInput = z.infer<typeof crearProductoSchema>
+export type CrearProductoRapidoInput = z.infer<typeof crearProductoRapidoSchema>
 export type EditarProductoInput = z.infer<typeof editarProductoSchema>
 export type ListarProductosQuery = z.infer<typeof listarProductosQuerySchema>
 export type CambiarCostoInput = z.infer<typeof cambiarCostoSchema>

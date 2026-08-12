@@ -52,6 +52,34 @@ export const PERMISSIONS = [
   /** Cambiar el costo. Exige motivo y deja historial inmutable. */
   'products.cost.update',
   'products.delete',
+  /**
+   * Dar de alta un producto DESDE LA CAJA, con el formulario minimo.
+   *
+   * Aparte de `products.create` y no un alias suyo. La pregunta que lo decidio
+   * fue si hacia falta un permiso nuevo cuando ya existe uno de alta, y la
+   * respuesta es que los dos no reparten el mismo poder:
+   *
+   *   `products.create`            el formulario entero: costo, proveedor,
+   *                                varios codigos, unidad de compra, minimo.
+   *   `products.quickCreate`       seis campos y nada mas, en el mostrador,
+   *                                con el codigo que acaba de pasar el lector.
+   *
+   * Que sea MAS CHICO es lo que lo hace util: se le puede dar al supervisor de
+   * turno --que tiene que poder destrabar una venta a las nueve de la noche--
+   * sin darle el catalogo entero. Al reves tambien vale: quien administra el
+   * catalogo desde la oficina no necesita este.
+   *
+   * NO lo tiene el cajero por omision. Es la unica decision del reparto que el
+   * pedido fijo de antemano, y coincide con el criterio del resto del sistema:
+   * quien cobra no define que se vende ni a cuanto.
+   *
+   * Sobre el precio: quien puede crear fija el precio INICIAL, igual que con
+   * `products.create` desde la Fase 2.4 --un producto sin precio no se puede
+   * vender, que es justamente lo que se viene a destrabar--. Cambiar el precio
+   * de un producto que YA EXISTE sigue necesitando `products.price.update`.
+   * Ver docs/POS_QUICK_PRODUCT_CREATE.md.
+   */
+  'products.quickCreate',
   'categories.manage',
   // Inventario
   'stock.view',
@@ -431,6 +459,7 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'sales.cancel',
     'products.view',
     'products.create',
+    'products.quickCreate',
     'products.update',
     // El encargado si fija precios: es quien recibe la lista del proveedor.
     'products.price.update',
@@ -521,6 +550,22 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'cash.movement.create',
     'stock.adjust',
     'inventory.movements.view',
+    /**
+     * Alta rapida desde la caja, y SOLO la rapida: sin `products.create`.
+     *
+     * Es el caso que motiva todo el permiso. Cuando el cajero pasa por el lector
+     * algo que no esta en el catalogo, quien esta a mano en el mostrador es el
+     * supervisor; si el escalon mas bajo que puede resolverlo es el encargado,
+     * el callejon sin salida no se cierra, se corre un piso mas arriba y a las
+     * nueve de la noche sigue sin haber nadie.
+     *
+     * Lo que suma sobre lo que ya podia: fijar el precio inicial de un producto
+     * que no existia. NO puede tocar el de uno que si existe --eso es
+     * `products.price.update`, que no tiene-- ni cargar costo --no tiene
+     * `products.cost.update`, asi que el servidor le rechaza el campo--. Declarar
+     * stock inicial no le agrega nada: ya podia con `stock.adjust`.
+     */
+    'products.quickCreate',
     // Lo que necesita para que el turno cierre: cuanto se vendio, como esta la
     // caja y que falta reponer. SIN `reports.costs.view`, por el mismo motivo
     // por el que no tiene `products.cost.view`: el margen del negocio no hace
@@ -586,6 +631,15 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
    * que no puede mostrar el credito que esta generando. Las dos son peores que
    * no tener el boton.
    */
+  /*
+   * SIN `products.quickCreate`, y no por descuido. El repositor no tiene
+   * `products.create`: hoy no puede dar de alta nada, y darle la version rapida
+   * seria AMPLIARLE el alcance con la excusa de una comodidad. Ademas no esta en
+   * el mostrador --el alta rapida existe para no frenar una venta con el cliente
+   * enfrente-- y lo que encuentra sin etiqueta en el deposito no tiene apuro:
+   * entra por el formulario completo o por una recepcion de compra, que es donde
+   * se carga el costo.
+   */
   repositor: [
     'products.view',
     'stock.view',
@@ -621,6 +675,11 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
   compras: [
     'products.view',
     'products.create',
+    // Y la rapida, porque ya administra el catalogo: negarsela solo le sacaria
+    // el atajo desde la orden de compra --donde tambien aparece el producto que
+    // falta-- sin quitarle ningun poder, porque con `products.create` puede
+    // cargar exactamente lo mismo por el formulario largo.
+    'products.quickCreate',
     'products.update',
     // El costo es su materia prima: es quien negocia con el proveedor y quien
     // carga la factura. Sin esto no podria hacer su trabajo.

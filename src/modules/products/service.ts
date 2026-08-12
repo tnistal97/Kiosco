@@ -12,14 +12,15 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import type { Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { audit } from '@/server/audit/audit'
-import { conflict, forbidden, invalid, notFound } from '@/server/http/errors'
+import { AppError, conflict, forbidden, invalid, notFound } from '@/server/http/errors'
 import type { Session } from '@/server/auth/session'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
 import type {
   CambiarCostoInput,
   CrearProductoInput,
+  CrearProductoRapidoInput,
   EditarProductoInput,
   ListarProductosQuery,
 } from './schemas'
@@ -640,6 +641,23 @@ function exigirCantidadValida(unidad: UnidadDeVenta, valor: TextoCantidad, campo
 }
 
 export async function crearProducto(session: Session, input: CrearProductoInput) {
+  return altaDeProducto(session, input, 'POST /api/products')
+}
+
+/**
+ * El alta, una sola vez.
+ *
+ * `crearProducto` y `crearProductoRapido` son la MISMA operacion vista con dos
+ * formularios distintos: la rapida traduce sus seis campos a esta entrada y
+ * entra por aca. Duplicar el cuerpo habria significado dos transacciones que
+ * pueden separarse --una con el movimiento de stock inicial y otra sin el, una
+ * que audita y otra que no-- y esa es exactamente la clase de diferencia que
+ * despues nadie encuentra.
+ *
+ * `origen` es lo unico que cambia, y va a la bitacora: es lo que despues permite
+ * preguntar cuantos productos se dieron de alta desde la caja.
+ */
+async function altaDeProducto(session: Session, input: CrearProductoInput, origen: string) {
   const categoria = await prisma.category.findUnique({ where: { id: input.categoryId } })
   if (!categoria) throw invalid('La categoria indicada no existe')
 
@@ -722,7 +740,7 @@ export async function crearProducto(session: Session, input: CrearProductoInput)
         barcode: input.barcode ?? null,
         stockInicial: input.totalStock,
       },
-      origin: 'POST /api/products',
+      origin: origen,
     })
 
     // Los codigos se releen de la base en vez de devolver los de la entrada:
@@ -742,6 +760,124 @@ export async function crearProducto(session: Session, input: CrearProductoInput)
     barcode: resultado.codigos.find((c) => c.isPrimary)?.code ?? null,
     alternateBarcodes: resultado.codigos.filter((c) => !c.isPrimary).map((c) => c.code),
   }
+}
+
+/** Origen de la bitacora del alta rapida. Se consulta para la metrica. */
+export const ORIGEN_ALTA_RAPIDA = 'POST /api/products/quick'
+
+/**
+ * Alta RAPIDA desde la caja. Fase 5A.1.
+ *
+ * Traduce los seis campos del mostrador a un alta completa y delega. Los valores
+ * que no se preguntan se eligen aca --y no en el esquema-- para que se lean
+ * juntos y se entienda por que cada uno es el que es:
+ *
+ *   `purchaseUnit = saleUnit`   se compra en la misma unidad en que se vende.
+ *                               Con `unitsPerPurchaseUnit = 1` es la unica
+ *                               combinacion que no dice nada falso; corregirla
+ *                               es parte de completar la ficha despues.
+ *   `minimumStock = 0`          cero significa SIN MINIMO CONFIGURADO. El
+ *                               sistema no sabe cuantas unidades quiere tener
+ *                               este almacen de un producto que acaba de
+ *                               conocer, y no lo inventa.
+ *   `lotTracking`, `expirationTracking`  quedan en `NONE` por omision del
+ *                               esquema de Prisma. Configurar lotes desde la
+ *                               caja no: para eso esta el flujo de
+ *                               inicializacion de la Fase 4D, que exige
+ *                               atribuir el stock existente.
+ *   `supplierId = null`         quien esta cobrando no sabe a quien se le
+ *                               compro, y un proveedor inventado es peor que
+ *                               ninguno.
+ *
+ * El caso de DOS CAJAS esta contemplado y es la parte que importa: entre la
+ * comprobacion de codigo libre y la insercion hay una ventana en la que la otra
+ * caja puede haber creado el mismo producto. La base la cierra --el indice unico
+ * de `ProductBarcode.code` rechaza la segunda-- y aca se traduce ese rechazo en
+ * algo con lo que se puede seguir vendiendo. Ver docs/POS_QUICK_PRODUCT_CREATE.md.
+ */
+export async function crearProductoRapido(session: Session, input: CrearProductoRapidoInput) {
+  const completo: CrearProductoInput = {
+    name: input.name,
+    barcode: input.barcode ?? null,
+    alternateBarcodes: undefined,
+    description: null,
+    price: input.price,
+    cost: input.cost ?? null,
+    categoryId: input.categoryId,
+    supplierId: null,
+    saleUnit: input.saleUnit,
+    // `UnidadDeVenta` es subconjunto de `UnidadDeCompra`: las cinco existen de
+    // los dos lados. Las dos que no --PACK y BOX-- no son de venta.
+    purchaseUnit: input.saleUnit,
+    unitsPerPurchaseUnit: '1',
+    totalStock: input.initialStock,
+    minimumStock: CERO,
+  }
+
+  try {
+    return await altaDeProducto(session, completo, ORIGEN_ALTA_RAPIDA)
+  } catch (error) {
+    const codigo = input.barcode ?? null
+    if (codigo === null || !esChoqueDeCodigo(error)) throw error
+    throw await conflictoDeCodigo(session, codigo, error)
+  }
+}
+
+/**
+ * `true` si el fallo es "ese codigo de barras ya existe".
+ *
+ * Dos formas del mismo hecho: el `conflict` que emite `exigirCodigosLibres`
+ * cuando alcanza a verlo, y el P2002 que emite PostgreSQL cuando la otra caja
+ * gano la carrera. Las dos se atienden igual.
+ */
+function esChoqueDeCodigo(error: unknown): boolean {
+  if (error instanceof AppError) return error.code === 'DUPLICATE_BARCODE'
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002' &&
+    JSON.stringify(error.meta?.target ?? '').includes('code')
+  )
+}
+
+/**
+ * Vuelve a buscar el codigo y arma el error con lo que encontro.
+ *
+ * Dos desenlaces distintos, y confundirlos seria mentir:
+ *
+ *   lo tiene un producto de ESTA sucursal  la otra caja gano la carrera. Se
+ *       devuelve el producto entero para que el mostrador lo agregue a la venta
+ *       sin volver a escanear.
+ *   lo tiene un producto de OTRA sucursal  no es una carrera: el codigo es
+ *       global --el indice unico de `ProductBarcode.code` no distingue
+ *       sucursal-- y el catalogo no. No se dice de que producto se trata ni de
+ *       que sucursal: quien esta en la caja no puede verlo ni resolverlo.
+ *
+ * Que un producto INACTIVO caiga en el primer caso es deliberado: se busca con
+ * `soloActivos: false` porque "ya existe pero esta de baja" es informacion util
+ * --el camino es reactivarlo, no crear un duplicado-- y decir "codigo ocupado"
+ * a secas dejaria al cajero sin saber que hacer.
+ */
+async function conflictoDeCodigo(
+  session: Session,
+  codigo: string,
+  causa: unknown,
+): Promise<AppError> {
+  const existente = await buscarPorCodigoExacto(session, codigo, { soloActivos: false })
+
+  if (!existente) {
+    return conflict(
+      'Ese código ya está registrado y no pertenece a esta sucursal. ' +
+        'Pedile a un encargado que lo revise.',
+      { code: 'DUPLICATE_BARCODE', cause: causa },
+    )
+  }
+
+  return conflict(
+    existente.isActive
+      ? `Otro usuario acaba de registrar este producto: ${existente.name}.`
+      : `Ese código ya lo tiene "${existente.name}", que está dado de baja.`,
+    { code: 'PRODUCT_ALREADY_EXISTS', details: { producto: existente }, cause: causa },
+  )
 }
 
 /**

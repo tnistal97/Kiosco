@@ -55,6 +55,17 @@ export type ErrorCode =
   /** `1.235` unidades no existe. La unidad no admite esa fraccion. */
   | 'INVALID_QUANTITY_FOR_UNIT'
   | 'DUPLICATE_BARCODE'
+  /**
+   * El codigo ya lo tiene un producto de ESTA sucursal, que viaja en `details`.
+   *
+   * Distinto de `DUPLICATE_BARCODE`, que dice "ese codigo esta ocupado" y punto.
+   * Este dice ademas cual es el producto y que se puede vender, y existe para el
+   * caso de dos cajas: las dos pasan un codigo nuevo, una lo crea y la otra
+   * tiene que poder seguir vendiendo sin volver a escanear. Sin un codigo
+   * propio, la segunda caja veria un conflicto y no sabria que el producto que
+   * necesita ya existe. Ver docs/POS_QUICK_PRODUCT_CREATE.md.
+   */
+  | 'PRODUCT_ALREADY_EXISTS'
   | 'DUPLICATE_USERNAME'
   | 'INSUFFICIENT_CASH'
   | 'CASH_REGISTER_MISMATCH'
