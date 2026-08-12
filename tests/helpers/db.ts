@@ -12,6 +12,7 @@ import { knownRoles } from '@/server/authz/permissions'
 import type { Monto } from '@/lib/money'
 import { aMonto, sumar, sumaODefecto } from '@/server/money'
 import { MEDIO_EFECTIVO } from '@/modules/sales/payment-methods'
+import { hoyEn, sumarDias, ZONA_POR_DEFECTO } from '@/lib/tiempo'
 
 export { prisma }
 
@@ -635,7 +636,7 @@ export async function movimientosDe(branchId: number, productId: number) {
 }
 
 /**
- * El dia de HOY en la hora del LOCAL, no en UTC.
+ * El dia de HOY en la zona del NEGOCIO. Ni en UTC ni en la de la maquina.
  *
  * `new Date().toISOString().slice(0, 10)` da el dia UTC, que en Argentina
  * cambia a las nueve de la noche: a partir de esa hora una prueba escrita asi
@@ -644,10 +645,25 @@ export async function movimientosDe(branchId: number, productId: number) {
  * Es la misma confusion que tenia el reporte hasta la Fase 3C --el rango se
  * armaba con la `Z` final-- y el motivo de que las pruebas no la detectaran:
  * usaban su misma convencion equivocada. Ver `reporteDeVentas`.
+ *
+ * FASE 5A.1: hasta ahora esto leia la zona de la MAQUINA
+ * (`d.getFullYear()`...), que acierta en una computadora argentina y se
+ * equivoca en cualquier otra. CI corre en UTC y no exporta `TZ`, asi que ahi
+ * fallaba entre la medianoche y las tres de la manana --tres horas por dia--
+ * sin que nadie lo relacionara con la hora. Ahora pregunta por la zona del
+ * negocio, que es la unica que usan los reportes.
  */
 export function hoyLocal(): string {
-  const d = new Date()
-  const mes = String(d.getMonth() + 1).padStart(2, '0')
-  const dia = String(d.getDate()).padStart(2, '0')
-  return `${String(d.getFullYear())}-${mes}-${dia}`
+  return hoyEn(ZONA_POR_DEFECTO)
+}
+
+/**
+ * El dia a `n` dias de hoy, en la misma zona.
+ *
+ * Con `n` negativo, hacia atras. Existe para que las pruebas de vencimientos no
+ * calculen fechas sumandole 86.400.000 milisegundos a un instante: eso se
+ * equivoca el dia que el dia dura 23 o 25 horas, y ademas arrastra la hora.
+ */
+export function diaLocal(n: number): string {
+  return sumarDias(hoyLocal(), n)
 }

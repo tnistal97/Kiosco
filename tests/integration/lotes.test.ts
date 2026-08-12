@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { seedFixture, prisma, type Fixture } from '../helpers/db'
+import { seedFixture, prisma, diaLocal, type Fixture } from '../helpers/db'
 import { call, errorDe, sessionCookie } from '../helpers/http'
 
 let fx: Fixture
@@ -37,12 +37,14 @@ afterAll(async () => {
 // sirve para leer el cuerpo con `.body` y para pasarlo a `errorDe`.
 // ---------------------------------------------------------------------------
 
-/** `YYYY-MM-DD` a `dias` de hoy. Fecha de calendario, nunca un instante. */
-function enDias(dias: number): string {
-  const d = new Date()
-  d.setUTCDate(d.getUTCDate() + dias)
-  return d.toISOString().slice(0, 10)
-}
+/**
+ * `YYYY-MM-DD` a `dias` de hoy. Fecha de calendario, nunca un instante.
+ *
+ * Cuenta desde el dia del NEGOCIO. Contarlo desde UTC hacia que "vence en 40
+ * dias" fuera en realidad 39 durante las tres horas en que los dos calendarios
+ * no coinciden.
+ */
+const enDias = diaLocal
 
 async function crearLote(productId: number, code: string, vence: string | null) {
   const { POST } = await import('@/app/api/lotes/route')

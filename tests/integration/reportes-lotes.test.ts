@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { seedFixture, prisma, type Fixture } from '../helpers/db'
+import { seedFixture, prisma, hoyLocal, diaLocal, type Fixture } from '../helpers/db'
 import { call, sessionCookie, errorDe } from '../helpers/http'
 
 import { GET as MERMAS } from '@/app/api/reports/mermas/route'
@@ -60,8 +60,10 @@ interface Vencimientos {
 beforeEach(async () => {
   fx = await seedFixture()
   cookie = await sessionCookie(fx.admin)
-  const ahora = new Date()
-  hoy = ahora.toISOString().slice(0, 10)
+  // El dia del NEGOCIO, no el de UTC. Con `toISOString()` estas cuatro pruebas
+  // fallaban todos los dias entre las nueve de la noche y la medianoche: pedian
+  // el reporte de manana y no encontraban lo que acababan de cargar.
+  hoy = hoyLocal()
 })
 
 afterAll(async () => {
@@ -172,7 +174,7 @@ describe('Reporte de mermas', () => {
       body: {
         productId: fx.productoA.id,
         code: 'VENC-1',
-        expirationDate: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+        expirationDate: diaLocal(-1),
       },
     })
     await call(ATRIBUIR, '/api/lotes/atribuir', {
@@ -294,7 +296,7 @@ describe('Reporte de vencimientos', () => {
       body: { lotTracking: 'OPTIONAL', expirationTracking: 'OPTIONAL' },
     })
 
-    const dia = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
+    const dia = diaLocal
 
     // Las cuatro partidas SUMAN EXACTAMENTE el stock del producto: atribuir
     // más de lo que hay se rechaza --y con razón--, y una prueba que lo
@@ -362,7 +364,7 @@ describe('Reporte de vencimientos', () => {
       body: {
         productId: fx.productoA.id,
         code: 'V-COSTO',
-        expirationDate: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+        expirationDate: diaLocal(-1),
       },
     })
     await call(ATRIBUIR, '/api/lotes/atribuir', {

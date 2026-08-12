@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { seedFixture, prisma, stockOf, cashOf, type Fixture } from '../helpers/db'
+import { seedFixture, prisma, stockOf, cashOf, hoyLocal, type Fixture } from '../helpers/db'
 import { multiplicarMonto, negarMonto } from '@/lib/money'
 import { aMonto } from '@/server/money'
 import { call, sessionCookie } from '../helpers/http'
@@ -169,19 +169,6 @@ describe('Proteccion de la anulacion', () => {
     expect(res.status).toBe(404)
   })
 })
-
-/**
- * El dia de HOY en la hora del local, no en UTC.
- *
- * `toISOString().slice(0,10)` da el dia UTC, que en Argentina cambia a las
- * 21:00. Una prueba escrita asi pasa de dia a las nueve de la noche y busca
- * las ventas de manana. Es el mismo error que tenia el reporte hasta la Fase
- * 3C, y por eso las pruebas no lo detectaban: usaban su misma convencion.
- */
-function hoyLocal(): string {
-  const d = new Date()
-  return `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 describe('El dia del reporte es el dia del LOCAL, no el de UTC', () => {
   it('una venta de las once de la noche cuenta en el dia en que se hizo', async () => {

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { entrar } from './ayudantes'
+import { entrar, hoyDelNegocio } from './ayudantes'
 
 /** La misma base que usa el servidor de las pruebas. Ver playwright.config.ts. */
 const BASE_DE_DATOS =
@@ -464,14 +464,15 @@ test.describe('Cuentas por pagar a proveedores', () => {
 
   test('18. el reporte separa lo comprado de lo pagado', async ({ page }) => {
     await entrar(page, 'duenio')
-    const reporte = await page.evaluate(async () => {
-      const hoy = new Date().toISOString().slice(0, 10)
+    // El dia se calcula en Node y viaja al navegador: adentro de `evaluate` no
+    // hay forma de importar el ayudante, y `toISOString()` daria el dia de UTC.
+    const reporte = await page.evaluate(async (hoy: string) => {
       const r = await fetch(`/api/reports/proveedores?desde=${hoy}&hasta=${hoy}`)
       return (await r.json()) as {
         cuentasPorPagar: { total: string; vencido: string }
         periodo: { recibido: string; pagado: string }
       }
-    })
+    }, hoyDelNegocio())
 
     expect(reporte.cuentasPorPagar).toBeDefined()
     expect(

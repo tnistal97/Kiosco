@@ -53,6 +53,24 @@ export async function salir(page: Page): Promise<void> {
   await page.waitForURL(/\/login/)
 }
 
+/**
+ * El dia de HOY en la zona del NEGOCIO.
+ *
+ * Ni en UTC ni en la de la maquina que corre las pruebas. Los reportes resuelven
+ * el dia con `Branch.timeZone`, asi que un rango armado con
+ * `toISOString().slice(0, 10)` pide el dia equivocado durante las tres horas en
+ * que los dos calendarios no coinciden --de las nueve de la noche a la
+ * medianoche en Argentina-- y el reporte vuelve vacio.
+ *
+ * `sv-SE` no es una preferencia de idioma: es el unico formato regional que ya
+ * escribe `AAAA-MM-DD`.
+ */
+export function hoyDelNegocio(): string {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+  }).format(new Date())
+}
+
 /** Escanea un codigo en la pantalla de venta, como lo haria el lector. */
 export async function escanear(page: Page, codigo: string): Promise<void> {
   const campo = page.locator('[data-barcode-input]')

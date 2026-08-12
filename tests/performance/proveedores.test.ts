@@ -25,7 +25,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { seedFixture, prisma, type Fixture } from '../helpers/db'
+import { seedFixture, prisma, hoyLocal, type Fixture } from '../helpers/db'
 import { call, sessionCookie } from '../helpers/http'
 
 import { GET as LISTAR } from '@/app/api/suppliers/route'
@@ -259,7 +259,7 @@ describe('las cuentas por pagar con volumen', () => {
 
   it('el reporte del rango agrega en la base', async () => {
     const cookie = await sessionCookie(fx.admin)
-    const hoy = new Date().toISOString().slice(0, 10)
+    const hoy = hoyLocal()
 
     const ms = await cuantoTarda(async () => {
       await call(REPORTE, `/api/reports/proveedores?desde=${hoy}&hasta=${hoy}`, { cookie })
