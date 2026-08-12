@@ -225,6 +225,57 @@ async function ventaCompleta() {
   return `venta ${String(id)} creada y anulada`
 }
 
+/**
+ * Alta rapida desde la caja. Fase 5A.1.
+ *
+ * El codigo lleva la marca de la hora: dos corridas del smoke no pueden chocar
+ * entre si, y el producto que queda se distingue a simple vista de uno real.
+ *
+ * NO se limpia despues, y es a proposito: staging tiene que quedar con la marca
+ * de lo que se probo. Un smoke que borra su rastro no deja comprobar despues
+ * que el producto se creo bien.
+ */
+async function altaRapida() {
+  const { cuerpo: cats } = await pedir('/api/categories')
+  const categoria = Array.isArray(cats) ? cats[0] : null
+  exigir(categoria, 'no hay categorias')
+
+  const codigo = `SMOKE-${String(Date.now())}`
+  const alta = await pedir('/api/products/quick', {
+    method: 'POST',
+    body: JSON.stringify({
+      barcode: codigo,
+      name: `Smoke ${codigo}`,
+      price: '1',
+      categoryId: categoria.id,
+      saleUnit: 'UNIT',
+      initialStock: '1',
+    }),
+  })
+  exigir(alta.res.status === 201, `alta rapida: ${String(alta.res.status)}`)
+  exigir(alta.cuerpo?.totalStock === '1.000', 'el stock inicial no quedo en 1')
+  exigir(!('cost' in (alta.cuerpo ?? {})), 'el costo viajo sin permiso de verlo')
+
+  // Y lo que importa de verdad: que el lector lo encuentre.
+  const lectura = await pedir(`/api/products/barcode/${encodeURIComponent(codigo)}`)
+  exigir(lectura.res.status === 200, `el lector no lo encuentra: ${String(lectura.res.status)}`)
+  exigir(lectura.cuerpo?.id === alta.cuerpo?.id, 'el lector encontro otro producto')
+
+  // Y que no se pueda crear dos veces el mismo codigo.
+  const repetido = await pedir('/api/products/quick', {
+    method: 'POST',
+    body: JSON.stringify({
+      barcode: codigo,
+      name: 'Duplicado',
+      price: '1',
+      categoryId: categoria.id,
+    }),
+  })
+  exigir(repetido.res.status === 409, `el duplicado no dio 409: ${String(repetido.res.status)}`)
+
+  return `producto ${codigo} creado y encontrado por el lector`
+}
+
 async function integridad() {
   const { res, cuerpo } = await pedir('/api/reportes/integridad')
   if (res.status === 404) return 'sin endpoint: correr `npm run integrity:check` en el servidor'
@@ -258,6 +309,7 @@ async function main() {
   if (MODO === 'staging' && entro) {
     console.log('\nEscritura (solo staging)')
     await paso('turno, venta, cobro y anulacion', ventaCompleta)
+    await paso('alta rapida desde la caja', altaRapida)
   } else if (MODO === 'production') {
     console.log('\nEscritura: OMITIDA a proposito.')
     console.log('  Una venta de prueba en produccion es una venta falsa en la contabilidad,')

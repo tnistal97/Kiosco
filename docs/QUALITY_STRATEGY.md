@@ -307,8 +307,8 @@ Este es el único que exige infraestructura real: transacciones concurrentes con
 > API, transacciones, esquemas, permisos, migraciones, concurrencia,
 > rendimiento con volumen, accesibilidad, responsive y extremo a extremo.
 >
-> **1.421 pruebas en 63 archivos**, más **222 de extremo a extremo** con
-> Playwright.
+> **1.540 pruebas en 71 archivos**, más **244 de extremo a extremo** con
+> Playwright (cifras al cierre de la Fase 5A.1).
 >
 > | Categoría             | Qué cubre                                                                                         |
 > | --------------------- | ------------------------------------------------------------------------------------------------- |
@@ -772,6 +772,70 @@ tablas, así que falla en el primer `CREATE TABLE`.
 Se descubrió con una consulta de una línea contra el servidor real. La lección
 no es «hay que mirar los privilegios»: es que **el entorno de destino es parte
 de lo que hay que probar**, y ninguna cantidad de pruebas locales lo sustituye.
+
+## Fase 5A.1 — alta rápida desde la caja
+
+Una fase funcional corta metida entre la preproducción y staging, para cerrar
+un callejón sin salida que apareció usando el sistema: un código de barras que
+no está en el catálogo frenaba la venta.
+
+|                   | Fase 5A                  | **Fase 5A.1**                                         |
+| ----------------- | ------------------------ | ----------------------------------------------------- |
+| Pruebas           | 1.478 en 68 archivos     | **1.540** en 71 archivos                              |
+| Extremo a extremo | 222                      | **244**                                               |
+| Permisos          | 64                       | **65** — se agregó `products.quickCreate`             |
+| Migraciones       | 43                       | 43 — **el esquema no cambia**                         |
+| `npm audit`       | 0                        | 0                                                     |
+| Integridad        | 23/23                    | 23/23                                                 |
+| Cobertura         | 81,3 L · 79,0 F · 64,3 R | **81,5 L · 79,1 F · 64,7 R** — umbrales **sin tocar** |
+
+### Lo que esta fase enseñó
+
+**1. Una prueba puede fallar tres horas por día durante meses sin que nadie lo
+note.**
+
+El baseline arrancó **rojo**: cinco pruebas de reportes que estaban verdes el
+día anterior. La causa no era el código: las pruebas calculaban «hoy» con
+`new Date().toISOString().slice(0, 10)` —el día **UTC**— mientras los reportes
+resuelven el día con la zona de la sucursal. En Argentina los dos calendarios
+difieren entre las 21:00 y la medianoche, así que la prueba pedía el reporte de
+mañana y no encontraba lo que acababa de cargar.
+
+Es **exactamente** el error que la Fase 3C corrigió en el código de producción,
+reaparecido del lado de las pruebas. Y el ayudante correcto ya existía
+(`hoyLocal()` en `tests/helpers/db.ts`), con un comentario que explicaba el
+problema; simplemente no se usó en los archivos de la Fase 4D.
+
+Peor: `hoyLocal()` leía la zona de **la máquina**, no la del negocio. Acierta en
+una computadora argentina y falla en CI, que corre en UTC sin exportar `TZ`.
+Había una ventana diaria de tres horas en la que esas pruebas podían fallar en
+CI sin que nadie relacionara el fallo con la hora. Ahora pregunta por la zona
+del negocio, que es la única que usan los reportes.
+
+**La lección:** una convención de fecha equivocada en las pruebas es invisible
+mientras el reloj acompañe. El único antídoto es que **las pruebas usen la misma
+función que el código**, no una reimplementación que se le parece.
+
+**2. Una aserción puede no estar midiendo nada.**
+
+`tests/performance/queries.test.ts` cuenta consultas SQL con un `PrismaClient`
+aparte —el «espía»— que tiene el registro de consultas encendido. Pero las rutas
+usan el cliente de `@/lib/prisma`, que es **otra conexión**: el espía no ve sus
+consultas. Comprobado con una sonda: cliente de la aplicación 0, espía 1.
+
+Las aserciones del tipo `expect(consultas).toBeLessThanOrEqual(2)` sobre
+llamadas a rutas se cumplen con `0` y no protegen de nada. Parecen una guardia
+contra el N+1 y no lo son.
+
+Las mediciones nuevas de esta fase **no** usan ese mecanismo: usan
+`EXPLAIN (ANALYZE)`, que informa lo que PostgreSQL de verdad leyó. Con 10.000
+productos, buscar un código inexistente lee **cero filas** y usa el índice
+único; el plan lo dice y la prueba lo afirma.
+
+Arreglar el contador para todo el archivo exige cambiar cómo la aplicación
+construye su cliente de base de datos. Eso es una modificación de riesgo en la
+víspera de una release candidate, así que **queda anotado y no hecho**. Está en
+el informe de la fase con su severidad.
 
 **2. El volumen no escala lineal, y hay que medirlo para saberlo.**
 

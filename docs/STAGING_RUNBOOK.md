@@ -120,8 +120,8 @@ cierran.
 
 ```bash
 cd /home/ubuntu/kiosco-staging
-sha256sum -c kiosco-1.0.0-rc.1-<commit>.tar.gz.sha256   # ANTES de descomprimir
-tar -xzf kiosco-1.0.0-rc.1-<commit>.tar.gz
+sha256sum -c kiosco-1.0.0-rc.2-<commit>.tar.gz.sha256   # ANTES de descomprimir
+tar -xzf kiosco-1.0.0-rc.2-<commit>.tar.gz
 npm ci --omit=dev
 npx prisma generate
 npx prisma migrate deploy
@@ -232,6 +232,12 @@ export SMOKE_PASSWORD=…
 npm run smoke:staging
 ```
 
+El smoke de staging incluye, desde la Fase 5A.1, **el alta rápida desde la
+caja**: crea un producto con código `SMOKE-<hora>`, comprueba que el lector lo
+encuentre, que el stock inicial haya quedado en 1 y que un segundo intento con
+el mismo código dé 409 en vez de un duplicado. El producto **queda**: un smoke
+que borra su rastro no permite comprobar después que se creó bien.
+
 Y la reconciliación, que es lo que dice si los libros cierran:
 
 ```bash
@@ -240,18 +246,25 @@ DATABASE_URL="postgresql://kiosco_staging:…" npm run integrity:check
 
 ## Qué se prueba acá y no en otro lado
 
-|                                                           | Lo prueba            |
-| --------------------------------------------------------- | -------------------- |
-| El código está bien                                       | la suite             |
-| La migración aplica sobre datos con la forma real         | `rehearsal:prodlike` |
-| **El artefacto arranca en el servidor**                   | **staging**          |
-| **Nginx enruta y el certificado sirve**                   | **staging**          |
-| **PM2 lo levanta solo tras un reinicio**                  | **staging**          |
-| **Node 18 del servidor corre un build hecho con Node 24** | **staging**          |
-| **Los permisos de la base alcanzan para migrar**          | **staging**          |
+|                                                           | Lo prueba                   |
+| --------------------------------------------------------- | --------------------------- |
+| El código está bien                                       | la suite                    |
+| La migración aplica sobre datos con la forma real         | `rehearsal:prodlike`        |
+| **El artefacto arranca en el servidor**                   | **staging**                 |
+| **Nginx enruta y el certificado sirve**                   | **staging**                 |
+| **PM2 lo levanta solo tras un reinicio**                  | **staging**                 |
+| **Node 18 del servidor corre un build hecho con Node 24** | **staging**                 |
+| **Los permisos de la base alcanzan para migrar**          | **staging**                 |
+| **La carga de imágenes pasa el Nginx productivo**         | **staging** (cuando exista) |
 
 Los dos últimos son los que justifican el esfuerzo. Todo lo demás ya está
 demostrado en la máquina de desarrollo.
+
+**Sobre la última fila:** hoy el sistema no tiene carga de imágenes y no se
+agregó en la Fase 5A.1. Queda anotada porque el Nginx productivo actual
+**bloquea `multipart/form-data`**, así que el día que exista una pantalla de
+imagen no alcanza con que funcione en desarrollo: hay que probarla detrás del
+Nginx real.
 
 ## Mantenimiento
 

@@ -53,6 +53,7 @@ habría exigido migrar los usuarios existentes sin ganar nada.
 | `sales.cancel`              |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |
 | `products.view`             |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ✔     |    ✔    |    ✔    |
 | `products.create`           |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |
+| `products.quickCreate`      |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ✔    |    ·    |
 | `products.update`           |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |
 | `products.price.update`     |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |
 | `products.cost.view`        |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |
@@ -225,6 +226,7 @@ La separación útil es la que ya existe: **`purchases.receive` sin
 | `sales.cancel`              | `POST /api/sales/:id/cancel`                                                                                                                                                                                      | Anular una venta                                                                  | **Devuelve dinero de la caja y restituye stock.** El permiso más sensible de la operación diaria.                                                                                                                                     |
 | `products.view`             | `GET /api/products`<br>`GET /api/products/:id`<br>`GET /api/categories`                                                                                                                                           | Leer el catálogo                                                                  | Expone precios de costo si algún día se agregan.                                                                                                                                                                                      |
 | `products.create`           | `POST /api/products`                                                                                                                                                                                              | Alta de producto                                                                  | Un producto con precio erróneo se vende a ese precio.                                                                                                                                                                                 |
+| `products.quickCreate`      | `POST /api/products/quick`                                                                                                                                                                                        | Alta rápida desde la caja                                                         | Formulario mínimo de seis campos. **Más chico que `products.create`**, no un alias: se le puede dar al supervisor sin darle el catálogo entero. Ver [POS_QUICK_PRODUCT_CREATE.md](POS_QUICK_PRODUCT_CREATE.md).                       |
 | `products.update`           | `PUT /api/products/:id`                                                                                                                                                                                           | Editar la ficha                                                                   | Nombre, código, descripción, categoría, proveedor. No incluye el precio.                                                                                                                                                              |
 | `products.price.update`     | `PUT /api/products/:id` (campo `price`)                                                                                                                                                                           | Cambiar el precio de venta                                                        | **Cambia cuánto se le cobra al cliente.** Separado de la edición desde la Fase 2.                                                                                                                                                     |
 | `products.cost.view`        | `GET /api/products`<br>`GET /api/products/:id`                                                                                                                                                                    | Ver el costo, la ganancia, el margen y el markup                                  | **Es la información más sensible del catálogo:** con ella se calcula el margen del negocio entero. Sin el permiso, el servidor NO manda la clave `cost`; no se esconde, no viaja.                                                     |
@@ -328,6 +330,37 @@ qué campos vienen "sucios".
 precio, y exigir los dos permisos dejaría a `compras` sin poder cargar
 mercadería nueva, que es exactamente su trabajo. Lo que `compras` no puede
 hacer es retocar el precio de algo que ya se está vendiendo.
+
+La Fase 5A.1 extiende esa misma regla al alta rápida, y conviene decirla con
+las palabras exactas porque son dos cosas distintas:
+
+|                                   | Permiso                                    | Por qué                                                                                                                                          |
+| --------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Establecer el precio inicial**  | `products.create` o `products.quickCreate` | Un producto sin precio no se puede vender. Exigir además `products.price.update` dejaría el alta rápida inservible justo para quién la necesita. |
+| **Modificar un precio existente** | `products.price.update`                    | Cambia lo que se le cobra a un cliente por algo que ya se estaba vendiendo a otro precio.                                                        |
+
+El caso que lo hace concreto: el `supervisor` **puede** crear un producto nuevo
+a $1.500 y **no puede** bajar de $1.500 a $100 el que ya existía. Las dos
+operaciones quedan en la bitácora, pero la bitácora no es la protección: la
+protección es que son dos permisos.
+
+### Alta rápida: quién sí y quién no
+
+`products.quickCreate` lo tienen `duenio`, `admin`, `encargado`, `supervisor` y
+`compras`.
+
+- **`supervisor` sí, y es la decisión menos obvia.** Es el único rol que lo
+  tiene **sin** `products.create`. El motivo es el caso de uso: cuando la caja
+  se traba con un código desconocido, quién está a mano es el supervisor. Si el
+  escalón más bajo que puede resolverlo fuera el encargado, el callejón sin
+  salida no se cerraría, se correría un piso más arriba.
+- **`cajero` no, por omisión.** Quién cobra no define qué se vende ni a cuánto.
+  Se puede otorgar por rol si el comercio lo decide; el sistema no lo asume.
+- **`repositor` no.** Hoy no tiene `products.create`: darle la versión rápida
+  le ampliaría el alcance con la excusa de una comodidad. Además no está en el
+  mostrador, y lo que encuentra sin etiqueta en el depósito entra por el
+  formulario completo o por una recepción de compra.
+- **`auditor` no.** Quién revisa no modifica lo que revisa.
 
 ## Pruebas asociadas
 

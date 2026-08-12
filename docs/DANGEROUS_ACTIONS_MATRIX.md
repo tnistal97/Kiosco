@@ -38,13 +38,14 @@ pantalla.
 
 ### Catálogo
 
-| Acción                                           | Permiso                 | Confirma | Motivo |         Bitácora          | Reversibilidad                                                                                                                                                         |
-| ------------------------------------------------ | ----------------------- | :------: | :----: | :-----------------------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cambiar precio                                   | `products.price.update` |    no    |   no   |   sí, con antes/después   | **Reversible**: se vuelve a poner el anterior. Las ventas viejas **no** cambian: el precio queda congelado en `SaleItem`.                                              |
-| Cambiar costo<br>`PUT /api/products/:id/cost`    | `products.cost.update`  |    no    |   no   | sí + `ProductCostHistory` | **Compensable.** El historial de costos es **inmutable**: corregir agrega una fila, no reescribe.                                                                      |
-| Dar de baja un producto                          | `products.update`       |    sí    |   no   |            sí             | **Reversible**: se reactiva.                                                                                                                                           |
-| Borrar un producto<br>`DELETE /api/products/:id` | `products.delete`       |    sí    |   no   |            sí             | **Irreversible.** Solo si nunca se vendió, no tiene movimientos y no tiene historial de costos: en cualquier otro caso el sistema **se niega** y ofrece darlo de baja. |
-| Cambiar la unidad de venta                       | `products.update`       |    sí    |   no   |            sí             | **Irreversible** una vez que hay cantidades guardadas. El sistema lo bloquea (`PRODUCT_UNIT_LOCKED`): cambiarla reescribiría el significado del pasado.                |
+| Acción                                                  | Permiso                 | Confirma | Motivo |         Bitácora          | Reversibilidad                                                                                                                                                         |
+| ------------------------------------------------------- | ----------------------- | :------: | :----: | :-----------------------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cambiar precio                                          | `products.price.update` |    no    |   no   |   sí, con antes/después   | **Reversible**: se vuelve a poner el anterior. Las ventas viejas **no** cambian: el precio queda congelado en `SaleItem`.                                              |
+| Cambiar costo<br>`PUT /api/products/:id/cost`           | `products.cost.update`  |    no    |   no   | sí + `ProductCostHistory` | **Compensable.** El historial de costos es **inmutable**: corregir agrega una fila, no reescribe.                                                                      |
+| Dar de baja un producto                                 | `products.update`       |    sí    |   no   |            sí             | **Reversible**: se reactiva.                                                                                                                                           |
+| Borrar un producto<br>`DELETE /api/products/:id`        | `products.delete`       |    sí    |   no   |            sí             | **Irreversible.** Solo si nunca se vendió, no tiene movimientos y no tiene historial de costos: en cualquier otro caso el sistema **se niega** y ofrece darlo de baja. |
+| Cambiar la unidad de venta                              | `products.update`       |    sí    |   no   |            sí             | **Irreversible** una vez que hay cantidades guardadas. El sistema lo bloquea (`PRODUCT_UNIT_LOCKED`): cambiarla reescribiría el significado del pasado.                |
+| Alta rápida desde la caja<br>`POST /api/products/quick` | `products.quickCreate`  |    no    |   no   |   sí + `StockMovement`    | **Compensable**: se da de baja el producto y se ajusta el stock. No se borra si ya se vendió. El movimiento `INITIAL` queda en el libro y **no se puede borrar**.      |
 
 ### Stock
 
@@ -91,6 +92,21 @@ tiene. Ver [`PERMISSIONS_MATRIX.md`](PERMISSIONS_MATRIX.md).
 | Cambiar el rol de un usuario           | `users.manage`    |    sí    |   no   | sí, con antes/después | Reversible. **Es la acción más potente del sistema**: da cualquier otro permiso.        |
 | Dar de baja un usuario                 | `users.manage`    |    sí    |   no   |          sí           | Reversible. Cierra sus sesiones.                                                        |
 | Cambiar la zona horaria de la sucursal | `branches.manage` |    sí    |   no   |          sí           | Reversible en la configuración; **no** en los informes ya emitidos, que cambian de día. |
+
+### Por qué el alta rápida es de riesgo BAJO
+
+Crea un producto y declara un saldo de partida. Las dos cosas son visibles y
+compensables, y ninguna toca dinero ni historial ajeno:
+
+- el producto se da de baja si se cargó por error;
+- el stock declarado se corrige con un ajuste, y los dos movimientos quedan;
+- el precio inicial se puede cambiar —con `products.price.update`— y las ventas
+  ya hechas conservan el suyo, congelado en `SaleItem`.
+
+Lo que **no** puede hacer, y por eso no sube de escalón: no carga costo sin
+`products.cost.update`, no toca lotes, no elige sucursal y no puede pisar un
+producto que ya existe. Ver
+[POS_QUICK_PRODUCT_CREATE.md](POS_QUICK_PRODUCT_CREATE.md).
 
 ## Los tres controles que no son permisos
 

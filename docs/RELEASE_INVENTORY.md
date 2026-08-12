@@ -1,6 +1,6 @@
 # Inventario de la release
 
-> Todo lo que compone `1.0.0-rc.1`, en un solo lugar. Sirve para dos cosas:
+> Todo lo que compone `1.0.0-rc.2`, en un solo lugar. Sirve para dos cosas:
 > saber qué se va a desplegar, y durante un incidente, saber qué **está**
 > desplegado.
 >
@@ -10,10 +10,10 @@
 
 |                 |                                                                 |
 | --------------- | --------------------------------------------------------------- |
-| Versión         | **`1.0.0-rc.1`**                                                |
+| Versión         | **`1.0.0-rc.2`**                                                |
 | Rama            | `release/almacen-v1`, publicada en `origin`                     |
 | Creada desde    | `feat/almacen-phase3-operations`, HEAD idéntico                 |
-| Fases incluidas | 0, 1, 2, 3, 3A–3D, 4A–4D, 5A                                    |
+| Fases incluidas | 0, 1, 2, 3, 3A–3D, 4A–4D, 5A, 5A.1                              |
 | Artefacto       | `dist/kiosco-<version>-<commit12>.tar.gz` + `.sha256` + `.json` |
 
 El commit y el checksum exactos del artefacto final están en el informe de la
@@ -30,7 +30,8 @@ release en el momento de construir.
 
 ## Versión del salto
 
-De `0.1.0` a `1.0.0-rc.1`. El `0.1.0` venía del andamiaje inicial y no
+De `0.1.0` a `1.0.0-rc.1`, y de ahí a `1.0.0-rc.2` con la Fase 5A.1. El
+`0.1.0` venía del andamiaje inicial y no
 distinguía seis meses de trabajo de un proyecto recién creado. El `-rc.1` es
 literal: **es una candidata, no una versión publicada.** Pasa a `1.0.0` cuando
 haya estado en producción y funcionando.
@@ -128,9 +129,9 @@ stock cierren fila por fila.
 
 |              |                                                                                                              |
 | ------------ | ------------------------------------------------------------------------------------------------------------ |
-| Rutas de API | **89**                                                                                                       |
+| Rutas de API | **90**                                                                                                       |
 | Páginas      | **29**                                                                                                       |
-| Permisos     | **64**                                                                                                       |
+| Permisos     | **65**                                                                                                       |
 | Roles        | **9**: `duenio`, `admin`, `encargado`, `supervisor`, `cajero`, `vendedor`, `repositor`, `compras`, `auditor` |
 
 Rutas principales: `/venta` · `/ventas` · `/caja` · `/productos` · `/stock` ·
@@ -143,6 +144,13 @@ la equivalencia vive en un solo archivo. Ver
 [`PERMISSIONS_MATRIX.md`](PERMISSIONS_MATRIX.md), que un test mantiene sincronizada
 con el código.
 
+### Novedades de la 5A.1
+
+Un endpoint (`POST /api/products/quick`), un permiso (`products.quickCreate`) y
+un código de error (`PRODUCT_ALREADY_EXISTS`). Sin migración: **el esquema no
+cambia entre `rc.1` y `rc.2`.** Ver
+[POS_QUICK_PRODUCT_CREATE.md](POS_QUICK_PRODUCT_CREATE.md).
+
 ### Service worker
 
 Serwist 9.5. La política de qué se guarda vive en
@@ -150,7 +158,10 @@ Serwist 9.5. La política de qué se guarda vive en
 explícitamente permitido y todo lo demás va a la red.
 
 `npm run pwa:check` comprueba 18 reglas, incluida la que importa: **ninguna
-ruta bajo `/api/` se cachea**, tampoco `/api/health`.
+ruta bajo `/api/` se cachea**, tampoco `/api/health` ni
+`/api/products/quick`. El matcher es por prefijo `/api/`, así que un endpoint
+nuevo queda cubierto sin tocar nada; la regla de la lista blanca es la última
+palabra.
 
 ## Scripts operativos
 

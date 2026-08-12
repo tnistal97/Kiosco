@@ -9,7 +9,7 @@ códigos de barras por cámara y por lector USB.
 > cortan en febrero de 2026: la aplicación dejó de arrancar cuando el rol de
 > PostgreSQL perdió los privilegios sobre las tablas.
 >
-> La release candidate **`1.0.0-rc.1`** está lista en `release/almacen-v1`, con
+> La release candidate **`1.0.0-rc.2`** está lista en `release/almacen-v1`, con
 > su artefacto y su checksum, pero el despliegue es **NO-GO** por tres
 > bloqueantes que no son de código y que requieren escribir en el servidor:
 >
@@ -37,6 +37,10 @@ códigos de barras por cámara y por lector USB.
 - **Productos y stock** — catálogo con categorías y proveedores, venta por
   unidad, por peso y por volumen, varios códigos de barras por producto,
   mínimo de reposición y alertas de agotado y bajo mínimo.
+- **Alta rápida desde la caja** — un código que no está en el catálogo deja de
+  frenar la venta: se da de alta con seis campos, entra al ticket y el foco
+  vuelve al lector. El stock inicial pasa por el libro de inventario, no por un
+  `UPDATE`. Ver [POS_QUICK_PRODUCT_CREATE.md](docs/POS_QUICK_PRODUCT_CREATE.md).
 - **Compras** — proveedores, órdenes de compra con estados, y recepción total
   o parcial. Lo que llega entra al stock convertido a la unidad de venta —5
   cajas de 8 son 40 botellas— y actualiza el costo del producto.
@@ -262,6 +266,7 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 | [STAGING_RUNBOOK.md](docs/STAGING_RUNBOOK.md)                               | Cómo montar staging sin tocar producción                  |
 | [PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md)                         | El encendido, paso a paso, con puntos de decisión         |
 | [OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)                         | GO/NO-GO, qué mirar después y cómo diagnosticar           |
+| [POS_QUICK_PRODUCT_CREATE.md](docs/POS_QUICK_PRODUCT_CREATE.md)             | Alta rápida desde la caja: permiso, flujo y concurrencia  |
 
 ## Despliegue
 
