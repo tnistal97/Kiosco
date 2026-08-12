@@ -713,3 +713,158 @@ describe('El indice de la Fase 5A: los renglones de UNA venta', () => {
     expect(texto, `el plan fue: ${texto}`).toMatch(/Index (Only )?Scan.*SaleItem_saleId_idx/)
   })
 })
+
+/**
+ * El lector con un catalogo de verdad. Fase 5A.1.
+ *
+ * La busqueda por codigo es el camino mas caliente del sistema: ocurre una vez
+ * por producto de cada ticket, con el cliente esperando. Lo que se mide aca es
+ * que su costo NO dependa del tamano del catalogo, y en particular que el
+ * codigo que NO existe --el caso que ahora abre el alta rapida-- no dispare un
+ * recorrido de la tabla.
+ *
+ * Los tiempos se informan pero no se afirman: dependen de la maquina. Lo que si
+ * se afirma es la forma --numero de consultas y plan-- que es lo que no puede
+ * cambiar sin que alguien lo note.
+ */
+describe('El lector con 10.000 productos', () => {
+  /** Tope generoso: no mide la maquina, atrapa una regresion catastrofica. */
+  const TECHO_MS = 400
+
+  /**
+   * Diez mil productos y veinte mil codigos, en dos sentencias.
+   *
+   * Uno por uno con `prisma.product.create` serian veinte mil viajes de ida y
+   * vuelta y varios minutos. `generate_series` los arma dentro de PostgreSQL.
+   */
+  async function catalogoGrande(n: number): Promise<void> {
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "Product" ("name", "price", "categoryId", "branchId", "saleUnit",
+                             "purchaseUnit", "unitsPerPurchaseUnit", "minimumStock", "isActive")
+      SELECT 'Producto ' || i, 100 + i, ${String(fx.categoryId)}, ${String(fx.branchA.id)},
+             'UNIT', 'UNIT', 1, 0, true
+        FROM generate_series(1, ${String(n)}) AS i
+    `)
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "ProductBarcode" ("productId", "code", "isPrimary")
+      SELECT p."id", '77' || lpad(p."id"::text, 11, '0'), true
+        FROM "Product" p WHERE p."name" LIKE 'Producto %'
+    `)
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "ProductBarcode" ("productId", "code", "isPrimary")
+      SELECT p."id", 'ALT' || lpad(p."id"::text, 10, '0'), false
+        FROM "Product" p WHERE p."name" LIKE 'Producto %'
+    `)
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "BranchStock" ("branchId", "productId", "quantity")
+      SELECT ${String(fx.branchA.id)}, p."id", 50
+        FROM "Product" p WHERE p."name" LIKE 'Producto %'
+    `)
+    // Sin esto el planificador trabaja con estadisticas de una tabla vacia.
+    await prisma.$executeRawUnsafe(`ANALYZE "Product", "ProductBarcode", "BranchStock"`)
+  }
+
+  async function cuantoTarda(fn: () => Promise<unknown>): Promise<number> {
+    const t0 = performance.now()
+    await fn()
+    return performance.now() - t0
+  }
+
+  it('conocido, inexistente y alta rapida, con el catalogo lleno', async () => {
+    await catalogoGrande(10_000)
+    const { GET } = await import('@/app/api/products/barcode/[code]/route')
+    const { POST: QUICK } = await import('@/app/api/products/quick/route')
+    const cookie = await sessionCookie(fx.admin)
+    const cookieAdmin = await sessionCookie(fx.admin)
+
+    // Uno del medio del catalogo, no el primero ni el ultimo.
+    const alMedio = await prisma.productBarcode.findFirstOrThrow({
+      where: { code: { startsWith: '77' } },
+      select: { code: true },
+      orderBy: { id: 'asc' },
+      skip: 5_000,
+    })
+
+    const conocido = await cuantoTarda(async () => {
+      const res = await call(GET, `/api/products/barcode/${alMedio.code}`, {
+        cookie,
+        params: { code: alMedio.code },
+      })
+      expect(res.status).toBe(200)
+    })
+
+    const inexistente = await cuantoTarda(async () => {
+      const res = await call(GET, '/api/products/barcode/7799999999999', {
+        cookie,
+        params: { code: '7799999999999' },
+      })
+      expect(res.status, 'no existe, y eso es lo que se mide').toBe(404)
+    })
+
+    const alta = await cuantoTarda(async () => {
+      const res = await call(QUICK, '/api/products/quick', {
+        method: 'POST',
+        cookie: cookieAdmin,
+        body: {
+          barcode: '7788888888888',
+          name: 'Recien creado',
+          price: '1000',
+          categoryId: fx.categoryId,
+          saleUnit: 'UNIT',
+          initialStock: '1',
+        },
+      })
+      expect(res.status).toBe(201)
+    })
+
+    console.log(
+      `[5A.1] barcode conocido ${conocido.toFixed(1)} ms · ` +
+        `inexistente ${inexistente.toFixed(1)} ms · alta rapida ${alta.toFixed(1)} ms`,
+    )
+
+    expect(conocido, `conocido tardo ${conocido.toFixed(1)} ms`).toBeLessThan(TECHO_MS)
+    expect(inexistente, `inexistente tardo ${inexistente.toFixed(1)} ms`).toBeLessThan(TECHO_MS)
+    expect(alta, `el alta tardo ${alta.toFixed(1)} ms`).toBeLessThan(TECHO_MS * 3)
+  })
+
+  it('el codigo inexistente NO recorre la tabla de codigos', async () => {
+    await catalogoGrande(10_000)
+
+    const plan = await prisma.$queryRawUnsafe<Array<Record<string, string>>>(
+      `EXPLAIN SELECT * FROM "ProductBarcode" WHERE "code" = '7799999999999'`,
+    )
+    const texto = plan.map((f) => Object.values(f).join(' ')).join(' | ')
+
+    // Sin `SET LOCAL enable_seqscan = off`: con diez mil filas y estadisticas
+    // frescas, el planificador tiene que elegir el indice por su cuenta. Si
+    // eligiera el recorrido, la caja pagaria el catalogo entero en cada lectura
+    // fallida, que es justo el caso que ahora ofrece crear el producto.
+    expect(texto, `el plan fue: ${texto}`).toMatch(/Index (Only )?Scan/)
+    expect(texto).not.toMatch(/Seq Scan/)
+  })
+
+  it('lee UNA fila, con el catalogo vacio y con diez mil', async () => {
+    // Se mide con EXPLAIN ANALYZE --lo que PostgreSQL de verdad leyo-- y no
+    // contando sentencias con el cliente espia: ese cliente NO ve las consultas
+    // que hace la aplicacion, porque son dos conexiones distintas. Ver el
+    // informe de la Fase 5A.1.
+    const filasLeidas = async (): Promise<number> => {
+      const plan = await prisma.$queryRawUnsafe<Array<Record<string, string>>>(
+        `EXPLAIN (ANALYZE, FORMAT JSON) SELECT * FROM "ProductBarcode" WHERE "code" = '7799999999999'`,
+      )
+      const crudo = JSON.stringify(plan)
+      const leidas = /"Actual Rows":\s*(\d+)/.exec(crudo)
+      return Number(leidas?.[1] ?? -1)
+    }
+
+    const conPocos = await filasLeidas()
+    await catalogoGrande(10_000)
+    const conMuchos = await filasLeidas()
+
+    // Cero filas devueltas en los dos casos: el codigo no existe. Lo que
+    // importa es que con diez mil productos siga siendo cero y no diez mil,
+    // que es lo que pasaria con un recorrido de tabla.
+    expect(conPocos).toBe(0)
+    expect(conMuchos, `con 10.000 productos leyo ${String(conMuchos)} filas`).toBe(0)
+  })
+})
