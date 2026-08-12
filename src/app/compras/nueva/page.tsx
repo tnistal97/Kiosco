@@ -25,6 +25,9 @@ import {
   Textarea,
   aviso,
 } from '@/components/ui'
+import { usePermiso } from '@/components/shell/SessionProvider'
+import { DialogoAltaRapida } from '@/components/venta/DialogoAltaRapida'
+import { parseCategorias, type CategoriaDTO } from '@/modules/products/dto'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { parsePaginaProveedores, type ProveedorDTO } from '@/modules/suppliers/dto'
 import { parseDetalleOrden } from '@/modules/purchases/dto'
@@ -79,6 +82,25 @@ export default function NuevaCompraPage() {
   const [busqueda, setBusqueda] = useState('')
   const [resultados, setResultados] = useState<ProductoDTO[]>([])
   const [buscando, setBuscando] = useState(false)
+
+  // El MISMO dialogo que usa la caja. Item 20 del pedido: una sola
+  // implementacion. Aca el codigo va siempre en null --nadie escanea armando una
+  // orden-- asi que el campo queda editable y se puede dejar vacio.
+  const puedeCrearProducto = usePermiso('products.quickCreate')
+  const [altaAbierta, setAltaAbierta] = useState(false)
+  const [categorias, setCategorias] = useState<CategoriaDTO[]>([])
+
+  const cargarCategorias = useCallback(() => {
+    apiRequest('/api/categories', { parse: parseCategorias })
+      .then(setCategorias)
+      .catch(() => {
+        setCategorias([])
+      })
+  }, [])
+
+  useEffect(() => {
+    if (puedeCrearProducto) cargarCategorias()
+  }, [puedeCrearProducto, cargarCategorias])
 
   useEffect(() => {
     // Solo los ACTIVOS: a uno dado de baja no se le puede comprar, y ofrecerlo
@@ -248,6 +270,21 @@ export default function NuevaCompraPage() {
 
       <Card className="p-4">
         <CardHeader title="Proveedor" />
+
+        {/* Dead end de la Fase 5A.1: sin proveedores activos el selector queda
+            con un solo renglón que no se puede elegir y el botón deshabilitado,
+            sin decir por qué. Pasa la primera vez que alguien abre esta
+            pantalla, que es justo cuando menos se sabe qué falta. */}
+        {proveedores.length === 0 && (
+          <Alert tone="info" title="No hay proveedores activos">
+            Una orden de compra necesita a quién comprarle.{' '}
+            <Link href="/proveedores" className="underline">
+              Cargá un proveedor
+            </Link>{' '}
+            y volvé.
+          </Alert>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="A quién se le compra" required>
             <Select
@@ -298,8 +335,25 @@ export default function NuevaCompraPage() {
         {busqueda.trim().length >= 2 && (
           <div className="mt-2 rounded-md border border-line bg-sunken">
             {buscando && <p className="px-3 py-2 text-sm text-ink-faint">Buscando…</p>}
+            {/* Dead end de la Fase 5A.1: antes esto era el final del camino.
+                Quien arma la orden tiene delante la lista del proveedor con un
+                producto que todavia no esta en el catalogo, y la unica salida
+                era irse a Productos --perdiendo el borrador-- y volver. */}
             {!buscando && resultados.length === 0 && (
-              <p className="px-3 py-2 text-sm text-ink-faint">Ningún producto coincide.</p>
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                <p className="text-sm text-ink-faint">Ningún producto coincide.</p>
+                {puedeCrearProducto && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      setAltaAbierta(true)
+                    }}
+                  >
+                    Crear producto
+                  </Button>
+                )}
+              </div>
             )}
             {resultados.map((p) => (
               <button
@@ -482,6 +536,21 @@ export default function NuevaCompraPage() {
           Confirmar orden
         </Button>
       </div>
+
+      <DialogoAltaRapida
+        abierto={altaAbierta}
+        codigo={null}
+        categorias={categorias}
+        onCerrar={() => {
+          setAltaAbierta(false)
+        }}
+        onCreado={(p) => {
+          setAltaAbierta(false)
+          // Entra a la orden directamente: quien lo creo lo hizo para comprarlo.
+          agregar(p)
+        }}
+        onCategoriaCreada={cargarCategorias}
+      />
     </div>
   )
 }

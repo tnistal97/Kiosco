@@ -67,7 +67,10 @@ test('escanear el mismo producto dos veces suma cantidad, no lineas', async ({ p
 test('un codigo desconocido avisa y no agrega nada', async ({ page }) => {
   await escanear(page, '0000000000000')
 
-  await expect(page.getByText(/desconocido/i)).toBeVisible()
+  // Desde la Fase 5A.1 no es una linea de texto que se pierde: es un bloque con
+  // el codigo a la vista y lo que se puede hacer. El detalle esta en
+  // e2e/alta-rapida.spec.ts; aca solo importa que avise y no agregue nada.
+  await expect(page.getByText('Código no registrado')).toBeVisible()
   await expect(page.getByText('El ticket está vacío')).toBeVisible()
 })
 
@@ -82,7 +85,8 @@ test('un producto dado de baja se distingue de uno inexistente', async ({ page }
   await escanear(page, PRODUCTOS.deBaja.codigo)
 
   // El cajero necesita poder decirle al cliente por que no se puede vender.
-  await expect(page.getByText(/dado de baja/i)).toBeVisible()
+  await expect(page.getByText('Producto inactivo')).toBeVisible()
+  await expect(page.getByText(/dado de baja/i).last()).toBeVisible()
   await expect(page.getByText('El ticket está vacío')).toBeVisible()
 })
 

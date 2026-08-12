@@ -148,3 +148,50 @@ test('el login entra en 375 px', async ({ page }) => {
   await expect(page.getByRole('textbox', { name: 'Usuario' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Entrar' })).toBeInViewport()
 })
+
+test('el alta rápida entra en 375 px y se puede completar', async ({ page }) => {
+  // Fase 5A.1. El diálogo tiene siete campos: es el formulario más largo que
+  // aparece en la caja, y la caja también se usa desde un teléfono.
+  await page.goto('/venta')
+  await escanear(page, '7799200000015')
+
+  await expect(page.getByText('Código no registrado')).toBeVisible()
+  expect(await hayScrollHorizontal(page)).toBe(false)
+
+  await page.getByRole('button', { name: 'Crear producto' }).click()
+  const dialogo = page.getByRole('dialog')
+  // `toBeAttached` y no `toBeVisible`: el nodo con `role="dialog"` de Headless
+  // UI es un envoltorio sin tamaño; lo que se ve es el panel de adentro.
+  await expect(dialogo).toBeAttached()
+  await expect(dialogo.getByRole('heading', { level: 2 })).toBeVisible()
+
+  // Nada se sale de la pantalla, ni con el diálogo abierto.
+  expect(await hayScrollHorizontal(page)).toBe(false)
+
+  // La categoría por omisión tiene que estar puesta antes de escribir: es lo
+  // que habilita el botón, y sin esperarla la prueba mide una carrera.
+  await expect(dialogo.getByRole('combobox', { name: /^Categoría/ })).toHaveValue(/\d+/)
+
+  const nombre = dialogo.getByLabel('Nombre')
+  await nombre.fill('Creado desde el teléfono')
+  await expect(nombre).toHaveValue('Creado desde el teléfono')
+  const precio = dialogo.getByLabel(/^Precio/)
+  await precio.fill('650')
+  await expect(precio).toHaveValue('650')
+
+  // Siete campos no entran en 812 px de alto: el diálogo scrollea POR DENTRO,
+  // que es lo correcto. Lo que no debe pasar --y se comprueba arriba-- es que
+  // scrollee la página entera.
+  const confirmar = dialogo.getByRole('button', { name: /crear y agregar/i })
+  await confirmar.scrollIntoViewIfNeeded()
+  await expect(confirmar).toBeInViewport()
+  await expect(confirmar).toBeEnabled()
+  await confirmar.click()
+
+  await page.getByRole('button', { name: /^ticket/i }).click()
+  await expect(
+    page
+      .getByRole('dialog', { name: 'Ticket' })
+      .getByText('Creado desde el teléfono', { exact: true }),
+  ).toBeVisible()
+})

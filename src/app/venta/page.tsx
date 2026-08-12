@@ -25,7 +25,9 @@ import {
 import { AyudaAtajos } from '@/components/venta/AyudaAtajos'
 import { AvisoCajaCerrada } from '@/components/venta/AvisoCajaCerrada'
 import { EscanerCamara } from '@/components/venta/EscanerCamara'
-import { useSession } from '@/components/shell/SessionProvider'
+import { DialogoAltaRapida } from '@/components/venta/DialogoAltaRapida'
+import { CodigoSinResolver, type EstadoDelCodigo } from '@/components/venta/CodigoSinResolver'
+import { useSession, usePermiso } from '@/components/shell/SessionProvider'
 import { notificarCambioDeCaja } from '@/components/shell/EstadoCaja'
 import { buscarProductosPorIds, useProducts, type Product } from '@/hooks/useProducts'
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
@@ -35,22 +37,42 @@ import { useHayCapaAbierta } from '@/store/overlays'
 import { articulosDelTicket, totalDelTicket, useCartStore } from '@/store/cart'
 import { aMilesimas, type TextoCantidad } from '@/lib/cantidad'
 import { esFraccionable, formatearCantidadConUnidad } from '@/modules/products/units'
+import { motivoDeCodigoInvalido, normalizarCodigo } from '@/modules/products/barcode'
 
 /** Cuantos resultados se muestran. Mas no entran en pantalla sin scroll. */
 const RESULTADOS_VISIBLES = 8
 
+/**
+ * Cuanto se insiste en devolver el foco al lector despues de cerrar un dialogo,
+ * y cada cuanto. Cubre con holgura la transicion de salida (`duration-150`),
+ * que es cuando Headless UI devuelve el foco a quien abrio.
+ */
+const MS_ESPERA_FOCO = 600
+const MS_ENTRE_INTENTOS = 40
+
 export default function VentaPage() {
   const { session } = useSession()
   const hayCapa = useHayCapaAbierta()
+  const puedeCrearProducto = usePermiso('products.quickCreate')
+  const puedeReactivar = usePermiso('products.update')
 
-  const { products, searchTerm, setSearchTerm, buscarPorCodigo, isLoading, error, fetchProducts } =
-    useProducts({
-      enServidor: true,
-      pageSize: RESULTADOS_VISIBLES,
-      // Un producto dado de baja no se vende, asi que tampoco aparece entre
-      // los resultados de la caja.
-      filtrosIniciales: { estado: 'activos' },
-    })
+  const {
+    products,
+    categories,
+    searchTerm,
+    setSearchTerm,
+    buscarPorCodigo,
+    isLoading,
+    error,
+    fetchProducts,
+    fetchCategories,
+  } = useProducts({
+    enServidor: true,
+    pageSize: RESULTADOS_VISIBLES,
+    // Un producto dado de baja no se vende, asi que tampoco aparece entre
+    // los resultados de la caja.
+    filtrosIniciales: { estado: 'activos' },
+  })
 
   const items = useCartStore((s) => s.items)
   const agregar = useCartStore((s) => s.add)
@@ -71,6 +93,16 @@ export default function VentaPage() {
   const [estadoCodigo, setEstadoCodigo] = useState<BarcodeStatus>('idle')
   const [mensajeCodigo, setMensajeCodigo] = useState<string | null>(null)
   const [avisoRestauracion, setAvisoRestauracion] = useState<string | null>(null)
+  /**
+   * El ultimo codigo que NO se resolvio en una linea del ticket.
+   *
+   * Null mientras todo va bien: el camino del producto encontrado no muestra
+   * nada extra y sigue siendo instantaneo.
+   */
+  const [sinResolver, setSinResolver] = useState<EstadoDelCodigo | null>(null)
+  /** Codigo con el que se abre el alta rapida. `null` = alta manual. */
+  const [altaAbierta, setAltaAbierta] = useState(false)
+  const [codigoDelAlta, setCodigoDelAlta] = useState<string | null>(null)
 
   const campoCodigo = useRef<HTMLInputElement>(null)
   const campoBusqueda = useRef<HTMLInputElement>(null)
@@ -87,16 +119,49 @@ export default function VentaPage() {
    * de cobro.
    */
   const escanerActivo =
-    !hayCapa && !editandoCantidad && !escribiendoCodigo && !cobroAbierto && pesando === null
+    !hayCapa &&
+    !editandoCantidad &&
+    !escribiendoCodigo &&
+    !cobroAbierto &&
+    pesando === null &&
+    !altaAbierta
 
   const visibles = products.slice(0, RESULTADOS_VISIBLES)
 
   // ---------------------------------------------------------------- ticket
 
+  /**
+   * El foco vuelve al lector, y se INSISTE hasta que quede.
+   *
+   * Un `setTimeout` de cero no alcanza. Headless UI devuelve el foco al elemento
+   * que lo tenia antes de abrir, y lo hace cuando termina la transicion de
+   * salida, no al desmontar. Mientras el abridor desaparecia junto con el
+   * dialogo --el boton de cobrar, el de peso-- no se notaba: no habia adonde
+   * devolverlo. Con el alta rapida si, porque el boton "Crear producto" sigue en
+   * pantalla y se lleva el foco despues de que nosotros lo pusimos.
+   *
+   * Se insiste en vez de esperar un numero fijo porque la duracion depende de la
+   * transicion y de la maquina, y un numero fijo es una carrera que se gana casi
+   * siempre. Casi siempre no sirve: el sintoma es que el escaneo siguiente no
+   * entra en ningun lado, y eso en una caja es el sistema roto.
+   *
+   * Lo encontro la prueba 7 de `e2e/alta-rapida.spec.ts`.
+   */
   const devolverFoco = useCallback(() => {
-    // Un `setTimeout` de 0 deja que el dialogo termine de desmontarse antes
-    // de mover el foco; si no, Headless UI lo devuelve al abridor y pisa esto.
-    setTimeout(() => campoCodigo.current?.focus(), 0)
+    const campo = campoCodigo.current
+    if (!campo) return
+
+    campo.focus()
+
+    // Se insiste toda la ventana, SIN cortar al primer acierto. Cortar ahi era
+    // el error de la primera version: el foco quedaba en el campo a los 240 ms,
+    // el intervalo se detenia, y Headless UI lo devolvia al abridor a los 300.
+    let restantes = Math.ceil(MS_ESPERA_FOCO / MS_ENTRE_INTENTOS)
+    const id = setInterval(() => {
+      campo.focus()
+      restantes--
+      if (restantes <= 0) clearInterval(id)
+    }, MS_ENTRE_INTENTOS)
   }, [])
 
   const agregarProducto = useCallback(
@@ -150,42 +215,128 @@ export default function VentaPage() {
 
   // --------------------------------------------------------------- escaneo
 
+  /**
+   * Que hacer con un codigo leido.
+   *
+   * UNA sola consulta, con `soloActivos: false`. Antes eran dos --primero entre
+   * los activos y despues entre todos-- lo que duplicaba el trabajo del camino
+   * mas frecuente de todos los que fallan: el codigo que no existe pagaba dos
+   * viajes al servidor para enterarse de lo mismo. Las dos consultas eran
+   * ademas literalmente la misma: el filtro de activo se aplica despues de leer
+   * la fila, no en la consulta.
+   *
+   * Los cinco desenlaces se distinguen, y cada uno tiene su siguiente paso:
+   *
+   *   invalido      el codigo no puede existir. Ni se consulta.
+   *   encontrado    se agrega, o se pide el peso. Sin ruido.
+   *   sin stock     se dice y no se agrega.
+   *   inactivo      se nombra el producto y se ofrece reactivarlo.
+   *   no registrado se ofrece darlo de alta.
+   *   sin red       se ofrece reintentar, y se aclara que no se creo nada.
+   */
   const procesarCodigo = useCallback(
-    async (codigo: string) => {
+    async (crudo: string) => {
+      const codigo = normalizarCodigo(crudo)
+      setSinResolver(null)
+
+      const roto = motivoDeCodigoInvalido(codigo)
+      if (roto !== null) {
+        setEstadoCodigo('error')
+        setMensajeCodigo(roto)
+        setSinResolver({ tipo: 'invalido', codigo, motivo: roto })
+        return
+      }
+
       setEstadoCodigo('reading')
       setMensajeCodigo(null)
       try {
-        // Primero entre los activos, que es lo normal.
-        const activo = await buscarPorCodigo(codigo)
-        if (activo) {
-          const ok = elegirProducto(activo)
-          setEstadoCodigo(ok ? 'ok' : 'error')
-          setMensajeCodigo(
-            ok
-              ? esFraccionable(activo.saleUnit)
-                ? `${activo.name} · ingresá el peso`
-                : `${activo.name} · agregado`
-              : `${activo.name} · sin stock disponible`,
-          )
+        const producto = await buscarPorCodigo(codigo, { soloActivos: false })
+
+        if (!producto) {
+          setEstadoCodigo('error')
+          // La linea del campo y el bloque de abajo NO dicen lo mismo: repetir
+          // la misma frase dos veces en la misma pantalla es ruido, y ademas
+          // haria imposible referirse a una de las dos. Acá va el código --que
+          // el campo ya vació-- y el bloque explica qué se puede hacer.
+          setMensajeCodigo(`${codigo} · sin resultado`)
+          setSinResolver({ tipo: 'no-registrado', codigo })
           return
         }
 
-        // Si no aparece, se mira si existe pero esta dado de baja: no es lo
-        // mismo "no existe" que "lo sacamos de venta", y el cajero necesita
-        // poder decirselo al cliente.
-        const cualquiera = await buscarPorCodigo(codigo, { soloActivos: false })
-        setEstadoCodigo('error')
+        // Existe pero esta de baja: no es lo mismo "no existe" que "lo sacamos
+        // de venta", y el cajero necesita poder decirselo al cliente.
+        if (!producto.isActive) {
+          setEstadoCodigo('error')
+          // Corto, por lo mismo que arriba: el bloque de abajo ya explica el
+          // caso entero y ofrece reactivar. Repetir la frase completa deja dos
+          // veces el mismo texto en la misma pantalla.
+          setMensajeCodigo(`${producto.name} · dado de baja`)
+          setSinResolver({
+            tipo: 'inactivo',
+            codigo,
+            nombre: producto.name,
+            productId: producto.id,
+          })
+          return
+        }
+
+        const ok = elegirProducto(producto)
+        setEstadoCodigo(ok ? 'ok' : 'error')
         setMensajeCodigo(
-          cualquiera
-            ? `${cualquiera.name} está dado de baja y no se puede vender`
-            : `Código ${codigo} desconocido`,
+          ok
+            ? esFraccionable(producto.saleUnit)
+              ? `${producto.name} · ingresá el peso`
+              : `${producto.name} · agregado`
+            : `${producto.name} · sin stock disponible`,
         )
       } catch (err) {
+        const mensaje = mensajeDeError(err, 'No hubo respuesta del servidor.')
         setEstadoCodigo('error')
-        setMensajeCodigo(mensajeDeError(err, 'No se pudo consultar el código.'))
+        setMensajeCodigo(mensaje)
+        setSinResolver({ tipo: 'sin-red', codigo, mensaje })
       }
     },
     [elegirProducto, buscarPorCodigo],
+  )
+
+  /** El producto recien creado entra al ticket por el MISMO camino que uno viejo. */
+  const usarProductoNuevo = useCallback(
+    (p: Product) => {
+      setAltaAbierta(false)
+      setSinResolver(null)
+      const ok = elegirProducto(p)
+      setEstadoCodigo(ok ? 'ok' : 'error')
+      setMensajeCodigo(
+        ok
+          ? esFraccionable(p.saleUnit)
+            ? `${p.name} · ingresá el peso`
+            : `${p.name} · agregado`
+          : `${p.name} · sin stock disponible`,
+      )
+      void fetchProducts()
+      devolverFoco()
+    },
+    [elegirProducto, fetchProducts, devolverFoco],
+  )
+
+  /** Reactivar un producto dado de baja, sin salir de la caja. */
+  const reactivar = useCallback(
+    async (productId: number, codigo: string) => {
+      try {
+        await apiRequest(`/api/products/${String(productId)}`, {
+          method: 'PUT',
+          body: { isActive: true },
+          // La respuesta no se usa: lo que interesa es el estado nuevo, y ese
+          // se relee escaneando otra vez el mismo codigo.
+          parse: () => null,
+        })
+        setSinResolver(null)
+        await procesarCodigo(codigo)
+      } catch (err) {
+        aviso.error(mensajeDeError(err, 'No se pudo reactivar el producto.'))
+      }
+    },
+    [procesarCodigo],
   )
 
   useBarcodeScanner({
@@ -302,6 +453,19 @@ export default function VentaPage() {
 
       if (hayCapa || cobroAbierto) return
 
+      // Alt+N abre el alta rapida manual. No choca con nada: los atajos que ya
+      // existian son F12, Ctrl+K, "/" y las flechas, y Alt+N no lo usa el
+      // navegador. Sin permiso no hace nada, en vez de abrir un formulario que
+      // el servidor va a rechazar.
+      if (e.altKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        if (puedeCrearProducto) {
+          setCodigoDelAlta(null)
+          setAltaAbierta(true)
+        }
+        return
+      }
+
       // Ctrl+K y "/" llevan a la busqueda. La barra sola no, si se esta
       // escribiendo: seria imposible tipear una fraccion.
       if ((e.ctrlKey && e.key.toLowerCase() === 'k') || (e.key === '/' && !enCampo)) {
@@ -326,7 +490,7 @@ export default function VentaPage() {
     return () => {
       window.removeEventListener('keydown', alPresionar)
     }
-  }, [cobroAbierto, hayCapa, items.length, visibles.length])
+  }, [cobroAbierto, hayCapa, items.length, visibles.length, puedeCrearProducto])
 
   /** Atajos de la lista de resultados, mientras el foco esta en el buscador. */
   function atajosDeBusqueda(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -390,6 +554,7 @@ export default function VentaPage() {
     setResaltado(0)
     setEstadoCodigo('idle')
     setMensajeCodigo(null)
+    setSinResolver(null)
     void fetchProducts()
     devolverFoco()
   }
@@ -471,6 +636,21 @@ export default function VentaPage() {
               </svg>
             </IconButton>
           </div>
+          {/* Alta manual: para el producto sin codigo, el artesanal o la
+              etiqueta rota. Discreto a proposito --no es la operacion normal
+              de una caja-- y ausente sin permiso, en vez de deshabilitado. */}
+          {puedeCrearProducto && (
+            <Button
+              variant="secondary"
+              className="shrink-0"
+              onClick={() => {
+                setCodigoDelAlta(null)
+                setAltaAbierta(true)
+              }}
+            >
+              + Producto
+            </Button>
+          )}
           <div className="flex-1">
             <SearchInput
               ref={campoBusqueda}
@@ -491,6 +671,33 @@ export default function VentaPage() {
             />
           </div>
         </div>
+
+        {/* Lo que pasó con el último código, cuando no terminó en el ticket.
+            Va acá arriba, no en un aviso flotante: un toast que se va solo es
+            justamente lo que hacía que el cajero no se enterara. */}
+        {sinResolver && (
+          <CodigoSinResolver
+            estado={sinResolver}
+            puedeCrear={puedeCrearProducto}
+            puedeReactivar={puedeReactivar}
+            onCrear={() => {
+              setCodigoDelAlta(sinResolver.codigo)
+              setAltaAbierta(true)
+            }}
+            onReactivar={() => {
+              if (sinResolver.tipo === 'inactivo') {
+                void reactivar(sinResolver.productId, sinResolver.codigo)
+              }
+            }}
+            onReintentar={() => {
+              void procesarCodigo(sinResolver.codigo)
+            }}
+            onCerrar={() => {
+              setSinResolver(null)
+              devolverFoco()
+            }}
+          />
+        )}
 
         <div className="min-h-0 flex-1">
           {error ? (
@@ -596,6 +803,21 @@ export default function VentaPage() {
           if (pesando) agregarProducto(pesando, cantidad)
           setPesando(null)
           devolverFoco()
+        }}
+      />
+
+      <DialogoAltaRapida
+        abierto={altaAbierta}
+        codigo={codigoDelAlta}
+        categorias={categories}
+        onCerrar={() => {
+          setAltaAbierta(false)
+          devolverFoco()
+        }}
+        onCreado={usarProductoNuevo}
+        onYaExistia={usarProductoNuevo}
+        onCategoriaCreada={() => {
+          void fetchCategories()
         }}
       />
 

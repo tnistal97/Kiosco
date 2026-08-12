@@ -230,6 +230,9 @@ export function useProducts(options: UseProductsOptions = {}) {
     totalPages,
     total,
     fetchProducts,
+    // Se expone para el alta rapida de la caja: al crear una categoria desde el
+    // modal, la lista tiene que volver a leerse o el selector no la muestra.
+    fetchCategories,
     buscarPorCodigo,
     isLoading,
     error,

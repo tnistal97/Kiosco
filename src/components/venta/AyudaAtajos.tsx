@@ -17,6 +17,9 @@ const ATAJOS: Array<{ teclas: string[]; que: string }> = [
   { teclas: ['+', '−'], que: 'Cambiar la cantidad de una línea' },
   { teclas: ['Supr'], que: 'Quitar la línea (con el foco en la cantidad)' },
   { teclas: ['F12'], que: 'Cobrar' },
+  // Fase 5A.1. `Alt` y no `Ctrl`: Ctrl+N es "ventana nueva" en todos los
+  // navegadores y no se puede interceptar desde una pagina.
+  { teclas: ['Alt', 'N'], que: 'Dar de alta un producto' },
   { teclas: ['Esc'], que: 'Cerrar el diálogo o vaciar la búsqueda' },
 ]
 
