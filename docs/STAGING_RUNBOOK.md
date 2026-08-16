@@ -120,8 +120,8 @@ cierran.
 
 ```bash
 cd /home/ubuntu/kiosco-staging
-sha256sum -c kiosco-1.0.0-rc.2-<commit>.tar.gz.sha256   # ANTES de descomprimir
-tar -xzf kiosco-1.0.0-rc.2-<commit>.tar.gz
+sha256sum -c kiosco-1.0.0-rc.3-<commit>.tar.gz.sha256   # ANTES de descomprimir
+tar -xzf kiosco-1.0.0-rc.3-<commit>.tar.gz
 npm ci --omit=dev
 npx prisma generate
 npx prisma migrate deploy

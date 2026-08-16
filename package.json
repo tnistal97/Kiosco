@@ -1,6 +1,6 @@
 {
   "name": "kiosco",
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "private": true,
   "_comentario_version": "Primera release candidate del almacen completo (Fases 0 a 4D). El 0.1.0 anterior venia del andamiaje inicial y no distinguia seis meses de trabajo. Ver docs/RELEASE_INVENTORY.md.",
   "engines": {

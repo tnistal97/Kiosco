@@ -9,7 +9,7 @@ códigos de barras por cámara y por lector USB.
 > cortan en febrero de 2026: la aplicación dejó de arrancar cuando el rol de
 > PostgreSQL perdió los privilegios sobre las tablas.
 >
-> La release candidate **`1.0.0-rc.2`** está lista en `release/almacen-v1`, con
+> La release candidate **`1.0.0-rc.3`** está lista en `release/almacen-v1`, con
 > su artefacto y su checksum, pero el despliegue es **NO-GO** por tres
 > bloqueantes que no son de código y que requieren escribir en el servidor:
 >
@@ -41,6 +41,10 @@ códigos de barras por cámara y por lector USB.
   frenar la venta: se da de alta con seis campos, entra al ticket y el foco
   vuelve al lector. El stock inicial pasa por el libro de inventario, no por un
   `UPDATE`. Ver [POS_QUICK_PRODUCT_CREATE.md](docs/POS_QUICK_PRODUCT_CREATE.md).
+- **Stock vendible en la caja** — con partidas vencidas, la pantalla separa lo
+  que hay de lo que se puede vender: `Stock 22 · Vendible 10 · Vencido 12`. El
+  ticket se corta en lo vendible en vez de que el rechazo aparezca al cobrar. El
+  número del navegador es ayuda: el cobro lo recalcula igual.
 - **Compras** — proveedores, órdenes de compra con estados, y recepción total
   o parcial. Lo que llega entra al stock convertido a la unidad de venta —5
   cajas de 8 son 40 botellas— y actualiza el costo del producto.
@@ -254,19 +258,21 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 
 ### Preproducción (Fase 5A)
 
-| Documento                                                                   | Qué contesta                                              |
-| --------------------------------------------------------------------------- | --------------------------------------------------------- |
-| [RELEASE_INVENTORY.md](docs/RELEASE_INVENTORY.md)                           | Qué compone la release, hasta el último índice            |
-| [PRODUCTION_CURRENT_STATE.md](docs/PRODUCTION_CURRENT_STATE.md)             | Qué hay **hoy** en el servidor, medido en solo lectura    |
-| [PRODUCTION_DATA_PRECHECK.md](docs/PRODUCTION_DATA_PRECHECK.md)             | Si los datos reales sobreviven a la migración             |
-| [MIGRATION_COMPATIBILITY_MATRIX.md](docs/MIGRATION_COMPATIBILITY_MATRIX.md) | Después de cada migración, ¿alcanza con volver el código? |
-| [PRODUCTION_BACKUP_PLAN.md](docs/PRODUCTION_BACKUP_PLAN.md)                 | Cómo respaldar y, sobre todo, cómo **restaurar**          |
-| [SECRET_ROTATION_PLAN.md](docs/SECRET_ROTATION_PLAN.md)                     | Qué secretos rotar, en qué orden y con qué consecuencia   |
-| [DANGEROUS_ACTIONS_MATRIX.md](docs/DANGEROUS_ACTIONS_MATRIX.md)             | Qué se puede deshacer y qué no                            |
-| [STAGING_RUNBOOK.md](docs/STAGING_RUNBOOK.md)                               | Cómo montar staging sin tocar producción                  |
-| [PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md)                         | El encendido, paso a paso, con puntos de decisión         |
-| [OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)                         | GO/NO-GO, qué mirar después y cómo diagnosticar           |
-| [POS_QUICK_PRODUCT_CREATE.md](docs/POS_QUICK_PRODUCT_CREATE.md)             | Alta rápida desde la caja: permiso, flujo y concurrencia  |
+| Documento                                                                   | Qué contesta                                               |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| [RELEASE_INVENTORY.md](docs/RELEASE_INVENTORY.md)                           | Qué compone la release, hasta el último índice             |
+| [PRODUCTION_CURRENT_STATE.md](docs/PRODUCTION_CURRENT_STATE.md)             | Qué hay **hoy** en el servidor, medido en solo lectura     |
+| [PRODUCTION_DATA_PRECHECK.md](docs/PRODUCTION_DATA_PRECHECK.md)             | Si los datos reales sobreviven a la migración              |
+| [MIGRATION_COMPATIBILITY_MATRIX.md](docs/MIGRATION_COMPATIBILITY_MATRIX.md) | Después de cada migración, ¿alcanza con volver el código?  |
+| [PRODUCTION_BACKUP_PLAN.md](docs/PRODUCTION_BACKUP_PLAN.md)                 | Cómo respaldar y, sobre todo, cómo **restaurar**           |
+| [SECRET_ROTATION_PLAN.md](docs/SECRET_ROTATION_PLAN.md)                     | Qué secretos rotar, en qué orden y con qué consecuencia    |
+| [DANGEROUS_ACTIONS_MATRIX.md](docs/DANGEROUS_ACTIONS_MATRIX.md)             | Qué se puede deshacer y qué no                             |
+| [STAGING_RUNBOOK.md](docs/STAGING_RUNBOOK.md)                               | Cómo montar staging sin tocar producción                   |
+| [PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md)                         | El encendido, paso a paso, con puntos de decisión          |
+| [OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)                         | GO/NO-GO, qué mirar después y cómo diagnosticar            |
+| [POS_QUICK_PRODUCT_CREATE.md](docs/POS_QUICK_PRODUCT_CREATE.md)             | Alta rápida desde la caja: permiso, flujo y concurrencia   |
+| [BARCODE_BRANCH_ARCHITECTURE.md](docs/BARCODE_BRANCH_ARCHITECTURE.md)       | Código de barras y sucursales: modelo, opciones y decisión |
+| [PERFORMANCE_BASELINE.md](docs/PERFORMANCE_BASELINE.md)                     | Línea base de rendimiento, medida y con su método          |
 
 ## Despliegue
 

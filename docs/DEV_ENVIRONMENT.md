@@ -43,6 +43,19 @@ Para detenerla:
 "$PGBIN/pg_ctl" -D "$PGDATA" stop
 ```
 
+> **No es un servicio de Windows: no vuelve sola después de un reinicio.** Si de
+> golpe la suite entera falla con dos segundos por prueba, la causa suele ser
+> ésta: `pg_ctl status` dice _no server running_ y no hay nada escuchando en 5433. Es lo que pasó al empezar la Fase 5A.2, y cuesta un rato de diagnóstico
+> porque el síntoma —1.500 pruebas rojas— parece un problema de código.
+
+> **Arrancarla desde una terminal que se va a cerrar la mata.** `pg_ctl start -l`
+> deja un proceso intermedio que redirige el registro; si el shell que lo lanzó
+> muere, el postmaster queda huérfano en una sesión rota y el primer cliente que
+> se conecte lo tumba con `client backend was terminated by exception
+0xC0000142` (Windows: fallo al inicializar DLLs). Se ve en el log y no en la
+> aplicación. Arrancarla con `Start-Process` —o desde una terminal que quede
+> abierta— y comprobar con `psql` **antes** de correr nada.
+
 ## Variables de entorno
 
 `.env.local` (leído por Next.js):

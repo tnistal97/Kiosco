@@ -1,6 +1,6 @@
 # Inventario de la release
 
-> Todo lo que compone `1.0.0-rc.2`, en un solo lugar. Sirve para dos cosas:
+> Todo lo que compone `1.0.0-rc.3`, en un solo lugar. Sirve para dos cosas:
 > saber qué se va a desplegar, y durante un incidente, saber qué **está**
 > desplegado.
 >
@@ -10,7 +10,7 @@
 
 |                 |                                                                 |
 | --------------- | --------------------------------------------------------------- |
-| Versión         | **`1.0.0-rc.2`**                                                |
+| Versión         | **`1.0.0-rc.3`**                                                |
 | Rama            | `release/almacen-v1`, publicada en `origin`                     |
 | Creada desde    | `feat/almacen-phase3-operations`, HEAD idéntico                 |
 | Fases incluidas | 0, 1, 2, 3, 3A–3D, 4A–4D, 5A, 5A.1                              |
@@ -30,7 +30,8 @@ release en el momento de construir.
 
 ## Versión del salto
 
-De `0.1.0` a `1.0.0-rc.1`, y de ahí a `1.0.0-rc.2` con la Fase 5A.1. El
+De `0.1.0` a `1.0.0-rc.1`, de ahí a `1.0.0-rc.2` con la Fase 5A.1, y a
+`1.0.0-rc.3` con la Fase 5A.2. El
 `0.1.0` venía del andamiaje inicial y no
 distinguía seis meses de trabajo de un proyecto recién creado. El `-rc.1` es
 literal: **es una candidata, no una versión publicada.** Pasa a `1.0.0` cuando
@@ -147,9 +148,24 @@ con el código.
 ### Novedades de la 5A.1
 
 Un endpoint (`POST /api/products/quick`), un permiso (`products.quickCreate`) y
-un código de error (`PRODUCT_ALREADY_EXISTS`). Sin migración: **el esquema no
-cambia entre `rc.1` y `rc.2`.** Ver
+un código de error (`PRODUCT_ALREADY_EXISTS`). Ver
 [POS_QUICK_PRODUCT_CREATE.md](POS_QUICK_PRODUCT_CREATE.md).
+
+### Novedades de la 5A.2
+
+Ni un endpoint, ni un permiso, ni un código de error nuevos: **es una fase de
+confiabilidad, no de funciones**. Lo que cambió:
+
+- El DTO de producto trae dos campos más —`sellableStock` y `expiredStock`— que
+  el POS usa como techo del ticket. Son derivados: no hay columna nueva.
+- El cliente Prisma se construye con una fábrica que puede emitir eventos de
+  consulta **sólo fuera de producción**. Ver
+  [QUALITY_STRATEGY.md](QUALITY_STRATEGY.md).
+- Dos mensajes de error se reescribieron para que digan qué hacer: el rechazo
+  por permiso y el rechazo por validación.
+
+**El esquema no cambia entre `rc.1`, `rc.2` y `rc.3`:** 43 migraciones, las
+mismas. Es lo que hace que volver atrás sea sustituir un directorio.
 
 ### Service worker
 

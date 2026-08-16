@@ -149,8 +149,8 @@ cd /home/ubuntu/kiosco
 mv kiosco kiosco-anterior-$FECHA        # el checkout viejo, intacto
 mkdir kiosco && cd kiosco
 
-sha256sum -c ~/kiosco-1.0.0-rc.2-<commit>.tar.gz.sha256   # ANTES de descomprimir
-tar -xzf ~/kiosco-1.0.0-rc.2-<commit>.tar.gz
+sha256sum -c ~/kiosco-1.0.0-rc.3-<commit>.tar.gz.sha256   # ANTES de descomprimir
+tar -xzf ~/kiosco-1.0.0-rc.3-<commit>.tar.gz
 cp ../kiosco-anterior-$FECHA/.env .                        # el .env NO viaja en el artefacto
 chmod 600 .env
 

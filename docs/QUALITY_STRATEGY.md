@@ -816,26 +816,63 @@ del negocio, que es la única que usan los reportes.
 mientras el reloj acompañe. El único antídoto es que **las pruebas usen la misma
 función que el código**, no una reimplementación que se le parece.
 
-**2. Una aserción puede no estar midiendo nada.**
+**2. Una aserción puede no estar midiendo nada.** _(detectado en 5A.1,
+corregido en 5A.2)_
 
-`tests/performance/queries.test.ts` cuenta consultas SQL con un `PrismaClient`
-aparte —el «espía»— que tiene el registro de consultas encendido. Pero las rutas
-usan el cliente de `@/lib/prisma`, que es **otra conexión**: el espía no ve sus
+`tests/performance/queries.test.ts` contaba consultas SQL con un `PrismaClient`
+aparte —el «espía»— que tenía el registro de consultas encendido. Pero las rutas
+usan el cliente de `@/lib/prisma`, que es **otra conexión**: el espía no veía sus
 consultas. Comprobado con una sonda: cliente de la aplicación 0, espía 1.
 
 Las aserciones del tipo `expect(consultas).toBeLessThanOrEqual(2)` sobre
-llamadas a rutas se cumplen con `0` y no protegen de nada. Parecen una guardia
-contra el N+1 y no lo son.
+llamadas a rutas se cumplían con `0` y no protegían de nada. Parecían una guardia
+contra el N+1 y no lo eran.
 
-Las mediciones nuevas de esta fase **no** usan ese mecanismo: usan
-`EXPLAIN (ANALYZE)`, que informa lo que PostgreSQL de verdad leyó. Con 10.000
-productos, buscar un código inexistente lee **cero filas** y usa el índice
-único; el plan lo dice y la prueba lo afirma.
+### Cómo se arregló (Fase 5A.2)
 
-Arreglar el contador para todo el archivo exige cambiar cómo la aplicación
-construye su cliente de base de datos. Eso es una modificación de riesgo en la
-víspera de una release candidate, así que **queda anotado y no hecho**. Está en
-el informe de la fase con su severidad.
+`src/lib/prisma.ts` construye el cliente con una **fábrica**. Si
+`PRISMA_QUERY_EVENTS=1` —que sólo pone `tests/setup.ts`, y que
+`pideInstrumentacion()` **ignora en producción**— el cliente nace con el registro
+de consultas encendido. Sin la variable, `new PrismaClient()` recibe exactamente
+los mismos argumentos que antes: ninguno. Producción no cambia.
+
+Las dos propiedades que hacen que el instrumento sirva, y que faltaban:
+
+1. **Si no puede medir, aborta.** `clienteObservable()` devuelve `null` —y no un
+   cliente mudo— cuando la instrumentación está apagada, y `tests/helpers/consultas.ts`
+   lanza en la importación. Medir cero y darlo por bueno es peor que no medir.
+2. **Espera a que los eventos lleguen.** El registro viaja por un canal aparte
+   del de los resultados, así que el `await` de la última consulta no garantiza
+   que su evento ya haya llegado. Se manda una sentencia reconocible y se espera
+   a **verla**; si no aparece en cinco segundos, lanza.
+
+Y la guardia se probó **fallando**: `consultas-n1.test.ts` corre el mismo trabajo
+—leer N productos— escrito bien y escrito como un N+1, con el mismo cliente, y
+afirma que la primera pasa y la segunda **es rechazada**. Una guardia que nunca
+se vio fallar no es una guardia.
+
+Siete caminos quedaron protegidos: lector del POS, venta de quince líneas,
+listado de productos, panel, cuenta de proveedor, FEFO y revisión de inventario.
+
+### Lo que apareció al medir de verdad
+
+Dos números que se afirmaban eran falsos, y no por una regresión: nunca se
+habían medido.
+
+| Camino            | Se afirmaba |    Es |
+| ----------------- | ----------: | ----: |
+| Lector por código |         ≤ 2 | **8** |
+| Listado de caja   |         ≤ 3 | **7** |
+
+Las ocho del lector: dos de la sesión, una del código por el índice único, una
+del producto y cuatro de sus relaciones, que Prisma resuelve cada una por
+separado. No crece con el catálogo —eso sí está comprobado— pero crece con
+cuántas relaciones pida el DTO, y ahora hay un tope que obliga a justificar la
+próxima. Ver [PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md).
+
+**Ninguna prueba vieja se borró.** Las que no medían se convirtieron para que
+midan: donde ejecutaban una consulta «equivalente» sobre el espía, ahora llaman
+al servicio o a la ruta de verdad.
 
 **2. El volumen no escala lineal, y hay que medirlo para saberlo.**
 
