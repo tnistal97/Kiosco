@@ -8,45 +8,41 @@
  *      si el numero crece con la cantidad de filas, hay una consulta por fila.
  *   2. Cuantas filas devuelve. Es lo que detecta una respuesta sin limite.
  *
- * El conteo se hace con el evento `query` de Prisma, que es el numero real de
- * sentencias enviadas al motor.
+ * FASE 5A.2 --lo que cambio y por que importa--. Hasta esta fase el conteo se
+ * hacia con un `PrismaClient` propio de este archivo. Ese cliente abre su
+ * propia conexion y NO VE ninguna de las consultas que hace la aplicacion: las
+ * mediciones sobre rutas observaban cero, y aserciones como "esta ruta no hizo
+ * mas de dos consultas" se cumplian sin mirar nada. Las que median de verdad
+ * eran las que ejecutaban una consulta EQUIVALENTE sobre el espia, que
+ * comprueban la forma de la consulta pero no que la ruta la use.
+ *
+ * Ahora se mide sobre el mismo cliente que usan las rutas --ver
+ * `tests/helpers/consultas.ts` y `src/lib/prisma.ts`-- y los numeros de abajo
+ * son los reales. Ninguna prueba se borro: las que no median se convirtieron
+ * para que midan, y en dos casos el numero verdadero resulto ser mayor que el
+ * que se afirmaba. Estan anotados donde aparecen.
+ *
+ * Las guardias por ruta viven en `consultas-n1.test.ts`.
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { PrismaClient } from '@prisma/client'
 import { seedFixture, prisma, type Fixture, hoyLocal } from '../helpers/db'
 import { call, sessionCookie } from '../helpers/http'
+import { medir } from '../helpers/consultas'
 import { multiplicarMonto } from '@/lib/money'
 
 let fx: Fixture
-
-/** Cliente aparte, con el registro de consultas encendido. */
-const espia = new PrismaClient({ log: [{ emit: 'event', level: 'query' }] })
-let consultas = 0
-espia.$on('query', () => {
-  consultas++
-})
 
 beforeEach(async () => {
   fx = await seedFixture()
 })
 
 afterAll(async () => {
-  await espia.$disconnect()
   await prisma.$disconnect()
 })
 
-/**
- * Cuenta las consultas que hace `fn`.
- *
- * Se mide sobre el cliente espia, asi que las funciones bajo prueba tienen
- * que usarlo. Para los endpoints se cuenta de otra forma: ver `medirRuta`.
- */
-async function contando<T>(fn: () => Promise<T>): Promise<{ resultado: T; consultas: number }> {
-  consultas = 0
-  const resultado = await fn()
-  return { resultado, consultas }
-}
+/** Cuenta las consultas que hace `fn`, sobre el cliente de la aplicacion. */
+const contando = medir
 
 /** Crea N productos con stock, para que los listados tengan volumen. */
 async function crearProductos(n: number): Promise<void> {
@@ -260,21 +256,10 @@ describe('Ninguna consulta se repite por fila (N+1)', () => {
         permissions: new Set<never>(),
       }
 
-      const { consultas: n } = await contando(() =>
-        // El servicio usa el cliente compartido, no el espia. Se cuenta con
-        // una consulta equivalente sobre el espia, que es lo que se quiere
-        // medir: la forma de la consulta, no quien la ejecuta.
-        espia.cashRegisterMovement.findMany({
-          where: { branchId: sesion.branchId },
-          select: {
-            id: true,
-            amount: true,
-            sale: { select: { id: true, status: true, items: { select: { id: true } } } },
-          },
-          take: 50,
-        }),
-      )
-      void listarMovimientos
+      // Fase 5A.2: se mide EL SERVICIO, no una consulta equivalente. Antes se
+      // ejecutaba a mano una consulta con la misma forma sobre otro cliente, lo
+      // que comprueba que esa forma no crece pero no que el servicio la use.
+      const { consultas: n } = await contando(() => listarMovimientos(sesion, { page: 1, pageSize: 50, dias: 30, tipo: 'todos' })) // prettier-ignore
       return n
     }
 
@@ -287,11 +272,11 @@ describe('Ninguna consulta se repite por fila (N+1)', () => {
     ).toBe(con5)
 
     // Prisma resuelve cada nivel de relacion con una consulta propia
-    // (movimientos, ventas, items): tres en total, sin importar cuantas
-    // filas haya. Eso es distinto de un N+1, donde el numero crece con las
-    // filas. Se acota por arriba para que agregar un nivel mas no pase
-    // inadvertido.
-    expect(con5).toBeLessThanOrEqual(3)
+    // (movimientos, ventas, items), y el servicio ademas cuenta el total para
+    // paginar. Sin importar cuantas filas haya. Eso es distinto de un N+1,
+    // donde el numero crece con las filas. Se acota por arriba para que
+    // agregar un nivel mas no pase inadvertido.
+    expect(con5, `el listado de caja hizo ${String(con5)} consultas`).toBeLessThanOrEqual(7)
   })
 
   it('el catalogo trae el stock de cada producto sin una consulta por producto', async () => {
@@ -299,17 +284,10 @@ describe('Ninguna consulta se repite por fila (N+1)', () => {
       fx = await seedFixture()
       await crearProductos(n)
 
-      const { consultas: c } = await contando(() =>
-        espia.product.findMany({
-          where: { branchId: fx.branchA.id },
-          select: {
-            id: true,
-            name: true,
-            stocks: { where: { branchId: fx.branchA.id }, select: { quantity: true } },
-          },
-          take: 100,
-        }),
-      )
+      // Fase 5A.2: la RUTA, no una consulta con su forma.
+      const { GET } = await import('@/app/api/products/route')
+      const cookie = await sessionCookie(fx.cajero)
+      const { consultas: c } = await contando(() => call(GET, '/api/products?pageSize=100', { cookie })) // prettier-ignore
       return c
     }
 
@@ -373,7 +351,12 @@ describe('La busqueda por codigo de barras no crece con el catalogo', () => {
     expect(resultado.status).toBe(200)
     // Antes el lector pedia veinte candidatos con `q=` y filtraba en el
     // navegador. Ahora es un acierto directo sobre el indice unico.
-    expect(consultas, `la busqueda por codigo hizo ${String(consultas)} consultas`).toBeLessThanOrEqual(2) // prettier-ignore
+    //
+    // Fase 5A.2: el tope decia 2 y el numero real es 8 --la sesion, el codigo,
+    // el producto y sus cuatro relaciones--. No era una regresion: la medicion
+    // observaba otra conexion y veia cero. El desglose esta en
+    // `consultas-n1.test.ts`.
+    expect(consultas, `la busqueda por codigo hizo ${String(consultas)} consultas`).toBeLessThanOrEqual(8) // prettier-ignore
   })
 
   it('encuentra por un alternativo con el mismo coste', async () => {
@@ -389,7 +372,9 @@ describe('La busqueda por codigo de barras no crece con el catalogo', () => {
     )
 
     expect(resultado.status).toBe(200)
-    expect(consultas).toBeLessThanOrEqual(2)
+    // Mismo coste que por el principal: es la misma consulta sobre el mismo
+    // indice. Que los dos caminos cuesten lo mismo es la afirmacion.
+    expect(consultas, `por un alternativo hizo ${String(consultas)} consultas`).toBeLessThanOrEqual(8) // prettier-ignore
   })
 
   it('el plan de consulta USA el indice unico, no un recorrido de tabla', async () => {
@@ -459,22 +444,10 @@ describe('El listado de compras no crece con la cantidad de ordenes', () => {
       fx = await seedFixture()
       await crearOrdenes(n)
 
-      const { consultas: c } = await contando(() =>
-        espia.purchaseOrder.findMany({
-          where: { branchId: fx.branchA.id },
-          select: {
-            id: true,
-            number: true,
-            status: true,
-            expectedTotal: true,
-            supplier: { select: { id: true, name: true } },
-            createdBy: { select: { id: true, name: true } },
-            _count: { select: { receipts: true } },
-            items: { select: { orderedQuantity: true, receivedQuantity: true } },
-          },
-          take: 25,
-        }),
-      )
+      // Fase 5A.2: la RUTA, no una consulta con su forma.
+      const { GET } = await import('@/app/api/purchases/route')
+      const cookie = await sessionCookie(fx.admin)
+      const { consultas: c } = await contando(() => call(GET, '/api/purchases?pageSize=25', { cookie })) // prettier-ignore
       return c
     }
 
@@ -485,9 +458,10 @@ describe('El listado de compras no crece con la cantidad de ordenes', () => {
       con15,
       `Con 3 ordenes hizo ${String(con3)} consultas y con 15 hizo ${String(con15)}`,
     ).toBe(con3)
-    // Prisma resuelve cada nivel con una consulta propia. Se acota por arriba
-    // para que agregar una relacion mas no pase inadvertido.
-    expect(con3).toBeLessThanOrEqual(4)
+    // Prisma resuelve cada nivel con una consulta propia, y la ruta agrega la
+    // sesion y el total de la paginacion. Se acota por arriba para que agregar
+    // una relacion mas no pase inadvertido.
+    expect(con3, `el listado de compras hizo ${String(con3)} consultas`).toBeLessThanOrEqual(10)
   })
 
   it('devuelve una pagina, no todas las ordenes', async () => {
@@ -528,13 +502,14 @@ describe('Recibir veinte productos no hace una transaccion por producto', () => 
     )
 
     expect(resultado.status).toBe(200)
-    // La recepcion NO se mide contando consultas del espia --el servicio usa
-    // el cliente compartido-- sino comprobando que la transaccion cerro y que
-    // el resultado es correcto. Lo que se mide aca es que 20 productos entren
-    // en UNA transaccion: si se hubiera hecho una por producto, un fallo en la
-    // decimoquinta dejaria catorce recibidas, y la prueba de "si falla una, no
-    // queda ninguna" ya cubre eso.
-    void consultas
+    // Fase 5A.2: esto SI se puede medir ahora. Recibir veinte lineas cuesta un
+    // numero acotado de sentencias --hay escrituras por linea, que son trabajo
+    // real-- y lo que importa es que no se dispare. Se informa el numero para
+    // que una regresion se vea en la salida antes de romper el tope.
+    console.log(`[5A.2] recepcion de 20 lineas: ${String(consultas)} consultas`)
+    expect(consultas, `la recepcion de 20 lineas hizo ${String(consultas)} consultas`).toBeLessThan(
+      200,
+    )
 
     const recibidas = await prisma.purchaseReceipt.count({ where: { purchaseOrderId: orden.id } })
     expect(recibidas, 'veinte productos tienen que entrar en UNA recepcion').toBe(1)
@@ -657,9 +632,9 @@ describe('Los reportes agregan en la base, no en JavaScript', () => {
       return Date.now() - antes
     }
 
-    // No se mide el numero de consultas --son SQL crudo y no pasan por el
-    // espia-- sino que el tiempo no se dispare: las nueve comprobaciones son
-    // agregados, no recorridos fila por fila.
+    // Aca se mide el TIEMPO y no el numero de sentencias: la reconciliacion es
+    // SQL crudo, una sentencia por invariante, y ese numero es fijo por
+    // construccion. Lo que puede degradarse es cuanto tarda cada una.
     const pocas = await medir(2)
     const muchas = await medir(30)
 
@@ -844,10 +819,9 @@ describe('El lector con 10.000 productos', () => {
   })
 
   it('lee UNA fila, con el catalogo vacio y con diez mil', async () => {
-    // Se mide con EXPLAIN ANALYZE --lo que PostgreSQL de verdad leyo-- y no
-    // contando sentencias con el cliente espia: ese cliente NO ve las consultas
-    // que hace la aplicacion, porque son dos conexiones distintas. Ver el
-    // informe de la Fase 5A.1.
+    // Se mide con EXPLAIN ANALYZE --lo que PostgreSQL de verdad leyo-- porque
+    // contar sentencias no distingue una consulta que lee una fila de una que
+    // recorre diez mil. Las dos cuentan uno.
     const filasLeidas = async (): Promise<number> => {
       const plan = await prisma.$queryRawUnsafe<Array<Record<string, string>>>(
         `EXPLAIN (ANALYZE, FORMAT JSON) SELECT * FROM "ProductBarcode" WHERE "code" = '7799999999999'`,
