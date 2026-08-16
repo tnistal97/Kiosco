@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { seedFixture, prisma, diaLocal, type Fixture } from '../helpers/db'
+import { seedFixture, prisma, diaLocal, restaurarEstadisticas, type Fixture } from '../helpers/db'
 import { call, sessionCookie } from '../helpers/http'
 
 let fx: Fixture
@@ -26,6 +26,10 @@ beforeEach(async () => {
 })
 
 afterAll(async () => {
+  // Este archivo carga cien mil productos. Sin esto, el planificador sigue
+  // creyendo que la tabla es grande y las pruebas que corran despues --en
+  // cualquier archivo-- eligen planes para un volumen que ya no existe.
+  await restaurarEstadisticas()
   await prisma.$disconnect()
 })
 

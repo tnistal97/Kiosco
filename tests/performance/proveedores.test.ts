@@ -170,6 +170,17 @@ beforeAll(async () => {
       ) r ON true
      WHERE p."number" LIKE 'PP-VOL-%'
   `)
+
+  // FASE 5A.2: sin esto, el planificador decide los planes con las
+  // estadisticas que hubiera dejado el archivo anterior --que no tienen nada
+  // que ver con estas cincuenta mil filas-- y lo que se mide es su ignorancia,
+  // no la consulta. `lotes.test.ts` ya lo hacia; este archivo no, y el reporte
+  // pasaba de 1.100 ms a 2.900 ms segun que hubiera corrido antes. Un techo de
+  // milisegundos sobre un plan elegido al azar es una prueba que falla sola.
+  await prisma.$executeRawUnsafe(
+    'ANALYZE "Supplier", "SupplierAccountMovement", "SupplierPayment", ' +
+      '"SupplierPaymentAllocation", "PurchaseOrder", "PurchaseReceipt"',
+  )
 }, 600_000)
 
 afterAll(async () => {

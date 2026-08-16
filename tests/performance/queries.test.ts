@@ -26,7 +26,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { seedFixture, prisma, type Fixture, hoyLocal } from '../helpers/db'
+import { seedFixture, prisma, restaurarEstadisticas, type Fixture, hoyLocal } from '../helpers/db'
 import { call, sessionCookie } from '../helpers/http'
 import { medir } from '../helpers/consultas'
 import { multiplicarMonto } from '@/lib/money'
@@ -38,6 +38,8 @@ beforeEach(async () => {
 })
 
 afterAll(async () => {
+  // Tambien carga diez mil productos. Ver `restaurarEstadisticas`.
+  await restaurarEstadisticas()
   await prisma.$disconnect()
 })
 

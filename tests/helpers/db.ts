@@ -73,6 +73,30 @@ export async function resetDb(): Promise<void> {
   }
 }
 
+/**
+ * Devuelve al planificador su vision de la realidad.
+ *
+ * FASE 5A.2. `TRUNCATE` vacia las tablas pero NO toca `pg_statistic`: despues
+ * de una prueba que carga cien mil productos, PostgreSQL sigue creyendo que
+ * `Product` tiene cien mil filas cuando tiene cinco, y elige planes pensados
+ * para un volumen que ya no existe. Las pruebas que corren despues se vuelven
+ * lentas sin que nada en su codigo haya cambiado.
+ *
+ * Se midio: `tests/performance/proveedores.test.ts` tarda 1.100 ms con
+ * estadisticas frescas y 2.976 ms despues de una carga masiva --contra un techo
+ * de 1.500 ms--. Y el fallo aparece en un archivo que no tiene nada que ver con
+ * el que cargo los datos, que es lo que lo hace dificil de diagnosticar: cambia
+ * segun el orden en que vitest tome los archivos.
+ *
+ * La llaman en `afterAll` los archivos que inflan el catalogo. No va en
+ * `resetDb()`: son mil quinientos reinicios por corrida y `ANALYZE` no es
+ * gratis.
+ */
+export async function restaurarEstadisticas(): Promise<void> {
+  await resetDb()
+  await prisma.$executeRawUnsafe('ANALYZE')
+}
+
 export interface Fixture {
   branchA: { id: number; name: string }
   branchB: { id: number; name: string }
