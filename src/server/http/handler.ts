@@ -17,6 +17,7 @@ import { getSession, type Session } from '@/server/auth/session'
 import { requirePermission, requireUser } from '@/server/authz/require'
 import type { Permission } from '@/server/authz/permissions'
 import { AppError, forbidden, type ApiErrorBody } from '@/server/http/errors'
+import { SIN_PERMISO } from '@/server/authz/require'
 import { ipDe, runWithRequestContext } from '@/server/http/requestContext'
 import { traducirError } from '@/server/http/prismaErrors'
 import { paraLog } from '@/server/http/redaccion'
@@ -213,7 +214,7 @@ function requireAny(session: Session | null, permissions: readonly Permission[])
 
   const user = requireUser(session)
   if (!permissions.some((p) => user.permissions.has(p))) {
-    throw forbidden(`Falta alguno de los permisos: ${permissions.join(', ')}`)
+    throw forbidden(SIN_PERMISO, { details: { permisos: [...permissions] } })
   }
 }
 

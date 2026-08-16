@@ -13,11 +13,22 @@ export function requireUser(session: Session | null): Session {
   return session
 }
 
+/**
+ * El texto que lee quien se topa con un permiso que no tiene.
+ *
+ * Fase 5A.2, del recorrido con el navegador: la pantalla decia `Falta el
+ * permiso "inventoryCounts.view"`. Es exacto y no le sirve a nadie parado en el
+ * mostrador: nombra un identificador interno y no dice que hacer. El nombre del
+ * permiso sigue viajando --en `details`, que es donde lo busca quien da
+ * soporte-- y la frase pasa a decir el paso siguiente.
+ */
+export const SIN_PERMISO = 'No tenés permiso para hacer esto. Pedíselo a un encargado.'
+
 /** Exige un permiso concreto. */
 export function requirePermission(session: Session | null, permission: Permission): Session {
   const user = requireUser(session)
   if (!user.permissions.has(permission)) {
-    throw forbidden(`Falta el permiso "${permission}"`)
+    throw forbidden(SIN_PERMISO, { details: { permiso: permission } })
   }
   return user
 }
@@ -29,7 +40,7 @@ export function requireAnyPermission(
 ): Session {
   const user = requireUser(session)
   if (!permissions.some((p) => user.permissions.has(p))) {
-    throw forbidden(`Falta alguno de los permisos: ${permissions.join(', ')}`)
+    throw forbidden(SIN_PERMISO, { details: { permisos: [...permissions] } })
   }
   return user
 }

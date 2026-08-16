@@ -45,6 +45,35 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * El mensaje que de verdad le sirve a quien esta en la pantalla.
+ *
+ * Un rechazo de validacion viaja como `VALIDATION` con el mensaje generico
+ * "Datos invalidos" y el motivo concreto adentro de `details`, campo por campo.
+ * Hasta la Fase 5A.2 ninguna pantalla miraba `details`, asi que quien intentaba
+ * vender a cuenta sin cliente leia "Datos invalidos" y no tenia forma de saber
+ * que le faltaba. Es un callejon: dice que algo esta mal y no dice que.
+ *
+ * Se arma aca --y no en cada pantalla-- porque el problema es de TODAS: hay
+ * treinta formularios y ninguno tiene por que repetir esta traduccion.
+ *
+ * Solo para `VALIDATION`. Los demas errores traen un mensaje escrito a mano
+ * para el caso, que siempre es mejor que cualquier cosa que se arme aca.
+ */
+export function mensajeVisible(code: string, message: string, details: unknown): string {
+  if (code !== 'VALIDATION' || !Array.isArray(details)) return message
+
+  const problemas = details.map(problemaDe).filter((p): p is string => p !== null)
+  return problemas.length === 0 ? message : problemas.join(' · ')
+}
+
+/** El texto de un `{ campo, problema }`, si lo tiene. */
+function problemaDe(item: unknown): string | null {
+  if (typeof item !== 'object' || item === null || !('problema' in item)) return null
+  const problema: unknown = item.problema
+  return typeof problema === 'string' ? problema : null
+}
+
 /** Error de red: no hubo respuesta. Distinto de "el servidor dijo que no". */
 export class NetworkError extends Error {
   constructor(cause: unknown) {
@@ -116,7 +145,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions<T>): P
     if (esCuerpoDeError(data)) {
       throw new ApiError({
         code: data.error.code,
-        message: data.error.message,
+        message: mensajeVisible(data.error.code, data.error.message, data.error.details),
         status: res.status,
         requestId: data.error.requestId || res.headers.get('x-request-id') || '',
         details: data.error.details,
