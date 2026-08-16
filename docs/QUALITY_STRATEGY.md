@@ -874,6 +874,51 @@ próxima. Ver [PERFORMANCE_BASELINE.md](PERFORMANCE_BASELINE.md).
 midan: donde ejecutaban una consulta «equivalente» sobre el espía, ahora llaman
 al servicio o a la ruta de verdad.
 
+### Que la suite corra dos veces seguidas (Fase 5A.2)
+
+Una prueba que pasa la primera vez y falla la segunda es peor que una que falla
+siempre: la primera se arregla, la segunda se culpa al azar. Se auditaron las
+seis fuentes conocidas y aparecieron dos.
+
+**1. `resetDb()` reiniciaba dos de las cinco secuencias de documentos.**
+
+`TRUNCATE ... RESTART IDENTITY` reinicia las secuencias que **pertenecen a una
+columna**. Las que numeran documentos —órdenes de compra, cobros, inventarios,
+devoluciones a proveedor y pagos a proveedor— no pertenecen a ninguna: son
+`CREATE SEQUENCE` sueltas, y por eso `nextval()` no bloquea. `resetDb()`
+reiniciaba a mano las dos primeras.
+
+Ninguna prueba de hoy afirma el primer número de las otras tres, así que era una
+**trampa y no un fallo**: la primera prueba que escribiera
+`expect(numero).toBe('INV-00000001')` pasaría una vez y fallaría en la corrida
+siguiente. Ahora las secuencias **se descubren** —`pg_sequences`— en vez de
+listarse, para que la sexta quede cubierta el día que exista.
+
+**2. Una prueba de reportes calculaba la medianoche en la zona de la máquina.**
+
+`sale-cancel.test.ts` construía «las 00:30» con `new Date(); setHours(0, 30)` y
+«ayer» con `getDate() - 1`. Las dos trabajan en la zona del **proceso**. En una
+computadora argentina coincide con la del negocio y la prueba pasa; en CI, que
+corre en UTC, las 00:30 UTC son las 21:30 de ayer en Buenos Aires, así que la
+venta **sí** cae en el día anterior y la prueba afirmaba lo contrario de lo que
+debía.
+
+Es la misma clase de defecto que la Fase 5A.1 corrigió en `reportes-lotes`, y
+sobrevivió por el mismo motivo por el que aquélla existía: **la prueba no usaba
+la función del código**. Ahora usa `inicioDelDia(hoyLocal(), ZONA_POR_DEFECTO)`
+y `diaLocal(-1)`, y se comprobó con `TZ=UTC`.
+
+**Lo que se revisó y estaba limpio:** ningún `.only` olvidado; los ids literales
+que aparecen están en pruebas de rechazo, donde Zod corta antes de mirarlos; los
+`beforeAll` son de archivos que arman un volumen una vez y sólo leen; la base la
+vacía `seedFixture()` en cada caso.
+
+**Una advertencia que no es un defecto:** dos pruebas de `pwa-cache.test.ts` se
+saltean con `skipIf` cuando no existe `public/sw.js`, que sólo aparece después
+de `next build`. Es deliberado y está anotado en el archivo, pero significa que
+**el total de la suite es 1.541 o 1.539 según si hubo build antes**. Conviene
+saberlo antes de comparar dos informes.
+
 **2. El volumen no escala lineal, y hay que medirlo para saberlo.**
 
 `phase3_sale_payments` tarda 113 ms con los datos reales y 31.119 ms con veinte

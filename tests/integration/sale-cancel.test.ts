@@ -6,7 +6,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { seedFixture, prisma, stockOf, cashOf, hoyLocal, type Fixture } from '../helpers/db'
+import {
+  seedFixture,
+  prisma,
+  stockOf,
+  cashOf,
+  hoyLocal,
+  diaLocal,
+  type Fixture,
+} from '../helpers/db'
+import { inicioDelDia, ZONA_POR_DEFECTO } from '@/lib/tiempo'
 import { multiplicarMonto, negarMonto } from '@/lib/money'
 import { aMonto } from '@/server/money'
 import { call, sessionCookie } from '../helpers/http'
@@ -199,13 +208,21 @@ describe('El dia del reporte es el dia del LOCAL, no el de UTC', () => {
   it('una venta de las 00:30 NO cuenta en el dia anterior', async () => {
     const saleId = await venderDosUnidades()
 
-    const alaMadrugada = new Date()
-    alaMadrugada.setHours(0, 30, 0, 0)
+    // Las 00:30 EN LA ZONA DE LA SUCURSAL, y el dia anterior en la misma zona.
+    //
+    // FASE 5A.2: esto usaba `new Date(); setHours(0, 30)` y `getDate() - 1`,
+    // que trabajan en la zona de LA MAQUINA. En una computadora argentina
+    // coincide con la del negocio y la prueba pasa; en CI, que corre en UTC,
+    // las 00:30 UTC son las 21:30 de AYER en Buenos Aires --y entonces la venta
+    // SI cae en el dia anterior y la prueba afirma lo contrario de lo que
+    // deberia--. Es la misma clase de defecto que la Fase 5A.1 corrigio en las
+    // pruebas de reportes; esta sobrevivio porque no usaba `hoyLocal()`.
+    const alaMadrugada = new Date(
+      inicioDelDia(hoyLocal(), ZONA_POR_DEFECTO).getTime() + 30 * 60 * 1000,
+    )
     await prisma.sale.update({ where: { id: saleId }, data: { date: alaMadrugada } })
 
-    const ayer = new Date()
-    ayer.setDate(ayer.getDate() - 1)
-    const dia = `${String(ayer.getFullYear())}-${String(ayer.getMonth() + 1).padStart(2, '0')}-${String(ayer.getDate()).padStart(2, '0')}`
+    const dia = diaLocal(-1)
 
     const { GET } = await import('@/app/api/admin/sales/route')
     const res = await call<{ data: Array<{ id: number }> }>(

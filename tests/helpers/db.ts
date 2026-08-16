@@ -54,11 +54,23 @@ export async function resetDb(): Promise<void> {
   const list = TABLES.map((t) => `"${t}"`).join(', ')
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`)
 
-  // La secuencia que numera las ordenes de compra NO es de ninguna tabla, asi
-  // que `RESTART IDENTITY` no la toca: los numeros seguirian creciendo entre
+  // Las secuencias que numeran documentos NO pertenecen a ninguna tabla, asi
+  // que `RESTART IDENTITY` no las toca: los numeros seguirian creciendo entre
   // pruebas y "la primera orden es la OC-00000001" seria cierto una sola vez.
-  await prisma.$executeRawUnsafe(`ALTER SEQUENCE "PurchaseOrder_numero_seq" RESTART WITH 1`)
-  await prisma.$executeRawUnsafe(`ALTER SEQUENCE "CustomerPayment_numero_seq" RESTART WITH 1`)
+  //
+  // FASE 5A.2: se reiniciaban DOS de las CINCO que existen. Las otras tres
+  // --inventarios, devoluciones a proveedor y pagos a proveedor-- seguian
+  // subiendo. Ninguna prueba de hoy afirma su primer numero, asi que era una
+  // trampa y no un fallo: la primera que lo afirmara pasaria una vez y fallaria
+  // en la corrida siguiente, que es la peor clase de prueba que se puede
+  // escribir. Ahora se descubren en vez de listarse, para que la sexta quede
+  // cubierta el dia que exista.
+  const secuencias = await prisma.$queryRaw<Array<{ sequencename: string }>>`
+    SELECT sequencename FROM pg_sequences WHERE schemaname = 'public'
+  `
+  for (const { sequencename } of secuencias) {
+    await prisma.$executeRawUnsafe(`ALTER SEQUENCE "${sequencename}" RESTART WITH 1`)
+  }
 }
 
 export interface Fixture {
