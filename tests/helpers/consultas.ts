@@ -107,7 +107,13 @@ let contadorDeBarreras = 0
  */
 async function esperarEventos(): Promise<void> {
   contadorDeBarreras += 1
-  const marca = `barrera_${String(contadorDeBarreras)}`
+  // El `_fin` no es decoracion: sin el, la marca `barrera_1` es PREFIJO de
+  // `barrera_11`, y `includes()` da por llegada una barrera que todavia no
+  // llego --o borra dos-- en cuanto el contador pasa de diez. El sintoma era
+  // un conteo que se corria en uno, al azar, solo en corridas largas: la clase
+  // de ruido que hace que nadie le crea a la guardia. Con el sufijo, ninguna
+  // marca es prefijo de otra.
+  const marca = `barrera_${String(contadorDeBarreras)}_fin`
   await cliente.$queryRawUnsafe(`SELECT 1 AS ${marca}`)
 
   const limite = performance.now() + 5_000

@@ -67,6 +67,7 @@ recordar:
 | -------------------------------- | ---------: | ------------------- |
 | Barcode (una lectura)            |          8 | **No**              |
 | Listado de caja (50 movimientos) |          7 | **No**              |
+| Listado de compras (25 órdenes)  |          8 | **No**              |
 
 Las ocho del lector, una por una: dos de la sesión (usuario y rol), una del
 código por el índice único, una del producto, y cuatro de sus relaciones

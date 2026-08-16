@@ -943,6 +943,27 @@ prueba que falla sola —y lo peor es que falla en otro archivo—. Una prueba d
 rendimiento que construye su volumen tiene que analizarlo antes de medir, o no
 está midiendo la consulta.
 
+**4. El instrumento tambien puede estar mal, y de la peor manera.**
+
+Después de arreglar lo anterior, las guardias seguían fallando **una vez cada
+tantas corridas**, con mensajes absurdos: «con 5 filas hizo 10 consultas y con
+40 hizo 9». Un conteo que _baja_ al agregar datos no es un N+1: es ruido.
+
+La causa estaba en el medidor. La barrera que espera los eventos usa una marca
+`barrera_N` y la busca con `includes()`. **`barrera_1` es prefijo de
+`barrera_11`**: pasado el décimo compás, una barrera podía darse por llegada
+antes de llegar —o llevarse dos por delante—. El síntoma aparecía sólo en
+corridas largas, que es cuando el contador pasa de diez.
+
+Se arregló con un sufijo (`barrera_N_fin`), y con eso los números dejaron de
+moverse: el listado de caja hace 7 consultas, el de compras 8, y no 8 y 9 como
+llegué a anotar mientras el instrumento mentía.
+
+**La lección, y es la misma que la del cliente espía:** antes de creerle a una
+medición hay que probar el instrumento. `consultas-n1.test.ts` tiene un caso que
+mide dos veces lo mismo y exige el mismo número; ese caso habría encontrado esto
+antes si el contador hubiera pasado de diez dentro del archivo.
+
 **Lo que se revisó y estaba limpio:** ningún `.only` olvidado; los ids literales
 que aparecen están en pruebas de rechazo, donde Zod corta antes de mirarlos; los
 `beforeAll` son de archivos que arman un volumen una vez y sólo leen; la base la
