@@ -63,9 +63,23 @@ function vaciarCaptura(): void {
   captura.sentencias = []
 }
 
+/**
+ * Las sentencias de la ultima medicion terminada.
+ *
+ * `exigirQueNoCrezca` recibe una funcion que devuelve un NUMERO, asi que sin
+ * esto no tendria con que explicar un desvio. Se guarda aca --y no se cambia la
+ * firma-- para que las pruebas que ya la usan no tengan que reescribirse.
+ */
+let ultima: string[] = []
+
+export function sentenciasDeLaUltimaMedicion(): string[] {
+  return ultima
+}
+
 function cerrarCaptura(): string[] {
   captura.activa = false
-  return [...captura.sentencias]
+  ultima = [...captura.sentencias]
+  return ultima
 }
 
 function quitarBarrera(marca: string): void {
@@ -81,6 +95,29 @@ function quitarBarrera(marca: string): void {
  * quiere premiar.
  */
 const RUIDO = /^\s*(BEGIN|COMMIT|ROLLBACK|DEALLOCATE|SET|SAVEPOINT|RELEASE)\b/i
+
+/**
+ * El latido del pool. NO es trabajo de la aplicacion.
+ *
+ * Antes de reusar una conexion que estuvo ociosa, el pool de Prisma comprueba
+ * que siga viva con un `SELECT 1` pelado. Medido: con 0, 1 y 5 segundos de
+ * ocio no aparece; con 12 y 20 si.
+ *
+ * Fue la causa de un desvio de UNA consulta que aparecia al azar y en las dos
+ * direcciones. Enganaba por tres motivos:
+ *
+ *   - depende del RELOJ --de cuanto tardo la prueba anterior--, no de los
+ *     datos, asi que no se reproducia corriendo el archivo solo;
+ *   - una prueba que compara dos volumenes lo cobra en una medicion y no en la
+ *     otra, y da lo mismo en cual: por eso el conteo a veces subia con mas
+ *     filas y a veces bajaba;
+ *   - la barrera de apertura NO lo absorbe, porque calienta UNA conexion y las
+ *     rutas que hacen dos consultas en paralelo toman otra, todavia fria.
+ *
+ * Se exige la sentencia entera para no tragarse nada real: cualquier `SELECT 1`
+ * con `FROM`, con alias o con `WHERE` sigue contando.
+ */
+export const LATIDO_DEL_POOL = /^\s*SELECT\s+1\s*;?\s*$/i
 
 export interface Medicion {
   /** Todas las sentencias capturadas, en orden, incluido el ruido. */
@@ -137,6 +174,32 @@ async function esperarEventos(): Promise<void> {
  * No es reentrante a proposito: dos mediciones anidadas contarian lo mismo dos
  * veces y el numero no significaria nada. Se detecta y se aborta.
  */
+/**
+ * Que sentencia sobra --o falta-- entre dos mediciones.
+ *
+ * Un conteo que no coincide no dice NADA por si solo: hay que ver cual es la
+ * sentencia de mas. Sin esto, un desvio de uno solo se puede investigar
+ * adivinando, que es como se perdio la primera vuelta de este problema.
+ */
+export function diferenciaDeSentencias(a: readonly string[], b: readonly string[]): string {
+  const contar = (xs: readonly string[]): Map<string, number> => {
+    const m = new Map<string, number>()
+    for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1)
+    return m
+  }
+  const ca = contar(a)
+  const cb = contar(b)
+  const lineas: string[] = []
+  for (const clave of new Set([...ca.keys(), ...cb.keys()])) {
+    const na = ca.get(clave) ?? 0
+    const nb = cb.get(clave) ?? 0
+    if (na !== nb) lineas.push(`  ${String(na)} -> ${String(nb)}   ${clave.slice(0, 200)}`)
+  }
+  return lineas.length === 0
+    ? '  (las mismas sentencias; la diferencia esta en cuantas veces se repite alguna)'
+    : lineas.join('\n')
+}
+
 export async function medir<T>(fn: () => Promise<T>): Promise<Medicion & { resultado: T }> {
   if (captura.activa) {
     throw new Error('Hay una medicion en curso: anidarlas daria un numero sin sentido')
@@ -156,7 +219,7 @@ export async function medir<T>(fn: () => Promise<T>): Promise<Medicion & { resul
     todas = cerrarCaptura()
   }
 
-  const utiles = todas.filter((s) => !RUIDO.test(s))
+  const utiles = todas.filter((s) => !RUIDO.test(s) && !LATIDO_DEL_POOL.test(s))
   return {
     resultado,
     todas,
@@ -197,14 +260,17 @@ export async function exigirQueNoCrezca(
   if (muchas <= pocas) throw new Error('El segundo volumen tiene que ser mayor que el primero')
 
   const conPocas = await medirCon(pocas)
+  const sentenciasPocas = sentenciasDeLaUltimaMedicion()
   const conMuchas = await medirCon(muchas)
+  const sentenciasMuchas = sentenciasDeLaUltimaMedicion()
   const porFila = (conMuchas - conPocas) / (muchas - pocas)
 
   if (porFila > tolerancia) {
     throw new Error(
       `${que}: con ${String(pocas)} filas hizo ${String(conPocas)} consultas y con ` +
         `${String(muchas)} hizo ${String(conMuchas)}. Son ${porFila.toFixed(2)} consultas por ` +
-        `fila y la tolerancia es ${String(tolerancia)}: el costo crece con los datos.`,
+        `fila y la tolerancia es ${String(tolerancia)}: el costo crece con los datos.\n` +
+        `Sentencias que cambian:\n${diferenciaDeSentencias(sentenciasPocas, sentenciasMuchas)}`,
     )
   }
 

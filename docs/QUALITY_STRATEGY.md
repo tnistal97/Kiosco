@@ -955,14 +955,49 @@ La causa estaba en el medidor. La barrera que espera los eventos usa una marca
 antes de llegar —o llevarse dos por delante—. El síntoma aparecía sólo en
 corridas largas, que es cuando el contador pasa de diez.
 
-Se arregló con un sufijo (`barrera_N_fin`), y con eso los números dejaron de
-moverse: el listado de caja hace 7 consultas, el de compras 8, y no 8 y 9 como
-llegué a anotar mientras el instrumento mentía.
+Se arregló con un sufijo (`barrera_N_fin`). Y ahí me apuré: di el problema por
+cerrado porque `tests/performance` pasó tres veces seguidas. **No estaba
+cerrado.** La corrida doble siguiente volvió a fallar, y encima al revés
+—`expected 10 to be 9`—. El defecto de la barrera era real y había que
+arreglarlo, pero no era la causa de esto.
 
-**La lección, y es la misma que la del cliente espía:** antes de creerle a una
-medición hay que probar el instrumento. `consultas-n1.test.ts` tiene un caso que
-mide dos veces lo mismo y exige el mismo número; ese caso habría encontrado esto
-antes si el contador hubiera pasado de diez dentro del archivo.
+**5. La causa de verdad: el pool tiene latido.**
+
+Esta vez, en lugar de razonar sobre el código, hice que la falla trajera la
+prueba: el error de la guardia ahora imprime **qué sentencia sobra**. La
+siguiente corrida contestó en una línea:
+
+```
+1 -> 0   SELECT 1
+```
+
+Un `SELECT 1` pelado, que ninguna ruta escribe. Un script de veinte líneas lo
+confirmó: antes de reutilizar una conexión que estuvo ociosa, el pool de Prisma
+comprueba que siga viva. Con 0, 1 y 5 segundos de ocio no aparece; con 12 y 20
+sí.
+
+Eso explica todos los síntomas a la vez. Depende del **reloj** —de cuánto tardó
+la prueba anterior—, no de los datos: por eso se cobraba en una medición y no en
+la otra, y por eso el conteo tanto subía como bajaba. Corriendo el archivo solo
+no se reproduce nunca, porque las conexiones no se enfrían. Y la barrera de
+apertura no lo tapa: calienta **una** conexión, y una ruta que hace dos
+consultas en paralelo toma otra, todavía fría.
+
+Hoy el medidor lo descarta como descarta `BEGIN` y `COMMIT` —es trabajo del
+conector, no de la ruta—, exigiendo la sentencia entera para no tragarse nada
+real, con una prueba que lo comprueba en las dos direcciones.
+
+Los conteos verdaderos, ya sin latido: listado de caja **7**, listado de compras
+**8**, catálogo **9**, lector de códigos **8**.
+
+**Las lecciones.** La primera es la misma que la del cliente espía: antes de
+creerle a una medición hay que probar el instrumento. La segunda es sobre cómo
+se busca: dos veces intenté explicar el desvío razonando —caché de zona horaria,
+reconexión del cliente— y las dos veces me equivoqué; se resolvió cuando dejé de
+adivinar y le puse al fallo la obligación de mostrar la evidencia. Un desvío de
+**uno** casi no deja pistas: hay que instrumentarlo, no deducirlo. Y la tercera:
+tres corridas verdes no cierran un problema intermitente cuya frecuencia no se
+midió.
 
 **Lo que se revisó y estaba limpio:** ningún `.only` olvidado; los ids literales
 que aparecen están en pruebas de rechazo, donde Zod corta antes de mirarlos; los

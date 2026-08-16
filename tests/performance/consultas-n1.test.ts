@@ -23,7 +23,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { seedFixture, prisma, diaLocal, hoyLocal, type Fixture } from '../helpers/db'
 import { call, sessionCookie } from '../helpers/http'
-import { medir, cuantasConsultas, exigirQueNoCrezca } from '../helpers/consultas'
+import { medir, cuantasConsultas, exigirQueNoCrezca, LATIDO_DEL_POOL } from '../helpers/consultas'
 
 let fx: Fixture
 
@@ -138,6 +138,26 @@ describe('La instrumentacion mide de verdad', () => {
     await expect(
       exigirQueNoCrezca(unaPorFila, { pocas: 3, muchas: 12, que: 'leer n productos de a uno' }),
     ).rejects.toThrow(/consultas por fila/)
+  })
+
+  it('el latido del pool no cuenta, y nada que se le parezca queda afuera', () => {
+    // El pool comprueba con `SELECT 1` una conexion que estuvo ociosa. Depende
+    // del reloj, no de los datos: si contara, el numero se correria en uno al
+    // azar. Esa fue una falla real --ver el comentario de `LATIDO_DEL_POOL`--.
+    for (const latido of ['SELECT 1', 'select 1', '  SELECT   1  ', 'SELECT 1;']) {
+      expect(LATIDO_DEL_POOL.test(latido), `deberia ignorarse: ${latido}`).toBe(true)
+    }
+
+    // Y la precision: el filtro no puede tragarse trabajo de verdad.
+    for (const real of [
+      'SELECT 1 AS barrera_3_fin',
+      'SELECT 1 FROM "Product" WHERE "id" = $1',
+      'SELECT 10',
+      'SELECT 1, 2',
+      'SELECT "id" FROM "Product" WHERE EXISTS (SELECT 1 FROM "SaleItem")',
+    ]) {
+      expect(LATIDO_DEL_POOL.test(real), `deberia contarse: ${real}`).toBe(false)
+    }
   })
 })
 

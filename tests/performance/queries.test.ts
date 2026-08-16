@@ -28,7 +28,7 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { seedFixture, prisma, restaurarEstadisticas, type Fixture, hoyLocal } from '../helpers/db'
 import { call, sessionCookie } from '../helpers/http'
-import { medir } from '../helpers/consultas'
+import { medir, diferenciaDeSentencias, type Medicion } from '../helpers/consultas'
 import { multiplicarMonto } from '@/lib/money'
 
 let fx: Fixture
@@ -244,7 +244,7 @@ describe('Ninguna consulta se repite por fila (N+1)', () => {
     // Con 5 ventas y con 20, la cantidad de consultas tiene que ser la misma.
     // Si creciera, habria una consulta por movimiento --que es como estaba
     // antes: 26 movimientos daban 27 consultas.
-    const medir = async (ventas: number): Promise<number> => {
+    const medir = async (ventas: number): Promise<Medicion> => {
       fx = await seedFixture()
       await registrarVentas(ventas)
 
@@ -261,42 +261,49 @@ describe('Ninguna consulta se repite por fila (N+1)', () => {
       // Fase 5A.2: se mide EL SERVICIO, no una consulta equivalente. Antes se
       // ejecutaba a mano una consulta con la misma forma sobre otro cliente, lo
       // que comprueba que esa forma no crece pero no que el servicio la use.
-      const { consultas: n } = await contando(() => listarMovimientos(sesion, { page: 1, pageSize: 50, dias: 30, tipo: 'todos' })) // prettier-ignore
-      return n
+      return contando(() => listarMovimientos(sesion, { page: 1, pageSize: 50, dias: 30, tipo: 'todos' })) // prettier-ignore
     }
 
     const con5 = await medir(5)
     const con20 = await medir(20)
 
     expect(
-      con20,
-      `Con 5 ventas hizo ${con5} consultas y con 20 hizo ${con20}: la cantidad crece con las filas`,
-    ).toBe(con5)
+      con20.consultas,
+      `Con 5 ventas hizo ${String(con5.consultas)} consultas y con 20 hizo ` +
+        `${String(con20.consultas)}: la cantidad crece con las filas\n` +
+        `Sentencias que cambian:\n${diferenciaDeSentencias(con5.todas, con20.todas)}`,
+    ).toBe(con5.consultas)
 
     // Prisma resuelve cada nivel de relacion con una consulta propia
     // (movimientos, ventas, items), y el servicio ademas cuenta el total para
     // paginar. Sin importar cuantas filas haya. Eso es distinto de un N+1,
     // donde el numero crece con las filas. Se acota por arriba para que
     // agregar un nivel mas no pase inadvertido.
-    expect(con5, `el listado de caja hizo ${String(con5)} consultas`).toBeLessThanOrEqual(7)
+    expect(
+      con5.consultas,
+      `el listado de caja hizo ${String(con5.consultas)} consultas`,
+    ).toBeLessThanOrEqual(7)
   })
 
   it('el catalogo trae el stock de cada producto sin una consulta por producto', async () => {
-    const medir = async (n: number): Promise<number> => {
+    const medir = async (n: number): Promise<Medicion> => {
       fx = await seedFixture()
       await crearProductos(n)
 
       // Fase 5A.2: la RUTA, no una consulta con su forma.
       const { GET } = await import('@/app/api/products/route')
       const cookie = await sessionCookie(fx.cajero)
-      const { consultas: c } = await contando(() => call(GET, '/api/products?pageSize=100', { cookie })) // prettier-ignore
-      return c
+      return contando(() => call(GET, '/api/products?pageSize=100', { cookie }))
     }
 
     const con5 = await medir(5)
     const con40 = await medir(40)
 
-    expect(con40, 'La cantidad de consultas crece con la cantidad de productos').toBe(con5)
+    expect(
+      con40.consultas,
+      'La cantidad de consultas crece con la cantidad de productos\n' +
+        `Sentencias que cambian:\n${diferenciaDeSentencias(con5.todas, con40.todas)}`,
+    ).toBe(con5.consultas)
   })
 })
 

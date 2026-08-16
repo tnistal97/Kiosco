@@ -102,6 +102,43 @@ Por eso, en este proyecto:
 Los números de este documento se tomaron con la máquina quieta y las
 estadísticas frescas. Sin esas dos condiciones no son comparables.
 
+## Y una advertencia sobre el conteo de sentencias
+
+Contar sentencias es determinista **salvo por una**, que no la manda la
+aplicación: antes de reutilizar una conexión que estuvo ociosa, el pool de
+Prisma comprueba que siga viva con un `SELECT 1` pelado.
+
+Medido (`@prisma/client` 6.19.3, PostgreSQL 18.3):
+
+| Ocio antes de la consulta | ¿Aparece `SELECT 1`? |
+| ------------------------- | -------------------- |
+| 0 s, 1 s, 5 s             | No                   |
+| 12 s, 20 s                | **Sí**               |
+
+Como depende del **reloj** —de cuánto tardó la prueba anterior— y no de los
+datos, se cobraba en una medición y no en la otra, y daba lo mismo en cuál: el
+conteo a veces subía al agregar filas y a veces bajaba. Costó dos diagnósticos
+equivocados. Tres cosas lo hacían difícil de ver:
+
+- corriendo el archivo solo no se reproduce nunca, porque las conexiones no
+  llegan a enfriarse;
+- la barrera de apertura del medidor **no** lo absorbe: calienta una conexión, y
+  una ruta que hace dos consultas en paralelo toma otra, todavía fría;
+- el desvío es de uno, que es justo el tamaño que se confunde con un error de
+  redondeo del propio instrumento.
+
+Hoy el medidor lo descarta —`LATIDO_DEL_POOL` en `tests/helpers/consultas.ts`—
+igual que descarta `BEGIN` y `COMMIT`: es trabajo del conector, no de la ruta.
+El filtro exige la sentencia entera, así que cualquier `SELECT 1` con `FROM`,
+con alias o dentro de un `EXISTS` sigue contando, y hay una prueba que lo
+comprueba en las dos direcciones.
+
+> Consecuencia para los números de arriba: los conteos publicados son los
+> **verdaderos**, sin latido. El del listado de caja es 7 —no 8— y el del
+> catálogo 9. Cuando un conteo no coincide, el error de la prueba imprime qué
+> sentencia sobra: sin eso, un desvío de uno sólo se puede investigar
+> adivinando.
+
 ## Lo que NO se mide con un cronómetro
 
 - **N+1**: se detecta corriendo el mismo escenario con dos volúmenes y
