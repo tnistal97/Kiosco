@@ -43,6 +43,16 @@ export interface ProductoDTO {
   purchaseUnit: UnidadDeCompra
   unitsPerPurchaseUnit: TextoCantidad
   totalStock: TextoCantidad
+  /**
+   * Lo que el cobro va a dejar vender: el total menos lo vencido.
+   *
+   * Es AYUDA, no autoridad: el servidor lo vuelve a calcular al cobrar, con los
+   * lotes bloqueados. Sirve para no dejar armar un ticket que se va a rechazar.
+   * Sin lotes vencidos es igual a `totalStock`.
+   */
+  sellableStock: TextoCantidad
+  /** Lo que hay y no se puede vender por estar vencido. Cero en casi todo. */
+  expiredStock: TextoCantidad
   /** Cantidad por debajo de la cual hay que reponer. Cero: sin configurar. */
   minimumStock: TextoCantidad
   /** OK | LOW | OUT. Lo calcula el servidor; si no viene, se calcula aca. */
@@ -85,6 +95,11 @@ export function parseProducto(raw: unknown): ProductoDTO {
   const totalStock = cantidadODefecto(raw.totalStock)
   const minimumStock = cantidadODefecto(raw.minimumStock)
   const price = montoODefecto(raw.price)
+  // Sin la clave --una respuesta vieja del cache, un endpoint que todavia no la
+  // manda-- lo vendible es el total y lo vencido cero. Es la respuesta correcta
+  // para el catalogo sin lotes, que es donde puede haber respuestas viejas.
+  const sellableStock = cantidadODefecto(raw.sellableStock, totalStock)
+  const expiredStock = cantidadODefecto(raw.expiredStock, '0.000')
 
   const producto: ProductoDTO = {
     id: numero(raw.id),
@@ -103,6 +118,8 @@ export function parseProducto(raw: unknown): ProductoDTO {
     purchaseUnit: unidadDeCompraODefecto(raw.purchaseUnit),
     unitsPerPurchaseUnit: cantidadODefecto(raw.unitsPerPurchaseUnit, '1.000'),
     totalStock,
+    sellableStock,
+    expiredStock,
     minimumStock,
     // El servidor lo manda calculado. Si no viene --una respuesta vieja
     // cacheada, un endpoint que todavia no lo incluye-- se calcula aca con la

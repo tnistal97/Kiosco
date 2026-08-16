@@ -3,7 +3,11 @@
 import { Money, StockBadge, cn } from '@/components/ui'
 import type { Product } from '@/hooks/useProducts'
 import { aMilesimas } from '@/lib/cantidad'
-import { denominadorDePrecio, esFraccionable } from '@/modules/products/units'
+import {
+  denominadorDePrecio,
+  esFraccionable,
+  formatearCantidadConUnidad,
+} from '@/modules/products/units'
 
 /**
  * Una fila de resultado de busqueda.
@@ -26,7 +30,10 @@ export function ResultadoBusqueda({
   onAgregar: () => void
   onHover: () => void
 }) {
-  const agotado = aMilesimas(producto.totalStock) <= 0
+  // Agotado es NO TENER NADA VENDIBLE, que no es lo mismo que no tener nada:
+  // un producto con 10 unidades vencidas tiene stock y no se puede vender.
+  const agotado = aMilesimas(producto.sellableStock) <= 0
+  const hayVencido = aMilesimas(producto.expiredStock) > 0
   const porPeso = esFraccionable(producto.saleUnit)
 
   return (
@@ -67,9 +74,34 @@ export function ResultadoBusqueda({
               </>
             )}
           </p>
+
+          {/* Los tres numeros, y SOLO cuando hay algo que explicar. Sin lotes
+              vencidos --el catalogo entero, hoy-- la fila queda igual que
+              antes. Con vencidos, la diferencia entre "hay 10" y "se pueden
+              vender 3" deja de ser una sorpresa del momento de cobrar. */}
+          {hayVencido && (
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs">
+              <span className="text-ink-faint">
+                Stock {formatearCantidadConUnidad(producto.totalStock, producto.saleUnit)}
+              </span>
+              <span aria-hidden="true" className="text-ink-faint">
+                ·
+              </span>
+              <span className="font-medium text-ink">
+                Vendible {formatearCantidadConUnidad(producto.sellableStock, producto.saleUnit)}
+              </span>
+              <span aria-hidden="true" className="text-ink-faint">
+                ·
+              </span>
+              <span className="text-danger">
+                Vencido {formatearCantidadConUnidad(producto.expiredStock, producto.saleUnit)}
+              </span>
+            </p>
+          )}
         </div>
 
-        <StockBadge quantity={producto.totalStock} unit={producto.saleUnit} />
+        {/* La chapa muestra lo VENDIBLE: es lo que el cajero puede prometer. */}
+        <StockBadge quantity={producto.sellableStock} unit={producto.saleUnit} />
         <span className="w-28 text-right">
           <Money amount={producto.price} size="lg" />
           {porPeso && (

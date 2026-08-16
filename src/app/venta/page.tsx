@@ -47,6 +47,29 @@ const RESULTADOS_VISIBLES = 8
  * y cada cuanto. Cubre con holgura la transicion de salida (`duration-150`),
  * que es cuando Headless UI devuelve el foco a quien abrio.
  */
+/**
+ * Por que un producto no entra al ticket, en palabras.
+ *
+ * UNO SOLO para el aviso y para la linea del campo. Estaban separados y decian
+ * cosas distintas: la linea decia "sin stock disponible" --que con doce
+ * unidades vencidas en el deposito es mentira-- mientras el aviso, que dura
+ * cuatro segundos, daba los numeros. El cajero se quedaba con la mitad
+ * equivocada.
+ */
+function motivoDeStock(p: Product, caso: 'sin-stock' | 'tope-de-stock'): string {
+  const con = (c: TextoCantidad) => formatearCantidadConUnidad(c, p.saleUnit)
+  const hayVencido = aMilesimas(p.expiredStock) > 0
+
+  if (caso === 'sin-stock') {
+    return hayVencido
+      ? `lo que queda está vencido (${con(p.expiredStock)}) y no se puede vender`
+      : 'está agotado'
+  }
+  return hayVencido
+    ? `solo hay ${con(p.sellableStock)} vendibles, ${con(p.expiredStock)} están vencidos`
+    : 'no queda más stock'
+}
+
 const MS_ESPERA_FOCO = 600
 const MS_ENTRE_INTENTOS = 40
 
@@ -165,27 +188,21 @@ export default function VentaPage() {
   }, [])
 
   const agregarProducto = useCallback(
-    (p: Product, cantidad?: TextoCantidad) => {
+    (p: Product, cantidad?: TextoCantidad): string | null => {
       const r = agregar(
         {
           id: p.id,
           name: p.name,
           barcode: p.barcode,
           price: p.price,
-          totalStock: p.totalStock,
+          sellableStock: p.sellableStock,
           saleUnit: p.saleUnit,
         },
         cantidad,
       )
-      if (r === 'sin-stock') {
-        aviso.atencion(`${p.name} está agotado.`)
-        return false
-      }
-      if (r === 'tope-de-stock') {
-        aviso.atencion(`No queda más stock de ${p.name}.`)
-        return false
-      }
-      return true
+      if (r === 'sin-stock') return motivoDeStock(p, 'sin-stock')
+      if (r === 'tope-de-stock') return motivoDeStock(p, 'tope-de-stock')
+      return null
     },
     [agregar],
   )
@@ -199,16 +216,22 @@ export default function VentaPage() {
    * hacerle avisar al cajero algo que el sistema ya sabe.
    */
   const elegirProducto = useCallback(
-    (p: Product): boolean => {
-      if (aMilesimas(p.totalStock) <= 0) {
-        aviso.atencion(`${p.name} está agotado.`)
-        return false
+    (p: Product): string | null => {
+      // Lo VENDIBLE, no el total: con 10 unidades de las que 7 estan vencidas
+      // hay 3 para vender, y dejar armar el ticket con 10 solo mueve el
+      // rechazo al momento de cobrar.
+      if (aMilesimas(p.sellableStock) <= 0) {
+        const motivo = motivoDeStock(p, 'sin-stock')
+        aviso.atencion(`${p.name}: ${motivo}.`)
+        return motivo
       }
       if (esFraccionable(p.saleUnit)) {
         setPesando(p)
-        return true
+        return null
       }
-      return agregarProducto(p)
+      const motivo = agregarProducto(p)
+      if (motivo !== null) aviso.atencion(`${p.name}: ${motivo}.`)
+      return motivo
     },
     [agregarProducto],
   )
@@ -280,14 +303,18 @@ export default function VentaPage() {
           return
         }
 
-        const ok = elegirProducto(producto)
-        setEstadoCodigo(ok ? 'ok' : 'error')
+        // El MISMO texto que el aviso: la linea del campo queda en pantalla y
+        // el aviso se va, asi que decir "sin stock disponible" en la linea
+        // mientras el aviso explica que hay doce vencidos deja al cajero con la
+        // mitad de la historia --justo la mitad que no sirve--.
+        const motivo = elegirProducto(producto)
+        setEstadoCodigo(motivo === null ? 'ok' : 'error')
         setMensajeCodigo(
-          ok
+          motivo === null
             ? esFraccionable(producto.saleUnit)
               ? `${producto.name} · ingresá el peso`
               : `${producto.name} · agregado`
-            : `${producto.name} · sin stock disponible`,
+            : `${producto.name} · ${motivo}`,
         )
       } catch (err) {
         const mensaje = mensajeDeError(err, 'No hubo respuesta del servidor.')
@@ -304,14 +331,14 @@ export default function VentaPage() {
     (p: Product) => {
       setAltaAbierta(false)
       setSinResolver(null)
-      const ok = elegirProducto(p)
-      setEstadoCodigo(ok ? 'ok' : 'error')
+      const motivo = elegirProducto(p)
+      setEstadoCodigo(motivo === null ? 'ok' : 'error')
       setMensajeCodigo(
-        ok
+        motivo === null
           ? esFraccionable(p.saleUnit)
             ? `${p.name} · ingresá el peso`
             : `${p.name} · agregado`
-          : `${p.name} · sin stock disponible`,
+          : `${p.name} · ${motivo}`,
       )
       void fetchProducts()
       devolverFoco()
@@ -379,13 +406,17 @@ export default function VentaPage() {
             cambios.push('se quitó un producto que ya no está disponible')
             continue
           }
-          if (aMilesimas(p.totalStock) <= 0) {
-            cambios.push(`${p.name} quedó sin stock`)
+          if (aMilesimas(p.sellableStock) <= 0) {
+            cambios.push(
+              aMilesimas(p.expiredStock) > 0
+                ? `${p.name} quedó sin stock vendible: lo que hay está vencido`
+                : `${p.name} quedó sin stock`,
+            )
             continue
           }
-          if (aMilesimas(linea.q) > aMilesimas(p.totalStock)) {
+          if (aMilesimas(linea.q) > aMilesimas(p.sellableStock)) {
             cambios.push(
-              `${p.name}: solo quedan ${formatearCantidadConUnidad(p.totalStock, p.saleUnit)}`,
+              `${p.name}: solo quedan ${formatearCantidadConUnidad(p.sellableStock, p.saleUnit)} vendibles`,
             )
           }
           // El store acota al stock por su cuenta, con el paso de la unidad.
@@ -395,7 +426,7 @@ export default function VentaPage() {
               name: p.name,
               barcode: p.barcode,
               price: p.price,
-              totalStock: p.totalStock,
+              sellableStock: p.sellableStock,
               saleUnit: p.saleUnit,
             },
             linea.q,
@@ -800,7 +831,15 @@ export default function VentaPage() {
           devolverFoco()
         }}
         onConfirmar={(cantidad) => {
-          if (pesando) agregarProducto(pesando, cantidad)
+          // El peso confirmado puede seguir sin entrar --el diálogo acota al
+          // vendible, pero entre que se abrió y se confirmó pudo cambiar-- y
+          // entonces hay que decirlo, no perderlo en silencio.
+          const motivo = pesando ? agregarProducto(pesando, cantidad) : null
+          if (pesando && motivo !== null) {
+            aviso.atencion(`${pesando.name}: ${motivo}.`)
+            setEstadoCodigo('error')
+            setMensajeCodigo(`${pesando.name} · ${motivo}`)
+          }
           setPesando(null)
           devolverFoco()
         }}

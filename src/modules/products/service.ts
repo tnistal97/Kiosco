@@ -35,12 +35,15 @@ import {
   type Dinero,
 } from '@/server/money'
 import {
+  CERO_C,
   aTextoCantidad,
   cantidad as aCantidad,
   esCeroCantidad,
   restarCantidades,
   type Cantidad,
 } from '@/server/cantidad'
+import { separarStock, vencidoPorProducto } from '@/modules/lots/vendible'
+import { hoyEnSucursal } from '@/server/tiempo'
 import {
   applyStockMovement,
   idsBajoMinimo,
@@ -75,6 +78,16 @@ export interface ProductoListado {
   purchaseUnit: UnidadDeCompra
   unitsPerPurchaseUnit: TextoCantidad
   totalStock: TextoCantidad
+  /**
+   * Lo que el cobro va a dejar vender: el total menos lo vencido.
+   *
+   * Igual al total en todo producto sin lotes, que es el catalogo entero hoy.
+   * Es AYUDA para la pantalla, no autoridad: el cobro lo vuelve a calcular
+   * dentro de la transaccion. Ver src/modules/lots/vendible.ts.
+   */
+  sellableStock: TextoCantidad
+  /** Lo que ocupa lugar en el deposito y no se puede vender. */
+  expiredStock: TextoCantidad
   minimumStock: TextoCantidad
   /** OK | LOW | OUT. Calculado al leer, nunca guardado. */
   estado: EstadoStock
@@ -141,6 +154,13 @@ const CAMPOS_PRODUCTO = {
   purchaseUnit: true,
   unitsPerPurchaseUnit: true,
   minimumStock: true,
+  /**
+   * Se lee SIEMPRE aunque casi nunca cambie nada: es lo que permite decidir,
+   * sin otra consulta, si hace falta preguntar por lotes vencidos. Con el
+   * catalogo entero en `NONE` --que es el caso hoy-- la respuesta es que no, y
+   * el lector no paga ni una consulta de mas. Ver `vencidoDeLaPagina`.
+   */
+  lotTracking: true,
   category: { select: { id: true, name: true } },
   /**
    * El proveedor PRINCIPAL, desde `ProductSupplier`.
@@ -170,8 +190,28 @@ type FilaProducto = {
   purchaseUnit: string
   unitsPerPurchaseUnit: Cantidad
   minimumStock: Cantidad
+  lotTracking: string
   category: { id: number; name: string }
   suppliers: Array<{ supplier: { id: number; name: string } }>
+}
+
+/**
+ * Lo vencido de un grupo de productos, sin pagar nada cuando no hace falta.
+ *
+ * Cero consultas si ninguno sigue lotes --el catalogo entero, hoy-- y DOS si
+ * alguno los sigue: la zona horaria de la sucursal y el agregado. Nunca una por
+ * producto: el agregado pide la pagina completa de una vez. Hay una guardia que
+ * lo comprueba con 5 y con 40 productos.
+ */
+async function vencidoDeLaPagina(
+  cliente: TxClient,
+  branchId: number,
+  filas: readonly { id: number; lotTracking: string }[],
+): Promise<Map<number, Cantidad>> {
+  const conLotes = filas.filter((f) => f.lotTracking !== 'NONE').map((f) => f.id)
+  if (conLotes.length === 0) return new Map()
+  const hoy = await hoyEnSucursal(cliente, branchId)
+  return vencidoPorProducto(cliente, branchId, conLotes, hoy)
 }
 
 /**
@@ -186,10 +226,13 @@ function aProductoListado(
   fila: FilaProducto,
   totalStock: Cantidad | null,
   session: Session,
+  vencido?: Cantidad,
 ): ProductoListado & { barcode: string | null } {
-  const stock = totalStock === null ? CERO : aTextoCantidad(totalStock)
+  const total = totalStock ?? CERO_C
+  const stock = aTextoCantidad(total)
   const minimo = aTextoCantidad(fila.minimumStock)
   const price = aMonto(fila.price)
+  const vendible = separarStock(total, vencido)
 
   const base = {
     id: fila.id,
@@ -204,7 +247,12 @@ function aProductoListado(
     purchaseUnit: unidadDeCompraODefecto(fila.purchaseUnit),
     unitsPerPurchaseUnit: aTextoCantidad(fila.unitsPerPurchaseUnit),
     totalStock: stock,
+    sellableStock: aTextoCantidad(vendible.sellableStock),
+    expiredStock: aTextoCantidad(vendible.expiredStock),
     minimumStock: minimo,
+    // El estado sigue saliendo del TOTAL: "quedan pocas" es una pregunta de
+    // reposicion --hay que pedirle al proveedor-- y lo vencido tambien hay que
+    // reponerlo. Lo vendible es otra pregunta y tiene su propio numero.
     estado: estadoDeStock(stock, minimo),
   }
 
@@ -492,10 +540,13 @@ export async function listarProductos(
     }),
   ])
 
-  const codigos = await codigosPrincipalesDe(productos.map((p) => p.id))
+  const [codigos, vencido] = await Promise.all([
+    codigosPrincipalesDe(productos.map((p) => p.id)),
+    vencidoDeLaPagina(prisma, session.branchId, productos),
+  ])
 
   const data = productos.map(({ stocks, ...producto }) => ({
-    ...aProductoListado(producto, stocks[0]?.quantity ?? null, session),
+    ...aProductoListado(producto, stocks[0]?.quantity ?? null, session, vencido.get(producto.id)),
     barcode: codigos.get(producto.id) ?? null,
   }))
 
@@ -555,9 +606,10 @@ export async function obtenerProducto(
   })
 
   const { barcodes, stocks, ...fila } = producto
+  const vencido = await vencidoDeLaPagina(prisma, session.branchId, [fila])
 
   return {
-    ...aProductoListado(fila, stocks[0]?.quantity ?? null, session),
+    ...aProductoListado(fila, stocks[0]?.quantity ?? null, session, vencido.get(fila.id)),
     barcode: barcodes.find((b) => b.isPrimary)?.code ?? null,
     alternateBarcodes: barcodes.filter((b) => !b.isPrimary).map((b) => b.code),
     suppliers: vinculos.map((v) => ({
@@ -617,8 +669,13 @@ export async function buscarPorCodigoExacto(
   if (branchId !== session.branchId) return null
   if (opciones.soloActivos !== false && !producto.isActive) return null
 
+  // Cero consultas de mas para un producto sin lotes, que es el caso del 100 %
+  // del catalogo hoy: `vencidoDeLaPagina` ni pregunta. El lector es el camino
+  // mas caliente del sistema y no puede pagar un dato que no cambia nada.
+  const vencido = await vencidoDeLaPagina(prisma, session.branchId, [producto])
+
   return {
-    ...aProductoListado(producto, stocks[0]?.quantity ?? null, session),
+    ...aProductoListado(producto, stocks[0]?.quantity ?? null, session, vencido.get(producto.id)),
     barcode: barcodes[0]?.code ?? null,
   }
 }
@@ -755,6 +812,8 @@ async function altaDeProducto(session: Session, input: CrearProductoInput, orige
     return { producto, inicial, codigos }
   })
 
+  // Un producto recien creado no puede tener lotes: no hay por donde cargarlos
+  // antes de que exista. Lo vencido es cero y no hay nada que preguntar.
   return {
     ...aProductoListado(resultado.producto, resultado.inicial, session),
     barcode: resultado.codigos.find((c) => c.isPrimary)?.code ?? null,
@@ -1055,14 +1114,17 @@ export async function editarProducto(session: Session, id: number, input: Editar
       }
     }
 
-    const codigos = await tx.productBarcode.findMany({
-      where: { productId: id },
-      select: { code: true, isPrimary: true },
-      orderBy: { id: 'asc' },
-    })
+    const [codigos, vencido] = await Promise.all([
+      tx.productBarcode.findMany({
+        where: { productId: id },
+        select: { code: true, isPrimary: true },
+        orderBy: { id: 'asc' },
+      }),
+      vencidoDeLaPagina(tx, session.branchId, [despues]),
+    ])
 
     return {
-      ...aProductoListado(despues, saldo, session),
+      ...aProductoListado(despues, saldo, session, vencido.get(despues.id)),
       barcode: codigos.find((c) => c.isPrimary)?.code ?? null,
       alternateBarcodes: codigos.filter((c) => !c.isPrimary).map((c) => c.code),
     }

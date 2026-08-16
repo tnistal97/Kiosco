@@ -53,6 +53,8 @@ const PRODUCTO: ProductoDTO = {
   purchaseUnit: 'UNIT',
   unitsPerPurchaseUnit: '1.000',
   totalStock: '24.000',
+  sellableStock: '24.000',
+  expiredStock: '0.000',
   minimumStock: '6.000',
   estado: 'OK',
 }

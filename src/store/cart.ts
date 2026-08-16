@@ -75,7 +75,18 @@ export interface ProductoParaTicket {
   name: string
   barcode: string | null
   price: Monto
-  totalStock: TextoCantidad
+  /**
+   * El TECHO de lo que se puede poner en el ticket.
+   *
+   * Es lo vendible, no el total: un producto con 10 unidades de las cuales 7
+   * estan en lotes vencidos deja poner 3. Antes de la Fase 5A.2 este campo
+   * traia el total, la caja dejaba armar el ticket completo y el rechazo
+   * aparecia al cobrar --con el cliente enfrente--.
+   *
+   * Sigue siendo una AYUDA: el servidor lo recalcula al cobrar. Ver
+   * src/modules/lots/vendible.ts.
+   */
+  sellableStock: TextoCantidad
   saleUnit: UnidadDeVenta
 }
 
@@ -225,7 +236,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   hidratado: false,
 
   add(producto, cantidad) {
-    if (aMilesimas(producto.totalStock) <= 0) return 'sin-stock'
+    if (aMilesimas(producto.sellableStock) <= 0) return 'sin-stock'
 
     const pedida = cantidad ?? cantidadInicial(producto.saleUnit)
     const { items, branchId } = get()
@@ -233,7 +244,7 @@ export const useCartStore = create<CartState>((set, get) => ({
 
     if (existente) {
       const deseada = sumarCantidades(existente.quantity, pedida)
-      const permitida = acotar(deseada, producto.totalStock, producto.saleUnit)
+      const permitida = acotar(deseada, producto.sellableStock, producto.saleUnit)
       if (permitida === existente.quantity) return 'tope-de-stock'
 
       const nuevos = items.map((i) =>
@@ -242,7 +253,7 @@ export const useCartStore = create<CartState>((set, get) => ({
               ...i,
               quantity: permitida,
               price: producto.price,
-              stock: producto.totalStock,
+              stock: producto.sellableStock,
               saleUnit: producto.saleUnit,
             }
           : i,
@@ -259,9 +270,9 @@ export const useCartStore = create<CartState>((set, get) => ({
         name: producto.name,
         barcode: producto.barcode,
         price: producto.price,
-        stock: producto.totalStock,
+        stock: producto.sellableStock,
         saleUnit: producto.saleUnit,
-        quantity: acotar(pedida, producto.totalStock, producto.saleUnit),
+        quantity: acotar(pedida, producto.sellableStock, producto.saleUnit),
       },
     ]
     set({ items: nuevos })
@@ -307,9 +318,9 @@ export const useCartStore = create<CartState>((set, get) => ({
           name: p.name,
           barcode: p.barcode,
           price: p.price,
-          stock: p.totalStock,
+          stock: p.sellableStock,
           saleUnit: p.saleUnit,
-          quantity: acotar(i.quantity, p.totalStock, p.saleUnit),
+          quantity: acotar(i.quantity, p.sellableStock, p.saleUnit),
         }
       })
       .filter((i) => aMilesimas(i.stock) > 0)

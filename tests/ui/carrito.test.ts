@@ -26,7 +26,7 @@ const YERBA: ProductoParaTicket = {
   name: 'Yerba mate 1 kg',
   barcode: '7790001000011',
   price: '4850.00',
-  totalStock: '24.000',
+  sellableStock: '24.000',
   saleUnit: 'UNIT',
 }
 
@@ -35,7 +35,7 @@ const ULTIMO: ProductoParaTicket = {
   name: 'Fernet 750 ml',
   barcode: '7790003000048',
   price: '9800.00',
-  totalStock: '1.000',
+  sellableStock: '1.000',
   saleUnit: 'UNIT',
 }
 
@@ -44,7 +44,7 @@ const AGOTADO: ProductoParaTicket = {
   name: 'Helado 1 L',
   barcode: '7790008000036',
   price: '6800.00',
-  totalStock: '0.000',
+  sellableStock: '0.000',
   saleUnit: 'UNIT',
 }
 
@@ -54,7 +54,7 @@ const QUESO: ProductoParaTicket = {
   name: 'Queso cremoso',
   barcode: '2000000000015',
   price: '9800.00',
-  totalStock: '5.000',
+  sellableStock: '5.000',
   saleUnit: 'KG',
 }
 
@@ -130,7 +130,7 @@ describe('Reglas de cantidad', () => {
     estado().usarSucursal(1)
     estado().add(YERBA)
     estado().setQuantity(YERBA.id, '999.000')
-    expect(estado().items[0]?.quantity).toBe(YERBA.totalStock)
+    expect(estado().items[0]?.quantity).toBe(YERBA.sellableStock)
 
     estado().add(QUESO, '0.500')
     estado().setQuantity(QUESO.id, '99.000')
@@ -260,7 +260,7 @@ describe('Restauracion', () => {
     estado().add(YERBA, '5.000')
 
     // El precio subio y quedan menos unidades de las que tenia el ticket.
-    estado().sincronizar([{ ...YERBA, price: '5200.00', totalStock: '2.000' }])
+    estado().sincronizar([{ ...YERBA, price: '5200.00', sellableStock: '2.000' }])
 
     expect(estado().items[0]?.price).toBe('5200.00')
     expect(estado().items[0]?.quantity).toBe('2.000')
@@ -282,7 +282,7 @@ describe('Restauracion', () => {
     estado().usarSucursal(1)
     estado().add(YERBA)
 
-    estado().sincronizar([{ ...YERBA, totalStock: '0.000' }])
+    estado().sincronizar([{ ...YERBA, sellableStock: '0.000' }])
 
     expect(estado().items).toHaveLength(0)
   })

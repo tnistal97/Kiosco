@@ -52,7 +52,8 @@ export function DialogoPeso({
     name: string
     price: Monto
     saleUnit: UnidadDeVenta
-    totalStock: TextoCantidad
+    /** El techo: lo VENDIBLE, no el total. Ver src/modules/lots/vendible.ts. */
+    sellableStock: TextoCantidad
   } | null
   onCerrar: () => void
   onConfirmar: (cantidad: TextoCantidad) => void
@@ -79,8 +80,8 @@ export function DialogoPeso({
     const motivo = motivoDeCantidadInvalida(unidad, cantidad)
     if (motivo !== null) return motivo
 
-    if (aMilesimas(cantidad) > aMilesimas(producto.totalStock)) {
-      return `Solo quedan ${formatearCantidadConUnidad(producto.totalStock, unidad)}`
+    if (aMilesimas(cantidad) > aMilesimas(producto.sellableStock)) {
+      return `Solo quedan ${formatearCantidadConUnidad(producto.sellableStock, unidad)}`
     }
     return null
   }, [cantidad, producto, texto, unidad])
