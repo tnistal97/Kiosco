@@ -80,6 +80,27 @@ Prisma resuelve cada una con su propia consulta.
 > Con 6 ms de extremo a extremo no paga. Queda anotado por si algún día el
 > número deja de ser 6 ms.
 
+## Una advertencia sobre las mediciones de tiempo
+
+Un techo en milisegundos sólo significa algo si el plan de consulta es el que va
+a correr en producción. **`TRUNCATE` no actualiza `pg_statistic`**, así que una
+prueba que carga cien mil filas deja al planificador creyendo que las tablas son
+grandes mucho después de haberlas vaciado, y las pruebas que corren a
+continuación —en otros archivos— miden planes elegidos para un volumen que ya no
+existe.
+
+Se midió: el reporte de proveedores tarda ~1.100 ms con estadísticas frescas y
+**2.976 ms** después de una carga masiva, contra un techo de 1.500 ms.
+
+Por eso, en este proyecto:
+
+- toda prueba que **construye** un volumen lo **analiza** antes de medir;
+- toda prueba que **infla** el catálogo restaura las estadísticas al terminar
+  (`restaurarEstadisticas()` en `tests/helpers/db.ts`).
+
+Los números de este documento se tomaron con la máquina quieta y las
+estadísticas frescas. Sin esas dos condiciones no son comparables.
+
 ## Lo que NO se mide con un cronómetro
 
 - **N+1**: se detecta corriendo el mismo escenario con dos volúmenes y

@@ -908,6 +908,41 @@ sobrevivió por el mismo motivo por el que aquélla existía: **la prueba no usa
 la función del código**. Ahora usa `inicioDelDia(hoyLocal(), ZONA_POR_DEFECTO)`
 y `diaLocal(-1)`, y se comprobó con `TZ=UTC`.
 
+**3. Una prueba que carga cien mil filas envenena al planificador.**
+
+Es el hallazgo que sólo aparece corriendo la suite dos veces: fallaban pruebas
+**en archivos que no habían cambiado**, y cuáles fallaban cambiaba entre
+corridas.
+
+`TRUNCATE` vacía las tablas pero **no toca `pg_statistic`**. Después de una
+prueba que carga cien mil productos, PostgreSQL sigue creyendo que `Product`
+tiene cien mil filas cuando tiene cinco, y elige planes para un volumen que ya
+no existe. Todo lo que corra después paga la cuenta, y como `vitest` decide el
+orden de los archivos, la víctima cambia.
+
+Medido sobre `tests/performance/proveedores.test.ts`:
+
+| Estado de las estadísticas        |    Tiempo | Techo    |
+| --------------------------------- | --------: | -------- |
+| Frescas (`VACUUM ANALYZE` a mano) | ~1.100 ms | 1.500 ms |
+| Después de una carga masiva       |  2.976 ms | 1.500 ms |
+
+Dos arreglos, los dos del mismo principio —**que cada prueba deje el
+planificador como lo encontró, y que mida su propia consulta y no la ignorancia
+del planificador**—:
+
+- `restaurarEstadisticas()` en `tests/helpers/db.ts`, llamada en el `afterAll`
+  de los dos archivos que inflan el catálogo. No va en `resetDb()`: son mil
+  quinientos reinicios por corrida y `ANALYZE` no es gratis.
+- `proveedores.test.ts` analiza su propio conjunto de datos después de
+  construirlo. Insertaba cincuenta mil movimientos y medía con las estadísticas
+  que hubiera dejado otro archivo. `lotes.test.ts` ya lo hacía.
+
+**La lección:** un techo de milisegundos sobre un plan elegido al azar es una
+prueba que falla sola —y lo peor es que falla en otro archivo—. Una prueba de
+rendimiento que construye su volumen tiene que analizarlo antes de medir, o no
+está midiendo la consulta.
+
 **Lo que se revisó y estaba limpio:** ningún `.only` olvidado; los ids literales
 que aparecen están en pruebas de rechazo, donde Zod corta antes de mirarlos; los
 `beforeAll` son de archivos que arman un volumen una vez y sólo leen; la base la
