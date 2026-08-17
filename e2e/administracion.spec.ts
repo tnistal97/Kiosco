@@ -202,7 +202,13 @@ test.describe('Acceso por rol', () => {
     await expect(aviso).toBeVisible()
 
     // Y dice por que, en castellano: no un codigo ni una traza.
-    await expect(aviso).toContainText(/falta el permiso/i)
+    //
+    // El texto cambio en la Fase 5A.2 --antes decia "falta el permiso"-- porque
+    // nombrar el permiso que falta es hablarle al operario en vocabulario del
+    // sistema. Ahora dice que no puede y a quien pedirselo. Lo que la prueba
+    // defiende es lo mismo: una explicacion en castellano, y ningun interno.
+    await expect(aviso).toContainText(/no tenés permiso/i)
+    await expect(aviso).not.toContainText(/prisma|sql|constraint|\bat\s|Error:/i)
     await expect(aviso.getByRole('button', { name: 'Reintentar' })).toBeVisible()
   })
 })

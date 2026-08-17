@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { entrar, escanear, salir } from './ayudantes'
+import { entrar, escanear, salir, totalDelTicket } from './ayudantes'
 
 /**
  * Lotes, vencimientos e inventario físico, de punta a punta.
@@ -383,20 +383,32 @@ test.describe('Venta por FEFO', () => {
     expect(vencido, 'hay stock vencido').toBeGreaterThan(0)
     expect(total - vendible).toBe(vencido)
 
-    // Vender MÁS que lo vendible se rechaza aunque haya stock suficiente.
+    // Pedir MÁS que lo vendible no se puede, y el tope es lo VENDIBLE y no el
+    // stock: es la diferencia que importa.
+    //
+    // Cambió en la Fase 5A.2. Antes la caja dejaba cargar hasta el stock total
+    // y el rechazo llegaba recién al cobrar, desde el servidor. Ahora el tope
+    // es lo vendible, así que el operario se entera al escanear --con las
+    // unidades vencidas dichas por su nombre-- y no después de anunciarle un
+    // total al cliente.
+    //
+    // Que el SERVIDOR siga siendo la autoridad no se comprueba acá sino en
+    // `tests/integration/stock-vendible.test.ts`, que pega en la API sin
+    // pantalla de por medio: vender exactamente lo vendible sale 200 y una
+    // unidad más sale 409. Es el nivel correcto para esa pregunta, porque lo
+    // que hay que probar es justamente que no depende del cliente.
     await page.goto('/venta')
-    for (let i = 0; i < vendible + 1; i++) await escanear(page, CODIGO_LECHE)
-    await page.getByRole('button', { name: /^cobrar/i }).click()
-    const dlg = dialogo(page)
-    await expect(dlg).toBeAttached()
-    await dlg.getByRole('combobox', { name: 'Medio' }).selectOption({ label: 'Efectivo' })
-    await dlg.getByRole('button', { name: /^cobrar/i }).click()
+    for (let i = 0; i < vendible; i++) await escanear(page, CODIGO_LECHE)
+    const conTodoLoVendible = await totalDelTicket(page)
 
-    // El rechazo nombra lo VENDIBLE, no el stock: es la diferencia que importa.
+    await escanear(page, CODIGO_LECHE)
     await expect(page.getByText(/vendible|vencid/i).first()).toBeVisible({ timeout: 15_000 })
+    expect(await totalDelTicket(page), 'el ticket no pasó de lo vendible').toBe(conTodoLoVendible)
 
+    // Y no se vendió nada: el ticket quedó sin cobrar.
     const despues = await desglose(page, LECHE)
     expect(Number(despues.total), 'no se vendió nada').toBe(total)
+    expect(Number(despues.vencido), 'lo vencido sigue ahí').toBe(vencido)
   })
 
   test('14. la alerta de vencimiento aparece en el tablero y en el listado', async ({ page }) => {
