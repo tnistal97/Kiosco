@@ -116,9 +116,32 @@ function prisma(args: string[], url: string): string {
   })
 }
 
+/**
+ * Tres minutos para borrar tres bases, que parece mucho y no lo es.
+ *
+ * `DROP DATABASE` tiene que bajar a disco lo que todavia no se escribio de esa
+ * base, y estas tres se acaban de construir replicando las 43 migraciones. El
+ * costo no es el borrado: es el vaciado.
+ *
+ * Medido en esta maquina, sobre una base de 19 MB:
+ *
+ *   - recien copiada, con las escrituras sin asentar:  50.337 ms
+ *   - la misma, 45 s despues:                             231 ms
+ *
+ * Doscientas veces mas barato cuando no hay nada pendiente. Y dentro de la
+ * suite completa es todavia peor, porque PostgreSQL arrastra lo sucio de las
+ * 1.600 pruebas anteriores: con 60 s --el numero que habia, que no salia de
+ * ninguna medicion-- el archivo fallaba entero con "Hook timed out", una vez
+ * cada tantas corridas y solo dentro de la suite. Corriendolo solo tarda 56 s
+ * y pasaba siempre, que es lo que lo hacia parecer sano.
+ *
+ * No se acelera nada a proposito: la limpieza tiene que fallar si de verdad no
+ * puede borrar, porque una base colgada hace fallar la corrida siguiente por un
+ * motivo distinto al real.
+ */
 afterAll(async () => {
   for (const nombre of creadas) await borrarBase(nombre)
-}, 60_000)
+}, 180_000)
 
 describe('La cadena oficial', () => {
   it('contiene la baseline y ninguna de las migraciones archivadas', () => {
