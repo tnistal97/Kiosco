@@ -93,18 +93,47 @@ const HOSTS_LOCALES = new Set([
 ])
 
 /**
- * Si el nombre por el que preguntan es uno de los que servimos.
+ * El nombre por el que preguntan, si es uno de los que servimos. Si no, `null`.
  *
  * `X-Forwarded-Host` se mira ANTES que `Host` porque es el que lleva el nombre
  * que escribio la persona cuando hay un proxy delante. Se toma solo el primer
  * valor: una cadena de proxies los acumula separados por coma, y quedarse con
  * la lista entera es como se cuelan valores que nadie valido.
+ *
+ * Devolver el nombre --y no un booleano-- es lo que permite construir la
+ * redireccion con el dominio correcto SIN confiar a ciegas en la cabecera:
+ * lo que sale de aca ya paso por la lista de permitidos.
  */
-function hostPermitido(req: NextRequest): boolean {
+function hostDeLaPeticion(req: NextRequest): string | null {
   const crudo = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? ''
   const host = (crudo.split(',')[0] ?? '').trim().toLowerCase()
 
-  return HOSTS_PUBLICOS.has(host) || HOSTS_LOCALES.has(host)
+  if (HOSTS_PUBLICOS.has(host) || HOSTS_LOCALES.has(host)) return host
+
+  return null
+}
+
+/**
+ * El origen publico con el que armar una redireccion.
+ *
+ * El esquema sale de `X-Forwarded-Proto`, que es lo unico que sabe si la
+ * persona entro por HTTPS: la conexion que ve la aplicacion es siempre HTTP
+ * plano contra 127.0.0.1. Se acepta solo `http` o `https`; cualquier otra cosa
+ * cae a `https`, que es como se sirve de verdad.
+ *
+ * Sin esa cabecera --alguien hablando directo con el puerto interno-- se usa
+ * `http`, que es lo que efectivamente esta pasando.
+ */
+function origenDe(req: NextRequest, host: string): string {
+  const declarado = (req.headers.get('x-forwarded-proto')?.split(',')[0] ?? '').trim().toLowerCase()
+  const esquema =
+    declarado === 'https' || declarado === 'http'
+      ? declarado
+      : HOSTS_LOCALES.has(host)
+        ? 'http'
+        : 'https'
+
+  return `${esquema}://${host}`
 }
 
 export async function middleware(req: NextRequest) {
@@ -112,7 +141,8 @@ export async function middleware(req: NextRequest) {
 
   // Antes que nada: si el nombre no es de los nuestros, no se contesta. Va
   // primero para que tampoco lo aprovechen las rutas publicas.
-  if (!hostPermitido(req)) {
+  const host = hostDeLaPeticion(req)
+  if (host === null) {
     return new NextResponse('Host no reconocido', {
       status: 421,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -145,34 +175,37 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
-  // `Location` RELATIVO, y es la correccion de un fallo que rompia el sitio
-  // entero.
+  // La redireccion se arma con el nombre PUBLICO, no con `req.url`.
   //
-  // Antes decia `new URL('/login', req.url)`. En produccion eso mandaba a
-  // `https://localhost:3099/login`: la barra de direcciones del navegador
-  // terminaba en una direccion que solo existe DENTRO del servidor.
+  // Antes decia `new URL('/login', req.url)` y en produccion eso mandaba a
+  // `https://localhost:3099/login`: la barra de direcciones terminaba en una
+  // direccion que solo existe dentro del servidor y el sitio era inusable.
   //
-  // El motivo es que `req.url` NO se arma con la cabecera `Host`. Next usa la
-  // direccion en la que escucha el proceso --127.0.0.1:3099-- y por eso el
-  // nombre publico nunca aparecia. Comprobado pidiendole a la aplicacion, sin
-  // Nginx delante:
+  // El motivo es que `req.url` NO se arma con la cabecera `Host`: Next usa la
+  // direccion en la que escucha el proceso --127.0.0.1:3099--. Comprobado
+  // pidiendole a la aplicacion sin Nginx delante:
   //
   //   sin cabeceras          -> http://localhost:3099/login
   //   con Host: luchando...  -> http://localhost:3099/login   <-- lo ignora
   //   agregando XF-Proto     -> https://localhost:3099/login  <-- solo cambia
   //                                                               el esquema
   //
-  // Una referencia relativa (RFC 7231 §7.1.2) la resuelve el navegador contra
-  // la direccion que pidio. Sale el dominio correcto sea cual sea de los tres,
-  // sin que la aplicacion tenga que adivinarlo ni fiarse de una cabecera. Es
-  // ademas la unica forma que no vuelve a romperse al agregar un dominio.
+  // Un `Location` relativo seria mas simple y fue lo primero que se intento,
+  // pero Next valida la cabecera y la rechaza: `TypeError: Invalid URL,
+  // input: '/login'`, con lo que la raiz pasaba a responder 500.
+  //
+  // Asi que se arma absoluta, con `host` --que ya paso por la lista de
+  // permitidos-- y el esquema declarado por el proxy. Como el nombre esta
+  // validado antes de llegar aca, no hay confianza ciega en la cabecera: un
+  // `Host` inventado no llega a este punto.
   //
   // `pathname` viene de `req.nextUrl` y siempre empieza con `/`, asi que el
   // valor de `next` no puede convertirse en una redireccion a otro sitio.
   // `destinoSeguro()` en la pantalla de login lo vuelve a comprobar.
-  const destino = pathname === '/' ? '/login' : `/login?next=${encodeURIComponent(pathname)}`
+  const destino = new URL('/login', origenDe(req, host))
+  if (pathname !== '/') destino.searchParams.set('next', pathname)
 
-  const res = new NextResponse(null, { status: 307, headers: { Location: destino } })
+  const res = NextResponse.redirect(destino)
   // Si habia una cookie y no valida, se limpia para no reintentar en bucle.
   if (token) res.cookies.set(SESSION_COOKIE, '', { path: '/', maxAge: 0 })
   return res
