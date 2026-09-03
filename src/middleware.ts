@@ -65,8 +65,59 @@ function esPublica(pathname: string): boolean {
   return false
 }
 
+/**
+ * Los nombres con los que se llega a esta aplicacion.
+ *
+ * Nginx ya filtra por `server_name` y manda al vhost `default` cualquier otro
+ * nombre, asi que esto no deberia recibir nada raro. Se comprueba igual: si
+ * mañana alguien agrega un `proxy_pass` sin `server_name`, o se prueba la
+ * aplicacion sin proxy delante, un `Host` inventado deja de ser un problema
+ * silencioso. No hay confianza ciega en la cabecera.
+ */
+const HOSTS_PUBLICOS = new Set([
+  'luchandopormas.com',
+  'www.luchandopormas.com',
+  'kiosco.nistal.net',
+])
+
+/**
+ * La propia maquina. El chequeo de salud y el diagnostico entran por aca
+ * --`curl http://127.0.0.1:3099/api/health`-- y no pasan por Nginx, asi que
+ * su `Host` nunca va a ser un dominio publico.
+ */
+const HOSTS_LOCALES = new Set([
+  '127.0.0.1:3099',
+  'localhost:3099',
+  '127.0.0.1',
+  'localhost',
+])
+
+/**
+ * Si el nombre por el que preguntan es uno de los que servimos.
+ *
+ * `X-Forwarded-Host` se mira ANTES que `Host` porque es el que lleva el nombre
+ * que escribio la persona cuando hay un proxy delante. Se toma solo el primer
+ * valor: una cadena de proxies los acumula separados por coma, y quedarse con
+ * la lista entera es como se cuelan valores que nadie valido.
+ */
+function hostPermitido(req: NextRequest): boolean {
+  const crudo = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? ''
+  const host = (crudo.split(',')[0] ?? '').trim().toLowerCase()
+
+  return HOSTS_PUBLICOS.has(host) || HOSTS_LOCALES.has(host)
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
+
+  // Antes que nada: si el nombre no es de los nuestros, no se contesta. Va
+  // primero para que tampoco lo aprovechen las rutas publicas.
+  if (!hostPermitido(req)) {
+    return new NextResponse('Host no reconocido', {
+      status: 421,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    })
+  }
 
   if (esPublica(pathname)) return NextResponse.next()
 
@@ -94,12 +145,34 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
-  const destino = new URL('/login', req.url)
-  // Para volver a donde estaba despues de iniciar sesion. Solo rutas internas:
-  // pasar una URL absoluta permitiria una redireccion abierta.
-  if (pathname !== '/') destino.searchParams.set('next', pathname)
+  // `Location` RELATIVO, y es la correccion de un fallo que rompia el sitio
+  // entero.
+  //
+  // Antes decia `new URL('/login', req.url)`. En produccion eso mandaba a
+  // `https://localhost:3099/login`: la barra de direcciones del navegador
+  // terminaba en una direccion que solo existe DENTRO del servidor.
+  //
+  // El motivo es que `req.url` NO se arma con la cabecera `Host`. Next usa la
+  // direccion en la que escucha el proceso --127.0.0.1:3099-- y por eso el
+  // nombre publico nunca aparecia. Comprobado pidiendole a la aplicacion, sin
+  // Nginx delante:
+  //
+  //   sin cabeceras          -> http://localhost:3099/login
+  //   con Host: luchando...  -> http://localhost:3099/login   <-- lo ignora
+  //   agregando XF-Proto     -> https://localhost:3099/login  <-- solo cambia
+  //                                                               el esquema
+  //
+  // Una referencia relativa (RFC 7231 §7.1.2) la resuelve el navegador contra
+  // la direccion que pidio. Sale el dominio correcto sea cual sea de los tres,
+  // sin que la aplicacion tenga que adivinarlo ni fiarse de una cabecera. Es
+  // ademas la unica forma que no vuelve a romperse al agregar un dominio.
+  //
+  // `pathname` viene de `req.nextUrl` y siempre empieza con `/`, asi que el
+  // valor de `next` no puede convertirse en una redireccion a otro sitio.
+  // `destinoSeguro()` en la pantalla de login lo vuelve a comprobar.
+  const destino = pathname === '/' ? '/login' : `/login?next=${encodeURIComponent(pathname)}`
 
-  const res = NextResponse.redirect(destino)
+  const res = new NextResponse(null, { status: 307, headers: { Location: destino } })
   // Si habia una cookie y no valida, se limpia para no reintentar en bucle.
   if (token) res.cookies.set(SESSION_COOKIE, '', { path: '/', maxAge: 0 })
   return res
