@@ -214,3 +214,57 @@ es un cambio en la aplicación y no en el proxy. `'unsafe-eval'` **no** está.
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
 ```
+
+### Dos detalles de esta versión de Nginx
+
+**`http2 on;` no existe en 1.18.** Esa forma llegó en 1.25.1. Acá va como
+parámetro del listen: `listen 443 ssl http2;`. Con la sintaxis nueva, `nginx -t`
+falla con `unknown directive "http2"`.
+
+**Sin grapado OCSP.** Desde 2025 Let's Encrypt no publica la URL del
+respondedor en sus certificados, y Nginx avisaba en cada recarga que ignoraba
+`ssl_stapling`. Se quitaron las directivas: configuración muerta se retira, no
+se silencia.
+
+## HTTPS
+
+| Dato          | Valor                                          |
+| ------------- | ---------------------------------------------- |
+| Emisor        | Let's Encrypt                                  |
+| Nombres       | `luchandopormas.com`, `www.luchandopormas.com` |
+| Emitido       | 2026-09-03                                     |
+| Vence         | **2026-12-02**                                 |
+| Renovación    | `certbot.timer`, dos veces por día             |
+| Método        | `webroot` sobre `/var/www/certbot`             |
+
+El certificado se pidió con `certonly --webroot` **a propósito**: el plugin
+de nginx reescribe el vhost, y este lleva CSP, límites de petición y cabeceras
+que no conviene que toque un renovador automático.
+
+Como consecuencia, `options-ssl-nginx.conf` y `ssl-dhparams.pem` —que crea el
+plugin— no existen. Los parámetros TLS están escritos en el vhost. No hace
+falta `ssl_dhparam`: los cifradores son todos ECDHE.
+
+El bloque `/.well-known/acme-challenge/` va **antes** de la redirección a
+HTTPS. Si redirigiera, la validación HTTP-01 seguiría el 301 y la renovación
+fallaría dentro de tres meses, sin nadie mirando.
+
+`/etc/letsencrypt/renewal-hooks/deploy/recargar-nginx.sh` recarga Nginx tras
+renovar. Sin ese hook la renovación funciona y el sitio sirve el certificado
+viejo hasta el próximo reinicio.
+
+```bash
+sudo certbot certificates          # qué hay y cuándo vence
+sudo certbot renew --dry-run       # probar la renovación sin gastarla
+```
+
+## Lo que hay que saber para el próximo despliegue
+
+- **La `www` y el dominio pelado comparten certificado** pero no origen: `www`
+  redirige con 301 al canónico. La cookie de sesión se emite por host, así que
+  dos orígenes serían dos sesiones distintas.
+- **El aviso de React #418** (hidratación) aparece en la consola del navegador.
+  Es del código, no del despliegue, y no impide usar el sistema. Vale mirarlo
+  cuando haya tiempo.
+- **El health dice el commit.** Ante cualquier duda sobre qué está corriendo:
+  `curl -s https://luchandopormas.com/api/health`.
