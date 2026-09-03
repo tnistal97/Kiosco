@@ -268,3 +268,105 @@ sudo certbot renew --dry-run       # probar la renovación sin gastarla
   cuando haya tiempo.
 - **El health dice el commit.** Ante cualquier duda sobre qué está corriendo:
   `curl -s https://luchandopormas.com/api/health`.
+
+## El fallo de `https://localhost:3099/login`
+
+Vale contarlo porque la forma en que se escondió es reutilizable.
+
+Abrir `https://luchandopormas.com/` desde un navegador terminaba con la barra
+de direcciones en `https://localhost:3099/login`. El sitio era inusable.
+
+**La causa** estaba en `src/middleware.ts`: `new URL('/login', req.url)`.
+`req.url` **no se arma con la cabecera `Host`** — Next usa la dirección en la
+que escucha el proceso, `127.0.0.1:3099`. Pedido a la aplicación sin Nginx
+delante:
+
+| Cabeceras enviadas                | `Location` que devolvía          |
+| --------------------------------- | -------------------------------- |
+| ninguna                           | `http://localhost:3099/login`    |
+| `Host: luchandopormas.com`        | `http://localhost:3099/login` ←  la ignora |
+| `Host:` + `X-Forwarded-Proto`     | `https://localhost:3099/login` ← solo cambia el esquema |
+
+**Por qué la verificación anterior no lo vio:** se comprobó que
+`/login` respondía 200 y se siguieron redirecciones sin mirar el `Location`.
+Pero `/login` es la ruta pública, responde 200 y **nunca redirige**. El fallo
+estaba en el salto desde `/`, que es exactamente por donde entra una persona.
+Un 200 en la página de destino no dice nada del salto que lleva a ella.
+
+**La corrección:** la URL se arma con el nombre público, tomado de
+`X-Forwarded-Host`/`Host` y **validado contra una lista** antes de usarse. Un
+`Location` relativo sería más simple y fue lo primero que se probó, pero Next
+valida la cabecera y la rechaza (`TypeError: Invalid URL, input: '/login'`),
+dejando la raíz en 500.
+
+Como el nombre se valida antes, no hay confianza ciega en la cabecera: un
+`Host` que no esté en la lista recibe **421** y no llega a construir nada.
+Comprobado con `X-Forwarded-Host: evil.example` — la redirección sigue saliendo
+al dominio real.
+
+### Qué NO era
+
+- **No estaba en el build.** Ningún `localhost:3099` en `.next/static` ni en
+  `sw.js`; el `manifest.json` usa rutas relativas (`start_url: "/"`).
+- **No estaba en el service worker.** La política de caché es una lista blanca
+  y solo guarda `/offline` y estáticos con hash. Cero rutas privadas.
+- **Ningún usuario tiene "localhost" guardado**: era un 307 generado en cada
+  petición, y las redirecciones no se precachean. Nadie necesita limpiar nada.
+
+Si aun así alguien quiere partir de cero en su navegador: DevTools →
+Application → Service Workers → *Unregister*, y *Clear storage*. O una recarga
+forzada con Ctrl-Shift-R. El `sw.js` se sirve con `cache-control: max-age=0` y
+lleva `skipWaiting`/`clientsClaim`, así que la versión nueva entra sola en la
+siguiente visita.
+
+## Contraseña del administrador
+
+No hay ninguna contraseña escrita en este repositorio, ni en la documentación,
+ni en los registros. La de `admin` es una cadena aleatoria que **nadie conoce**.
+
+Para poner una:
+
+```bash
+cd /srv/kiosco/app
+read -rs NUEVA
+printf '%s' "$NUEVA" | sudo -u kiosco bash -lc 'cd /srv/kiosco/app && set -a && . ./.env && set +a && npx tsx scripts/establecer-clave.ts admin'
+unset NUEVA
+```
+
+`read -rs` no muestra lo que se teclea y, al ser una variable del shell, no
+queda en el historial. El guion la lee por entrada estándar: nunca viaja como
+argumento, que sería visible en `ps` para cualquiera con una sesión abierta.
+
+## kiosco.nistal.net
+
+**Todavía no apunta a este servidor.** Resuelve a `31.97.82.132`, que es otra
+máquina (la que describe `PRODUCTION_CURRENT_STATE.md`).
+
+Lo que ya está hecho de este lado: el nombre está en la lista de hosts que la
+aplicación acepta (`src/middleware.ts`) y en el `server_name` del bloque HTTP
+del vhost, de modo que la validación ACME funcione apenas el DNS cambie.
+
+Lo que falta, en este orden:
+
+1. Cambiar el registro `A` de `kiosco.nistal.net` a `129.213.133.204`.
+2. Esperar la propagación y comprobarla:
+   `nslookup kiosco.nistal.net 8.8.8.8`
+3. Ampliar el certificado y agregar el bloque HTTPS:
+
+```bash
+sudo certbot certonly --webroot -w /var/www/certbot \
+  -d luchandopormas.com -d www.luchandopormas.com -d kiosco.nistal.net \
+  --cert-name luchandopormas.com --expand
+```
+
+Después hay que añadir un `server` en el puerto 443 con
+`server_name kiosco.nistal.net;` apuntando al mismo `proxy_pass`. **No antes:**
+anunciar un nombre que el certificado no cubre da un error de certificado en el
+navegador, que es peor que no responder.
+
+Ese dominio servirá la aplicación directamente, sin redirigir al canónico: la
+aplicación no usa un framework de autenticación que exija una única URL — la
+sesión es un JWT propio en una cookie por host — así que los tres nombres
+funcionan por igual. `www` sí redirige, pero por otro motivo: `www` y el
+dominio pelado son el mismo sitio, y dos orígenes serían dos sesiones distintas
+para la misma persona.
