@@ -5,27 +5,36 @@ import { Skeleton } from '@/components/ui'
  *
  * POR QUE EXISTE
  * --------------
- * Hasta ahora la aplicacion no tenia NINGUN `loading.tsx`. Con el armazon
+ * Hasta la 2.1 la aplicacion no tenia NINGUN limite de carga. Con el armazon
  * pidiendo la sesion en el layout --que lo vuelve dinamico-- cada navegacion
- * es un viaje al servidor, y sin este archivo el enrutador de Next no tiene
+ * es un viaje al servidor, y sin `loading.tsx` el enrutador de Next no tiene
  * nada que mostrar mientras tanto: se queda en la pantalla anterior, sin
- * ningun cambio visible, hasta que el HTML llega. Medido en la construccion
- * de produccion de este equipo, eso son entre 120 y 400 ms en los que hacer
- * clic no produce absolutamente nada. Es exactamente la sensacion de "se
+ * ningun cambio visible, hasta que llega el HTML. Es la sensacion de "se
  * traba" que motivo la fase.
  *
- * Ademas habilita la precarga: `<Link>` solo puede precargar de una ruta
- * dinamica su limite de carga. Sin `loading.tsx` no hay nada que precargar y
- * cada navegacion empieza de cero.
+ * Y hay una segunda razon, menos visible y mas importante: `<Link>` solo
+ * puede precargar de una ruta dinamica su limite de carga. Sin esto no habia
+ * NADA que precargar y cada navegacion empezaba de cero. Medido en la
+ * construccion de produccion: el primer cambio en pantalla paso de 46 ms a
+ * 19 ms (docs/UX_V2_PHASE2_1_LIST_SESSION_NAVIGATION.md).
+ *
+ * POR QUE NO ESTA EN LA RAIZ
+ * --------------------------
+ * Un `loading.tsx` en `src/app/` cubriria todo de una vez, pero un limite de
+ * carga hace que la respuesta EMPIECE A VIAJAR antes de que la pagina
+ * termine, y con eso se pierde el estado HTTP: `/compras/recepcion/<id>`
+ * --que llama a `notFound()` para un numero que no existe-- pasaba de 404 a
+ * 200. Comprobado quitando y poniendo el archivo. Asi que el limite se pone
+ * por seccion, y `/compras` se queda sin el a proposito.
  *
  * QUE SE DIBUJA
  * -------------
  * La barra de progreso arriba --el mismo lugar en todas las pantallas-- y un
  * esqueleto sobrio con la forma de una cabecera y unas filas. NO se desmonta
  * la barra lateral ni la cabecera: viven en el layout, que no se vuelve a
- * dibujar. Es lo que pedia la fase: el armazon queda, cambia el contenido.
+ * dibujar.
  */
-export default function Cargando() {
+export function CargandoPantalla() {
   return (
     <div role="status" aria-busy="true" className="flex h-full flex-col">
       <span className="sr-only">Cargando la pantalla</span>
