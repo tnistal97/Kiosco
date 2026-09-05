@@ -67,15 +67,16 @@ export const aviso = {
 /**
  * Contenedor de los avisos.
  *
- * Abajo a la derecha en escritorio: arriba al centro tapaba el buscador de la
- * caja, que es justo donde el usuario esta mirando cuando aparece el aviso.
- * En movil va arriba, donde no compite con el pulgar.
+ * Abajo a la IZQUIERDA en escritorio: arriba al centro tapaba el buscador de
+ * la caja, y abajo a la derecha tapaba el boton de cobrar del ticket, que es
+ * justo lo que el cajero esta por apretar cuando aparece el aviso. En movil va
+ * arriba, donde no compite con el pulgar.
  */
 export function ToastViewport() {
   return (
     <Toaster
-      position="bottom-right"
-      containerClassName="!bottom-4 !right-4 !top-auto max-sm:!top-4 max-sm:!bottom-auto max-sm:!left-4 max-sm:!right-4"
+      position="bottom-left"
+      containerClassName="!bottom-4 !left-4 !top-auto max-sm:!top-4 max-sm:!bottom-auto max-sm:!left-4 max-sm:!right-4"
       gutter={8}
       toastOptions={{ className: '!bg-transparent !shadow-none !p-0 !max-w-none' }}
     />

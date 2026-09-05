@@ -23,11 +23,17 @@ import type { TeclaDelLector } from '@/components/ui/ScannerInput'
 
 export type ModoDelCampo = 'vacio' | 'codigo' | 'busqueda'
 
-/** Digitos son un codigo; cualquier otra cosa, una busqueda. */
+/**
+ * Digitos son un codigo; cualquier otra cosa, una busqueda.
+ *
+ * Los espacios entre digitos no convierten al codigo en una busqueda: un
+ * "779 12 34" tipeado a mano es un codigo invalido, y tiene que decirlo como
+ * tal en vez de buscar productos que se llamen asi.
+ */
 export function modoDelCampo(texto: string): ModoDelCampo {
   const t = texto.trim()
   if (t === '') return 'vacio'
-  return /^[0-9]+$/.test(t) ? 'codigo' : 'busqueda'
+  return /^[0-9 ]+$/.test(t) ? 'codigo' : 'busqueda'
 }
 
 export type AccionDelPos =

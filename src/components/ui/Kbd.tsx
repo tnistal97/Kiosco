@@ -19,7 +19,8 @@ export function Kbd({ children, className }: { children: ReactNode; className?: 
     <kbd
       aria-hidden="true"
       className={cn(
-        'inline-flex items-center rounded border border-current/30 px-1.5 py-0.5 font-sans text-[0.72em] leading-none font-normal',
+        // En un telefono no hay teclas: la pista aparece desde `sm`.
+        'hidden items-center rounded border border-current/30 px-1.5 py-0.5 font-sans text-[0.72em] leading-none font-normal sm:inline-flex',
         className,
       )}
     >

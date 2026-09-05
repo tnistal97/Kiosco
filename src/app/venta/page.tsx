@@ -759,36 +759,43 @@ export default function VentaPage() {
           {/* Alta manual: para el producto sin codigo, el artesanal o la
               etiqueta rota. Discreto a proposito --no es la operacion normal
               de una caja-- y ausente sin permiso, en vez de deshabilitado. */}
+          {/* Las clases de visibilidad van en un envoltorio y no en el boton: el
+              boton ya declara su `display`, y dos utilidades de `display` en el
+              mismo elemento se resuelven por el orden del CSS, no del `className`. */}
           {puedeCrearProducto && (
             <>
-              <Button
-                variant="ghost"
-                size="lg"
-                className="hidden shrink-0 sm:inline-flex"
-                onClick={() => {
-                  setCodigoDelAlta(null)
-                  setAltaAbierta(true)
-                }}
-              >
-                Nuevo producto
-              </Button>
-              <IconButton
-                label="Nuevo producto"
-                variant="ghost"
-                size="lg"
-                className="shrink-0 sm:hidden"
-                onClick={() => {
-                  setCodigoDelAlta(null)
-                  setAltaAbierta(true)
-                }}
-              >
-                <span aria-hidden="true" className="text-xl leading-none">
-                  +
-                </span>
-              </IconButton>
+              <div className="hidden shrink-0 sm:block">
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  onClick={() => {
+                    setCodigoDelAlta(null)
+                    setAltaAbierta(true)
+                  }}
+                >
+                  Nuevo producto
+                </Button>
+              </div>
+              <div className="shrink-0 sm:hidden">
+                <IconButton
+                  label="Nuevo producto"
+                  variant="ghost"
+                  size="lg"
+                  onClick={() => {
+                    setCodigoDelAlta(null)
+                    setAltaAbierta(true)
+                  }}
+                >
+                  <span aria-hidden="true" className="text-xl leading-none">
+                    +
+                  </span>
+                </IconButton>
+              </div>
             </>
           )}
-          <AyudaAtajos className="hidden self-center lg:inline-flex" />
+          <div className="hidden self-center lg:block">
+            <AyudaAtajos />
+          </div>
         </div>
 
         {/* Lo que pasó con el último código, cuando no terminó en el ticket.

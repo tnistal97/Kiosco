@@ -83,13 +83,14 @@ export default function VentasPage() {
 function Ventas() {
   const puedeAnular = usePermiso('sales.cancel')
 
-  // `?venta=482` --desde el libro de movimientos-- abre esa venta, este del
-  // rango que este: se busca por numero en los ultimos diez anios y se deja
-  // desplegada (auditoria, H-04).
+  // `?venta=482` --desde el libro de movimientos-- abre esa venta y la deja
+  // desplegada (auditoria, H-04). Se busca por numero en el ultimo anio, que es
+  // el rango mas amplio que acepta el reporte; una venta mas vieja se busca
+  // moviendo "Desde".
   const params = useSearchParams()
   const ventaPedida = numeroDeVenta(params.get('venta'))
 
-  const [desde, setDesde] = useState(() => (ventaPedida === null ? haceDias(7) : haceDias(3650)))
+  const [desde, setDesde] = useState(() => (ventaPedida === null ? haceDias(7) : haceDias(365)))
   const [hasta, setHasta] = useState(() => iso(new Date()))
   const [estado, setEstado] = useState('todas')
   const [medio, setMedio] = useState('')

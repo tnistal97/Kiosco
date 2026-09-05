@@ -44,7 +44,7 @@ test('una venta completa: escanear, elegir, sumar, cobrar, vuelto y siguiente', 
   await expect(elegida(page)).toContainText(PRODUCTOS.yerba.nombre)
   await page.keyboard.press('ArrowRight')
   await expect(campo(page)).toBeFocused()
-  await expect(ticket(page).getByText('2 u.')).toBeVisible()
+  await expect(ticket(page).getByText('2 u.', { exact: true })).toBeVisible()
   expect(await totalDelTicket(page)).toBe(PRODUCTOS.yerba.precio * 2 + PRODUCTOS.leche.precio)
 
   // Enter con el campo vacio abre el cobro. Efectivo por omision, foco en
@@ -108,11 +108,11 @@ test('← baja la cantidad y nunca deja la linea en cero', async ({ page }) => {
   await escanearConTeclado(page, PRODUCTOS.yerba.codigo)
   await page.keyboard.press('ArrowRight')
   await page.keyboard.press('ArrowRight')
-  await expect(ticket(page).getByText('3 u.')).toBeVisible()
+  await expect(ticket(page).getByText('3 u.', { exact: true })).toBeVisible()
   await page.keyboard.press('ArrowLeft')
   await page.keyboard.press('ArrowLeft')
   await page.keyboard.press('ArrowLeft')
-  await expect(ticket(page).getByText('1 u.')).toBeVisible()
+  await expect(ticket(page).getByText('1 u.', { exact: true })).toBeVisible()
   await expect(ticket(page).getByText(PRODUCTOS.yerba.nombre, { exact: true })).toBeVisible()
 })
 

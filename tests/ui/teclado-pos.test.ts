@@ -29,8 +29,9 @@ describe('Que es lo que hay escrito', () => {
     expect(modoDelCampo('   ')).toBe('vacio')
     expect(modoDelCampo('7790001000011')).toBe('codigo')
     expect(modoDelCampo('yerba')).toBe('busqueda')
-    // Una letra entre digitos ya no es un codigo de barras.
+    // Una letra entre digitos ya no es un codigo de barras; un espacio, si.
     expect(modoDelCampo('77900a')).toBe('busqueda')
+    expect(modoDelCampo('779 12 34')).toBe('codigo')
   })
 })
 
