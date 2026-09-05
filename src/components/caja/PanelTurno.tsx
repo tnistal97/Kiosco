@@ -1,6 +1,6 @@
 'use client'
 
-import { Alert, Button, Card, Money, Skeleton } from '@/components/ui'
+import { Alert, ButtonLink, Card, Money, Skeleton } from '@/components/ui'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import type { EstadoDeCajaDTO } from '@/modules/cash/dto'
 import { fechaCorta } from './MovimientoRow'
@@ -13,18 +13,20 @@ import { fechaCorta } from './MovimientoRow'
  * cuando? ¿cuanto tiene que haber?".
  *
  * Cuando NO hay caja abierta lo dice claro y ofrece abrirla, en vez de mostrar
- * un cero que se lee como "no vendi nada".
+ * un cero que se lee como "no vendi nada". Abrir y cerrar son pantallas
+ * propias desde la Fase 2 --`/caja/abrir` y `/caja/cerrar`--: un flujo
+ * guiado, no un dialogo encima del listado.
+ *
+ * Los cuatro renglones de la suma van a la vista: inicial, ventas, entradas y
+ * salidas. Con solo tres, "Inicial 25.000 · Ventas 102.495 · Tiene que haber
+ * 99.725" parecia una cuenta mal hecha (auditoria, H-12).
  */
 export function PanelTurno({
   estado,
   cargando,
-  onAbrir,
-  onCerrar,
 }: {
   estado: EstadoDeCajaDTO | null
   cargando: boolean
-  onAbrir: () => void
-  onCerrar: () => void
 }) {
   const puedeAbrir = usePermiso('cash.shift.open')
   const puedeCerrar = usePermiso('cash.shift.close')
@@ -38,13 +40,13 @@ export function PanelTurno({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span>
             {estado.politica.requiereTurno
-              ? 'No se puede vender hasta abrirla. Contá el efectivo del cajón y abrila.'
+              ? 'No se puede cobrar hasta abrirla. Contá el efectivo del cajón y abrila.'
               : 'Se puede vender igual, pero sin turno el arqueo no compara contra nada.'}
           </span>
           {puedeAbrir && (
-            <Button variant="primary" onClick={onAbrir}>
-              Abrir la caja
-            </Button>
+            <ButtonLink href="/caja/abrir" variant="primary">
+              Abrir caja
+            </ButtonLink>
           )}
         </div>
       </Alert>
@@ -79,9 +81,21 @@ export function PanelTurno({
             </dd>
           </div>
           <div className="flex flex-col">
-            <dt className="text-xs text-ink-faint">Ventas</dt>
+            <dt className="text-xs text-ink-faint">Ventas en efectivo</dt>
             <dd>
               <Money amount={t.ventasEnEfectivo} size="sm" tone="muted" />
+            </dd>
+          </div>
+          <div className="flex flex-col">
+            <dt className="text-xs text-ink-faint">Entradas</dt>
+            <dd>
+              <Money amount={t.ingresos} size="sm" tone="muted" />
+            </dd>
+          </div>
+          <div className="flex flex-col">
+            <dt className="text-xs text-ink-faint">Salidas</dt>
+            <dd>
+              <Money amount={t.egresos} size="sm" tone="muted" />
             </dd>
           </div>
           <div className="flex flex-col">
@@ -93,9 +107,9 @@ export function PanelTurno({
         </dl>
 
         {puedeCerrar && (
-          <Button variant="secondary" onClick={onCerrar}>
+          <ButtonLink href="/caja/cerrar" variant="primary">
             Cerrar la caja
-          </Button>
+          </ButtonLink>
         )}
       </div>
     </Card>

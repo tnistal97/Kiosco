@@ -26,7 +26,6 @@ import {
   aviso,
 } from '@/components/ui'
 import { DialogoArqueo } from '@/components/caja/DialogoArqueo'
-import { DialogoAbrirCaja, DialogoCerrarCaja } from '@/components/caja/DialogoTurno'
 import { PanelTurno } from '@/components/caja/PanelTurno'
 import { HistorialTurnos } from '@/components/caja/HistorialTurnos'
 import { DialogoMovimiento } from '@/components/caja/DialogoMovimiento'
@@ -67,7 +66,6 @@ function parsePaginaMovimientos(raw: unknown): Pagina {
 export default function CajaPage() {
   const puedeMover = usePermiso('cash.movement.create')
   const puedeArquear = usePermiso('cash.count.create')
-  const puedeAutorizar = usePermiso('cash.shift.authorize')
 
   const [saldo, setSaldo] = useState<Monto | null>(null)
   const [efectivoHoy, setEfectivoHoy] = useState<Monto>(CERO)
@@ -82,13 +80,9 @@ export default function CajaPage() {
   const [error, setError] = useState<string | null>(null)
 
   const [caja, setCaja] = useState<EstadoDeCajaDTO | null>(null)
-  /** Se incrementa al abrir o cerrar: es la senial para recargar el historial. */
-  const [recargas, setRecargas] = useState(0)
 
   const [movimientoAbierto, setMovimientoAbierto] = useState(false)
   const [arqueoAbierto, setArqueoAbierto] = useState(false)
-  const [abrirCajaAbierto, setAbrirCajaAbierto] = useState(false)
-  const [cerrarCajaAbierto, setCerrarCajaAbierto] = useState(false)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -134,16 +128,7 @@ export default function CajaPage() {
         Hasta la Fase 2 aca habia una advertencia diciendo que el numero grande
         NO era el de un turno; ahora lo es.
       */}
-      <PanelTurno
-        estado={caja}
-        cargando={cargando}
-        onAbrir={() => {
-          setAbrirCajaAbierto(true)
-        }}
-        onCerrar={() => {
-          setCerrarCajaAbierto(true)
-        }}
-      />
+      <PanelTurno estado={caja} cargando={cargando} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <MetricCard
@@ -226,7 +211,7 @@ export default function CajaPage() {
             )}
             {puedeArquear && (
               <Button
-                variant="primary"
+                variant="secondary"
                 onClick={() => {
                   setArqueoAbierto(true)
                 }}
@@ -327,7 +312,8 @@ export default function CajaPage() {
         </div>
       </Card>
 
-      <HistorialTurnos recargar={recargas} />
+      {/* Abrir y cerrar son pantallas propias: al volver, todo se vuelve a leer. */}
+      <HistorialTurnos recargar={0} />
 
       {arqueos.length > 0 && (
         <Card>
@@ -364,39 +350,6 @@ export default function CajaPage() {
           void cargar()
         }}
       />
-
-      <DialogoAbrirCaja
-        abierto={abrirCajaAbierto}
-        onCerrar={() => {
-          setAbrirCajaAbierto(false)
-        }}
-        onHecho={() => {
-          setAbrirCajaAbierto(false)
-          aviso.ok('Caja abierta')
-          setRecargas((n) => n + 1)
-          notificarCambioDeCaja()
-          void cargar()
-        }}
-      />
-
-      {caja?.turno && (
-        <DialogoCerrarCaja
-          abierto={cerrarCajaAbierto}
-          turno={caja.turno}
-          umbral={caja.politica.umbralDiferencia}
-          puedeAutorizar={puedeAutorizar}
-          onCerrar={() => {
-            setCerrarCajaAbierto(false)
-          }}
-          onHecho={() => {
-            setCerrarCajaAbierto(false)
-            aviso.ok('Caja cerrada')
-            setRecargas((n) => n + 1)
-            notificarCambioDeCaja()
-            void cargar()
-          }}
-        />
-      )}
 
       <DialogoArqueo
         abierto={arqueoAbierto}
