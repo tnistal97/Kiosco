@@ -63,7 +63,14 @@ export default defineConfig({
     },
     {
       name: 'movil',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 375, height: 812 } },
+      // `hasTouch`: en el mostrador se toca, no se hace clic. Sin esto
+      // `locator.tap()` no existe y las reglas `@media (hover: none)` --la
+      // estrella de favorito, por ejemplo-- nunca se ejercitan.
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 375, height: 812 },
+        hasTouch: true,
+      },
       dependencies: ['datos'],
       testMatch: /movil\.spec\.ts/,
     },

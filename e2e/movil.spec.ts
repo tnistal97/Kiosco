@@ -116,6 +116,29 @@ test('los botones principales llegan a 44 px', async ({ page }) => {
   expect(problemas, `objetivos tactiles por debajo de 44 px:\n${problemas.join('\n')}`).toEqual([])
 })
 
+test('con el dedo: tocar una fila de la lista la manda al ticket', async ({ page }) => {
+  await page.goto('/venta')
+  await page.evaluate(() => {
+    localStorage.removeItem('kiosco:ticket')
+  })
+  await page.goto('/venta')
+
+  // La lista se ve sin escribir nada, tambien en 375 px.
+  const filas = page.locator('[data-fila]')
+  await expect(filas.first()).toBeVisible()
+
+  // Un toque, no un clic con el raton: es lo que hace el dedo en el mostrador.
+  const primera = filas.first()
+  const nombre = ((await primera.getAttribute('aria-label')) ?? '').split(', ')[0] ?? ''
+  await primera.tap()
+
+  await expect(page.getByRole('button', { name: /^ticket/i })).toContainText('1 artículo')
+  await page.getByRole('button', { name: /^ticket/i }).click()
+  await expect(
+    page.getByRole('dialog', { name: 'Ticket' }).getByText(nombre, { exact: true }),
+  ).toBeVisible()
+})
+
 test('el total y el boton de cobrar se ven sin desplazarse', async ({ page }) => {
   await page.goto('/venta')
   await escanear(page, PRODUCTOS.yerba.codigo)

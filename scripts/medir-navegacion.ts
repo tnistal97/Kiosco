@@ -173,14 +173,15 @@ function mediana(valores: number[]): number {
 }
 
 async function iniciarSesion(page: Page): Promise<void> {
+  // Por la API, no por el formulario: lo que se mide es la navegacion y el
+  // formulario mete su propia redireccion en el medio. La peticion comparte
+  // el frasco de cookies del contexto, asi que la sesion queda puesta.
   await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-  await page.locator('input').first().fill(USUARIO)
-  await page.locator('input[type="password"]').first().fill(CLAVE)
-  await page
-    .getByRole('button', { name: /ingresar|iniciar|entrar|acceder/i })
-    .first()
-    .click()
-  await page.waitForURL(`${BASE}/`, { timeout: 20_000 })
+  const r = await page.context().request.post(`${BASE}/api/auth/login`, {
+    data: { username: USUARIO, password: CLAVE },
+  })
+  if (!r.ok()) throw new Error(`El ingreso respondio ${String(r.status())}`)
+  await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(HAY_DATOS, null, { timeout: 20_000 })
 }
 
@@ -288,7 +289,7 @@ async function main(): Promise<void> {
       muestras.push(await medirNavegacion(page, desde, hasta))
     }
 
-    navegaciones.push({
+    const u: Resumen = {
       ruta: hasta.href,
       desde: desde.href,
       visual: mediana(muestras.map((m) => m.visual)),
@@ -299,9 +300,9 @@ async function main(): Promise<void> {
       faltoArmazon: muestras.some((m) => m.faltoArmazon),
       armazonRemontado: muestras.some((m) => m.armazonRemontado),
       muestras,
-    })
+    }
 
-    const u = navegaciones[navegaciones.length - 1]!
+    navegaciones.push(u)
     console.log(
       `${u.desde} → ${u.ruta}`.padEnd(26) +
         `visual ${String(u.visual).padStart(6)} ms · commit ${String(u.commit).padStart(6)} ms · datos ${String(u.datos).padStart(6)} ms · ` +
@@ -314,13 +315,14 @@ async function main(): Promise<void> {
   for (const ruta of RUTAS) {
     const medidas: CargaDirecta[] = []
     for (let i = 0; i < MUESTRAS; i++) medidas.push(await medirCargaDirecta(page, ruta))
-    directas.push({
+    const u: CargaDirecta = {
       ruta: ruta.href,
       ttfb: mediana(medidas.map((m) => m.ttfb)),
       domContentLoaded: mediana(medidas.map((m) => m.domContentLoaded)),
       datos: mediana(medidas.map((m) => m.datos)),
-    })
-    const u = directas[directas.length - 1]!
+    }
+
+    directas.push(u)
     console.log(
       `F5 ${u.ruta}`.padEnd(26) +
         `ttfb ${String(u.ttfb).padStart(6)} ms · dcl ${String(u.domContentLoaded).padStart(6)} ms · datos ${String(u.datos)} ms`,

@@ -30,6 +30,12 @@ const ETIQUETAS_WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']
 
 /** Analisis estandar de una pantalla ya cargada. */
 async function analizar(page: Page) {
+  // El `<title>` se desprende POR UN CUADRO --unos 16 ms, medido-- cuando la
+  // navegacion es del lado del cliente y la ruta tiene limite de carga: Next
+  // vuelve a dibujar los metadatos despues del esqueleto. Axe tiene que mirar
+  // la pantalla ya asentada, no en el medio de la transicion; si el titulo
+  // faltara de verdad, esta espera vence y la prueba falla igual.
+  await page.locator('title').waitFor({ state: 'attached' })
   return new AxeBuilder({ page }).withTags(ETIQUETAS_WCAG).analyze()
 }
 

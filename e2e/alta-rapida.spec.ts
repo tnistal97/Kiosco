@@ -79,6 +79,11 @@ test.describe('el escaneo dice qué pasó', () => {
   test.beforeEach(async ({ page }) => {
     await entrar(page, 'encargado')
     await page.goto('/venta')
+    // Hasta que el lector no tiene el foco, la pantalla no termino de
+    // hidratarse y los atajos de teclado todavia no escuchan. Desde que hay
+    // limite de carga (UX V2 2.1) el evento `load` llega antes que eso, asi
+    // que hay que esperar la senal de la aplicacion y no la del navegador.
+    await expect(page.locator('[data-barcode-input]')).toBeFocused()
   })
 
   test('1. un código conocido sigue siendo instantáneo y sin ruido', async ({ page }) => {

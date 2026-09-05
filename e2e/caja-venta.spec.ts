@@ -18,7 +18,7 @@ import { PRODUCTOS, entrar, escanear, leerMonto } from './ayudantes'
 
 const ticket = (page: Page) => page.getByRole('region', { name: 'Ticket en curso' })
 const campo = (page: Page) => page.locator('[data-barcode-input]')
-const tarjeta = (page: Page, nombre: string) =>
+const fila = (page: Page, nombre: string) =>
   page.getByRole('group', { name: 'Productos' }).getByRole('button', { name: new RegExp(`^${nombre}, `) }) // prettier-ignore
 
 async function cobrarEnEfectivo(page: Page, recibido: string): Promise<void> {
@@ -115,7 +115,11 @@ test.describe('Vender', () => {
   test('la pantalla ya muestra productos antes de escribir nada', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Todos' })).toBeVisible()
     await expect(page.getByRole('group', { name: 'Productos' })).toBeVisible()
-    await expect(tarjeta(page, PRODUCTOS.yerba.nombre)).toBeVisible()
+    await expect(fila(page, PRODUCTOS.yerba.nombre)).toBeVisible()
+    // La lista, con sus columnas: producto, categoria, stock y precio.
+    const primera = page.locator('[data-fila]').first()
+    await expect(primera).toContainText('$')
+    await expect(fila(page, PRODUCTOS.yerba.nombre)).toContainText('Almacen')
     // Y el ticket vacio dice que hacer, con "Cobrar" a la vista pero apagado.
     await expect(page.getByText('El ticket está vacío')).toBeVisible()
     await expect(ticket(page).getByRole('button', { name: 'Cobrar' })).toBeDisabled()
@@ -123,27 +127,36 @@ test.describe('Vender', () => {
 
   test('9. elegir un producto de la lista visible, tocando', async ({ page }) => {
     await page.getByRole('button', { name: 'Bebidas' }).click()
-    await tarjeta(page, PRODUCTOS.gaseosa.nombre).click()
+    await fila(page, PRODUCTOS.gaseosa.nombre).click()
 
     await expect(ticket(page).getByText(PRODUCTOS.gaseosa.nombre, { exact: true })).toBeVisible()
     // El foco vuelve al lector: el proximo codigo cae donde tiene que caer.
     await expect(campo(page)).toBeFocused()
   })
 
+  test('elegir una categoria deja en la lista solo lo de esa categoria', async ({ page }) => {
+    await page.getByRole('button', { name: 'Bebidas' }).click()
+    await expect(fila(page, PRODUCTOS.gaseosa.nombre)).toBeVisible()
+    await expect(fila(page, PRODUCTOS.yerba.nombre)).toBeHidden()
+
+    // "Todos" la trae de vuelta.
+    await page.getByRole('button', { name: 'Todos' }).click()
+    await expect(fila(page, PRODUCTOS.yerba.nombre)).toBeVisible()
+  })
+
   test('9. elegir un producto de la lista visible, con el teclado', async ({ page }) => {
-    // Con el ticket vacio, ↓ entra a la grilla; las flechas la recorren y
-    // Enter agrega.
+    // Con el ticket vacio, ↓ entra a la lista; ↑ ↓ la recorren y Enter agrega.
     await page.getByRole('button', { name: 'Todos' }).click()
     await campo(page).click()
     await expect(campo(page)).toBeFocused()
-    // Las tarjetas, no cualquier boton: cada tarjeta lleva ademas su estrella.
+    // Las filas, no cualquier boton: cada fila lleva ademas su estrella.
     await expect(page.locator('[data-fila]').first()).toBeVisible()
     await page.keyboard.press('ArrowDown')
-    const tarjetas = page.locator('[data-fila]')
-    await expect(tarjetas.first()).toBeFocused()
+    const filas = page.locator('[data-fila]')
+    await expect(filas.first()).toBeFocused()
 
-    await page.keyboard.press('ArrowRight')
-    const segunda = tarjetas.nth(1)
+    await page.keyboard.press('ArrowDown')
+    const segunda = filas.nth(1)
     await expect(segunda).toBeFocused()
     const nombre = (await segunda.getAttribute('aria-label'))?.split(', ')[0] ?? ''
     await page.keyboard.press('Enter')
@@ -154,7 +167,7 @@ test.describe('Vender', () => {
     await expect(campo(page)).toBeFocused()
   })
 
-  test('buscar por nombre filtra la misma grilla, y Enter agrega', async ({ page }) => {
+  test('buscar por nombre filtra la misma lista, y Enter agrega', async ({ page }) => {
     await campo(page).fill('yerba')
     await expect(page.getByRole('group', { name: 'Resultados de la búsqueda' })).toBeVisible()
     await campo(page).press('Enter')
@@ -255,7 +268,7 @@ test.describe('Vender', () => {
     await expect(page.getByRole('status').first()).toContainText('agotado')
     await expect(page.getByText('El ticket está vacío')).toBeVisible()
 
-    // En la grilla tambien: la tarjeta esta, apagada, y dice por que.
+    // En la lista tambien: la fila esta, apagada, y dice por que.
     await campo(page).fill('helado')
     const agotada = page
       .getByRole('group', { name: 'Resultados de la búsqueda' })
