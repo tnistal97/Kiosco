@@ -112,6 +112,22 @@ describe('El catalogo se ve antes de escribir nada', () => {
     expect(yerba).toHaveTextContent('10 u.')
   })
 
+  it('lo que no se puede vender por vencido lo dice asi, no "agotado"', () => {
+    armar({
+      productos: [
+        producto(11, 'Yogur bebible 900 g', {
+          sellableStock: '0.000',
+          expiredStock: '6.000',
+          totalStock: '6.000',
+          estado: 'OUT',
+        }),
+      ],
+      total: 1,
+    })
+    expect(screen.getByText('Vencido')).toBeInTheDocument()
+    expect(fila(/^Yogur bebible 900 g, vencido$/)).toBeDisabled()
+  })
+
   it('poco stock se lee sin depender del color', () => {
     armar({
       productos: [producto(9, 'Jugo naranja 1 L', { sellableStock: '3.000', estado: 'LOW' })],
@@ -121,7 +137,7 @@ describe('El catalogo se ve antes de escribir nada', () => {
   })
 
   it('cada dato aparece una sola vez: la fila se reacomoda con CSS, no se duplica', () => {
-    armar({ productos: [PRODUCTOS[0]!], total: 1 })
+    armar({ productos: PRODUCTOS.slice(0, 1), total: 1 })
     expect(screen.getAllByText(/1\.500,00/)).toHaveLength(1)
     expect(screen.getAllByText('10 u.')).toHaveLength(1)
   })

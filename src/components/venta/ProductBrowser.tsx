@@ -33,11 +33,18 @@ import { esTeclaDeGrilla, moverEnGrilla } from './teclado'
  * ---------------------------------
  * La fase 2 mostro el catalogo en tarjetas de 10rem. Funcionaba, pero se leia
  * como una tienda: cada producto ocupaba 176 x 88 px para decir dos datos, los
- * nombres largos se cortaban en dos lineas, todas las tarjetas se parecian y
- * encontrar uno exigia barrer la pantalla en zigzag. Una lista con columnas
- * fijas se lee en vertical: el ojo baja por los nombres, y precio, stock y
- * categoria estan siempre en la misma coordenada. En 1366 px entran 13 filas
- * donde entraban 8 tarjetas.
+ * nombres largos se cortaban en dos lineas ("Aceite de girasol 900 / ml"),
+ * todas las tarjetas se parecian y encontrar una exigia barrer la pantalla en
+ * zigzag. Una lista con columnas fijas se lee en vertical: el ojo baja por los
+ * nombres, y categoria, stock y precio estan siempre en la misma coordenada.
+ *
+ * Se cambio densidad por legibilidad, y conviene decirlo con los numeros
+ * medidos en las capturas de docs/ux-v2-phase2_1-evidence: en 1366 px entran
+ * 11 filas y media donde entraban 16 tarjetas. Cada fila, a cambio, dice el
+ * nombre entero en un renglon y agrega dos datos que la tarjeta no mostraba.
+ * En el telefono la densidad es la misma --siete filas donde entraban siete
+ * tarjetas en 375 x 667-- pero el nombre entra entero en un renglon y el
+ * precio se lee de un vistazo, sin cortes.
  *
  * Tres maneras de llegar a una fila, y las tres agregan:
  *
@@ -89,9 +96,31 @@ export interface ProductBrowserProps {
 /**
  * Las columnas, en un solo lugar: la cabecera y las filas tienen que estar
  * alineadas al pixel o la lista deja de leerse como tabla.
+ *
+ * Tres formas segun el ancho DISPONIBLE, que no es el de la pantalla:
+ *
+ *   hasta 768   dos renglones: nombre arriba, precio abajo (telefono)
+ *   768 a 1024  cuatro columnas; la tablet no dibuja el ticket al costado,
+ *               asi que el catalogo tiene la pantalla entera
+ *   1024 a 1280 TRES columnas: aparece el ticket de 440 px y al catalogo le
+ *               quedan unos 520; la categoria es lo primero que sobra
+ *   desde 1280  cuatro otra vez, con lugar de sobra para el nombre
  */
-const COLUMNAS =
-  'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 lg:grid-cols-[minmax(0,1fr)_9rem_8rem_9.5rem]'
+const COLUMNAS = [
+  'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3',
+  'md:grid-cols-[minmax(0,1fr)_9rem_8rem_9.5rem]',
+  'lg:grid-cols-[minmax(0,1fr)_7.5rem_9rem]',
+  'xl:grid-cols-[minmax(0,1fr)_9rem_8rem_9.5rem]',
+].join(' ')
+
+/** La celda de categoria: se esconde cuando el ticket se come el ancho. */
+const CELDA_CATEGORIA = 'hidden md:col-start-2 md:row-start-1 md:block lg:hidden xl:block'
+/** El stock cambia de columna en cada forma. */
+const CELDA_STOCK =
+  'col-start-2 row-start-1 justify-self-end md:col-start-3 md:justify-self-start lg:col-start-2 xl:col-start-3'
+/** El precio: segundo renglon en el telefono, ultima columna en el resto. */
+const CELDA_PRECIO =
+  'col-start-1 row-start-2 md:col-start-4 md:row-start-1 md:justify-end lg:col-start-3 xl:col-start-4'
 
 export const ProductBrowser = forwardRef<ProductBrowserHandle, ProductBrowserProps>(
   function ProductBrowser(
@@ -267,15 +296,15 @@ function Encabezado() {
     <div
       aria-hidden="true"
       className={cn(
-        'sticky top-0 z-10 hidden border-b border-line bg-raised px-3 py-1.5 lg:grid',
+        'sticky top-0 z-10 hidden border-b border-line bg-raised px-3 py-1.5 md:grid',
         'text-[11px] font-medium tracking-wide text-ink-faint uppercase',
-        'grid-cols-[minmax(0,1fr)_9rem_8rem_9.5rem] items-center gap-x-3',
+        COLUMNAS,
       )}
     >
-      <span>Producto</span>
-      <span>Categoría</span>
-      <span>Stock</span>
-      <span className="text-right">Precio</span>
+      <span className="col-start-1 row-start-1">Producto</span>
+      <span className={CELDA_CATEGORIA}>Categoría</span>
+      <span className={CELDA_STOCK}>Stock</span>
+      <span className={cn(CELDA_PRECIO, 'text-right')}>Precio</span>
     </div>
   )
 }
@@ -383,8 +412,11 @@ const FilaDeProducto = memo(function FilaDeProducto({
   onFavorito: (productId: number) => void
 }) {
   // Agotado es no tener NADA VENDIBLE: con diez unidades vencidas hay stock y
-  // no se puede vender.
+  // no se puede vender. Cuando es por vencimiento se dice asi --"Vencido"--,
+  // que no es lo mismo para el que repone: uno hay que pedirlo y el otro hay
+  // que sacarlo de la gondola.
   const agotado = aMilesimas(producto.sellableStock) <= 0
+  const porVencimiento = agotado && aMilesimas(producto.expiredStock) > 0
   const quedaPoco = !agotado && producto.estado === 'LOW'
   const porPeso = esFraccionable(producto.saleUnit)
   const denominador = denominadorDePrecio(producto.saleUnit)
@@ -407,14 +439,14 @@ const FilaDeProducto = memo(function FilaDeProducto({
         tabIndex={enfocable ? 0 : -1}
         disabled={agotado}
         aria-current={resaltada || undefined}
-        aria-label={`${producto.name}, ${agotado ? 'agotado' : formatearPrecio(producto)}`}
+        aria-label={`${producto.name}, ${agotado ? (porVencimiento ? 'vencido' : 'agotado') : formatearPrecio(producto)}`}
         onMouseEnter={() => {
           onHover(indice)
         }}
         onClick={alClic}
         className={cn(
           // Telefono: dos renglones --nombre y estado arriba, precio abajo--.
-          // Desde `lg`, una sola linea con las cuatro columnas de la cabecera.
+          // Desde `md`, una sola linea con las columnas de la cabecera.
           // Cada dato se dibuja UNA sola vez y cambia de celda con el ancho:
           // duplicar el precio para "la version movil" es como se termina
           // arreglando uno y olvidando el otro.
@@ -436,29 +468,34 @@ const FilaDeProducto = memo(function FilaDeProducto({
           )}
         </span>
 
-        {/* La categoria solo en escritorio: en el mostrador nadie elige por
-            categoria --para eso estan los chips de arriba--, elige por nombre. */}
-        <span className="hidden truncate text-sm text-ink-muted lg:col-start-2 lg:row-start-1 lg:block">
+        {/* La categoria nunca en el telefono: en el mostrador no se elige por
+            categoria --para eso estan los chips de arriba--, se elige por
+            nombre. Y tampoco cuando el ticket se lleva el ancho. */}
+        <span className={cn(CELDA_CATEGORIA, 'truncate text-sm text-ink-muted')}>
           {producto.category.name}
         </span>
 
         <span
           className={cn(
-            'col-start-2 row-start-1 justify-self-end text-sm lg:col-start-3 lg:justify-self-start',
+            CELDA_STOCK,
+            'text-sm',
             // En el telefono el stock solo aparece cuando cambia una decision:
             // no queda, o queda poco.
-            !agotado && !quedaPoco && 'hidden lg:block',
+            !agotado && !quedaPoco && 'hidden md:block',
             agotado ? 'text-danger' : quedaPoco ? 'text-warning' : 'text-ink-muted',
           )}
           data-numeric=""
         >
-          {agotado ? 'Agotado' : quedaPoco ? `Quedan ${cantidad}` : cantidad}
+          {agotado
+            ? porVencimiento
+              ? 'Vencido'
+              : 'Agotado'
+            : quedaPoco
+              ? `Quedan ${cantidad}`
+              : cantidad}
         </span>
 
-        <span
-          className="col-start-1 row-start-2 flex items-baseline gap-1 lg:col-start-4 lg:row-start-1 lg:justify-end"
-          data-numeric=""
-        >
+        <span className={cn(CELDA_PRECIO, 'flex items-baseline gap-1')} data-numeric="">
           <Money amount={producto.price} size="md" />
           {porPeso && <span className="text-xs text-ink-faint">{denominador}</span>}
         </span>

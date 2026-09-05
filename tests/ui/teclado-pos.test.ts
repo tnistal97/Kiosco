@@ -69,10 +69,10 @@ describe('Flechas', () => {
   })
 
   it('con el ticket vacio, abajo entra a la grilla de productos', () => {
-    expect(accionDeTecla('ArrowDown', { ...VACIO, hayGrilla: true })).toBe('ir-a-grilla')
-    expect(accionDeTecla('ArrowDown', { ...VACIO, hayGrilla: false })).toBe('nada')
+    expect(accionDeTecla('ArrowDown', { ...VACIO, hayLista: true })).toBe('ir-a-la-lista')
+    expect(accionDeTecla('ArrowDown', { ...VACIO, hayLista: false })).toBe('nada')
     // Con lineas, las lineas mandan: la grilla se alcanza con Tab.
-    expect(accionDeTecla('ArrowDown', { ...VACIO, hayLineas: true, hayGrilla: true })).toBe(
+    expect(accionDeTecla('ArrowDown', { ...VACIO, hayLineas: true, hayLista: true })).toBe(
       'linea-siguiente',
     )
   })

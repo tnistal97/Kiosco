@@ -51,19 +51,20 @@ import { esFraccionable, formatearCantidadConUnidad } from '@/modules/products/u
 import { motivoDeCodigoInvalido, normalizarCodigo } from '@/modules/products/barcode'
 
 /**
- * Cuantas tarjetas trae cada consulta del catalogo.
+ * Cuantas filas trae cada consulta del catalogo.
  *
- * Sesenta entran en dos o tres pantallas de grilla. Con mas, la grilla pide
- * buscar por nombre, que es mas rapido que desplazar cien tarjetas.
+ * Sesenta son cuatro o cinco pantallas de lista. Con mas, la lista dice
+ * cuantos hay y pide buscar por nombre, que es mas rapido que desplazar cien
+ * filas. Sesenta filas tampoco piden virtualizar nada: son sesenta botones.
  */
-const TARJETAS_POR_CONSULTA = 60
+const FILAS_POR_CONSULTA = 60
 
 /** Cuantos productos entran en "Frecuentes": favoritos primero, despues los mas vendidos. */
 const TOPE_DE_FRECUENTES = 24
 
 /**
  * Lo minimo que hace falta saber de un producto para ponerlo en el ticket.
- * Es lo que tiene una tarjeta del catalogo y --reconstruido-- una linea que
+ * Es lo que tiene una fila del catalogo y --reconstruido-- una linea que
  * se vuelve a pesar.
  */
 type ProductoVendible = Pick<
@@ -113,7 +114,7 @@ function productoDeLinea(linea: CartLine): ProductoVendible {
  * Desde el primer momento se ve la estructura entera: el lector, el catalogo
  * --frecuentes, categorias o resultados-- y el ticket con su total y "Cobrar".
  * Se vende de dos maneras que terminan en el mismo lugar: escaneando, o
- * tocando una tarjeta. La gramatica de teclado esta en `teclado.ts`; esta
+ * tocando una fila. La gramatica de teclado esta en `teclado.ts`; esta
  * pantalla ejecuta.
  *
  * Lo que no cambio: el lector escribe en el campo y manda Enter, sin ningun
@@ -140,7 +141,7 @@ export default function VentaPage() {
     fetchCategories,
   } = useProducts({
     enServidor: true,
-    pageSize: TARJETAS_POR_CONSULTA,
+    pageSize: FILAS_POR_CONSULTA,
     // Un producto dado de baja no se vende, asi que tampoco aparece en la caja.
     filtrosIniciales: { estado: 'activos', sortBy: 'name', sortDir: 'asc' },
   })
@@ -301,7 +302,7 @@ export default function VentaPage() {
   )
 
   /**
-   * Lo que pasa al elegir un producto, por escaneo, busqueda o tarjeta.
+   * Lo que pasa al elegir un producto, por escaneo, busqueda o fila.
    *
    * Un producto por unidad se agrega y listo. Uno que se pesa abre el dialogo
    * INMEDIATAMENTE, sin pasos intermedios: despues de pasar un queso por el
@@ -334,13 +335,13 @@ export default function VentaPage() {
     setSearchTerm('')
   }, [setSearchTerm])
 
-  /** Una tarjeta del catalogo, tocada o elegida con Enter. */
+  /** Una fila del catalogo, tocada o elegida con Enter. */
   const elegirDelCatalogo = useCallback(
     (p: Product, desdeElTeclado: boolean) => {
       elegirProducto(p)
       if (buscando) limpiarBusqueda()
       // Quien toca vuelve al lector: ahi cae el proximo codigo. Quien navega
-      // con el teclado se queda en la grilla para seguir eligiendo.
+      // con el teclado se queda en la lista para seguir eligiendo.
       if (!desdeElTeclado) campo.current?.focus()
     },
     [elegirProducto, buscando, limpiarBusqueda],
@@ -617,7 +618,7 @@ export default function VentaPage() {
       haySeleccion: seleccionada !== null,
       hayResultados: buscando && visibles.length > 0,
       hayAviso: sinResolver !== null,
-      hayGrilla: visibles.length > 0,
+      hayLista: visibles.length > 0,
     })
 
     switch (accion) {
@@ -648,7 +649,7 @@ export default function VentaPage() {
       case 'linea-siguiente':
         setSeleccionada(moverSeleccion(ids, seleccionada, 1))
         return true
-      case 'ir-a-grilla':
+      case 'ir-a-la-lista':
         catalogo.current?.enfocar()
         return true
       case 'cantidad-menos':

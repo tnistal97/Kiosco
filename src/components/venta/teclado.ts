@@ -50,7 +50,7 @@ export type AccionDelPos =
   | 'limpiar-campo'
   | 'deseleccionar'
   | 'cerrar-aviso'
-  | 'ir-a-grilla'
+  | 'ir-a-la-lista'
   | 'nada'
 
 export interface ContextoDelPos {
@@ -61,7 +61,7 @@ export interface ContextoDelPos {
   /** Hay un bloque de "codigo no registrado" o similar en pantalla. */
   hayAviso: boolean
   /** Hay tarjetas en la grilla de productos. Fase 2. */
-  hayGrilla?: boolean
+  hayLista?: boolean
 }
 
 export function accionDeTecla(tecla: TeclaDelLector, ctx: ContextoDelPos): AccionDelPos {
@@ -89,7 +89,7 @@ export function accionDeTecla(tecla: TeclaDelLector, ctx: ContextoDelPos): Accio
       // es lo unico que hay para recorrer. Con lineas, sigue eligiendo lineas.
       if (modo === 'vacio') {
         if (ctx.hayLineas) return 'linea-siguiente'
-        return ctx.hayGrilla === true ? 'ir-a-grilla' : 'nada'
+        return ctx.hayLista === true ? 'ir-a-la-lista' : 'nada'
       }
       return 'nada'
 
@@ -138,12 +138,16 @@ export function seleccionTrasQuitar(ids: readonly number[], quitado: number): nu
 }
 
 // ---------------------------------------------------------------------------
-// La grilla de productos. UX V2, Fase 2.
+// El catalogo de productos. UX V2, Fase 2; lista desde la 2.1.
 //
-// Desde la Fase 2 el punto de venta muestra una grilla de productos aunque
-// nadie haya escrito nada, y esa grilla se recorre con el teclado como
-// cualquier lista: ↑ ↓ ← → mueven, Enter agrega, Escape vuelve al lector. La
-// aritmetica de "que tarjeta sigue" vive aca, sin DOM, para probarla sola.
+// Desde la Fase 2 el punto de venta muestra productos aunque nadie haya
+// escrito nada, y se recorren con el teclado: ↑ ↓ ← → mueven, Enter agrega,
+// Escape vuelve al lector. La aritmetica de "cual sigue" vive aca, sin DOM,
+// para probarla sola.
+//
+// Sigue expresada en filas y columnas aunque la 2.1 haya pasado a una lista:
+// una lista es esta misma cuenta con `columnas = 1`, y tener las dos formas en
+// una sola funcion es lo que evita dos implementaciones que se desincronizan.
 // ---------------------------------------------------------------------------
 
 export type TeclaDeGrilla = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'Home' | 'End'
