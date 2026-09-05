@@ -186,3 +186,81 @@ export function formatearCantidadConUnidad(c: TextoCantidad, unidad: UnidadDeVen
 export function denominadorDePrecio(unidad: UnidadDeVenta): string {
   return unidad === 'UNIT' ? '' : `/ ${POLITICA_DE_UNIDAD[unidad].simbolo}`
 }
+
+// ---------------------------------------------------------------------------
+// Formato para leer, no para operar. UX V2, Fase 1.
+//
+// La auditoria encontro "Pendiente 30.000 unidad", "Anterior 33.000" y
+// "4.000 unidades" en seis pantallas: la cadena cruda de tres decimales, que en
+// es-AR se lee como treinta mil. Estas tres funciones son el UNICO camino de
+// una cantidad a la pantalla; ninguna pantalla vuelve a imprimir un
+// `TextoCantidad` tal cual.
+// ---------------------------------------------------------------------------
+
+const FORMATO_LIBRE = new Intl.NumberFormat('es-AR', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 3,
+})
+
+/**
+ * La cantidad sin unidad y sin ceros de relleno: `"30"`, `"0,425"`, `"1,5"`.
+ *
+ * Para los totales que mezclan productos --"7 unidades vendidas", "4 unidades
+ * vencidas"-- donde no hay UNA unidad que decida cuantos decimales van.
+ */
+export function formatearNumeroDeCantidad(c: TextoCantidad): string {
+  return FORMATO_LIBRE.format(aMilesimas(c) / 1000)
+}
+
+const NOMBRE_DE_BULTO: Record<'PACK' | 'BOX', [singular: string, plural: string]> = {
+  PACK: ['pack', 'packs'],
+  BOX: ['caja', 'cajas'],
+}
+
+/**
+ * Una cantidad en unidad de COMPRA: `"30"` cajas, `"1,250"` kg.
+ *
+ * Las unidades que tambien son de venta usan su politica de decimales; un pack
+ * o una caja se cuentan y se muestran sin ceros.
+ */
+export function formatearCantidadDeCompra(c: TextoCantidad, unidad: UnidadDeCompra): string {
+  return esUnidadDeVenta(unidad) ? formatearCantidad(c, unidad) : formatearNumeroDeCantidad(c)
+}
+
+/** La cantidad de compra con su unidad: `"30 cajas"`, `"1 pack"`, `"12 u."`. */
+export function formatearCantidadDeCompraConUnidad(
+  c: TextoCantidad,
+  unidad: UnidadDeCompra,
+): string {
+  const numero = formatearCantidadDeCompra(c, unidad)
+  if (unidad === 'PACK' || unidad === 'BOX') {
+    const [singular, plural] = NOMBRE_DE_BULTO[unidad]
+    return `${numero} ${aMilesimas(c) === 1000 ? singular : plural}`
+  }
+  return `${numero} ${POLITICA_DE_UNIDAD[unidad].simbolo}`
+}
+
+const FORMATOS_SIN_MILES: Record<0 | 3, Intl.NumberFormat> = {
+  0: new Intl.NumberFormat('es-AR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+    useGrouping: false,
+  }),
+  3: new Intl.NumberFormat('es-AR', {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+    useGrouping: false,
+  }),
+}
+
+/**
+ * La cantidad como se ESCRIBE en un campo: coma decimal y sin punto de miles.
+ *
+ * Para rellenar un input que despues se vuelve a interpretar con
+ * `cantidadDesdeTexto`, que no acepta separador de miles: un `1.500` con
+ * punto se leeria como uno y medio. Nunca para mostrar en una tabla; para eso
+ * esta `formatearCantidad`.
+ */
+export function formatearCantidadParaEditar(c: TextoCantidad, unidad: UnidadDeVenta): string {
+  return FORMATOS_SIN_MILES[POLITICA_DE_UNIDAD[unidad].decimales].format(aMilesimas(c) / 1000)
+}

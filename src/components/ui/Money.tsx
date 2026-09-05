@@ -85,3 +85,6 @@ export function Money({
     </span>
   )
 }
+
+/** Alias con el nombre del sistema de diseno V2. Es el mismo componente. */
+export const MoneyText = Money

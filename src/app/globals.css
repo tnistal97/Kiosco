@@ -71,6 +71,10 @@
 
   --color-focus: #8fbcff;
 
+  /* Lo seleccionado con el teclado: la linea del ticket, la fila activa. Es
+   * el azul apagado de lo interactivo, no un quinto color. */
+  --color-selection: var(--color-primary-quiet);
+
   /* --- Radios ----------------------------------------------------------- */
   --radius-xs: 4px;
   --radius-sm: 6px;
@@ -90,14 +94,24 @@
   --spacing-touch: 44px;
   --spacing-control: 44px;
   --spacing-control-lg: 56px;
+  /* El boton de cobrar del punto de venta. Se aprieta cien veces por dia, con
+   * el cliente enfrente, y tiene que encontrarse sin mirar. */
+  --spacing-control-xl: 64px;
   --spacing-sidebar: 236px;
   --spacing-sidebar-tight: 68px;
-  --spacing-ticket: 400px;
+  /* 440 y no 400: con la barra lateral contraida en la caja, once lineas de
+   * ticket entran en 1366 x 768 en vez de cuatro. */
+  --spacing-ticket: 440px;
+  /* Margen de pagina. Uno solo para todas las pantallas: la mitad de las
+   * pantallas tenia 0 y los botones tocaban el borde en un telefono. */
+  --spacing-gutter: 12px;
+  --spacing-gutter-lg: 20px;
 
   /* --- Tipografia ------------------------------------------------------- */
+  /* Sin Inter: se declaraba y no se cargaba, asi que cada equipo veia la
+   * fuente del sistema igual. Ahora lo dice. */
   --font-sans:
-    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
-    sans-serif;
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', Consolas, monospace;
 }
 
@@ -220,6 +234,21 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
     font-weight: 600;
+  }
+
+  /* Margen inferior que respeta la zona segura de un telefono con notch o
+   * barra de gestos. Es lo que impide que una barra fija tape el ultimo
+   * boton de la pagina. */
+  .pb-safe {
+    padding-bottom: max(var(--spacing-gutter), env(safe-area-inset-bottom));
+  }
+  @media (min-width: 40rem) {
+    .pb-safe {
+      padding-bottom: max(var(--spacing-gutter-lg), env(safe-area-inset-bottom));
+    }
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   /* Deja de mostrarse salvo para lectores de pantalla. */

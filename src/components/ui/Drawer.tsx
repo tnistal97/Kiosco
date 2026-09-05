@@ -7,12 +7,16 @@ import { IconButton } from './Button'
 import { useOverlays } from '@/store/overlays'
 
 /**
- * Cajon lateral.
+ * Cajon lateral, u hoja inferior.
  *
- * Para la navegacion en movil y para el ticket cuando no hay ancho para
- * dejarlo fijo. Misma base accesible que `Dialog` --foco atrapado, Escape,
- * foco devuelto-- y el mismo registro en `useOverlays`, para que el escaner
- * no siga escuchando mientras esta abierto.
+ * Para la navegacion en movil, para el ticket cuando no hay ancho para
+ * dejarlo fijo, y para todo lo que en un telefono conviene que suba desde
+ * abajo, al alcance del pulgar. Misma base accesible que `Dialog` --foco
+ * atrapado, Escape, foco devuelto-- y el mismo registro en `useOverlays`,
+ * para que el escaner no siga escuchando mientras esta abierto.
+ *
+ * `side="bottom"` es la hoja: ocupa el ancho entero, deja ver lo que hay
+ * detras y lleva un tirador arriba. El pie, si hay, queda fijo.
  */
 export function Drawer({
   open,
@@ -26,7 +30,7 @@ export function Drawer({
   open: boolean
   onClose: () => void
   title: string
-  side?: 'left' | 'right'
+  side?: 'left' | 'right' | 'bottom'
   children: ReactNode
   footer?: ReactNode
   className?: string
@@ -38,6 +42,8 @@ export function Drawer({
     return registrar()
   }, [open, registrar])
 
+  const hoja = side === 'bottom'
+
   return (
     <HDialog open={open} onClose={onClose} className="relative z-50">
       <DialogBackdrop
@@ -46,19 +52,32 @@ export function Drawer({
       />
 
       <div
-        className={cn('fixed inset-y-0 flex max-w-full', side === 'left' ? 'left-0' : 'right-0')}
+        className={cn(
+          'fixed flex',
+          hoja && 'inset-x-0 bottom-0 justify-center',
+          side === 'left' && 'inset-y-0 left-0 max-w-full',
+          side === 'right' && 'inset-y-0 right-0 max-w-full',
+        )}
       >
         <DialogPanel
           transition
           className={cn(
-            'flex w-[86vw] max-w-sm flex-col border-line bg-surface shadow-modal',
-            side === 'left' ? 'border-r' : 'border-l',
+            'flex flex-col border-line bg-surface shadow-modal',
             'transition duration-200 ease-out',
-            side === 'left' ? 'data-[closed]:-translate-x-full' : 'data-[closed]:translate-x-full',
+            hoja
+              ? 'max-h-[88dvh] w-full rounded-t-xl border-t data-[closed]:translate-y-full'
+              : 'w-[86vw] max-w-sm',
+            side === 'left' && 'border-r data-[closed]:-translate-x-full',
+            side === 'right' && 'border-l data-[closed]:translate-x-full',
             className,
           )}
         >
-          <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+          {hoja && (
+            <div aria-hidden="true" className="flex shrink-0 justify-center pt-2">
+              <span className="h-1.5 w-10 rounded-full bg-line-strong" />
+            </div>
+          )}
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3">
             <DialogTitle className="text-base font-semibold text-ink">{title}</DialogTitle>
             <IconButton label="Cerrar" size="sm" onClick={onClose} className="-mr-1.5">
               <svg
@@ -77,7 +96,7 @@ export function Drawer({
 
           <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
 
-          {footer && <div className="border-t border-line p-4">{footer}</div>}
+          {footer && <div className="shrink-0 border-t border-line p-4 safe-bottom">{footer}</div>}
         </DialogPanel>
       </div>
     </HDialog>

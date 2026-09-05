@@ -23,6 +23,12 @@ import { useOverlays } from '@/store/overlays'
  * mientras esta abierto se registra en `useOverlays`, para que el escaner de
  * codigo de barras deje de escuchar el teclado.
  *
+ * EL PIE ES FIJO. El panel es una columna: cabecera, cuerpo que se desplaza,
+ * pie. Antes el panel entero se desplazaba, y en 1366 x 768 --la pantalla de
+ * una caja comun-- el boton de cobrar quedaba debajo del pliegue: habia que
+ * desplazar el dialogo para cobrar (auditoria, H-01). Ahora la accion
+ * principal se ve siempre, mida lo que mida el contenido.
+ *
  * No se usan dialogos para todo. Un dialogo interrumpe: se reserva para
  * confirmar algo irreversible, para cobrar y para formularios que no entran
  * en la pantalla.
@@ -43,7 +49,7 @@ export interface DialogProps {
   title: string
   description?: ReactNode
   size?: DialogSize
-  /** Pie con las acciones. */
+  /** Pie con las acciones. Siempre visible: el cuerpo se desplaza, el pie no. */
   footer?: ReactNode
   children: ReactNode
   /**
@@ -55,6 +61,21 @@ export interface DialogProps {
   dismissible?: boolean
   /** Elemento que recibe el foco al abrir. Por omision, el primero enfocable. */
   initialFocus?: React.MutableRefObject<HTMLElement | null>
+  /**
+   * En un telefono ocupa la pantalla entera, como una hoja.
+   *
+   * Para lo que se usa con las dos manos y el teclado abierto --el cobro--.
+   * En escritorio no cambia nada.
+   */
+  fullScreenMobile?: boolean
+  /** Clases extra para el cuerpo, p. ej. para quitarle el relleno. */
+  bodyClassName?: string
+  /**
+   * Teclas del dialogo entero --cabecera, cuerpo y pie--. Para las letras
+   * que eligen medio en el cobro: tienen que valer con el foco en cualquier
+   * lado del dialogo, no solo dentro del cuerpo.
+   */
+  onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void
 }
 
 export function Dialog({
@@ -67,6 +88,9 @@ export function Dialog({
   children,
   dismissible = true,
   initialFocus,
+  fullScreenMobile = false,
+  bodyClassName,
+  onKeyDown,
 }: DialogProps) {
   const registrar = useOverlays((s) => s.registrar)
 
@@ -90,19 +114,27 @@ export function Dialog({
         )}
       />
 
-      {/* El contenedor scrollea, no el dialogo: asi un formulario largo no se
-          corta ni supera la altura de la ventana. */}
-      <div className="fixed inset-0 flex items-end justify-center overflow-y-auto p-0 sm:items-center sm:p-6">
+      {/* En el telefono el dialogo nace del borde inferior, como una hoja; en
+          escritorio flota en el centro. */}
+      <div
+        className={cn(
+          'fixed inset-0 flex justify-center p-0 sm:items-center sm:p-6',
+          fullScreenMobile ? 'items-stretch' : 'items-end',
+        )}
+      >
         <DialogPanel
           transition
+          onKeyDown={onKeyDown}
           className={cn(
-            'w-full rounded-t-xl border border-line bg-surface shadow-modal sm:rounded-xl',
-            'max-h-[92dvh] overflow-y-auto',
+            'flex w-full flex-col border border-line bg-surface shadow-modal',
             'transition duration-150 data-[closed]:translate-y-3 data-[closed]:opacity-0',
+            fullScreenMobile
+              ? 'h-dvh max-h-dvh rounded-none sm:h-auto sm:max-h-[92dvh] sm:rounded-xl'
+              : 'max-h-[92dvh] rounded-t-xl sm:rounded-xl',
             ANCHOS[size],
           )}
         >
-          <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4">
             <div className="min-w-0">
               <DialogTitle className="text-lg font-semibold text-ink">{title}</DialogTitle>
               {description && (
@@ -110,7 +142,7 @@ export function Dialog({
               )}
             </div>
             {dismissible && (
-              <IconButton label="Cerrar" size="sm" onClick={onClose} className="-mr-1.5 -mt-1">
+              <IconButton label="Cerrar" size="sm" onClick={onClose} className="-mt-1 -mr-1.5">
                 <svg
                   className="h-5 w-5"
                   viewBox="0 0 24 24"
@@ -126,10 +158,13 @@ export function Dialog({
             )}
           </div>
 
-          <div className="px-5 py-4">{children}</div>
+          {/* Solo esto se desplaza. */}
+          <div className={cn('min-h-0 flex-1 overflow-y-auto px-5 py-4', bodyClassName)}>
+            {children}
+          </div>
 
           {footer && (
-            <div className="flex flex-col-reverse gap-2 border-t border-line px-5 py-4 sm:flex-row sm:justify-end">
+            <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-line bg-surface px-5 py-4 safe-bottom sm:flex-row sm:justify-end">
               {footer}
             </div>
           )}

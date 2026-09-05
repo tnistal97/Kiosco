@@ -29,7 +29,7 @@ import { cn } from './cn'
  * no tiene fondo hasta que se apunta-- y no su tamanio.
  */
 export type ButtonVariant = 'primary' | 'confirm' | 'secondary' | 'ghost' | 'danger'
-export type ButtonSize = 'sm' | 'md' | 'lg'
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'xl'
 
 const VARIANTES: Record<ButtonVariant, string> = {
   primary:
@@ -47,6 +47,9 @@ const TAMANIOS: Record<ButtonSize, string> = {
   sm: 'h-touch px-3 text-sm gap-2 rounded-md',
   md: 'h-touch px-4 text-sm gap-2 rounded-md',
   lg: 'h-control-lg px-6 text-base gap-2.5 rounded-lg',
+  // Solo para la accion principal del punto de venta: cobrar. Se aprieta con
+  // el cliente enfrente y tiene que encontrarse sin mirar.
+  xl: 'h-control-xl px-8 text-lg gap-3 rounded-lg',
 }
 
 const BASE =
@@ -117,6 +120,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
     sm: 'h-touch w-touch p-0 rounded-md',
     md: 'h-touch w-touch p-0 rounded-md',
     lg: 'h-control-lg w-control-lg p-0 rounded-lg',
+    xl: 'h-control-xl w-control-xl p-0 rounded-lg',
   }
 
   return (
