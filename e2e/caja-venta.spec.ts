@@ -137,9 +137,9 @@ test.describe('Vender', () => {
     await campo(page).click()
     await expect(campo(page)).toBeFocused()
     // Las tarjetas, no cualquier boton: cada tarjeta lleva ademas su estrella.
-    await expect(page.locator('[data-tarjeta]').first()).toBeVisible()
+    await expect(page.locator('[data-fila]').first()).toBeVisible()
     await page.keyboard.press('ArrowDown')
-    const tarjetas = page.locator('[data-tarjeta]')
+    const tarjetas = page.locator('[data-fila]')
     await expect(tarjetas.first()).toBeFocused()
 
     await page.keyboard.press('ArrowRight')

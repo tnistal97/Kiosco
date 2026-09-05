@@ -22,34 +22,43 @@ import {
 import { esTeclaDeGrilla, moverEnGrilla } from './teclado'
 
 /**
- * El catalogo a la vista. UX V2, Fase 2.
+ * El catalogo a la vista. UX V2, Fase 2 --lista operativa, Fase 2.1--.
  *
  * Antes de escribir nada, el punto de venta ya muestra productos: los mas
  * vendidos en esta caja, o una categoria, o todo. Con una letra en el campo,
- * la misma grilla pasa a mostrar los resultados. Es lo que hace que se pueda
+ * la misma lista pasa a mostrar los resultados. Es lo que hace que se pueda
  * vender sin lector y sin saberse el nombre exacto (auditoria, H-29 y §22).
  *
- * Tres maneras de llegar a una tarjeta, y las tres agregan:
+ * POR QUE LISTA Y NO TARJETAS (2.1)
+ * ---------------------------------
+ * La fase 2 mostro el catalogo en tarjetas de 10rem. Funcionaba, pero se leia
+ * como una tienda: cada producto ocupaba 176 x 88 px para decir dos datos, los
+ * nombres largos se cortaban en dos lineas, todas las tarjetas se parecian y
+ * encontrar uno exigia barrer la pantalla en zigzag. Una lista con columnas
+ * fijas se lee en vertical: el ojo baja por los nombres, y precio, stock y
+ * categoria estan siempre en la misma coordenada. En 1366 px entran 13 filas
+ * donde entraban 8 tarjetas.
+ *
+ * Tres maneras de llegar a una fila, y las tres agregan:
  *
  *   un toque o un clic          → agrega, y el foco vuelve al lector
  *   ↑ ↓ desde el campo, buscando → resalta; Enter agrega
- *   Tab o ↓ con el ticket vacio  → el foco entra a la grilla; las flechas la
- *                                 recorren; Enter agrega; Escape vuelve al
- *                                 lector
+ *   Tab o ↓ con el ticket vacio  → el foco entra a la lista; ↑ ↓ la recorren;
+ *                                 Enter agrega; Escape vuelve al lector
  *
- * El lector sigue siendo instantaneo con el foco en la grilla: la rafaga del
+ * El lector sigue siendo instantaneo con el foco en la lista: la rafaga del
  * lector USB la toma el escucha global, que solo se calla dentro de un campo
  * de texto.
  *
  * No hay imagenes: en un almacen no aportan y en una tablet pesan. Nombre,
- * precio y --cuando importa-- "se pesa" y cuanto queda.
+ * categoria, stock, precio y --cuando importa-- "se pesa" y cuanto queda.
  */
 
 /** Que se muestra cuando no se esta buscando. */
 export type SeccionDelCatalogo = 'frecuentes' | 'todos' | number
 
 export interface ProductBrowserHandle {
-  /** Lleva el foco a la tarjeta resaltada, o a la primera. */
+  /** Lleva el foco a la fila resaltada, o a la primera. */
   enfocar: () => void
 }
 
@@ -66,16 +75,23 @@ export interface ProductBrowserProps {
   error: string | null
   /** Cuantos hay en total, cuando la lista no los trae a todos. */
   total: number
-  /** Indice de la tarjeta resaltada desde el campo. -1 si ninguna. */
+  /** Indice de la fila resaltada desde el campo. -1 si ninguna. */
   resaltado: number
   onResaltar: (indice: number) => void
-  /** `desdeElTeclado`: el foco se queda en la grilla para seguir eligiendo. */
+  /** `desdeElTeclado`: el foco se queda en la lista para seguir eligiendo. */
   onElegir: (producto: Product, desdeElTeclado: boolean) => void
   esFavorito: (productId: number) => boolean
   onFavorito: (productId: number) => void
   onVolverAlLector: () => void
   className?: string
 }
+
+/**
+ * Las columnas, en un solo lugar: la cabecera y las filas tienen que estar
+ * alineadas al pixel o la lista deja de leerse como tabla.
+ */
+const COLUMNAS =
+  'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 lg:grid-cols-[minmax(0,1fr)_9rem_8rem_9.5rem]'
 
 export const ProductBrowser = forwardRef<ProductBrowserHandle, ProductBrowserProps>(
   function ProductBrowser(
@@ -99,8 +115,8 @@ export const ProductBrowser = forwardRef<ProductBrowserHandle, ProductBrowserPro
     },
     ref,
   ) {
-    const grilla = useRef<HTMLDivElement>(null)
-    /** La tarjeta que recibe el foco con Tab. Sigue al resaltado. */
+    const lista = useRef<HTMLDivElement>(null)
+    /** La fila que recibe el foco con Tab. Sigue al resaltado. */
     const [enfocada, setEnfocada] = useState(0)
     const buscando = busqueda !== null
 
@@ -108,14 +124,14 @@ export const ProductBrowser = forwardRef<ProductBrowserHandle, ProductBrowserPro
       if (resaltado >= 0) setEnfocada(resaltado)
     }, [resaltado])
 
-    // Si la lista se achica, el foco no apunta a una tarjeta que ya no esta.
+    // Si la lista se achica, el foco no apunta a una fila que ya no esta.
     useEffect(() => {
       if (enfocada >= productos.length) setEnfocada(Math.max(0, productos.length - 1))
     }, [productos.length, enfocada])
 
-    const enfocarTarjeta = useCallback((indice: number) => {
-      const boton = grilla.current?.querySelector<HTMLButtonElement>(
-        `[data-tarjeta][data-indice="${String(indice)}"]`,
+    const enfocarFila = useCallback((indice: number) => {
+      const boton = lista.current?.querySelector<HTMLButtonElement>(
+        `[data-fila][data-indice="${String(indice)}"]`,
       )
       boton?.focus()
       boton?.scrollIntoView({ block: 'nearest' })
@@ -127,30 +143,23 @@ export const ProductBrowser = forwardRef<ProductBrowserHandle, ProductBrowserPro
         enfocar: () => {
           const indice = resaltado >= 0 ? resaltado : enfocada
           setEnfocada(indice)
-          enfocarTarjeta(indice)
+          enfocarFila(indice)
         },
       }),
-      [resaltado, enfocada, enfocarTarjeta],
+      [resaltado, enfocada, enfocarFila],
     )
 
-    /** Cuantas tarjetas entran por fila, leido del CSS: es lo que ↑ ↓ saltan. */
-    function columnas(): number {
-      const el = grilla.current
-      if (!el) return 1
-      return Math.max(1, getComputedStyle(el).gridTemplateColumns.split(' ').length)
-    }
-
-    function alPresionarEnLaGrilla(e: KeyboardEvent<HTMLDivElement>) {
+    function alPresionarEnLaLista(e: KeyboardEvent<HTMLDivElement>) {
       if (e.key === 'Escape') {
         e.preventDefault()
         onVolverAlLector()
         return
       }
-      // Enter agrega la tarjeta enfocada. Se hace aca y no por la activacion
+      // Enter agrega la fila enfocada. Se hace aca y no por la activacion
       // nativa del boton para que dependa de la tecla y no de como cada
       // navegador --o cada lector de pantalla-- sintetiza el clic.
       if (e.key === 'Enter') {
-        const boton = e.target instanceof HTMLElement ? e.target.closest('[data-tarjeta]') : null
+        const boton = e.target instanceof HTMLElement ? e.target.closest('[data-fila]') : null
         const indice = Number(boton?.getAttribute('data-indice') ?? '-1')
         const producto = productos[indice]
         if (boton instanceof HTMLButtonElement && !boton.disabled && producto) {
@@ -161,11 +170,13 @@ export const ProductBrowser = forwardRef<ProductBrowserHandle, ProductBrowserPro
       }
       if (!esTeclaDeGrilla(e.key)) return
       e.preventDefault()
-      const siguiente = moverEnGrilla(enfocada, e.key, productos.length, columnas())
+      // Una sola columna: ↑ ↓ ← → mueven de a una fila, Inicio y Fin a los
+      // extremos. La aritmetica es la misma que la de la grilla de la fase 2.
+      const siguiente = moverEnGrilla(enfocada, e.key, productos.length, 1)
       if (siguiente < 0) return
       setEnfocada(siguiente)
       onResaltar(siguiente)
-      enfocarTarjeta(siguiente)
+      enfocarFila(siguiente)
     }
 
     return (
@@ -184,7 +195,7 @@ export const ProductBrowser = forwardRef<ProductBrowserHandle, ProductBrowserPro
           {error ? (
             <ErrorState title="No se pudo cargar el catálogo" description={error} />
           ) : cargando && productos.length === 0 ? (
-            <SkeletonRows rows={4} />
+            <SkeletonRows rows={6} />
           ) : productos.length === 0 ? (
             buscando ? (
               <EmptyState
@@ -204,26 +215,29 @@ export const ProductBrowser = forwardRef<ProductBrowserHandle, ProductBrowserPro
             )
           ) : (
             <>
-              <div
-                ref={grilla}
-                role="group"
-                aria-label={buscando ? 'Resultados de la búsqueda' : 'Productos'}
-                onKeyDown={alPresionarEnLaGrilla}
-                className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2"
-              >
-                {productos.map((p, i) => (
-                  <TarjetaDeProducto
-                    key={p.id}
-                    producto={p}
-                    indice={i}
-                    resaltada={i === resaltado}
-                    enfocable={i === enfocada}
-                    favorito={esFavorito(p.id)}
-                    onHover={onResaltar}
-                    onElegir={onElegir}
-                    onFavorito={onFavorito}
-                  />
-                ))}
+              <div className="overflow-hidden rounded-lg border border-line bg-surface">
+                <Encabezado />
+                <div
+                  ref={lista}
+                  role="group"
+                  aria-label={buscando ? 'Resultados de la búsqueda' : 'Productos'}
+                  onKeyDown={alPresionarEnLaLista}
+                  className="divide-y divide-line"
+                >
+                  {productos.map((p, i) => (
+                    <FilaDeProducto
+                      key={p.id}
+                      producto={p}
+                      indice={i}
+                      resaltada={i === resaltado}
+                      enfocable={i === enfocada}
+                      favorito={esFavorito(p.id)}
+                      onHover={onResaltar}
+                      onElegir={onElegir}
+                      onFavorito={onFavorito}
+                    />
+                  ))}
+                </div>
               </div>
               {total > productos.length && (
                 <p className="mt-3 text-center text-xs text-ink-faint">
@@ -239,6 +253,33 @@ export const ProductBrowser = forwardRef<ProductBrowserHandle, ProductBrowserPro
   },
 )
 
+// ---------------------------------------------------------------- cabecera
+
+/**
+ * Los nombres de las columnas, solo en escritorio.
+ *
+ * `aria-hidden`: para quien escucha, cada fila ya dice nombre y precio en su
+ * etiqueta; repetir los encabezados no agrega nada y alarga el recorrido.
+ * Queda pegada arriba mientras la lista se desplaza.
+ */
+function Encabezado() {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        'sticky top-0 z-10 hidden border-b border-line bg-raised px-3 py-1.5 lg:grid',
+        'text-[11px] font-medium tracking-wide text-ink-faint uppercase',
+        'grid-cols-[minmax(0,1fr)_9rem_8rem_9.5rem] items-center gap-x-3',
+      )}
+    >
+      <span>Producto</span>
+      <span>Categoría</span>
+      <span>Stock</span>
+      <span className="text-right">Precio</span>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------- categorias
 
 /**
@@ -246,7 +287,11 @@ export const ProductBrowser = forwardRef<ProductBrowserHandle, ProductBrowserPro
  *
  * Roving tabindex: un solo chip entra con Tab y las flechas cambian de
  * seccion. Ocho categorias serian ocho paradas de Tab entre el lector y la
- * grilla, y eso es lo que hace que nadie use el teclado.
+ * lista, y eso es lo que hace que nadie use el teclado.
+ *
+ * En 2.1 adelgazaron: el chip inactivo es texto sin borde --la fila de
+ * secciones no tiene por que pesar mas que la lista que filtra-- y el activo
+ * es el unico con fondo. En una pantalla tactil siguen midiendo 44 px.
  */
 function Categorias({
   seccion,
@@ -286,7 +331,7 @@ function Categorias({
       onKeyDown={alPresionar}
       // En el telefono se desplazan de costado; en escritorio, con lugar de
       // sobra, se envuelven y se ven todas.
-      className="-mx-1 flex shrink-0 gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:thin] lg:flex-wrap lg:overflow-visible"
+      className="-mx-1 flex shrink-0 gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:thin] lg:flex-wrap lg:overflow-visible"
     >
       {opciones.map((o) => {
         const esActiva = o.clave === activa
@@ -301,10 +346,11 @@ function Categorias({
               onSeccion(o.clave)
             }}
             className={cn(
-              'min-h-touch shrink-0 rounded-full border px-4 text-sm font-medium whitespace-nowrap transition-colors',
+              'min-h-touch shrink-0 rounded-md border px-3 text-sm whitespace-nowrap transition-colors lg:min-h-9',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
               esActiva
-                ? 'border-primary bg-primary-quiet text-ink'
-                : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink',
+                ? 'border-primary bg-primary-quiet font-medium text-ink'
+                : 'border-transparent text-ink-muted hover:bg-raised hover:text-ink',
             )}
           >
             {o.etiqueta}
@@ -315,9 +361,9 @@ function Categorias({
   )
 }
 
-// ------------------------------------------------------------------ tarjeta
+// --------------------------------------------------------------------- fila
 
-const TarjetaDeProducto = memo(function TarjetaDeProducto({
+const FilaDeProducto = memo(function FilaDeProducto({
   producto,
   indice,
   resaltada,
@@ -341,19 +387,22 @@ const TarjetaDeProducto = memo(function TarjetaDeProducto({
   const agotado = aMilesimas(producto.sellableStock) <= 0
   const quedaPoco = !agotado && producto.estado === 'LOW'
   const porPeso = esFraccionable(producto.saleUnit)
+  const denominador = denominadorDePrecio(producto.saleUnit)
 
   function alClic(e: MouseEvent<HTMLButtonElement>) {
     // `detail` es 0 cuando el clic lo disparo Enter o la barra: quien navega
-    // con el teclado se queda en la grilla para seguir eligiendo; quien toca
+    // con el teclado se queda en la lista para seguir eligiendo; quien toca
     // vuelve al lector, que es donde va a caer el proximo codigo.
     onElegir(producto, e.detail === 0)
   }
+
+  const cantidad = formatearCantidadConUnidad(producto.sellableStock, producto.saleUnit)
 
   return (
     <div className="group relative">
       <button
         type="button"
-        data-tarjeta=""
+        data-fila=""
         data-indice={indice}
         tabIndex={enfocable ? 0 : -1}
         disabled={agotado}
@@ -364,40 +413,59 @@ const TarjetaDeProducto = memo(function TarjetaDeProducto({
         }}
         onClick={alClic}
         className={cn(
-          'flex min-h-[5.5rem] w-full flex-col justify-between gap-2 rounded-lg border p-3 text-left transition-colors',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
-          agotado && 'cursor-not-allowed opacity-50',
+          // Telefono: dos renglones --nombre y estado arriba, precio abajo--.
+          // Desde `lg`, una sola linea con las cuatro columnas de la cabecera.
+          // Cada dato se dibuja UNA sola vez y cambia de celda con el ancho:
+          // duplicar el precio para "la version movil" es como se termina
+          // arreglando uno y olvidando el otro.
+          'min-h-touch w-full border-l-[3px] py-1.5 pr-13 pl-2 text-left transition-colors',
+          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
+          COLUMNAS,
+          agotado && 'cursor-not-allowed opacity-55',
           resaltada
-            ? 'border-primary bg-primary-quiet'
-            : 'border-line bg-surface hover:border-line-strong hover:bg-raised',
+            ? 'border-l-primary bg-selection'
+            : 'border-l-transparent hover:bg-raised focus-visible:border-l-primary focus-visible:bg-selection',
         )}
       >
-        <span className="line-clamp-2 pr-9 text-sm leading-snug font-medium text-ink">
-          {producto.name}
+        <span className="col-start-1 row-start-1 flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium text-ink">{producto.name}</span>
+          {porPeso && (
+            <span className="shrink-0 rounded bg-raised px-1.5 py-px text-[11px] text-ink-muted">
+              Se pesa
+            </span>
+          )}
         </span>
-        <span className="flex w-full items-end justify-between gap-2">
-          <span className="text-xs text-ink-faint">
-            {agotado
-              ? 'Agotado'
-              : quedaPoco
-                ? `Quedan ${formatearCantidadConUnidad(producto.sellableStock, producto.saleUnit)}`
-                : porPeso
-                  ? 'Se pesa'
-                  : ''}
-          </span>
-          <span className="text-right" data-numeric="">
-            <Money amount={producto.price} size="md" />
-            {porPeso && (
-              <span className="block text-xs text-ink-faint">
-                {denominadorDePrecio(producto.saleUnit)}
-              </span>
-            )}
-          </span>
+
+        {/* La categoria solo en escritorio: en el mostrador nadie elige por
+            categoria --para eso estan los chips de arriba--, elige por nombre. */}
+        <span className="hidden truncate text-sm text-ink-muted lg:col-start-2 lg:row-start-1 lg:block">
+          {producto.category.name}
+        </span>
+
+        <span
+          className={cn(
+            'col-start-2 row-start-1 justify-self-end text-sm lg:col-start-3 lg:justify-self-start',
+            // En el telefono el stock solo aparece cuando cambia una decision:
+            // no queda, o queda poco.
+            !agotado && !quedaPoco && 'hidden lg:block',
+            agotado ? 'text-danger' : quedaPoco ? 'text-warning' : 'text-ink-muted',
+          )}
+          data-numeric=""
+        >
+          {agotado ? 'Agotado' : quedaPoco ? `Quedan ${cantidad}` : cantidad}
+        </span>
+
+        <span
+          className="col-start-1 row-start-2 flex items-baseline gap-1 lg:col-start-4 lg:row-start-1 lg:justify-end"
+          data-numeric=""
+        >
+          <Money amount={producto.price} size="md" />
+          {porPeso && <span className="text-xs text-ink-faint">{denominador}</span>}
         </span>
       </button>
 
       {/* La estrella: favorito de esta caja. Aparece al pasar por encima o
-          al enfocar la tarjeta; en una pantalla tactil, siempre. 44 px de
+          al enfocar la fila; en una pantalla tactil, siempre. 44 px de
           objetivo aunque el simbolo sea chico. */}
       <button
         type="button"
@@ -412,7 +480,7 @@ const TarjetaDeProducto = memo(function TarjetaDeProducto({
           onFavorito(producto.id)
         }}
         className={cn(
-          'absolute top-0 right-0 flex h-touch w-touch items-center justify-center rounded-lg text-lg leading-none transition-opacity',
+          'absolute inset-y-0 right-0 flex w-touch items-center justify-center text-lg leading-none transition-opacity',
           'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100',
           favorito ? 'text-warning opacity-100' : 'text-ink-faint hover:text-warning',
         )}
