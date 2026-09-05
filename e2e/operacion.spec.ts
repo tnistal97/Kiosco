@@ -69,8 +69,8 @@ async function venderYCobrar(
   const dialogo = page.getByRole('dialog')
   await expect(dialogo).toBeAttached()
 
-  // El medio de pago es un `select`, no una fila de botones.
-  await dialogo.getByRole('combobox', { name: 'Medio' }).selectOption({ label: medio })
+  // Desde UX V2 el medio de pago es una fila de botones, no un `select`.
+  await dialogo.getByRole('radio', { name: medio }).click()
   await dialogo.getByRole('button', { name: /^cobrar/i }).click()
 
   await expect(page.getByText('Venta registrada')).toBeVisible({ timeout: 15_000 })

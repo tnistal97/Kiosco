@@ -581,7 +581,9 @@ test.describe('el mostrador', () => {
     // Al elegir "A cuenta", el selector de cliente se abre SOLO: sin cliente la
     // venta no se puede registrar, y hacerlo descubrir al confirmar seria
     // hacerle perder el tiempo con el cliente enfrente.
-    await dialogo.getByRole('combobox', { name: 'Medio' }).selectOption({ label: 'A cuenta' })
+    // En el mostrador se dice "fiado": asi se llama el boton. En el libro sigue
+    // siendo "A cuenta".
+    await dialogo.getByRole('radio', { name: 'Fiado' }).click()
     await expect(dialogo.getByRole('searchbox', { name: /Buscar cliente/i })).toBeVisible()
 
     // No aparece nadie con ese nombre, y se crea desde ahi.

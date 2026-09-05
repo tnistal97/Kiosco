@@ -296,7 +296,7 @@ async function venderYCobrar(page: Page, codigo: string, veces = 1): Promise<voi
   await page.getByRole('button', { name: /^cobrar/i }).click()
   const d = dialogo(page)
   await expect(d).toBeAttached()
-  await d.getByRole('combobox', { name: 'Medio' }).selectOption({ label: 'Efectivo' })
+  await d.getByRole('radio', { name: 'Efectivo' }).click()
   await d.getByRole('button', { name: /^cobrar/i }).click()
   await page.waitForTimeout(1500)
 }

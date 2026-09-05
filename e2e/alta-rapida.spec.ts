@@ -231,7 +231,7 @@ test.describe('el escaneo dice qué pasó', () => {
 
     // Segunda: se fuerza el alta con el MISMO código desde el alta manual,
     // que es exactamente lo que le pasa a la otra caja que no se enteró.
-    await page.getByRole('button', { name: '+ Producto' }).click()
+    await page.getByRole('button', { name: 'Nuevo producto' }).click()
     await dialogo(page).getByLabel('Código de barras').fill(NUEVO.duplicado)
     await completar(page, 'Llegó tarde', '1100')
     await crearYAgregar(page)
@@ -255,7 +255,7 @@ test.describe('el escaneo dice qué pasó', () => {
   })
 
   test('15. se puede crear un producto SIN código desde el alta manual', async ({ page }) => {
-    await page.getByRole('button', { name: '+ Producto' }).click()
+    await page.getByRole('button', { name: 'Nuevo producto' }).click()
     await completar(page, 'Artesanal sin etiqueta', '2500')
     await crearYAgregar(page)
 
@@ -337,7 +337,7 @@ test.describe('sin permiso', () => {
 
     // Ni el botón del bloque ni el de la barra: ausentes, no deshabilitados.
     await expect(page.getByRole('button', { name: 'Crear producto' })).toBeHidden()
-    await expect(page.getByRole('button', { name: '+ Producto' })).toBeHidden()
+    await expect(page.getByRole('button', { name: 'Nuevo producto' })).toBeHidden()
     // Y sigue pudiendo copiar el código para dictárselo a alguien.
     await expect(page.getByRole('button', { name: 'Copiar código' })).toBeVisible()
   })

@@ -113,9 +113,12 @@ test('la venta se puede hacer entera con el teclado', async ({ page }) => {
   await expect(page.getByText('Venta registrada')).toBeVisible()
 })
 
-test('Ctrl+K lleva a la busqueda por nombre', async ({ page }) => {
+test('Ctrl+K lleva al campo unico, donde tambien se busca por nombre', async ({ page }) => {
+  // Desde UX V2 no hay un segundo campo: el mismo del lector busca por
+  // nombre cuando lo que se escribe tiene letras. Ctrl+K sigue como alias.
+  await page.getByRole('button', { name: 'Escanear con la cámara' }).focus()
   await page.keyboard.press('Control+k')
-  const buscador = page.getByPlaceholder('Buscar por nombre…')
+  const buscador = page.getByPlaceholder('Escaneá o buscá un producto')
   await expect(buscador).toBeFocused()
 
   await buscador.type('Yerba')
