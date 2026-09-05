@@ -83,8 +83,10 @@ describe('Precio en la ficha del producto', () => {
     const campo = screen.getByLabelText(/^precio/i)
     expect(campo).toBeInstanceOf(HTMLInputElement)
     expect(campo).not.toBeDisabled()
-    // El campo trae la escala completa: es el mismo texto que devuelve la API.
-    expect(campo).toHaveValue('4850.00')
+    // El campo trae el importe YA ESCRITO como se escribe. Antes traia
+    // "4850.00" --el texto del cable-- y eso obligaba a tipear en el formato
+    // del sistema para que lo aceptara.
+    expect(campo).toHaveValue('4.850,00')
   })
 
   it('SIN products.price.update el precio no es un campo', async () => {

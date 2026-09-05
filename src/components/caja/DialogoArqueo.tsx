@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Dialog, Field, Input, Money, Textarea } from '@/components/ui'
+import { Alert, Button, Dialog, Field, Money, NumericInput, Textarea, problemaDeImporte } from '@/components/ui' // prettier-ignore
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { esCero, esNegativo, montoDesdeTexto, restarMontos, type Monto } from '@/lib/money'
 import { tonoPorSigno } from '@/components/ui'
@@ -47,6 +47,7 @@ export function DialogoArqueo({
   const importe = useMemo(() => montoDesdeTexto(contado), [contado])
 
   const diferencia = importe === null ? null : restarMontos(importe, esperado)
+  const problema = problemaDeImporte(contado, { permitirCero: true })
   const valido = importe !== null && !esNegativo(importe)
 
   async function guardar() {
@@ -105,15 +106,13 @@ export function DialogoArqueo({
           <Money amount={esperado} size="lg" />
         </div>
 
-        <Field label="Efectivo contado" required>
-          <Input
-            inputMode="decimal"
+        <Field label="Efectivo contado" required error={problema}>
+          <NumericInput
+            modo="dinero"
             placeholder="0,00"
             value={contado}
             disabled={enviando}
-            onChange={(e) => {
-              setContado(e.target.value)
-            }}
+            onChange={setContado}
           />
         </Field>
 

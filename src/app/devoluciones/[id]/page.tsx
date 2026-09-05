@@ -27,6 +27,7 @@ import {
 } from '@/components/ui'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import { montoODefecto } from '@/lib/money'
 import { NOMBRE_DE_UNIDAD_DE_COMPRA, unidadDeCompraODefecto } from '@/modules/products/units'
 import {
   parseDevolucionDetallada,
@@ -264,7 +265,7 @@ export default function DevolucionPage() {
                     {limpia(l.stockQuantity)}
                   </TD>
                   <TD className="text-right">
-                    <Money amount={Number(l.unitCost).toFixed(2)} />
+                    <Money amount={montoODefecto(l.unitCost)} />
                   </TD>
                   <TD className="text-right">
                     <Money amount={l.amount} />

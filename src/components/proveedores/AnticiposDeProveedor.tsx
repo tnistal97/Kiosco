@@ -11,8 +11,8 @@ import {
   Dialog,
   EmptyState,
   Field,
-  Input,
   Money,
+  NumericInput,
   SkeletonRows,
   TBody,
   TD,
@@ -24,7 +24,17 @@ import {
   aviso,
 } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
-import { CERO, esPositivo, sumarMontos, type Monto } from '@/lib/money'
+import {
+  CERO,
+  aCentavos,
+  compararMontos,
+  desdeCentavos,
+  esPositivo,
+  montoDesdeTexto,
+  sumarMontos,
+  textoLocalDeMonto,
+  type Monto,
+} from '@/lib/money'
 import {
   parsePaginaAnticipos,
   type AnticipoDTO,
@@ -225,13 +235,17 @@ function DialogoImputacion({
 
         // La propuesta FIFO: a cada obligacion, lo menor entre lo que le falta y
         // lo que queda del pago. La lista ya viene en orden de vencimiento.
-        let resto = Number(pago.unallocatedAmount)
+        //
+        // En CENTAVOS enteros, como el resto de la aplicacion: en punto
+        // flotante, repartir tres veces 33,33 sobre 100 dejaba un resto de
+        // 0,000000000001 y una cuarta fila de un centavo.
+        let resto = aCentavos(pago.unallocatedAmount)
         const propuesta: Record<number, string> = {}
         for (const d of lista.data) {
           if (resto <= 0) break
-          const cuanto = Math.min(resto, Number(d.pendiente))
+          const cuanto = Math.min(resto, aCentavos(d.pendiente))
           if (cuanto <= 0) continue
-          propuesta[d.receiptId] = cuanto.toFixed(2)
+          propuesta[d.receiptId] = textoLocalDeMonto(desdeCentavos(cuanto))
           resto -= cuanto
         }
         setImportes(propuesta)
@@ -248,13 +262,16 @@ function DialogoImputacion({
   }, [supplierId, pago.unallocatedAmount])
 
   const elegidas = deudas
-    .map((d) => ({ deuda: d, importe: (importes[d.receiptId] ?? '').trim() }))
-    .filter((x) => x.importe !== '' && Number(x.importe) > 0)
+    .map((d) => ({ deuda: d, importe: montoDesdeTexto(importes[d.receiptId] ?? '') }))
+    .filter(
+      (x): x is { deuda: (typeof deudas)[number]; importe: Monto } =>
+        x.importe !== null && esPositivo(x.importe),
+    )
 
   const total: Monto = elegidas.reduce((t, x) => sumarMontos(t, x.importe), CERO)
 
-  const seExcede = Number(total) > Number(pago.unallocatedAmount)
-  const excedeAlguna = elegidas.find((x) => Number(x.importe) > Number(x.deuda.pendiente))
+  const seExcede = compararMontos(total, pago.unallocatedAmount) > 0
+  const excedeAlguna = elegidas.find((x) => compararMontos(x.importe, x.deuda.pendiente) > 0)
   const puedeGuardar = elegidas.length > 0 && !seExcede && excedeAlguna === undefined && !enviando
 
   async function guardar() {
@@ -361,13 +378,13 @@ function DialogoImputacion({
                     </TD>
                     <TD className="text-right">
                       <Field label={`Importe para ${d.orderNumber}`} labelHidden>
-                        <Input
+                        <NumericInput
+                          modo="dinero"
                           value={importes[d.receiptId] ?? ''}
-                          inputMode="decimal"
                           className="w-28 text-right"
                           disabled={enviando}
-                          onChange={(e) => {
-                            setImportes((prev) => ({ ...prev, [d.receiptId]: e.target.value }))
+                          onChange={(texto) => {
+                            setImportes((prev) => ({ ...prev, [d.receiptId]: texto }))
                           }}
                         />
                       </Field>

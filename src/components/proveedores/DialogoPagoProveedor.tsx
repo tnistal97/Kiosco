@@ -10,9 +10,11 @@ import {
   Field,
   Input,
   Money,
+  NumericInput,
   Select,
   Textarea,
   aviso,
+  problemaDeImporte,
 } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import {
@@ -20,8 +22,10 @@ import {
   compararMontos,
   esPositivo,
   minMonto,
+  montoDesdeTexto,
   restarMontos,
   sumarMontos,
+  textoLocalDeMonto,
   type Monto,
 } from '@/lib/money'
 import { MEDIOS_DE_PAGO_A_PROVEEDOR, etiquetaDeMedio } from '@/modules/sales/payment-methods'
@@ -132,7 +136,9 @@ export function DialogoPagoProveedor({
     if (!abierto) return
     // Se propone lo que se debe, que es lo que pasa la mayoria de las veces.
     // Con credito a favor no se propone nada: no hay nada que pagar.
-    setImporte(esPositivo(cuenta.balance) ? cuenta.balance : '')
+    // Se propone YA ESCRITO como se escribe: "1.234,56" y no "1234.56". El
+    // valor canonico es del cable, no del campo.
+    setImporte(esPositivo(cuenta.balance) ? textoLocalDeMonto(cuenta.balance) : '')
     setMedio('TRANSFER')
     setReferencia('')
     setNotas('')
@@ -143,9 +149,13 @@ export function DialogoPagoProveedor({
     void cargarDeudas()
   }, [abierto, cuenta.balance, cargarDeudas])
 
-  const importeOk = /^\d+(\.\d{1,2})?$/.test(importe.trim()) && Number(importe) > 0
+  // Lo escrito lo interpreta @/lib/numero-local: entra "1500", "1.500" y
+  // "1.500,00" por igual. Antes solo entraba la forma canonica del cable.
+  const importeEscrito = montoDesdeTexto(importe)
+  const problemaDelImporte = problemaDeImporte(importe, { permitirCero: false })
+  const importeOk = importeEscrito !== null && esPositivo(importeEscrito)
   const enEfectivo = medio === 'CASH'
-  const importeLimpio: Monto = importeOk ? importe.trim() : CERO
+  const importeLimpio: Monto = importeOk ? importeEscrito : CERO
 
   const reparto = useMemo(
     () => (automatica ? repartoAutomatico(deudas, importeLimpio) : new Map<number, Monto>()),
@@ -155,8 +165,10 @@ export function DialogoPagoProveedor({
   /** Lo imputado, venga del reparto automatico o de lo que se escribio a mano. */
   const imputado: Monto = useMemo(() => {
     if (automatica) return sumarMontos(...[...reparto.values()])
-    const escritos = Object.values(manual).filter((v) => /^\d+(\.\d{1,2})?$/.test(v.trim()))
-    return escritos.length === 0 ? CERO : sumarMontos(...escritos.map((v) => v.trim()))
+    const escritos = Object.values(manual)
+      .map((v) => montoDesdeTexto(v))
+      .filter((m): m is Monto => m !== null)
+    return escritos.length === 0 ? CERO : sumarMontos(...escritos)
   }, [automatica, reparto, manual])
 
   const sinImputar = restarMontos(importeLimpio, imputado)
@@ -190,8 +202,14 @@ export function DialogoPagoProveedor({
           : {
               imputacion: 'manual' as const,
               allocations: Object.entries(manual)
-                .filter(([, v]) => /^\d+(\.\d{1,2})?$/.test(v.trim()) && Number(v) > 0)
-                .map(([receiptId, v]) => ({ receiptId: Number(receiptId), amount: v.trim() })),
+                .map(([receiptId, v]) => ({
+                  receiptId: Number(receiptId),
+                  amount: montoDesdeTexto(v),
+                }))
+                .filter(
+                  (a): a is { receiptId: number; amount: Monto } =>
+                    a.amount !== null && esPositivo(a.amount),
+                ),
             }),
       }
 
@@ -271,19 +289,13 @@ export function DialogoPagoProveedor({
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field
-            label="Cuánto se paga"
-            required
-            error={importe !== '' && !importeOk ? 'Un importe mayor que cero' : null}
-          >
-            <Input
+          <Field label="Cuánto se paga" required error={problemaDelImporte}>
+            <NumericInput
+              modo="dinero"
               value={importe}
               disabled={enviando}
               autoFocus
-              inputMode="decimal"
-              onChange={(e) => {
-                setImporte(e.target.value)
-              }}
+              onChange={setImporte}
             />
           </Field>
 
@@ -387,14 +399,14 @@ export function DialogoPagoProveedor({
                         )}
                       </span>
                     ) : (
-                      <Input
+                      <NumericInput
+                        modo="dinero"
                         className="w-32"
                         value={manual[d.receiptId] ?? ''}
                         disabled={enviando}
-                        inputMode="decimal"
                         aria-label={`Imputar a la entrega ${String(d.receiptId)}`}
-                        onChange={(e) => {
-                          setManual((m) => ({ ...m, [d.receiptId]: e.target.value }))
+                        onChange={(texto) => {
+                          setManual((m) => ({ ...m, [d.receiptId]: texto }))
                         }}
                       />
                     )}

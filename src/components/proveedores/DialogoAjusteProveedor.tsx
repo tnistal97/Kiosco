@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Alert, Button, Dialog, Field, Input, Money, Textarea, aviso } from '@/components/ui'
+import { Alert, Button, Dialog, Field, Input, Money, NumericInput, Textarea, aviso, problemaDeImporte } from '@/components/ui' // prettier-ignore
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
-import { CERO, restarMontos, sumarMontos, type Monto } from '@/lib/money'
+import { CERO, montoDesdeTexto, restarMontos, sumarMontos, type Monto } from '@/lib/money'
 import type { ResumenDeCuentaDTO } from '@/modules/suppliers/dto.cuenta'
 
 /**
@@ -56,12 +56,14 @@ export function DialogoAjusteProveedor({
     setEnviando(false)
   }, [abierto, modo])
 
-  const importeOk = /^\d+(\.\d{1,2})?$/.test(importe.trim()) && Number(importe) > 0
+  const importeAjustado = montoDesdeTexto(importe)
+  const problema = problemaDeImporte(importe, { permitirCero: false })
+  const importeOk = importeAjustado !== null && problema === null
   const motivoOk = motivo.trim().length > 0
 
   // El credito SIEMPRE baja la deuda. El ajuste, lo que se haya elegido.
   const bajaLaDeuda = esCredito || signo === 'menos'
-  const importeLimpio: Monto = importeOk ? importe.trim() : CERO
+  const importeLimpio: Monto = importeOk ? importeAjustado : CERO
   const resultante = bajaLaDeuda
     ? restarMontos(cuenta.balance, importeLimpio)
     : sumarMontos(cuenta.balance, importeLimpio)
@@ -177,19 +179,13 @@ export function DialogoAjusteProveedor({
           </Field>
         )}
 
-        <Field
-          label="Importe"
-          required
-          error={importe !== '' && !importeOk ? 'Un importe mayor que cero' : null}
-        >
-          <Input
+        <Field label="Importe" required error={problema}>
+          <NumericInput
+            modo="dinero"
             value={importe}
             disabled={enviando}
             autoFocus
-            inputMode="decimal"
-            onChange={(e) => {
-              setImporte(e.target.value)
-            }}
+            onChange={setImporte}
           />
         </Field>
 

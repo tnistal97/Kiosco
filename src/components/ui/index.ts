@@ -30,6 +30,8 @@ export { ScannerInput } from './ScannerInput'
 export type { ScannerInputProps, TeclaDelLector } from './ScannerInput'
 
 export { QuantityInput } from './QuantityInput'
+export { NumericInput, problemaDeCantidad, problemaDeImporte } from './NumericInput'
+export type { NumericInputProps, ModoNumerico } from './NumericInput'
 
 export { QuantityText, formatQuantity } from './QuantityText'
 export type { QuantityTextProps, UnidadDeCantidad } from './QuantityText'
@@ -37,7 +39,7 @@ export type { QuantityTextProps, UnidadDeCantidad } from './QuantityText'
 export { Money, MoneyText, formatMoney, tonoPorSigno } from './Money'
 export type { MoneyProps, MoneySize, MoneyTone } from './Money'
 
-export { MoneyInput, montoDesdeTextoLocal, textoLocalDeMonto } from './MoneyInput'
+export { MoneyInput } from './MoneyInput'
 export type { MoneyInputProps, MoneyInputSize } from './MoneyInput'
 
 export { Badge, StatusBadge, SaleStatusBadge, StockBadge } from './Badge'

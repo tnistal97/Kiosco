@@ -9,15 +9,19 @@ import {
   Field,
   Input,
   Money,
+  NumericInput,
   Select,
   Textarea,
+  problemaDeCantidad,
+  problemaDeImporte,
 } from '@/components/ui'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import type { CategoriaDTO, ProductoDTO, ProveedorDTO } from '@/modules/products/dto'
 import { minimoSugerido } from '@/modules/inventory/minimum'
 import { aMilesimas, cantidadDesdeTexto } from '@/lib/cantidad'
-import { montoDesdeTexto } from '@/lib/money'
+import { aCentavos, desdeCentavos, montoDesdeTexto, textoLocalDeMonto } from '@/lib/money'
+import { REGLAS_DE_COSTO, textoLocalDeNumero, valorNumerico } from '@/lib/numero-local'
 import { calcularRentabilidad, formatearPorcentaje } from '@/modules/products/margen'
 import {
   formatearCantidadParaEditar,
@@ -107,8 +111,15 @@ export function DialogoProducto({
     setCategoria(String(producto?.category.id ?? categorias[0]?.id ?? ''))
     setProveedor(String(producto?.supplier?.id ?? ''))
     setDescripcion(producto?.description ?? '')
-    setPrecio(producto ? String(producto.price) : '')
-    setCosto(producto?.cost ?? '')
+    // Los importes se rellenan YA ESCRITOS como se escriben --"1.234,56"-- y
+    // no con la cadena del cable. Mostrar "1234.56" en un campo obligaba a
+    // tipear en el formato del sistema para que lo aceptara.
+    setPrecio(producto ? textoLocalDeMonto(producto.price) : '')
+    setCosto(
+      producto?.cost === null || producto?.cost === undefined
+        ? ''
+        : textoLocalDeNumero(producto.cost, { decimales: 4, decimalesMinimos: 2 }),
+    )
     setMotivoCosto('')
     setUnidadVenta(unidad)
     setUnidadCompra(producto?.purchaseUnit ?? 'UNIT')
@@ -155,20 +166,32 @@ export function DialogoProducto({
     }
   }, [abierto, producto])
 
+  const porCompraCantidad = cantidadDesdeTexto(porCompra === '' ? '1' : porCompra)
   const precioMonto = montoDesdeTexto(precio)
-  const costoMonto = costo.trim() === '' ? null : montoDesdeTexto(costo)
   const minimoCantidad = cantidadDesdeTexto(minimo === '' ? '0' : minimo)
   const stockCantidad = cantidadDesdeTexto(stockInicial === '' ? '0' : stockInicial)
 
+  // El costo se guarda con CUATRO decimales --sale de dividir una caja entre
+  // sus unidades-- asi que se lee con la escala del costo y no con la del
+  // dinero. Con dos, un costo de 1.543,125 se leia como "no es un importe" y
+  // el campo se marcaba en rojo mostrando el valor que el propio sistema habia
+  // guardado.
+  const costoCanonico = valorNumerico(costo, REGLAS_DE_COSTO)
+  const costoMonto = costoCanonico === null ? null : desdeCentavos(aCentavos(costoCanonico))
+
   const rentabilidad = calcularRentabilidad(precioMonto ?? '0.00', costoMonto)
 
-  const costoCambio = !esAlta && (producto.cost ?? '') !== costo.trim()
+  // Se compara valor con valor, no texto con texto: "1.543,125" y "1543.1250"
+  // son el mismo costo escrito de dos maneras.
+  const costoCambio = !esAlta && costoCanonico !== valorNumerico(producto.cost, REGLAS_DE_COSTO)
   const faltaMotivoCosto = costoCambio && motivoCosto.trim().length < 3
 
   const valido =
     nombre.trim().length > 0 &&
     categoria !== '' &&
     (esAlta ? precioMonto !== null : true) &&
+    problemaDeImporte(precio, { permitirCero: true }) === null &&
+    problemaDeImporte(costo, { permitirCero: true }) === null &&
     // Las dos cantidades tienen que parsear. Se puede llegar a `null` tipeando
     // "1.2.3": el campo filtra los caracteres, no la forma.
     minimoCantidad !== null &&
@@ -190,12 +213,12 @@ export function DialogoProducto({
             alternateBarcodes: alternativos,
             description: descripcion.trim(),
             price: precioMonto,
-            ...(puedeEditarCosto && costoMonto !== null ? { cost: costoMonto } : {}),
+            ...(puedeEditarCosto && costoCanonico !== null ? { cost: costoCanonico } : {}),
             categoryId: Number(categoria),
             supplierId: proveedor === '' ? null : Number(proveedor),
             saleUnit: unidadVenta,
             purchaseUnit: unidadCompra,
-            unitsPerPurchaseUnit: porCompra === '' ? '1' : porCompra.replace(',', '.'),
+            unitsPerPurchaseUnit: porCompraCantidad ?? '1',
             totalStock: stockCantidad,
             minimumStock: minimoCantidad,
           },
@@ -213,13 +236,13 @@ export function DialogoProducto({
           categoryId: Number(categoria),
           supplierId: proveedor === '' ? null : Number(proveedor),
           purchaseUnit: unidadCompra,
-          unitsPerPurchaseUnit: porCompra === '' ? '1' : porCompra.replace(',', '.'),
+          unitsPerPurchaseUnit: porCompraCantidad ?? '1',
         }
         cuerpo.minimumStock = minimoCantidad
         if (puedeEditarPrecio && precioMonto !== null) cuerpo.price = precioMonto
         if (puedeEditarPrecio) cuerpo.isActive = activo
         if (puedeEditarCosto && costoCambio) {
-          cuerpo.cost = costoMonto
+          cuerpo.cost = costoCanonico
           cuerpo.costReason = motivoCosto.trim()
         }
         // La unidad de venta solo viaja si el producto todavia no tiene
@@ -386,14 +409,13 @@ export function DialogoProducto({
                 label={`Precio por ${politicaVenta.simbolo}`}
                 required={esAlta}
                 hint={esFraccionable(unidadVenta) ? 'Lo que sale un kilo entero.' : undefined}
+                error={problemaDeImporte(precio, { permitirCero: true })}
               >
-                <Input
-                  inputMode="decimal"
+                <NumericInput
+                  modo="dinero"
                   value={precio}
                   disabled={enviando}
-                  onChange={(e) => {
-                    setPrecio(e.target.value)
-                  }}
+                  onChange={setPrecio}
                 />
               </Field>
             ) : (
@@ -431,14 +453,13 @@ export function DialogoProducto({
             <Field
               label="Unidades por compra"
               hint={`Cuántos ${politicaVenta.simbolo} trae una ${NOMBRE_DE_UNIDAD_DE_COMPRA[unidadCompra].toLowerCase()}.`}
+              error={problemaDeCantidad(porCompra, { permitirCero: false })}
             >
-              <Input
-                inputMode="decimal"
+              <NumericInput
+                modo="cantidad"
                 value={porCompra}
                 disabled={enviando}
-                onChange={(e) => {
-                  setPorCompra(e.target.value.replace(/[^0-9.,]/g, ''))
-                }}
+                onChange={setPorCompra}
               />
             </Field>
 
@@ -451,14 +472,13 @@ export function DialogoProducto({
                       ? 'Vacío si no se sabe. No poner el precio: sería un margen falso.'
                       : `Necesita el permiso products.cost.update para cambiarlo.`
                   }
+                  error={problemaDeImporte(costo, { permitirCero: true })}
                 >
-                  <Input
-                    inputMode="decimal"
+                  <NumericInput
+                    modo="costo"
                     value={costo}
                     disabled={enviando || !puedeEditarCosto}
-                    onChange={(e) => {
-                      setCosto(e.target.value)
-                    }}
+                    onChange={setCosto}
                   />
                 </Field>
 
@@ -510,15 +530,14 @@ export function DialogoProducto({
               <Field
                 label={`Stock inicial (${politicaVenta.simbolo})`}
                 hint="Cuánto entra hoy. Queda como movimiento inicial del libro."
+                error={problemaDeCantidad(stockInicial, { unidad: unidadVenta })}
               >
-                <Input
-                  inputMode={esFraccionable(unidadVenta) ? 'decimal' : 'numeric'}
+                <NumericInput
+                  modo="cantidad"
+                  unidad={unidadVenta}
                   value={stockInicial}
                   disabled={enviando}
-                  onChange={(e) => {
-                    const permitido = esFraccionable(unidadVenta) ? /[^0-9.,]/g : /[^0-9]/g
-                    setStockInicial(e.target.value.replace(permitido, ''))
-                  }}
+                  onChange={setStockInicial}
                 />
               </Field>
             ) : (
@@ -607,6 +626,7 @@ function CampoMinimo({
   return (
     <Field
       label={`Mínimo de reposición (${politicaDe(unidad).simbolo})`}
+      error={problemaDeCantidad(valor, { unidad })}
       hint={
         minimo <= 0
           ? 'Cero: sin mínimo. No va a avisar cuando quede poco.'
@@ -615,14 +635,12 @@ function CampoMinimo({
             : 'Avisa cuando quede esta cantidad o menos.'
       }
     >
-      <Input
-        inputMode={esFraccionable(unidad) ? 'decimal' : 'numeric'}
+      <NumericInput
+        modo="cantidad"
+        unidad={unidad}
         value={valor}
         disabled={deshabilitado}
-        onChange={(e) => {
-          const permitido = esFraccionable(unidad) ? /[^0-9.,]/g : /[^0-9]/g
-          onCambio(e.target.value.replace(permitido, ''))
-        }}
+        onChange={onCambio}
       />
     </Field>
   )

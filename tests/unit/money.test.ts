@@ -169,7 +169,17 @@ describe('Lo que se tipea en un campo', () => {
 
   it('rechaza mas de dos decimales: no se puede cobrar medio centavo', () => {
     expect(montoDesdeTexto('10,555')).toBeNull()
-    expect(montoDesdeTexto('10.001')).toBeNull()
+    expect(montoDesdeTexto('10.5551')).toBeNull()
+  })
+
+  it('el punto solo con tres digitos detras es de MILES, no tres decimales', () => {
+    // Cambio deliberado: un importe no tiene tres decimales, asi que "10.001"
+    // solo puede ser diez mil uno. Antes era `null` y el campo del cobro tenia
+    // que arreglarlo por su cuenta con una funcion propia; esa funcion ya no
+    // existe. La decision esta escrita en @/lib/numero-local.
+    expect(montoDesdeTexto('10.001')).toBe('10001.00')
+    expect(montoDesdeTexto('15.000')).toBe('15000.00')
+    expect(montoDesdeTexto('1.500')).toBe('1500.00')
   })
 
   it('el cero escrito a proposito si vale', () => {

@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Alert, Button, Dialog, Field, Input, Money, Select, aviso } from '@/components/ui'
+import { Alert, Button, Dialog, Field, Input, Money, NumericInput, Select, aviso, problemaDeImporte } from '@/components/ui' // prettier-ignore
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
-import { esNegativo, esPositivo, restarMontos, sumarMontos } from '@/lib/money'
+import { esNegativo, esPositivo, montoDesdeTexto, restarMontos, sumarMontos } from '@/lib/money'
 import type { ClienteDTO } from '@/modules/clients/dto'
 
 /**
@@ -44,14 +44,16 @@ export function DialogoAjusteCuenta({
     setEnviando(false)
   }, [abierto])
 
-  const importeOk = /^\d+(\.\d{1,2})?$/.test(importe.trim()) && Number(importe) > 0
+  const importeAjustado = montoDesdeTexto(importe)
+  const problema = problemaDeImporte(importe, { permitirCero: false })
+  const importeOk = importeAjustado !== null && problema === null
   const motivoOk = motivo.trim().length > 0
   const valido = importeOk && motivoOk
 
   const resultante = importeOk
     ? direccion === 'sube'
-      ? sumarMontos(cliente.balance, importe)
-      : restarMontos(cliente.balance, importe)
+      ? sumarMontos(cliente.balance, importeAjustado)
+      : restarMontos(cliente.balance, importeAjustado)
     : cliente.balance
 
   async function ajustar() {
@@ -65,7 +67,7 @@ export function DialogoAjusteCuenta({
           // El signo lo arma la pantalla a partir de la direccion elegida, no
           // se le pide a nadie que tipee un menos: un "-2000" mal copiado es un
           // ajuste al reves.
-          delta: direccion === 'sube' ? importe.trim() : `-${importe.trim()}`,
+          delta: direccion === 'sube' ? importeAjustado : `-${importeAjustado}`,
           reason: motivo.trim(),
         },
         parse: () => null,
@@ -126,19 +128,13 @@ export function DialogoAjusteCuenta({
           </Select>
         </Field>
 
-        <Field
-          label="Cuánto"
-          required
-          error={importe !== '' && !importeOk ? 'Un importe mayor que cero' : null}
-        >
-          <Input
+        <Field label="Cuánto" required error={problema}>
+          <NumericInput
+            modo="dinero"
             value={importe}
             disabled={enviando}
             autoFocus
-            inputMode="decimal"
-            onChange={(e) => {
-              setImporte(e.target.value)
-            }}
+            onChange={setImporte}
           />
         </Field>
 

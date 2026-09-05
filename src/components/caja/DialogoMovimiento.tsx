@@ -1,7 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Alert, Button, Dialog, Field, Input, RadioGroup, Select, Textarea } from '@/components/ui'
+import {
+  Alert,
+  Button,
+  Dialog,
+  Field,
+  NumericInput,
+  RadioGroup,
+  Select,
+  Textarea,
+  problemaDeImporte,
+} from '@/components/ui'
+import { montoDesdeTexto } from '@/lib/money'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { MEDIOS_DE_COBRANZA, etiquetaDeMedio } from '@/modules/sales/payment-methods'
 
@@ -55,8 +66,13 @@ export function DialogoMovimiento({
     if (tipo !== 'ingreso') setMedio('CASH')
   }, [tipo])
 
-  const importe = Number(monto.replace(',', '.'))
-  const valido = Number.isFinite(importe) && importe > 0
+  // El importe lo interpreta @/lib/numero-local, que es el unico lugar donde
+  // se decide que significa lo tipeado. Antes esto era
+  // `Number(monto.replace(',', '.'))`, que leia "1.500" como uno y medio y
+  // mandaba un `double` a la API.
+  const importe = montoDesdeTexto(monto)
+  const problema = problemaDeImporte(monto, { permitirCero: false })
+  const valido = importe !== null && problema === null
 
   async function guardar() {
     if (enviando || !valido) return
@@ -119,15 +135,18 @@ export function DialogoMovimiento({
           columns={3}
         />
 
-        <Field label="Monto" required hint="Siempre en positivo. El signo lo pone el sistema.">
-          <Input
-            inputMode="decimal"
+        <Field
+          label="Monto"
+          required
+          hint="Siempre en positivo. El signo lo pone el sistema."
+          error={problema}
+        >
+          <NumericInput
+            modo="dinero"
             placeholder="0,00"
             value={monto}
             disabled={enviando}
-            onChange={(e) => {
-              setMonto(e.target.value)
-            }}
+            onChange={setMonto}
           />
         </Field>
 

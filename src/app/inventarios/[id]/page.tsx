@@ -12,8 +12,8 @@ import {
   CardList,
   CardListItem,
   ErrorState,
-  Input,
   MetricCard,
+  NumericInput,
   Select,
   SkeletonRows,
   TBody,
@@ -28,7 +28,8 @@ import {
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest } from '@/lib/api-client'
 import { etiquetaDeLinea, tonoDeEstado } from '@/modules/inventory-counts/estados'
-import { unidadDeVentaODefecto } from '@/modules/products/units'
+import { politicaDe, unidadDeVentaODefecto } from '@/modules/products/units'
+import { cantidadDesdeTexto, textoLocalDeCantidad } from '@/lib/cantidad'
 
 interface Sesion {
   id: number
@@ -137,9 +138,20 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
   useEffect(() => cargar(), [cargar])
 
   function guardarConteos() {
-    const pendientes = Object.entries(borradores)
-      .filter(([, v]) => v.trim() !== '')
-      .map(([lineId, v]) => ({ lineId: Number(lineId), countedQuantity: v.trim() }))
+    const escritos = Object.entries(borradores).filter(([, v]) => v.trim() !== '')
+
+    // Lo escrito se interpreta ACA y viaja ya canonico. Antes iba el texto
+    // crudo: un "1,5" tipeado en el pasillo volvia con el mensaje de
+    // validacion del servidor, que no esta escrito para leerse en un telefono
+    // con el conteo a medio hacer.
+    const pendientes = escritos
+      .map(([lineId, v]) => ({ lineId: Number(lineId), countedQuantity: cantidadDesdeTexto(v) }))
+      .filter((l): l is { lineId: number; countedQuantity: string } => l.countedQuantity !== null)
+
+    if (pendientes.length < escritos.length) {
+      aviso.error('Hay conteos que no son un número. Revisalos antes de guardar.')
+      return
+    }
 
     if (pendientes.length === 0) {
       aviso.error('No hay conteos para guardar')
@@ -378,13 +390,14 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
                       )}
                       <TD>
                         {contando && puedeContar ? (
-                          <Input
+                          <NumericInput
+                            modo="cantidad"
+                            unidad={unidadDeVentaODefecto(l.saleUnit)}
                             aria-label={`Contado de ${l.productName}${l.lotCode === null ? '' : ` lote ${l.lotCode}`}`}
-                            inputMode="decimal"
                             className="w-24"
-                            value={borradores[l.id] ?? l.countedQuantity ?? ''}
-                            onChange={(e) => {
-                              setBorradores((b) => ({ ...b, [l.id]: e.target.value }))
+                            value={borradores[l.id] ?? contadoParaEditar(l)}
+                            onChange={(texto) => {
+                              setBorradores((b) => ({ ...b, [l.id]: texto }))
                             }}
                           />
                         ) : l.countedQuantity === null ? (
@@ -422,13 +435,14 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-2 text-sm">
                     {contando && puedeContar ? (
-                      <Input
+                      <NumericInput
+                        modo="cantidad"
+                        unidad={unidadDeVentaODefecto(l.saleUnit)}
                         aria-label={`Contado de ${l.productName} (móvil)`}
-                        inputMode="decimal"
                         className="w-28"
-                        value={borradores[l.id] ?? l.countedQuantity ?? ''}
-                        onChange={(e) => {
-                          setBorradores((b) => ({ ...b, [l.id]: e.target.value }))
+                        value={borradores[l.id] ?? contadoParaEditar(l)}
+                        onChange={(texto) => {
+                          setBorradores((b) => ({ ...b, [l.id]: texto }))
                         }}
                       />
                     ) : (
@@ -456,4 +470,16 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
       </Card>
     </PageContainer>
   )
+}
+
+/**
+ * Lo ya contado, como se ESCRIBE: "12" y no "12.000".
+ *
+ * La cadena del cable tiene siempre tres decimales; puesta tal cual en un
+ * campo, en es-AR se lee como doce mil.
+ */
+function contadoParaEditar(l: Linea): string {
+  if (l.countedQuantity === null) return ''
+  const unidad = unidadDeVentaODefecto(l.saleUnit)
+  return textoLocalDeCantidad(l.countedQuantity, politicaDe(unidad).decimales)
 }

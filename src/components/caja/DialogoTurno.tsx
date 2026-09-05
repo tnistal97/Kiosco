@@ -1,7 +1,17 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Dialog, Field, Input, Money, Textarea, tonoPorSigno } from '@/components/ui'
+import {
+  Alert,
+  Button,
+  Dialog,
+  Field,
+  Money,
+  NumericInput,
+  Textarea,
+  problemaDeImporte,
+  tonoPorSigno,
+} from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import {
   CERO,
@@ -100,16 +110,15 @@ export function DialogoAbrirCaja({
           label="Efectivo inicial"
           required
           hint="Lo que hay ahora en el cajón. Puede ser cero."
+          error={problemaDeImporte(inicial, { permitirCero: true })}
         >
-          <Input
-            inputMode="decimal"
+          <NumericInput
+            modo="dinero"
             placeholder="0,00"
             value={inicial}
             disabled={enviando}
             autoFocus
-            onChange={(e) => {
-              setInicial(e.target.value)
-            }}
+            onChange={setInicial}
           />
         </Field>
 
@@ -278,16 +287,18 @@ export function DialogoCerrarCaja({
           </div>
         </dl>
 
-        <Field label="Efectivo contado" required>
-          <Input
-            inputMode="decimal"
+        <Field
+          label="Efectivo contado"
+          required
+          error={problemaDeImporte(contado, { permitirCero: true })}
+        >
+          <NumericInput
+            modo="dinero"
             placeholder="0,00"
             value={contado}
             disabled={enviando}
             autoFocus
-            onChange={(e) => {
-              setContado(e.target.value)
-            }}
+            onChange={setContado}
           />
         </Field>
 

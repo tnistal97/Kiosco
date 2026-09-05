@@ -9,12 +9,14 @@ import {
   Field,
   Input,
   Money,
+  NumericInput,
   Select,
   Textarea,
   aviso,
+  problemaDeImporte,
 } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
-import { esPositivo, restarMontos } from '@/lib/money'
+import { esPositivo, montoDesdeTexto, restarMontos, textoLocalDeMonto } from '@/lib/money'
 import { MEDIOS_DE_COBRANZA, etiquetaDeMedio } from '@/modules/sales/payment-methods'
 import { parsePagoDeCliente, type ClienteDTO } from '@/modules/clients/dto'
 
@@ -54,7 +56,8 @@ export function DialogoCobro({
     if (!abierto) return
     // Se propone lo que debe, que es lo que pasa nueve de cada diez veces.
     // Cuando tiene saldo a favor no se propone nada: no hay nada que cobrar.
-    setImporte(esPositivo(cliente.balance) ? cliente.balance : '')
+    // Ya escrito como se escribe: "1.234,56". Lo canonico es del cable.
+    setImporte(esPositivo(cliente.balance) ? textoLocalDeMonto(cliente.balance) : '')
     setMedio('CASH')
     setReferencia('')
     setNotas('')
@@ -62,12 +65,15 @@ export function DialogoCobro({
     setEnviando(false)
   }, [abierto, cliente.balance])
 
-  const importeOk = /^\d+(\.\d{1,2})?$/.test(importe.trim()) && Number(importe) > 0
+  const importeCobrado = montoDesdeTexto(importe)
+  const problema = problemaDeImporte(importe, { permitirCero: false })
+  const importeOk = importeCobrado !== null && problema === null
   const enEfectivo = medio === 'CASH'
 
   // Cuanto quedaria a favor. Se calcula aca solo para AVISAR: la decision la
   // toma el servidor dentro de la transaccion, con el saldo real.
-  const sobra = importeOk ? restarMontos(importe, cliente.balance) : '0.00'
+  const sobra =
+    importeCobrado !== null && importeOk ? restarMontos(importeCobrado, cliente.balance) : '0.00'
   const dejaAFavor = importeOk && esPositivo(sobra)
 
   async function cobrar() {
@@ -78,7 +84,7 @@ export function DialogoCobro({
       const pago = await apiRequest(`/api/clients/${String(cliente.id)}/pagos`, {
         method: 'POST',
         body: {
-          amount: importe.trim(),
+          amount: importeCobrado,
           method: medio,
           reference: referencia.trim(),
           notes: notas.trim(),
@@ -142,19 +148,13 @@ export function DialogoCobro({
           </div>
         </div>
 
-        <Field
-          label="Cuánto paga"
-          required
-          error={importe !== '' && !importeOk ? 'Un importe mayor que cero' : null}
-        >
-          <Input
+        <Field label="Cuánto paga" required error={problema}>
+          <NumericInput
+            modo="dinero"
             value={importe}
             disabled={enviando}
             autoFocus
-            inputMode="decimal"
-            onChange={(e) => {
-              setImporte(e.target.value)
-            }}
+            onChange={setImporte}
           />
         </Field>
 

@@ -30,6 +30,7 @@
  */
 
 import { aCentavos, desdeCentavos, type Monto } from '@/lib/money'
+import { REGLAS_DE_CANTIDAD, leerNumeroLocal, textoLocalDeNumero } from '@/lib/numero-local'
 
 /**
  * Cantidad con tres decimales, como cadena. `"0.425"`, `"12.000"`, `"-2.500"`.
@@ -147,31 +148,56 @@ export function cantidadODefecto(
 /**
  * Lo que alguien escribe en un campo, convertido a cantidad.
  *
- * Acepta coma y punto decimal: la coma es lo que dice el teclado en castellano
- * y el punto es lo que sale del teclado numerico de una balanza o de un
- * telefono. Las dos formas se tipean de verdad en un mostrador.
+ * La interpretacion no vive aca: vive en `@/lib/numero-local`, que es el UNICO
+ * lugar donde se decide que significa lo tipeado. Esto le pone la escala de la
+ * cantidad --tres decimales-- y la lleva a la forma canonica.
  *
- * NO acepta separador de miles, a diferencia de `montoDesdeTexto`. Un peso
- * puede tener seis cifras y necesita el punto para leerse; nadie escribe
- * `1.500,250` kilos de queso, y aceptarlo haria ambiguo el `1.500` que en un
- * teclado numerico significa kilo y medio.
+ * Entra el entero pelado --`"1"`, sin obligar a escribir `",000"`--, la coma
+ * decimal del teclado en castellano y el punto decimal del teclado numerico de
+ * una balanza. Las dos formas se tipean de verdad en un mostrador.
+ *
+ * El punto de miles NO se acepta suelto, a diferencia de `montoDesdeTexto`, y
+ * es una decision documentada en `@/lib/numero-local`: `"1.500"` en un campo
+ * de peso es kilo y medio, que es lo que escribe la balanza. Con la coma
+ * presente no hay ambiguedad y `"1.500,250"` si entra como mil quinientos.
  *
  * Devuelve `null` --y no un cero-- cuando no es una cantidad. Un cero
  * silencioso significa "peso cero", que es una afirmacion muy distinta de
- * "todavia no escribi nada".
+ * "todavia no escribi nada". Para saber POR QUE fallo --y decirlo en el
+ * campo-- se usa `leerNumeroLocal` directamente.
  */
 export function cantidadDesdeTexto(entrada: string): TextoCantidad | null {
-  const limpio = entrada.trim()
-  if (limpio === '') return null
-
-  const normalizado = limpio.replace(',', '.')
-  if (!/^\d+(\.\d{1,3})?$/.test(normalizado)) return null
+  const lectura = leerNumeroLocal(entrada, REGLAS_DE_CANTIDAD)
+  if (lectura.estado !== 'ok') return null
 
   try {
-    return desdeMilesimas(aMilesimas(normalizado))
+    return desdeMilesimas(aMilesimas(lectura.valor))
   } catch {
     return null
   }
+}
+
+/**
+ * La cantidad como se ESCRIBE en un campo, sin punto de miles.
+ *
+ * Con miles, el propio campo se leeria mal al reabrirlo: `"1.500"` volveria a
+ * entrar como uno y medio. `formatearCantidad` --que si agrupa-- es para
+ * MOSTRAR; esto es para EDITAR.
+ */
+export function textoLocalDeCantidad(c: TextoCantidad, decimales: 0 | 3 = 3): string {
+  return textoLocalDeNumero(c, { decimales, decimalesMinimos: decimales, miles: false })
+}
+
+/**
+ * La cantidad como se escribe cuando NO hay una unidad que fije la escala:
+ * `"12"`, `"1,5"`, `"0,425"`. Sin ceros de relleno y sin punto de miles.
+ *
+ * Para los campos que valen para cualquier unidad --lo recibido de una orden,
+ * una partida, un umbral--, donde `"12.000"` seria ilegible: en es-AR se lee
+ * doce mil.
+ */
+export function textoLibreDeCantidad(c: TextoCantidad): string {
+  return textoLocalDeNumero(c, { decimales: ESCALA_CANTIDAD, decimalesMinimos: 0, miles: false })
 }
 
 export function sumarCantidades(...cantidades: TextoCantidad[]): TextoCantidad {

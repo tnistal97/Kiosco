@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Badge, Button, Field, Input, RadioGroup, aviso } from '@/components/ui'
+import { Alert, Badge, Button, Field, Input, NumericInput, RadioGroup, aviso, problemaDeCantidad } from '@/components/ui' // prettier-ignore
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { aMilesimas, cantidadDesdeTexto, type TextoCantidad } from '@/lib/cantidad'
@@ -350,7 +350,12 @@ function DialogoInicializacion({
   )
   const pendiente = disponible - asignado
   const excede = pendiente < 0
-  const completas = lineas.every((l) => l.code.trim() !== '' && l.quantity.trim() !== '')
+  const completas = lineas.every(
+    (l) =>
+      l.code.trim() !== '' &&
+      l.quantity.trim() !== '' &&
+      problemaDeCantidad(l.quantity, { unidad: desglose.saleUnit, permitirCero: false }) === null,
+  )
 
   function cambiar(i: number, campo: 'code' | 'quantity', valor: string) {
     setLineas((prev) => prev.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)))
@@ -397,7 +402,8 @@ function DialogoInicializacion({
               parse: (raw) => raw as { id: number },
             })
           ).id
-        conId.push({ lotId, quantity: linea.quantity })
+        // Ya interpretado: al servidor va la cadena canonica, no lo tipeado.
+        conId.push({ lotId, quantity: cantidadDesdeTexto(linea.quantity) ?? '0.000' })
       }
 
       await apiRequest('/api/lotes/atribuir', {
@@ -449,14 +455,22 @@ function DialogoInicializacion({
                 }}
               />
             </Field>
-            <Field label={`Cantidad de la partida ${String(i + 1)}`} labelHidden>
-              <Input
+            <Field
+              label={`Cantidad de la partida ${String(i + 1)}`}
+              labelHidden
+              error={problemaDeCantidad(linea.quantity, {
+                unidad: desglose.saleUnit,
+                permitirCero: false,
+              })}
+            >
+              <NumericInput
+                modo="cantidad"
+                unidad={desglose.saleUnit}
                 value={linea.quantity}
-                inputMode="decimal"
                 placeholder={simbolo}
                 disabled={enviando}
-                onChange={(e) => {
-                  cambiar(i, 'quantity', e.target.value.replace(/[^0-9.,]/g, ''))
+                onChange={(texto) => {
+                  cambiar(i, 'quantity', texto)
                 }}
               />
             </Field>

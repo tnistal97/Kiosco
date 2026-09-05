@@ -60,6 +60,7 @@
 - [ ] **Transferencia**: ¿elige el medio sin que se lo digan?
 - [ ] **Teléfono**: las mismas seis consignas en 375 px. Anotar si el teclado del teléfono tapa el vuelto.
 - [ ] **Código desconocido**: ¿entiende «Código no registrado»? ¿Sabe qué hacer?
+- [ ] **Números a mano**: en «Paga con» escribir `20000` (sin coma ni centavos), en el peso `1,5`, en el alta rápida un costo `0` y un precio `1.500`. Anotar si en algún momento la persona intenta escribir `,00` o si el sistema le pide otro formato. Debe aceptar todo tal cual y mostrarlo como `20.000,00`, `1,500 kg`, `0,00` y `1.500,00`.
 
 ## Resultado
 

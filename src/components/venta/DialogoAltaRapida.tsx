@@ -1,7 +1,20 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Dialog, Field, Input, Select } from '@/components/ui'
+import {
+  Alert,
+  Button,
+  Dialog,
+  Field,
+  Input,
+  NumericInput,
+  Select,
+  problemaDeCantidad,
+  problemaDeImporte,
+} from '@/components/ui'
+import { montoDesdeTexto } from '@/lib/money'
+import { cantidadDesdeTexto } from '@/lib/cantidad'
+import { REGLAS_DE_COSTO, valorNumerico } from '@/lib/numero-local'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { ApiError, apiRequest, mensajeDeError } from '@/lib/api-client'
 import {
@@ -146,6 +159,18 @@ export function DialogoAltaRapida({
     }
   }, [abierto])
 
+  // Lo tipeado, ya interpretado. Antes viajaba el TEXTO CRUDO al servidor:
+  // "1.500" o "1500,50" volvian con un 400 escrito para un log --"El importe
+  // debe ser un numero con dos decimales como maximo"-- y el alta se trababa
+  // con el cliente esperando.
+  const precioMonto = montoDesdeTexto(precio)
+  const stockCantidad = cantidadDesdeTexto(stock.trim() === '' ? '0' : stock)
+  const costoCanonico = valorNumerico(costo, REGLAS_DE_COSTO)
+
+  const problemaDelPrecio = problemaDeImporte(precio, { permitirCero: true })
+  const problemaDelStock = problemaDeCantidad(stock, { unidad })
+  const problemaDelCosto = problemaDeImporte(costo, { permitirCero: true })
+
   const elCodigo = codigo ?? normalizarCodigo(codigoManual)
   const codigoRoto = elCodigo === '' ? null : motivoDeCodigoInvalido(elCodigo)
   const politica = POLITICA_DE_UNIDAD[unidad]
@@ -187,13 +212,13 @@ export function DialogoAltaRapida({
         body: {
           ...(elCodigo === '' ? {} : { barcode: elCodigo }),
           name: nombre.trim(),
-          price: precio.trim(),
+          price: precioMonto,
           categoryId: Number(categoria),
           saleUnit: unidad,
-          initialStock: stock.trim() === '' ? '0' : stock.trim(),
+          initialStock: stockCantidad,
           // El costo solo viaja si se cargo. Mandar una cadena vacia sin
           // permiso daria un 403 por un campo que nadie completo.
-          ...(puedeCargarCosto && costo.trim() !== '' ? { cost: costo.trim() } : {}),
+          ...(puedeCargarCosto && costoCanonico !== null ? { cost: costoCanonico } : {}),
         },
         parse: parseProducto,
       })
@@ -221,7 +246,14 @@ export function DialogoAltaRapida({
   }
 
   const completo =
-    nombre.trim() !== '' && precio.trim() !== '' && categoria !== '' && codigoRoto === null
+    nombre.trim() !== '' &&
+    precioMonto !== null &&
+    stockCantidad !== null &&
+    categoria !== '' &&
+    codigoRoto === null &&
+    problemaDelPrecio === null &&
+    problemaDelStock === null &&
+    problemaDelCosto === null
 
   // --- Desenlaces que no son el formulario -----------------------------------
 
@@ -359,16 +391,9 @@ export function DialogoAltaRapida({
             }
             required
             hint={esFraccionable(unidad) ? `Lo que sale un ${politica.simbolo}` : undefined}
+            error={problemaDelPrecio}
           >
-            <Input
-              value={precio}
-              onChange={(e) => {
-                setPrecio(e.target.value)
-              }}
-              inputMode="decimal"
-              placeholder="0,00"
-              data-numeric=""
-            />
+            <NumericInput modo="dinero" value={precio} onChange={setPrecio} placeholder="0,00" />
           </Field>
 
           <Field label="Unidad de venta">
@@ -459,28 +484,18 @@ export function DialogoAltaRapida({
         <Field
           label={`Stock inicial (${politica.simbolo})`}
           hint="Lo que hay para vender ahora. Queda registrado como movimiento de inventario."
+          error={problemaDelStock}
         >
-          <Input
-            value={stock}
-            onChange={(e) => {
-              setStock(e.target.value)
-            }}
-            inputMode="decimal"
-            data-numeric=""
-          />
+          <NumericInput modo="cantidad" unidad={unidad} value={stock} onChange={setStock} />
         </Field>
 
         {puedeCargarCosto && (
-          <Field label="Costo" hint="Opcional. Se puede cargar después con su motivo.">
-            <Input
-              value={costo}
-              onChange={(e) => {
-                setCosto(e.target.value)
-              }}
-              inputMode="decimal"
-              placeholder="0,00"
-              data-numeric=""
-            />
+          <Field
+            label="Costo"
+            hint="Opcional. Se puede cargar después con su motivo."
+            error={problemaDelCosto}
+          >
+            <NumericInput modo="costo" value={costo} onChange={setCosto} placeholder="0,00" />
           </Field>
         )}
 

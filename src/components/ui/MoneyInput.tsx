@@ -2,7 +2,8 @@
 
 import { forwardRef, useId, type InputHTMLAttributes } from 'react'
 import { cn } from './cn'
-import { formatearMonto, montoDesdeTexto, type Monto } from '@/lib/money'
+import { montoDesdeTexto, textoLocalDeMonto, type Monto } from '@/lib/money'
+import { REGLAS_DE_DINERO, filtrarTecleoNumerico, leerNumeroLocal } from '@/lib/numero-local'
 
 /**
  * Campo de importe.
@@ -17,27 +18,6 @@ import { formatearMonto, montoDesdeTexto, type Monto } from '@/lib/money'
  * Tres tamanios: el normal de los formularios, `lg` para "paga con" en el
  * cobro y `xl` para una cifra que se lee desde el otro lado del mostrador.
  */
-
-/**
- * Lo que alguien escribe, convertido a importe.
- *
- * Acepta todo lo que acepta `montoDesdeTexto` y ademas `"15.000"` --punto de
- * miles sin decimales--, que es como se escribe quince mil en Argentina y que
- * aquella funcion rechaza porque no puede distinguirlo de tres decimales. Aca
- * se puede: un importe de tres decimales no existe en una caja.
- */
-export function montoDesdeTextoLocal(entrada: string): Monto | null {
-  const limpio = entrada.trim()
-  if (/^\d{1,3}(\.\d{3})+$/.test(limpio)) return montoDesdeTexto(limpio.replace(/\./g, ''))
-  return montoDesdeTexto(limpio)
-}
-
-/** `"1234.56"` → `"1.234,56"`: como se ve, sin el simbolo. */
-export function textoLocalDeMonto(m: Monto): string {
-  return formatearMonto(m)
-    .replace(/^-?\$\s?/, '')
-    .trim()
-}
 
 export type MoneyInputSize = 'md' | 'lg' | 'xl'
 
@@ -73,6 +53,7 @@ export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(function
     invalid,
     className,
     id,
+    onFocus,
     onBlur,
     ...rest
   },
@@ -80,7 +61,8 @@ export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(function
 ) {
   const idPropio = useId()
   const idFinal = id ?? idPropio
-  const malo = invalid ?? (value.trim() !== '' && montoDesdeTextoLocal(value) === null)
+  const lectura = leerNumeroLocal(value, REGLAS_DE_DINERO)
+  const malo = invalid ?? lectura.estado === 'invalido'
 
   return (
     <div className="flex w-full flex-col gap-1.5">
@@ -111,14 +93,23 @@ export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(function
           aria-invalid={malo || undefined}
           value={value}
           onChange={(e) => {
-            const texto = e.target.value.replace(/[^0-9.,]/g, '')
-            onChange(texto, montoDesdeTextoLocal(texto))
+            const texto = filtrarTecleoNumerico(e.target.value)
+            onChange(texto, montoDesdeTexto(texto))
+          }}
+          onFocus={(e) => {
+            // Todo seleccionado: tipear reemplaza, y editar a mano sigue
+            // siendo posible con las flechas. Es lo mismo que hace el campo
+            // numerico del resto de la aplicacion.
+            e.currentTarget.select()
+            onFocus?.(e)
           }}
           onBlur={(e) => {
             // Al salir se muestra como en el resto de la aplicacion. No antes:
             // formatear mientras se escribe mueve el cursor.
-            const monto = montoDesdeTextoLocal(value)
-            if (monto !== null && value.trim() !== '') onChange(textoLocalDeMonto(monto), monto)
+            if (lectura.estado === 'ok') {
+              const monto = montoDesdeTexto(value)
+              if (monto !== null) onChange(textoLocalDeMonto(monto), monto)
+            }
             onBlur?.(e)
           }}
           className={cn(

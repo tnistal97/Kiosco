@@ -2,7 +2,13 @@
 
 import { useEffect, useId, useState } from 'react'
 import { cn } from './cn'
-import { aMilesimas, cantidadDesdeTexto, desdeMilesimas, type TextoCantidad } from '@/lib/cantidad'
+import {
+  aMilesimas,
+  cantidadDesdeTexto,
+  desdeMilesimas,
+  textoLocalDeCantidad,
+  type TextoCantidad,
+} from '@/lib/cantidad'
 import { formatearCantidad, politicaDe, type UnidadDeVenta } from '@/modules/products/units'
 
 /**
@@ -49,13 +55,13 @@ export function QuantityInput({
 }) {
   const id = useId()
   const politica = politicaDe(unit)
-  const [texto, setTexto] = useState(() => formatearCantidad(value, unit))
+  const [texto, setTexto] = useState(() => textoLocalDeCantidad(value, politica.decimales))
 
   // El servidor puede corregir la cantidad (stock insuficiente, restauracion
   // del carrito). Cuando eso pasa, el campo tiene que reflejarlo.
   useEffect(() => {
-    setTexto(formatearCantidad(value, unit))
-  }, [value, unit])
+    setTexto(textoLocalDeCantidad(value, politica.decimales))
+  }, [value, unit, politica.decimales])
 
   const paso = aMilesimas(politica.paso)
   const minimo = aMilesimas(politica.minimo)
@@ -74,7 +80,7 @@ export function QuantityInput({
 
   function aplicar(milesimas: number) {
     const limpio = acotar(milesimas)
-    setTexto(formatearCantidad(desdeMilesimas(limpio), unit))
+    setTexto(textoLocalDeCantidad(desdeMilesimas(limpio), politica.decimales))
     if (limpio !== actual) onChange(desdeMilesimas(limpio))
   }
 

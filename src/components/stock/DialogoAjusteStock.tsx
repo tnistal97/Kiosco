@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Alert, Button, Dialog, Field, Input, RadioGroup, Select } from '@/components/ui'
+import { Alert, Button, Dialog, Field, Input, NumericInput, RadioGroup, Select, problemaDeCantidad } from '@/components/ui' // prettier-ignore
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import type { Product } from '@/hooks/useProducts'
 import {
@@ -11,7 +11,8 @@ import {
   etiquetaDeTipo,
   type TipoDeAjuste,
 } from '@/modules/inventory/movement-types'
-import { aMilesimas, cantidadDesdeTexto, desdeMilesimas } from '@/lib/cantidad'
+import { aMilesimas, desdeMilesimas } from '@/lib/cantidad'
+import { REGLAS_DE_CANTIDAD, valorNumerico } from '@/lib/numero-local'
 import {
   esFraccionable,
   formatearCantidad,
@@ -146,13 +147,16 @@ export function DialogoAjusteStock({
   const actual = aMilesimas(producto?.totalStock ?? '0.000')
   const resta = restaUnidades(tipo)
 
-  // El signo se parsea aparte: `cantidadDesdeTexto` rechaza los negativos a
-  // proposito --nadie tipea un peso negativo en el diálogo de la balanza-- y
-  // acá "−3" es una entrada legítima para un ajuste genérico.
-  const negativo = valor.trim().startsWith('-')
-  const escrito = cantidadDesdeTexto(valor.trim().replace(/^-/, ''))
+  // Acá "−3" es una entrada legítima --un ajuste genérico puede restar-- así
+  // que el signo se admite en la lectura. En los demás campos de cantidad no:
+  // nadie tipea un peso negativo en el diálogo de la balanza.
+  const escrito = valorNumerico(valor, { ...REGLAS_DE_CANTIDAD, negativos: true })
   const numeroValido = escrito !== null
-  const n = escrito === null ? 0 : (negativo ? -1 : 1) * aMilesimas(escrito)
+  const n = escrito === null ? 0 : aMilesimas(escrito)
+
+  // Lo que pasa con lo escrito, dicho para quien lo escribió. El signo se
+  // saca antes: la política de la unidad habla de la magnitud.
+  const problemaDelNumero = problemaDeCantidad(valor.replace(/^-/, ''), { unidad })
 
   // El delta que de verdad se va a mandar. Con un tipo que resta, lo que el
   // usuario escribe en positivo viaja en negativo.
@@ -342,9 +346,12 @@ export function DialogoAjusteStock({
             }
             required
             hint={fraccionable ? `Se admiten decimales: mínimo ${politica.paso}` : undefined}
+            error={problemaDelNumero}
           >
-            <Input
-              inputMode={fraccionable ? 'decimal' : 'numeric'}
+            <NumericInput
+              modo="cantidad"
+              unidad={unidad}
+              negativos={modo === 'delta' && !resta}
               placeholder={
                 fraccionable
                   ? modo === 'total'
@@ -358,18 +365,10 @@ export function DialogoAjusteStock({
               }
               value={valor}
               disabled={enviando}
-              onChange={(e) => {
-                // Con un tipo que resta, el signo lo pone el diálogo: dejar
-                // escribir "-3" en un campo que ya significa "cuántas se
-                // rompieron" permitiría cargar +3 sin querer.
-                //
-                // La coma y el punto solo entran si la unidad admite
-                // decimales: en un producto por unidad, tipear una coma
-                // simplemente no hace nada.
-                const digitos = fraccionable ? '0-9.,' : '0-9'
-                const conSigno = modo === 'delta' && !resta ? `${digitos}-` : digitos
-                setValor(e.target.value.replace(new RegExp(`[^${conSigno}]`, 'g'), ''))
-              }}
+              // Con un tipo que resta, el signo lo pone el diálogo: dejar
+              // escribir "-3" en un campo que ya significa "cuántas se
+              // rompieron" permitiría cargar +3 sin querer.
+              onChange={setValor}
             />
           </Field>
 

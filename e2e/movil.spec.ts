@@ -195,3 +195,61 @@ test('el alta rápida entra en 375 px y se puede completar', async ({ page }) =>
       .getByText('Creado desde el teléfono', { exact: true }),
   ).toBeVisible()
 })
+
+/**
+ * Escribir "10,5" desde el telefono, en los tres anchos que se pidieron.
+ *
+ * Lo que decide el teclado que aparece es `inputMode`: con `decimal` el
+ * telefono ofrece la coma; con `numeric` no hay forma de escribir medio kilo.
+ * Y lo escrito tiene que llegar al servidor como diez kilos y medio, no como
+ * diez mil quinientos ni como un error de formato.
+ */
+for (const [ancho, codigo] of [
+  [375, '7799300000034'],
+  [390, '7799300000041'],
+  [430, '7799300000058'],
+] as const) {
+  test(`en ${String(ancho)} px se escribe 10,5 kg con el teclado decimal`, async ({ page }) => {
+    await page.setViewportSize({ width: ancho, height: 812 })
+    await page.goto('/venta')
+    await escanear(page, codigo)
+    await page.getByRole('button', { name: 'Crear producto' }).click()
+
+    const dialogo = page.getByRole('dialog')
+    await expect(dialogo).toBeAttached()
+    await expect(dialogo.getByRole('combobox', { name: /^Categoría/ })).toHaveValue(/\d+/)
+
+    const nombre = `Peso desde ${String(ancho)} px`
+    await dialogo.getByLabel('Nombre').fill(nombre)
+    await dialogo.getByRole('combobox', { name: /Unidad de venta/ }).selectOption('KG')
+    await dialogo.getByLabel(/^Precio/).fill('9000')
+
+    const stock = dialogo.getByLabel(/Stock inicial/)
+    await expect(stock, 'el teclado del telefono tiene que ofrecer la coma').toHaveAttribute(
+      'inputmode',
+      'decimal',
+    )
+    await stock.click()
+    await stock.pressSequentially('10,5', { delay: 20 })
+    await expect(stock).toHaveValue('10,5')
+
+    expect(await hayScrollHorizontal(page)).toBe(false)
+
+    const confirmar = dialogo.getByRole('button', { name: /crear y agregar/i })
+    await confirmar.scrollIntoViewIfNeeded()
+    await confirmar.click()
+
+    await page.getByRole('button', { name: /^ticket/i }).click()
+    await expect(
+      page.getByRole('dialog', { name: 'Ticket' }).getByText(nombre, { exact: true }),
+    ).toBeVisible()
+
+    // Diez kilos y medio en el servidor: ni 10.500 ni un 400.
+    const stockGuardado = await page.evaluate(async (n: string) => {
+      const r = await fetch(`/api/products?q=${encodeURIComponent(n)}&pageSize=10&estado=todos`)
+      const c = (await r.json()) as { data: Array<{ name: string; totalStock: string }> }
+      return c.data.find((p) => p.name === n)?.totalStock ?? null
+    }, nombre)
+    expect(stockGuardado).toBe('10.500')
+  })
+}

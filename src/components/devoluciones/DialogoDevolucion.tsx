@@ -7,15 +7,23 @@ import {
   Button,
   Dialog,
   Field,
-  Input,
   Money,
+  NumericInput,
   Select,
   SkeletonRows,
   Textarea,
   aviso,
+  problemaDeCantidad,
 } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
-import { CERO, sumarMontos, type Monto } from '@/lib/money'
+import { CERO, montoODefecto, sumarMontos, type Monto } from '@/lib/money'
+import {
+  aMilesimas,
+  cantidadDesdeTexto,
+  precioPorCantidad,
+  textoLibreDeCantidad,
+  type TextoCantidad,
+} from '@/lib/cantidad'
 import { NOMBRE_DE_UNIDAD_DE_COMPRA, unidadDeCompraODefecto } from '@/modules/products/units'
 import {
   AYUDA_DE_MOTIVO,
@@ -29,16 +37,23 @@ import {
   type RetornablesDTO,
 } from '@/modules/purchases/dto.returns'
 
-/** Recorta los ceros de la derecha: "2" se lee y "2.000" hace dudar. */
+/** "2" se lee; "2.000" hace dudar, que en es-AR se lee dos mil. */
 function limpia(c: string): string {
-  return c.includes('.') ? c.replace(/0+$/, '').replace(/\.$/, '') : c
+  return textoLibreDeCantidad(c)
 }
 
-/** El credito de un renglon: cantidad x costo original, redondeado a pesos. */
+/**
+ * El credito de un renglon: cantidad x costo original.
+ *
+ * En centavos enteros, como el resto de la aplicacion. Antes era
+ * `Math.round(n * Number(unitCost) * 100) / 100` sobre punto flotante: un
+ * costo de 1.543,125 por tres cajas mostraba un credito que no era el que
+ * despues calculaba el servidor.
+ */
 function creditoDe(linea: RenglonRetornableDTO, cantidad: string): Monto {
-  const n = Number(cantidad)
-  if (!Number.isFinite(n) || n <= 0) return CERO
-  return (Math.round(n * Number(linea.unitCost) * 100) / 100).toFixed(2)
+  const c = cantidadDesdeTexto(cantidad)
+  if (c === null || aMilesimas(c) <= 0) return CERO
+  return precioPorCantidad(montoODefecto(linea.unitCost), c)
 }
 
 /**
@@ -135,9 +150,13 @@ export function DialogoDevolucion({
   const elegidas = casillas
     .map((c) => ({
       ...c,
-      cantidad: (cantidades[clave(c.linea.receiptItemId, c.lotId)] ?? '').trim(),
+      escrito: (cantidades[clave(c.linea.receiptItemId, c.lotId)] ?? '').trim(),
+      cantidad: cantidadDesdeTexto(cantidades[clave(c.linea.receiptItemId, c.lotId)] ?? ''),
     }))
-    .filter((x) => x.cantidad !== '' && Number(x.cantidad) > 0)
+    .filter(
+      (x): x is typeof x & { cantidad: TextoCantidad } =>
+        x.cantidad !== null && aMilesimas(x.cantidad) > 0,
+    )
 
   const credito = elegidas.reduce(
     (total, x) => sumarMontos(total, creditoDe(x.linea, x.cantidad)),
@@ -153,11 +172,12 @@ export function DialogoDevolucion({
    * ya se sabe que no entra.
    */
   const problema = elegidas
-    .map(({ linea, cantidad, code, disponible }) => {
+    .map(({ linea, cantidad, escrito, code, disponible }) => {
       const de = code === null ? `"${linea.productName}"` : `"${linea.productName}" (${code})`
-      const n = Number(cantidad)
-      if (!Number.isFinite(n)) return `${de}: esa cantidad no es un número.`
-      if (n > Number(disponible)) {
+      const malEscrito = problemaDeCantidad(escrito, { permitirCero: false })
+      if (malEscrito !== null) return `${de}: ${malEscrito}`
+      const n = aMilesimas(cantidad)
+      if (n > aMilesimas(disponible)) {
         return (
           `De ${de} quedan ${limpia(disponible)} sin devolver de ` +
           `${limpia(code === null ? linea.recibido : (linea.lotes.find((p) => p.code === code)?.recibido ?? linea.recibido))} recibidas.`
@@ -166,11 +186,13 @@ export function DialogoDevolucion({
       // El otro tope: lo que hay HOY. En unidad de venta, que es como se guarda
       // el stock, convertido con el factor de esta entrega. Se mira POR LÍNEA:
       // el stock del producto es uno solo aunque haya varias partidas.
-      const sale = n * Number(linea.unitsPerPurchaseUnit)
-      if (sale > Number(linea.stockActual)) {
+      // Todo en MILESIMAS enteras: dos cantidades multiplicadas en punto
+      // flotante daban un tercer decimal fantasma justo en el borde del tope.
+      const sale = Math.round((n * aMilesimas(linea.unitsPerPurchaseUnit)) / 1000)
+      if (sale > aMilesimas(linea.stockActual)) {
         return (
           `De ${de} quedan ${limpia(linea.stockActual)} en el depósito y esta ` +
-          `devolución saca ${limpia(String(sale))}.`
+          `devolución saca ${limpia(String(sale / 1000))}.`
         )
       }
       return null
@@ -260,7 +282,7 @@ export function DialogoDevolucion({
             {lineas.map((l) => {
               const unidad = unidadDeCompraODefecto(l.purchaseUnit)
               const cantidad = cantidades[clave(l.receiptItemId, 0)] ?? ''
-              const sinNada = Number(l.disponible) <= 0
+              const sinNada = aMilesimas(l.disponible) <= 0
               return (
                 <div
                   key={l.receiptItemId}
@@ -313,15 +335,15 @@ export function DialogoDevolucion({
                   {l.lotes.length === 0 ? (
                     <div className="mt-3 flex flex-wrap items-end gap-3">
                       <Field label="Devolver ahora" className="w-32">
-                        <Input
+                        <NumericInput
+                          modo="cantidad"
                           value={cantidad}
-                          inputMode="decimal"
                           disabled={enviando || sinNada}
                           aria-label={`Cantidad a devolver de ${l.productName}`}
-                          onChange={(e) => {
+                          onChange={(texto) => {
                             setCantidades((prev) => ({
                               ...prev,
-                              [clave(l.receiptItemId, 0)]: e.target.value,
+                              [clave(l.receiptItemId, 0)]: texto,
                             }))
                           }}
                         />
@@ -330,7 +352,7 @@ export function DialogoDevolucion({
                       <div className="text-sm">
                         <div className="text-xs text-ink-faint">Costo original</div>
                         <div className="text-ink" data-numeric="">
-                          <Money amount={Number(l.unitCost).toFixed(2)} />
+                          <Money amount={montoODefecto(l.unitCost)} />
                         </div>
                       </div>
 
@@ -345,7 +367,7 @@ export function DialogoDevolucion({
                     <ul className="mt-3 flex flex-col gap-2">
                       {l.lotes.map((p) => {
                         const escrito = cantidades[clave(l.receiptItemId, p.lotId)] ?? ''
-                        const agotada = Number(p.disponible) <= 0
+                        const agotada = aMilesimas(p.disponible) <= 0
                         return (
                           <li
                             key={p.lotId}
@@ -370,15 +392,15 @@ export function DialogoDevolucion({
                             </div>
 
                             <Field label={`Devolver de ${p.code}`} labelHidden className="w-28">
-                              <Input
+                              <NumericInput
+                                modo="cantidad"
                                 value={escrito}
-                                inputMode="decimal"
                                 disabled={enviando || agotada}
                                 aria-label={`Cantidad a devolver de ${l.productName}, partida ${p.code}`}
-                                onChange={(e) => {
+                                onChange={(texto) => {
                                   setCantidades((prev) => ({
                                     ...prev,
-                                    [clave(l.receiptItemId, p.lotId)]: e.target.value,
+                                    [clave(l.receiptItemId, p.lotId)]: texto,
                                   }))
                                 }}
                               />
@@ -394,7 +416,7 @@ export function DialogoDevolucion({
                         )
                       })}
                       <li className="text-xs text-ink-faint">
-                        Costo original <Money amount={Number(l.unitCost).toFixed(2)} /> por{' '}
+                        Costo original <Money amount={montoODefecto(l.unitCost)} /> por{' '}
                         {NOMBRE_DE_UNIDAD_DE_COMPRA[unidad].toLowerCase()}. No cambia: se devuelve
                         al costo con el que entró.
                       </li>

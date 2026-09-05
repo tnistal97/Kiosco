@@ -10,13 +10,22 @@ import {
   Field,
   Input,
   Money,
+  NumericInput,
   Textarea,
   aviso,
+  problemaDeCantidad,
+  problemaDeImporte,
 } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { usePermiso } from '@/components/shell/SessionProvider'
-import { aMilesimas, cantidadDesdeTexto, compararCantidades } from '@/lib/cantidad'
-import { esPositivo, montoDesdeTexto, type Monto } from '@/lib/money'
+import {
+  aMilesimas,
+  cantidadDesdeTexto,
+  compararCantidades,
+  textoLibreDeCantidad,
+} from '@/lib/cantidad'
+import { esPositivo, formatearMonto, type Monto } from '@/lib/money'
+import { REGLAS_DE_COSTO, textoLocalDeNumero, valorNumerico } from '@/lib/numero-local'
 import { parseResumenDeCuenta } from '@/modules/suppliers/dto.cuenta'
 import { descripcionDeConversion } from '@/modules/purchases/conversion'
 import { NOMBRE_DE_UNIDAD_DE_COMPRA } from '@/modules/products/units'
@@ -110,15 +119,19 @@ export function DialogoRecepcion({
     for (const i of orden.items) {
       if (compararCantidades(i.pendingQuantity, '0.000') <= 0) continue
       inicial[i.id] = {
-        // Lo pendiente entero: es lo que pasa la mayoria de las veces.
-        cantidad: i.pendingQuantity,
-        costo: i.unitCost ?? '',
+        // Lo pendiente entero: es lo que pasa la mayoria de las veces, ya
+        // escrito como se escribe --"12", no "12.000", que se lee doce mil--.
+        cantidad: textoLibreDeCantidad(i.pendingQuantity),
+        costo:
+          i.unitCost === null || i.unitCost === undefined
+            ? ''
+            : textoLocalDeNumero(i.unitCost, { decimales: 4, decimalesMinimos: 2 }),
         // Un producto que EXIGE partidas arranca con una fila puesta: sin ella
         // la pantalla mostraría "faltan partidas" y un botón para agregarlas,
         // que es un paso de más para el caso normal --una entrega, una partida--.
         partidas:
           i.product.lotTracking === 'REQUIRED'
-            ? [{ code: '', quantity: i.pendingQuantity, expirationDate: '' }]
+            ? [{ code: '', quantity: textoLibreDeCantidad(i.pendingQuantity), expirationDate: '' }]
             : [],
       }
     }
@@ -170,7 +183,10 @@ export function DialogoRecepcion({
   function estado(linea: LineaDTO) {
     const entrada = entradas[linea.id] ?? SIN_PARTIDAS
     const cantidad = cantidadDesdeTexto(entrada.cantidad)
-    const costo = montoDesdeTexto(entrada.costo)
+    // El costo se guarda con CUATRO decimales: sale de dividir una caja entre
+    // sus unidades. Leerlo con la escala del dinero descartaba el valor que la
+    // propia orden habia guardado.
+    const costo = valorNumerico(entrada.costo, REGLAS_DE_COSTO)
     const partidas = entrada.partidas
 
     // Las partidas, contra lo que se está recibiendo AHORA. La suma tiene que
@@ -253,7 +269,9 @@ export function DialogoRecepcion({
             // El costo solo viaja si se pudo tocar Y cambió. Mandarlo igual
             // no rompe nada, pero obligaria al servidor a exigir el permiso a
             // quien no cambió nada.
-            ...(puedeCambiarCosto && e.costo !== null && e.costo !== e.linea.unitCost
+            ...(puedeCambiarCosto &&
+            e.costo !== null &&
+            e.costo !== valorNumerico(e.linea.unitCost, REGLAS_DE_COSTO)
               ? { unitCost: e.costo }
               : {}),
             // Las partidas viajan sólo si hay: `lots: []` no es lo mismo que
@@ -263,7 +281,7 @@ export function DialogoRecepcion({
               ? {
                   lots: e.partidas.map((p) => ({
                     code: p.code.trim(),
-                    quantity: p.quantity,
+                    quantity: cantidadDesdeTexto(p.quantity),
                     ...(p.expirationDate === '' ? {} : { expirationDate: p.expirationDate }),
                   })),
                 }
@@ -340,9 +358,9 @@ export function DialogoRecepcion({
                   error={
                     e.excede
                       ? `No se puede recibir más de lo pendiente (${formatQuantity(e.linea.pendingQuantity, e.linea.purchaseUnit)})`
-                      : !e.vacia && e.cantidad === null
-                        ? 'No es una cantidad válida'
-                        : null
+                      : problemaDeCantidad(entradas[e.linea.id]?.cantidad ?? '', {
+                          permitirCero: false,
+                        })
                   }
                   hint={
                     e.cantidad === null || e.excede
@@ -355,12 +373,12 @@ export function DialogoRecepcion({
                         ) || undefined
                   }
                 >
-                  <Input
-                    inputMode="decimal"
+                  <NumericInput
+                    modo="cantidad"
                     value={entradas[e.linea.id]?.cantidad ?? ''}
                     disabled={enviando}
-                    onChange={(ev) => {
-                      set(e.linea.id, { cantidad: ev.target.value.replace(/[^0-9.,]/g, '') })
+                    onChange={(texto) => {
+                      set(e.linea.id, { cantidad: texto })
                     }}
                   />
                 </Field>
@@ -368,18 +386,23 @@ export function DialogoRecepcion({
                 {puedeCambiarCosto && e.linea.unitCost !== undefined && (
                   <Field
                     label="Costo de factura"
+                    error={problemaDeImporte(entradas[e.linea.id]?.costo ?? '', {
+                      permitirCero: true,
+                    })}
                     hint={
-                      e.costo !== null && e.linea.unitCost !== null && e.costo !== e.linea.unitCost
-                        ? `La orden decía ${e.linea.unitCost}. La diferencia queda registrada.`
+                      e.costo !== null &&
+                      e.linea.unitCost !== null &&
+                      e.costo !== valorNumerico(e.linea.unitCost, REGLAS_DE_COSTO)
+                        ? `La orden decía ${formatearMonto(e.linea.unitCost)}. La diferencia queda registrada.`
                         : 'Cambialo solo si la factura dice otra cosa.'
                     }
                   >
-                    <Input
-                      inputMode="decimal"
+                    <NumericInput
+                      modo="costo"
                       value={entradas[e.linea.id]?.costo ?? ''}
                       disabled={enviando}
-                      onChange={(ev) => {
-                        set(e.linea.id, { costo: ev.target.value.replace(/[^0-9.,]/g, '') })
+                      onChange={(texto) => {
+                        set(e.linea.id, { costo: texto })
                       }}
                     />
                   </Field>
@@ -444,15 +467,13 @@ export function DialogoRecepcion({
                         />
                       </Field>
                       <Field label={`Cantidad de la partida ${String(i + 1)}`} labelHidden>
-                        <Input
-                          inputMode="decimal"
+                        <NumericInput
+                          modo="cantidad"
                           value={p.quantity}
                           placeholder={NOMBRE_DE_UNIDAD_DE_COMPRA[e.linea.purchaseUnit]}
                           disabled={enviando}
-                          onChange={(ev) => {
-                            setPartida(e.linea.id, i, {
-                              quantity: ev.target.value.replace(/[^0-9.,]/g, ''),
-                            })
+                          onChange={(texto) => {
+                            setPartida(e.linea.id, i, { quantity: texto })
                           }}
                         />
                       </Field>

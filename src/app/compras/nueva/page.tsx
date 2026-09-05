@@ -12,8 +12,8 @@ import {
   EmptyState,
   Field,
   IconButton,
-  Input,
   Money,
+  NumericInput,
   SearchInput,
   Select,
   TBody,
@@ -25,6 +25,8 @@ import {
   TableWrap,
   Textarea,
   aviso,
+  problemaDeCantidad,
+  problemaDeImporte,
 } from '@/components/ui'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { DialogoAltaRapida } from '@/components/venta/DialogoAltaRapida'
@@ -189,7 +191,13 @@ export default function NuevaCompraPage() {
     const factor = cantidadDesdeTexto(l.unitsPerPurchaseUnit)
 
     if (cantidad === null || factor === null) {
-      return { cantidad: null, costo, subtotal: null, conversion: '', motivo: null }
+      // Antes esto era `motivo: null` y la fila quedaba muda: el boton se
+      // apagaba y no habia forma de saber cual de las cuatro celdas estaba mal.
+      const motivo =
+        problemaDeCantidad(l.cantidad, { permitirCero: false }) ??
+        problemaDeCantidad(l.unitsPerPurchaseUnit, { permitirCero: false }) ??
+        problemaDeImporte(l.costo, { permitirCero: true })
+      return { cantidad: null, costo, subtotal: null, conversion: '', motivo }
     }
 
     const motivo = motivoDeConversionInvalida(l.producto.saleUnit, l.purchaseUnit, cantidad, factor)
@@ -423,15 +431,14 @@ export default function NuevaCompraPage() {
                       )}
                     </TD>
                     <TD>
-                      <Input
-                        inputMode="decimal"
+                      <NumericInput
+                        modo="cantidad"
                         aria-label={`Cantidad de ${e.linea.producto.name}`}
                         value={e.linea.cantidad}
                         disabled={enviando}
-                        onChange={(ev) => {
-                          actualizar(e.linea.producto.id, {
-                            cantidad: ev.target.value.replace(/[^0-9.,]/g, ''),
-                          })
+                        invalid={problemaDeCantidad(e.linea.cantidad, { permitirCero: false }) !== null} // prettier-ignore
+                        onChange={(texto) => {
+                          actualizar(e.linea.producto.id, { cantidad: texto })
                         }}
                       />
                     </TD>
@@ -454,29 +461,26 @@ export default function NuevaCompraPage() {
                       </Select>
                     </TD>
                     <TD>
-                      <Input
-                        inputMode="decimal"
+                      <NumericInput
+                        modo="cantidad"
                         aria-label={`Unidades por unidad de compra de ${e.linea.producto.name}`}
                         value={e.linea.unitsPerPurchaseUnit}
                         disabled={enviando}
-                        onChange={(ev) => {
-                          actualizar(e.linea.producto.id, {
-                            unitsPerPurchaseUnit: ev.target.value.replace(/[^0-9.,]/g, ''),
-                          })
+                        onChange={(texto) => {
+                          actualizar(e.linea.producto.id, { unitsPerPurchaseUnit: texto })
                         }}
                       />
                     </TD>
                     <TD>
-                      <Input
-                        inputMode="decimal"
+                      <NumericInput
+                        modo="dinero"
                         aria-label={`Costo por unidad de compra de ${e.linea.producto.name}`}
                         placeholder="0,00"
                         value={e.linea.costo}
                         disabled={enviando}
-                        onChange={(ev) => {
-                          actualizar(e.linea.producto.id, {
-                            costo: ev.target.value.replace(/[^0-9.,]/g, ''),
-                          })
+                        invalid={problemaDeImporte(e.linea.costo, { permitirCero: true }) !== null}
+                        onChange={(texto) => {
+                          actualizar(e.linea.producto.id, { costo: texto })
                         }}
                       />
                     </TD>

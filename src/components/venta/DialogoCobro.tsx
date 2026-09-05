@@ -1,17 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Alert,
-  Button,
-  Dialog,
-  Kbd,
-  Money,
-  MoneyInput,
-  formatMoney,
-  montoDesdeTextoLocal,
-  textoLocalDeMonto,
-} from '@/components/ui'
+import { Alert, Button, Dialog, Kbd, Money, MoneyInput, formatMoney } from '@/components/ui'
 import type { CartLine } from '@/store/cart'
 import {
   CERO,
@@ -19,8 +9,10 @@ import {
   esCero,
   esNegativo,
   esPositivo,
+  montoDesdeTexto,
   restarMontos,
   sumarMontos,
+  textoLocalDeMonto,
   type Monto,
 } from '@/lib/money'
 import { precioPorCantidad } from '@/lib/cantidad'
@@ -168,7 +160,7 @@ export function DialogoCobro({
    * total para cobrarlo entero.
    */
   const resueltos = useMemo(() => {
-    const declarados = pagos.map((p) => montoDesdeTextoLocal(p.importe))
+    const declarados = pagos.map((p) => montoDesdeTexto(p.importe))
     const sumaDeclarada = declarados.reduce<Monto>(
       (acc, m) => (m === null ? acc : sumarMontos(acc, m)),
       CERO,
@@ -197,7 +189,7 @@ export function DialogoCobro({
     () =>
       resueltos.map((p) => {
         if (!esEfectivo(p.method)) return null
-        const recibido = montoDesdeTextoLocal(p.recibido)
+        const recibido = montoDesdeTexto(p.recibido)
         if (recibido === null || !esPositivo(recibido)) return null
         return restarMontos(recibido, p.monto)
       }),
@@ -322,7 +314,7 @@ export function DialogoCobro({
       const aEnviar: PagoParaEnviar[] = resueltos
         .filter((p) => esPositivo(p.monto))
         .map((p) => {
-          const recibido = esEfectivo(p.method) ? montoDesdeTextoLocal(p.recibido) : null
+          const recibido = esEfectivo(p.method) ? montoDesdeTexto(p.recibido) : null
           return {
             method: p.method,
             amount: p.monto,

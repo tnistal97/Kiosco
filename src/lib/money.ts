@@ -25,6 +25,8 @@
  * contra la base.
  */
 
+import { REGLAS_DE_DINERO, leerNumeroLocal, textoLocalDeNumero } from '@/lib/numero-local'
+
 /**
  * Importe con dos decimales, como cadena. `"1234.56"`, `"-90.00"`, `"0.00"`.
  *
@@ -128,38 +130,48 @@ export function montoODefecto(valor: unknown, porOmision: Monto = CERO): Monto {
 /**
  * Lo que alguien escribe en un campo, convertido a importe.
  *
- * Acepta las dos formas que se tipean de verdad en un mostrador:
+ * La interpretacion no vive aca: vive en `@/lib/numero-local`, que es el UNICO
+ * lugar donde se decide que significa lo tipeado. Esto le pone la escala del
+ * dinero --dos decimales-- y lo lleva a la forma canonica.
  *
+ * Entra todo lo que se tipea de verdad en un mostrador:
+ *
+ *   "1234"      un entero pelado, sin obligar a escribir ",00"
  *   "1234,56"   coma decimal, que es lo que dice el teclado en castellano
  *   "1234.56"   punto decimal, que es lo que sale del teclado numerico
- *   "1.234,56"  con separador de miles, que es como se lee en pantalla
+ *   "1.234,56"  como se lee en pantalla
+ *   "1.500"     punto de miles: mil quinientos, no uno y medio
+ *   "$ 1.500,00" pegado desde otra pantalla
  *
  * Devuelve `null` --y no un cero-- cuando no es un importe. Un cero silencioso
  * en un arqueo significa "conte cero pesos", que es una afirmacion muy
- * distinta de "todavia no escribi nada".
+ * distinta de "todavia no escribi nada". Para saber POR QUE fallo --y decirlo
+ * en el campo-- se usa `leerNumeroLocal` directamente.
  *
  * Rechaza mas de dos decimales por la misma razon que el servidor: no se puede
  * cobrar medio centavo, y aceptarlo en el campo obligaria a explicar despues
  * por que el numero cambio solo.
  */
 export function montoDesdeTexto(entrada: string): Monto | null {
-  const limpio = entrada.trim()
-  if (limpio === '') return null
-
-  // Con los dos separadores presentes, el punto es de miles y la coma es
-  // decimal: "1.234,56". Es el unico caso sin ambiguedad.
-  const normalizado =
-    limpio.includes(',') && limpio.includes('.')
-      ? limpio.replace(/\./g, '').replace(',', '.')
-      : limpio.replace(',', '.')
-
-  if (!/^[+-]?\d+(\.\d{1,2})?$/.test(normalizado)) return null
+  const lectura = leerNumeroLocal(entrada, REGLAS_DE_DINERO)
+  if (lectura.estado !== 'ok') return null
 
   try {
-    return desdeCentavos(aCentavos(normalizado))
+    return desdeCentavos(aCentavos(lectura.valor))
   } catch {
     return null
   }
+}
+
+/**
+ * El importe como se ESCRIBE en un campo: `"1.234,56"`, sin el simbolo.
+ *
+ * El `$` es del componente y no del valor. Meterlo dentro del texto obligaria
+ * a limpiarlo antes de volver a leerlo, y ese es justo el tipo de vuelta que
+ * termina en un importe mal interpretado.
+ */
+export function textoLocalDeMonto(m: Monto): string {
+  return textoLocalDeNumero(m, { decimales: 2, decimalesMinimos: 2 })
 }
 
 export function sumarMontos(...montos: Monto[]): Monto {

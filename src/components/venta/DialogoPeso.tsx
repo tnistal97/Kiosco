@@ -1,19 +1,19 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Dialog, Money } from '@/components/ui'
+import { Button, Dialog, Money, problemaDeCantidad } from '@/components/ui'
 import {
   aMilesimas,
   cantidadDesdeTexto,
   precioPorCantidad,
+  textoLocalDeCantidad,
   type TextoCantidad,
 } from '@/lib/cantidad'
+import { filtrarTecleoNumerico } from '@/lib/numero-local'
 import { CERO, type Monto } from '@/lib/money'
 import {
   denominadorDePrecio,
-  formatearCantidad,
   formatearCantidadConUnidad,
-  motivoDeCantidadInvalida,
   politicaDe,
   type UnidadDeVenta,
 } from '@/modules/products/units'
@@ -73,7 +73,11 @@ export function DialogoPeso({
   // cambio, arranca con el peso que tiene y seleccionado: se pisa escribiendo.
   useEffect(() => {
     if (!abierto) return
-    setTexto(inicial === null ? '' : formatearCantidad(inicial, producto?.saleUnit ?? 'KG'))
+    setTexto(
+      inicial === null
+        ? ''
+        : textoLocalDeCantidad(inicial, politicaDe(producto?.saleUnit ?? 'KG').decimales),
+    )
     setTimeout(() => campo.current?.select(), 60)
   }, [abierto, producto, inicial])
 
@@ -85,10 +89,12 @@ export function DialogoPeso({
   const problema = useMemo(() => {
     if (producto === null) return null
     if (texto.trim() === '') return null
-    if (cantidad === null) return 'Escribí un número'
 
-    const motivo = motivoDeCantidadInvalida(unidad, cantidad)
+    // La forma y la politica de la unidad, con el mismo mensaje que el resto de
+    // la aplicacion. Lo que sigue --el stock-- solo lo sabe esta pantalla.
+    const motivo = problemaDeCantidad(texto, { unidad, permitirCero: false })
     if (motivo !== null) return motivo
+    if (cantidad === null) return null
 
     if (aMilesimas(cantidad) > aMilesimas(producto.sellableStock)) {
       return `Solo quedan ${formatearCantidadConUnidad(producto.sellableStock, unidad)}`
@@ -164,7 +170,11 @@ export function DialogoPeso({
               aria-invalid={problema !== null}
               aria-describedby={problema === null ? undefined : 'peso-problema'}
               onChange={(e) => {
-                setTexto(e.target.value.replace(/[^0-9.,]/g, ''))
+                setTexto(filtrarTecleoNumerico(e.target.value))
+              }}
+              onBlur={() => {
+                // Al salir queda escrito como se escribe: "1,5" y no "1.5".
+                if (cantidad !== null) setTexto(textoLocalDeCantidad(cantidad, politica.decimales))
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {

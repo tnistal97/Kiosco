@@ -14,7 +14,8 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { QuantityText, formatQuantity } from '@/components/ui/QuantityText'
-import { MoneyInput, montoDesdeTextoLocal, textoLocalDeMonto } from '@/components/ui/MoneyInput'
+import { MoneyInput } from '@/components/ui/MoneyInput'
+import { montoDesdeTexto, textoLocalDeMonto } from '@/lib/money'
 import {
   formatearCantidadDeCompra,
   formatearCantidadDeCompraConUnidad,
@@ -72,21 +73,21 @@ describe('Cantidades para escribir', () => {
 
 describe('Dinero escrito a mano', () => {
   it('lee lo que se tipea en un mostrador', () => {
-    expect(montoDesdeTextoLocal('15000')).toBe('15000.00')
-    expect(montoDesdeTextoLocal('15000,50')).toBe('15000.50')
-    expect(montoDesdeTextoLocal('15.000,50')).toBe('15000.50')
-    expect(montoDesdeTextoLocal('1.234.567')).toBe('1234567.00')
-    expect(montoDesdeTextoLocal('15.5')).toBe('15.50')
+    expect(montoDesdeTexto('15000')).toBe('15000.00')
+    expect(montoDesdeTexto('15000,50')).toBe('15000.50')
+    expect(montoDesdeTexto('15.000,50')).toBe('15000.50')
+    expect(montoDesdeTexto('1.234.567')).toBe('1234567.00')
+    expect(montoDesdeTexto('15.5')).toBe('15.50')
   })
 
   it('"15.000" con punto de miles es quince mil, no quince con tres decimales', () => {
-    expect(montoDesdeTextoLocal('15.000')).toBe('15000.00')
+    expect(montoDesdeTexto('15.000')).toBe('15000.00')
   })
 
   it('lo que no es un importe es null, no cero', () => {
-    expect(montoDesdeTextoLocal('')).toBeNull()
-    expect(montoDesdeTextoLocal('abc')).toBeNull()
-    expect(montoDesdeTextoLocal('1,2,3')).toBeNull()
+    expect(montoDesdeTexto('')).toBeNull()
+    expect(montoDesdeTexto('abc')).toBeNull()
+    expect(montoDesdeTexto('1,2,3')).toBeNull()
   })
 
   it('se muestra como en el resto de la aplicacion, sin el simbolo', () => {

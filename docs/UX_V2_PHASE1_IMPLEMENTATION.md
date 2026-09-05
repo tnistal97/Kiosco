@@ -142,3 +142,98 @@ Velocidad percibida (mediana de 5 corridas; Chromium; build de producción; 1366
 «Cambiar medio» pasa de un `select` a un botón: el toque es más largo de medir pero es un solo gesto en vez de tres. El resto baja porque el POS renderiza menos por línea, el cobro ya no calcula un `select` por renglón y el foco vuelve una sola vez en lugar de insistir 600 ms.
 
 Capturas: `docs/ux-v2-phase1/before` y `docs/ux-v2-phase1/after`, 25 imágenes cada una (POS vacío y con productos, ticket móvil, selección, cobro, cobro con vuelto, alta rápida, error de stock) en 375, 390, 430, 1366, 1440 y 1920 px según la pantalla.
+
+---
+
+## 9. Corrección posterior: la entrada numérica
+
+Reportado después de cerrar la fase 1: **«0» no entraba donde la pantalla mostraba «0,00»**. La aplicación no debe obligar a escribir `,00` para aceptar un entero.
+
+### 9.1 Causa raíz
+
+No era un campo: eran catorce, cada uno con su propia idea de qué es un número.
+
+1. **Campos que validaban con la expresión regular del servidor.** `/^\d+(\.\d{1,2})?$/` sobre el texto tipeado, en los cuatro diálogos de cuenta corriente y en el límite de crédito. Esa expresión describe el formato del CABLE —punto decimal, sin miles— así que `1500,50` y `1.500` se rechazaban con el mismo mensaje que un cero: «Un importe mayor que cero».
+2. **Campos que se rellenaban con la cadena del cable.** El precio de la ficha mostraba `4850.00`; el cobro a un cliente proponía `1234.56`; la recepción, `12.000` unidades pendientes y un costo `1543.1250`. Lo que el campo mostraba era, además, lo único que aceptaba.
+3. **Campos que mandaban el texto crudo al servidor.** El conteo de inventario, las partidas de una recepción, el alta rápida del mostrador. Un `1,5` tipeado en el pasillo volvía con «La cantidad debe ser un numero con tres decimales como maximo», que es un mensaje escrito para un log.
+4. **Una conversión ingenua.** `Number(monto.replace(',', '.'))` en el movimiento manual de caja: leía `1.500` como uno y medio y mandaba un `double` a la API.
+5. **Aritmética en punto flotante** en el reparto FIFO de anticipos y en el crédito de una devolución.
+
+### 9.2 Parser central
+
+`src/lib/numero-local.ts`, un solo módulo, separando **leer** de **escribir**:
+
+- `leerNumeroLocal(texto, reglas)` devuelve `{ estado: 'vacio' }`, `{ estado: 'invalido', motivo }` o `{ estado: 'ok', valor }` con la cadena canónica. Tres estados y no dos: vacío **no** es cero.
+- `textoLocalDeNumero(canónico, reglas)` produce la forma oficial: `1.500,25`.
+- `mensajeDeNumeroInvalido(motivo)` da el texto humano; `filtrarTecleoNumerico` es lo único que corre por tecla.
+
+`montoDesdeTexto` (dinero) y `cantidadDesdeTexto` (cantidades) ahora delegan en él: ninguna pantalla vuelve a interpretar por su cuenta. `montoDesdeTextoLocal`, la función propia que se había agregado en el campo del cobro, dejó de existir.
+
+Entra: `0`, `0,0`, `0,00`, `0.0`, `0.00`, `1`, `1,5`, `1,50`, `1.5`, `25,25`, `1500`, `1.500`, `1500,25`, `1.500,25`, `1500.25`, `1,500.25` (pegado en formato inglés), `$ 1.500,00`, `00`, `000,50`, `1,` y `,50` a mitad de escribir. No entra en silencio: `1,2,3`, `1..2`, `abc`, `--`.
+
+### 9.3 La decisión del «1.500»
+
+En es-AR el punto separa miles y la coma es decimal. El único caso ambiguo es el punto solo con tres dígitos detrás, y **lo resuelve el campo**:
+
+| Campo    | `1.500` significa | Por qué                                                                                                                                    |
+| -------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| DINERO   | mil quinientos    | Un importe no tiene tres decimales: leerlo como miles no descarta ningún valor válido, y `15.000` en la caja es quince mil todos los días. |
+| CANTIDAD | uno y medio (1,5) | La escala de una cantidad son exactamente tres decimales, y `1.500` es lo que escribe una balanza para medio kilo.                         |
+
+Con la coma presente no hay ambigüedad y los dos leen igual: `1.500,25` es mil quinientos coma veinticinco en ambos. Consecuencia deliberada: **lo que un campo escribe, ese mismo campo lo vuelve a leer sin cambiar de valor**, y por eso el formato de edición de las cantidades no lleva punto de miles.
+
+### 9.4 Política del campo
+
+`src/components/ui/NumericInput.tsx`, uno solo para toda la aplicación (`MoneyInput` conserva su cromo —el `$` y los tamaños del cobro— y comparte el mismo parser):
+
+- **mientras se escribe** no se reformatea nada; sólo se filtra lo que no puede formar parte de un número;
+- **al salir** se normaliza: `0` → `0,00`, `1500` → `1.500,00`, `1500,5` → `1.500,50`;
+- **al volver a entrar** se selecciona todo, así tipear reemplaza y las flechas siguen dejando editar a mano;
+- `type="text"` + `inputMode="decimal"` (o `numeric` donde no hay decimales). **Ningún `type="number"`** en la aplicación: la coma depende del navegador y del idioma de la máquina, y las flechitas se tocan solas en una pantalla de mostrador;
+- el `$` es del componente, nunca del valor;
+- vacío ≠ cero. El límite de crédito lo dice en su ayuda: «Vacío: sin límite. Cero: no se le fía. No es lo mismo.»;
+- el signo lo decide el campo (`negativos`), no el parser: sólo el ajuste de stock lo admite;
+- los mensajes son de mostrador: «Ingresá un número válido.», «Los importes van con dos decimales como máximo: 1.500,50.», «Las unidades van enteras: 1, 2, 3.»
+
+La regla de la unidad —qué se puede partir y qué no— **no se duplicó**: `problemaDeCantidad` llama a `motivoDeCantidadInvalida`, la misma tabla que aplica el servidor. `PACK` y `BOX` no son enteros obligatorios en este sistema (el servidor acepta media caja y la recepción la convierte con su factor), así que el campo no inventa esa restricción; la que sí existe —`UNIT`, `G` y `ML` no se parten— ahora se explica en castellano en vez de dejar el botón apagado.
+
+### 9.5 Campos auditados
+
+Todos los que se escriben a mano. Ninguno usaba `type="number"`; ninguno usaba `parseFloat`.
+
+| Pantalla · campo                                                | Antes                                                    | Ahora                                   |
+| --------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------- |
+| Caja · movimiento manual (Monto)                                | `Number(texto.replace(',', '.'))`, `double` a la API     | parser central, cadena canónica         |
+| Caja · abrir turno (Efectivo inicial)                           | sin formato al salir, sin mensaje                        | normaliza y explica                     |
+| Caja · cerrar turno y arqueo (Efectivo contado)                 | ídem                                                     | ídem                                    |
+| Cliente · cobro (Cuánto paga)                                   | regex del cable; propone `1234.56`                       | parser; propone `1.234,56`              |
+| Cliente · ajuste de cuenta (Cuánto)                             | regex del cable                                          | parser                                  |
+| Cliente · ficha (Límite de crédito)                             | regex del cable; guardaba el texto                       | parser; vacío sigue siendo «sin límite» |
+| Proveedor · pago (Cuánto se paga, imputación por renglón)       | regex del cable ×3; propone `1234.56`                    | parser; propone `1.234,56`              |
+| Proveedor · crédito y ajuste (Importe)                          | regex del cable                                          | parser                                  |
+| Proveedor · imputar anticipo (Importe por deuda)                | reparto FIFO en punto flotante                           | centavos enteros                        |
+| Producto · ficha (Precio)                                       | mostraba `4850.00`                                       | `4.850,00`                              |
+| Producto · ficha (Costo)                                        | escala de dinero: un costo de 4 decimales se leía `null` | escala de costo                         |
+| Producto · ficha (Unidades por compra)                          | `.replace(',', '.')`                                     | parser de cantidad                      |
+| Producto · ficha (Stock inicial, Mínimo)                        | filtro propio, sin mensaje                               | parser + regla de la unidad             |
+| Producto · trazabilidad (Cantidad por partida)                  | texto crudo a la API                                     | canónico + mensaje                      |
+| Venta · alta rápida (Precio, Stock inicial, Costo)              | **texto crudo a la API**                                 | canónico + mensajes                     |
+| Venta · peso (Peso)                                             | sin normalizar al salir                                  | `1.5` → `1,5`                           |
+| Venta · ticket (cantidad − / +)                                 | `1.500` unidades se releía como 1,5                      | formato de edición sin miles            |
+| Venta · cobro (Paga con, pago dividido)                         | parser propio del componente                             | el central                              |
+| Compras · orden nueva (Cantidad, Unidades por compra, Costo)    | filtro propio; la fila no decía qué estaba mal           | parser + motivo por fila                |
+| Compras · recepción (Recibir ahora, Costo de factura, partidas) | mostraba `12.000` y `1543.1250`; partida cruda a la API  | `12` y `1.543,125`; canónico            |
+| Devoluciones (Devolver ahora, por partida)                      | `Number()` en punto flotante; texto crudo a la API       | milésimas y centavos enteros; canónico  |
+| Stock · ajuste (Cantidad, con signo)                            | filtro propio; el paso de la unidad callado              | `negativos` explícito + mensaje         |
+| Inventarios · nuevo (Umbral de recuento)                        | regex + `.replace(',', '.')`                             | parser                                  |
+| Inventarios · conteo (Contado)                                  | **texto crudo a la API**; mostraba `12.000`              | canónico; muestra `12`                  |
+
+Campos que NO son decimales y siguen igual, a propósito: DNI, CUIT, teléfono, código de barras y número de venta (`inputMode="numeric"`, sin separadores).
+
+### 9.6 Pruebas
+
+- `tests/unit/numero-local.test.ts` (55): la tabla completa de formatos, incluida la comprobación explícita de que `0` y `0,00` —y `5` y `5,00`— producen **exactamente el mismo** Decimal.
+- `tests/ui/entrada-numerica.test.tsx` (28): no reformatea por tecla, normaliza al salir, selecciona al entrar, ida y vuelta sin cambiar de valor, pegado de `$ 1.500,00`, mensajes humanos, teclado del teléfono.
+- `e2e/numeros.spec.ts` (8): precio `1500`, costo `0`, stock inicial `5`, ingreso de caja `10000`, pago en efectivo `20000`, peso `1,5`, recepción `10`, conteo `0`. Cada uno comprueba también **lo que quedó guardado en el servidor**. Los dos últimos casos fijan la decisión del `1.500` en las dos direcciones.
+
+Sin migraciones. Sin cambios en reglas de negocio: los esquemas de validación, los servicios y el libro no se tocaron.

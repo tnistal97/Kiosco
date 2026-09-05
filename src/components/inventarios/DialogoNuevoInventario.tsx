@@ -7,12 +7,14 @@ import {
   Checkbox,
   Dialog,
   Field,
-  Input,
+  NumericInput,
   RadioGroup,
   Select,
   Textarea,
 } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import { cantidadDesdeTexto } from '@/lib/cantidad'
+import { problemaDeCantidad } from '@/components/ui'
 import { ALCANCES, etiquetaDeAlcance, type Alcance } from '@/modules/inventory-counts/estados'
 
 /**
@@ -94,7 +96,9 @@ export function DialogoNuevoInventario({
   // pruebas; la pantalla ofrece los dos alcances que se recorren de verdad.
   const alcancesOfrecidos = ALCANCES.filter((a) => a !== 'SELECTION')
   const falta = alcance === 'CATEGORY' && categoria === ''
-  const umbralValido = !conRecuento || /^\d+([.,]\d{1,3})?$/.test(umbral.trim())
+  const umbralCantidad = cantidadDesdeTexto(umbral)
+  const problemaDelUmbral = conRecuento ? problemaDeCantidad(umbral) : null
+  const umbralValido = !conRecuento || (umbralCantidad !== null && problemaDelUmbral === null)
 
   async function crear() {
     setEnviando(true)
@@ -106,7 +110,7 @@ export function DialogoNuevoInventario({
           scope: alcance,
           ...(alcance === 'CATEGORY' ? { categoryId: Number(categoria) } : {}),
           blindCount: aCiegas,
-          ...(conRecuento ? { recountThreshold: umbral.replace(',', '.') } : {}),
+          ...(conRecuento ? { recountThreshold: umbralCantidad } : {}),
           ...(notas.trim() === '' ? {} : { notes: notas.trim() }),
         },
         parse: (raw) => raw as { id: number },
@@ -216,15 +220,13 @@ export function DialogoNuevoInventario({
               className="mt-3"
               label="A partir de qué diferencia"
               hint="En unidades. Una diferencia menor no pide recuento."
-              error={umbralValido ? null : 'Escribí un número.'}
+              error={problemaDelUmbral}
             >
-              <Input
-                inputMode="decimal"
+              <NumericInput
+                modo="cantidad"
                 value={umbral}
                 disabled={enviando}
-                onChange={(e) => {
-                  setUmbral(e.target.value.replace(/[^0-9.,]/g, ''))
-                }}
+                onChange={setUmbral}
               />
             </Field>
           )}

@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Alert, Button, Dialog, Field, Input, Textarea } from '@/components/ui'
+import { Alert, Button, Dialog, Field, Input, NumericInput, Textarea, problemaDeImporte } from '@/components/ui' // prettier-ignore
+import { montoDesdeTexto, textoLocalDeMonto } from '@/lib/money'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import type { ClienteDTO } from '@/modules/clients/dto'
 
@@ -49,7 +50,9 @@ function desde(c: ClienteDTO | null): Campos {
     email: c.email ?? '',
     address: c.address ?? '',
     notes: c.notes ?? '',
-    creditLimit: c.creditLimit ?? '',
+    // Ya escrito como se escribe. El vacio sigue siendo vacio: sin limite y
+    // limite cero no son lo mismo, y el campo lo dice.
+    creditLimit: c.creditLimit === null ? '' : textoLocalDeMonto(c.creditLimit),
   }
 }
 
@@ -82,7 +85,9 @@ export function DialogoCliente({
 
   const nombreOk = campos.name.trim().length > 0
   const correoOk = campos.email.trim() === '' || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(campos.email)
-  const limiteOk = campos.creditLimit.trim() === '' || /^\d+(\.\d{1,2})?$/.test(campos.creditLimit)
+  const limite = montoDesdeTexto(campos.creditLimit)
+  const problemaDelLimite = problemaDeImporte(campos.creditLimit, { permitirCero: true })
+  const limiteOk = problemaDelLimite === null
   const valido = nombreOk && correoOk && limiteOk
 
   async function guardar() {
@@ -90,7 +95,6 @@ export function DialogoCliente({
     setEnviando(true)
     setError(null)
     try {
-      const limite = campos.creditLimit.trim()
       await apiRequest(cliente ? `/api/clients/${String(cliente.id)}` : '/api/clients', {
         method: cliente ? 'PUT' : 'POST',
         body: {
@@ -103,7 +107,7 @@ export function DialogoCliente({
           notes: campos.notes.trim(),
           // El campo vacio manda `null`, que en el servidor significa "sin
           // limite configurado". NO manda `"0"`, que significa lo contrario.
-          creditLimit: limite === '' ? null : limite,
+          creditLimit: campos.creditLimit.trim() === '' ? null : limite,
         },
         parse: () => null,
       })
@@ -238,16 +242,14 @@ export function DialogoCliente({
           <Field
             label="Límite de crédito"
             hint="Vacío: sin límite. Cero: no se le fía. No es lo mismo."
-            error={!limiteOk ? 'Un importe con hasta dos decimales, o vacío' : null}
+            error={problemaDelLimite}
           >
-            <Input
+            <NumericInput
+              modo="dinero"
               value={campos.creditLimit}
               disabled={enviando}
-              inputMode="decimal"
               placeholder="50000"
-              onChange={(e) => {
-                set('creditLimit')(e.target.value)
-              }}
+              onChange={set('creditLimit')}
             />
           </Field>
         </section>
