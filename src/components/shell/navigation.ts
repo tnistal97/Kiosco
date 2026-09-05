@@ -45,7 +45,7 @@ export const NAVEGACION: GrupoNav[] = [
     title: 'Operación',
     items: [
       { href: '/venta', label: 'Venta', permission: 'sales.create' },
-      { href: '/caja', label: 'Caja', permission: 'cash.view' },
+      { href: '/caja', label: 'Caja', permission: 'cash.view', matchPrefix: true },
       { href: '/ventas', label: 'Ventas', permission: 'sales.view', matchPrefix: true },
       // En Operacion y no en Control: el cajero busca a Juan para cobrarle, y
       // eso pasa en el mostrador. `clients.view` y no `accounts.view` porque

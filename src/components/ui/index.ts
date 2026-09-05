@@ -17,6 +17,8 @@ export { Kbd } from './Kbd'
 export { PageContainer } from './PageContainer'
 export type { PageWidth } from './PageContainer'
 
+export { PageHeader } from './PageHeader'
+
 export { Field, Input, Textarea, Select, Checkbox, RadioGroup } from './Field'
 export type { FieldProps, InputProps, RadioOption, SelectProps } from './Field'
 

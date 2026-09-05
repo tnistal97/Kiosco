@@ -76,7 +76,8 @@ export function ToastViewport() {
   return (
     <Toaster
       position="bottom-left"
-      containerClassName="!bottom-4 !left-4 !top-auto max-sm:!top-4 max-sm:!bottom-auto max-sm:!left-4 max-sm:!right-4"
+      // Por debajo de `lg` la venta lleva una barra fija abajo: el aviso sube para no taparla.
+      containerClassName="!bottom-4 max-lg:!bottom-24 !left-4 !top-auto max-sm:!top-4 max-sm:!bottom-auto max-sm:!left-4 max-sm:!right-4"
       gutter={8}
       toastOptions={{ className: '!bg-transparent !shadow-none !p-0 !max-w-none' }}
     />
