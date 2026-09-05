@@ -168,7 +168,7 @@ export function SelectorDeCliente({
           setAbierto(true)
         }}
       >
-        Seleccionar cliente
+        Elegir cliente
       </Button>
     )
   }

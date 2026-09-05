@@ -1,6 +1,6 @@
 'use client'
 
-import { Money, StockBadge, cn } from '@/components/ui'
+import { IconButton, Money, StockBadge, cn } from '@/components/ui'
 import type { Product } from '@/hooks/useProducts'
 import { aMilesimas } from '@/lib/cantidad'
 import {
@@ -18,17 +18,24 @@ import {
  * `resaltada` marca el resultado seleccionado con el teclado. Se marca con
  * borde y fondo, no solo con color, porque es la fila que Enter va a agregar
  * y equivocarse ahi cuesta una linea de mas en el ticket.
+ *
+ * La estrella marca el producto como favorito de esta caja: es la forma de
+ * que el pan y la verdura --lo que no tiene codigo-- queden a un toque.
  */
 export function ResultadoBusqueda({
   producto,
   resaltada,
   onAgregar,
   onHover,
+  favorito = false,
+  onFavorito,
 }: {
   producto: Product
   resaltada: boolean
   onAgregar: () => void
   onHover: () => void
+  favorito?: boolean
+  onFavorito?: () => void
 }) {
   // Agotado es NO TENER NADA VENDIBLE, que no es lo mismo que no tener nada:
   // un producto con 10 unidades vencidas tiene stock y no se puede vender.
@@ -37,18 +44,18 @@ export function ResultadoBusqueda({
   const porPeso = esFraccionable(producto.saleUnit)
 
   return (
-    <li>
+    <li className="flex items-stretch gap-1">
       <button
         type="button"
         disabled={agotado}
         onClick={onAgregar}
         onMouseEnter={onHover}
-        // El foco lo maneja el buscador: mover el foco real a cada resultado
-        // sacaria el cursor del campo y cortaria el escaneo.
+        // El foco lo maneja el campo de escaneo: mover el foco real a cada
+        // resultado sacaria el cursor del campo y cortaria el escaneo.
         tabIndex={-1}
         aria-current={resaltada || undefined}
         className={cn(
-          'flex w-full min-h-touch items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
+          'flex min-h-touch min-w-0 flex-1 items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
           agotado && 'cursor-not-allowed opacity-55',
           resaltada
             ? 'border-primary bg-primary-quiet'
@@ -101,8 +108,10 @@ export function ResultadoBusqueda({
         </div>
 
         {/* La chapa muestra lo VENDIBLE: es lo que el cajero puede prometer. */}
-        <StockBadge quantity={producto.sellableStock} unit={producto.saleUnit} />
-        <span className="w-28 text-right">
+        <span className="hidden sm:inline-flex">
+          <StockBadge quantity={producto.sellableStock} unit={producto.saleUnit} />
+        </span>
+        <span className="w-28 shrink-0 text-right">
           <Money amount={producto.price} size="lg" />
           {porPeso && (
             <span className="block text-xs text-ink-faint">
@@ -111,6 +120,24 @@ export function ResultadoBusqueda({
           )}
         </span>
       </button>
+
+      {onFavorito && (
+        <IconButton
+          label={
+            favorito
+              ? `Quitar ${producto.name} de favoritos`
+              : `Marcar ${producto.name} como favorito`
+          }
+          variant="ghost"
+          tabIndex={-1}
+          onClick={onFavorito}
+          className={cn('shrink-0 self-center', favorito ? 'text-warning' : 'text-ink-faint')}
+        >
+          <span aria-hidden="true" className="text-lg leading-none">
+            {favorito ? '★' : '☆'}
+          </span>
+        </IconButton>
+      )}
     </li>
   )
 }

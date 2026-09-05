@@ -12,6 +12,9 @@
  * la caja y el stock. Lo segundo es peor de otra manera: si un error se
  * pinta como exito, el cajero cobra y entrega la mercaderia por una venta
  * que no existe.
+ *
+ * Desde UX V2 Fase 1 los medios son botones, "paga con" tiene el foco al
+ * abrir, hay importes rapidos y Enter cobra: eso tambien se prueba aca.
  */
 
 import { describe, it, expect, vi } from 'vitest'
@@ -21,6 +24,7 @@ import { DialogoCobro, type PagoParaEnviar } from '@/components/venta/DialogoCob
 import type { CartLine } from '@/store/cart'
 import { sumarMontos } from '@/lib/money'
 import { precioPorCantidad } from '@/lib/cantidad'
+import { esperar } from './helpers'
 
 const LINEAS: CartLine[] = [
   {
@@ -60,6 +64,8 @@ function abrirCobro(onCobrar: (pagos: PagoParaEnviar[]) => Promise<number>) {
   )
 }
 
+const pagaCon = () => screen.getByLabelText(/^paga con/i)
+
 describe('Resumen y vuelto', () => {
   it('muestra las lineas y el total', async () => {
     abrirCobro(() => Promise.resolve(1))
@@ -70,17 +76,28 @@ describe('Resumen y vuelto', () => {
     expect(screen.getAllByText(/11\.390/).length).toBeGreaterThan(0)
   })
 
-  it('calcula el vuelto', async () => {
+  it('arranca en efectivo, con el foco en "paga con"', async () => {
+    abrirCobro(() => Promise.resolve(1))
+    await screen.findByRole('dialog')
+
+    expect(screen.getByRole('radio', { name: 'Efectivo' })).toBeChecked()
+    await waitFor(() => {
+      expect(document.activeElement).toBe(pagaCon())
+    })
+  })
+
+  it('calcula el vuelto y lo muestra en grande', async () => {
     const usuario = userEvent.setup()
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
-    await usuario.type(screen.getByLabelText(/con cuánto paga/i), '15000')
+    await usuario.type(pagaCon(), '15000')
 
     // 15.000 − 11.390 = 3.610
     await waitFor(() => {
       expect(screen.getByText(/3\.610/)).toBeInTheDocument()
     })
+    expect(screen.getByText(/3\.610/).className).toMatch(/text-3xl/)
   })
 
   it('avisa cuando el monto recibido no alcanza', async () => {
@@ -88,11 +105,12 @@ describe('Resumen y vuelto', () => {
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
-    await usuario.type(screen.getByLabelText(/con cuánto paga/i), '5000')
+    await usuario.type(pagaCon(), '5000')
 
     await waitFor(() => {
       expect(screen.getByText(/se recibió menos/i)).toBeInTheDocument()
     })
+    expect(screen.getByRole('button', { name: /^cobrar/i })).toBeDisabled()
   })
 
   it('el monto recibido solo aparece con efectivo', async () => {
@@ -100,10 +118,124 @@ describe('Resumen y vuelto', () => {
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
-    expect(screen.getByLabelText(/con cuánto paga/i)).toBeInTheDocument()
+    expect(pagaCon()).toBeInTheDocument()
 
-    await usuario.selectOptions(screen.getByLabelText('Medio'), 'DEBIT_CARD')
-    expect(screen.queryByLabelText(/con cuánto paga/i)).toBeNull()
+    await usuario.click(screen.getByRole('radio', { name: 'Débito' }))
+    expect(screen.queryByLabelText(/^paga con/i)).toBeNull()
+  })
+
+  it('propone billetes por encima del total, y "Justo"', async () => {
+    const usuario = userEvent.setup()
+    abrirCobro(() => Promise.resolve(1))
+    await screen.findByRole('dialog')
+
+    // 11.390 → 12.000, 15.000 y 20.000: nunca uno por debajo del total.
+    expect(screen.getByRole('button', { name: /12\.000/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /15\.000/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /20\.000/ })).toBeInTheDocument()
+
+    await usuario.click(screen.getByRole('button', { name: /20\.000/ }))
+    expect(pagaCon()).toHaveValue('20.000,00')
+
+    await usuario.click(screen.getByRole('button', { name: /^justo/i }))
+    expect(pagaCon()).toHaveValue('11.390,00')
+  })
+
+  it('acepta "15.000" con punto de miles como quince mil', async () => {
+    const usuario = userEvent.setup()
+    abrirCobro(() => Promise.resolve(1))
+    await screen.findByRole('dialog')
+
+    await usuario.type(pagaCon(), '15.000')
+    await waitFor(() => {
+      expect(screen.getByText(/3\.610/)).toBeInTheDocument()
+    })
+  })
+})
+
+describe('Teclado del cobro', () => {
+  it('una letra elige el medio, aunque el foco este en "paga con"', async () => {
+    const usuario = userEvent.setup()
+    abrirCobro(() => Promise.resolve(1))
+    await screen.findByRole('dialog')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(pagaCon())
+    })
+
+    await usuario.keyboard('t')
+    expect(screen.getByRole('radio', { name: 'Transferencia' })).toBeChecked()
+    expect(screen.queryByLabelText(/^paga con/i)).toBeNull()
+
+    await usuario.keyboard('e')
+    expect(screen.getByRole('radio', { name: 'Efectivo' })).toBeChecked()
+    await waitFor(() => {
+      expect(document.activeElement).toBe(pagaCon())
+    })
+  })
+
+  it('J pone el importe justo', async () => {
+    const usuario = userEvent.setup()
+    abrirCobro(() => Promise.resolve(1))
+    await screen.findByRole('dialog')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(pagaCon())
+    })
+
+    await usuario.keyboard('j')
+    expect(pagaCon()).toHaveValue('11.390,00')
+  })
+
+  it('Enter en "paga con" cobra', async () => {
+    const usuario = userEvent.setup()
+    const cobrar = vi.fn(() => Promise.resolve(9))
+    abrirCobro(cobrar)
+    await screen.findByRole('dialog')
+
+    await usuario.type(pagaCon(), '15000')
+    // Los primeros 300 ms no cobran: es lo que separa un Enter a proposito
+    // de uno que rebota desde el ticket.
+    await esperar(350)
+    await usuario.keyboard('{Enter}')
+
+    await screen.findByText(/venta registrada/i)
+    expect(cobrar).toHaveBeenCalledTimes(1)
+    const [pagos] = cobrar.mock.calls[0] as unknown as [PagoParaEnviar[]]
+    expect(pagos).toEqual([{ method: 'CASH', amount: TOTAL, cashReceived: '15000.00' }])
+  })
+
+  it('Enter no cobra en los primeros 300 ms', async () => {
+    const usuario = userEvent.setup()
+    const cobrar = vi.fn(() => Promise.resolve(9))
+    abrirCobro(cobrar)
+    await screen.findByRole('dialog')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(pagaCon())
+    })
+
+    await usuario.keyboard('{Enter}')
+    expect(cobrar).not.toHaveBeenCalled()
+  })
+})
+
+describe('Pago dividido', () => {
+  it('muestra un renglon por medio y el pendiente', async () => {
+    const usuario = userEvent.setup()
+    abrirCobro(() => Promise.resolve(1))
+    await screen.findByRole('dialog')
+
+    await usuario.click(screen.getByRole('button', { name: /dividir el pago/i }))
+
+    expect(screen.getByRole('radiogroup', { name: 'Medio del pago 1' })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: 'Medio del pago 2' })).toBeInTheDocument()
+
+    // El primero se lleva lo que reste: la venta ya esta cubierta.
+    expect(screen.getByText(/cubierto/i)).toBeInTheDocument()
+
+    // Con un importe en el primero, el segundo (sin importe) toma el resto.
+    await usuario.type(screen.getByLabelText('Importe del pago 1'), '10000')
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^cobrar/i })).toBeEnabled()
+    })
   })
 })
 
@@ -166,13 +298,15 @@ describe('Una venta correcta', () => {
     abrirCobro(() => Promise.resolve(128))
     await screen.findByRole('dialog')
 
-    await usuario.type(screen.getByLabelText(/con cuánto paga/i), '15000')
+    await usuario.type(pagaCon(), '15000')
     await usuario.click(screen.getByRole('button', { name: /^cobrar/i }))
 
     await screen.findByText(/venta registrada/i)
     expect(screen.getByText(/#128/)).toBeInTheDocument()
     expect(screen.getByText('Efectivo')).toBeInTheDocument()
     expect(screen.getByText(/vuelto/i)).toBeInTheDocument()
+    // El vuelto es lo que se lee en voz alta: va en el tamanio mas grande.
+    expect(screen.getByText(/3\.610/).className).toMatch(/text-4xl/)
     expect(screen.getByRole('button', { name: /nueva venta/i })).toBeInTheDocument()
   })
 })

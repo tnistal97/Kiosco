@@ -3,19 +3,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
-  BarcodeInput,
   Button,
   Drawer,
   EmptyState,
   IconButton,
-  SearchInput,
+  Money,
+  PageContainer,
+  ScannerInput,
   SkeletonRows,
   aviso,
-  cn,
   type BarcodeStatus,
+  type TeclaDelLector,
 } from '@/components/ui'
 import { ResultadoBusqueda } from '@/components/venta/ResultadoBusqueda'
-import { Ticket } from '@/components/venta/Ticket'
+import { Ticket, cantidadAjustada } from '@/components/venta/Ticket'
 import { DialogoPeso } from '@/components/venta/DialogoPeso'
 import {
   DialogoCobro,
@@ -27,6 +28,15 @@ import { AvisoCajaCerrada } from '@/components/venta/AvisoCajaCerrada'
 import { EscanerCamara } from '@/components/venta/EscanerCamara'
 import { DialogoAltaRapida } from '@/components/venta/DialogoAltaRapida'
 import { CodigoSinResolver, type EstadoDelCodigo } from '@/components/venta/CodigoSinResolver'
+import { Favoritos } from '@/components/venta/Favoritos'
+import { useFavoritos } from '@/components/venta/useFavoritos'
+import { devolverFocoA } from '@/components/venta/foco'
+import {
+  accionDeTecla,
+  modoDelCampo,
+  moverSeleccion,
+  seleccionTrasQuitar,
+} from '@/components/venta/teclado'
 import { useSession, usePermiso } from '@/components/shell/SessionProvider'
 import { notificarCambioDeCaja } from '@/components/shell/EstadoCaja'
 import { buscarProductosPorIds, useProducts, type Product } from '@/hooks/useProducts'
@@ -34,7 +44,7 @@ import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { parseVenta } from '@/modules/sales/dto'
 import { useHayCapaAbierta } from '@/store/overlays'
-import { articulosDelTicket, totalDelTicket, useCartStore } from '@/store/cart'
+import { articulosDelTicket, totalDelTicket, useCartStore, type CartLine } from '@/store/cart'
 import { aMilesimas, type TextoCantidad } from '@/lib/cantidad'
 import { esFraccionable, formatearCantidadConUnidad } from '@/modules/products/units'
 import { motivoDeCodigoInvalido, normalizarCodigo } from '@/modules/products/barcode'
@@ -43,10 +53,15 @@ import { motivoDeCodigoInvalido, normalizarCodigo } from '@/modules/products/bar
 const RESULTADOS_VISIBLES = 8
 
 /**
- * Cuanto se insiste en devolver el foco al lector despues de cerrar un dialogo,
- * y cada cuanto. Cubre con holgura la transicion de salida (`duration-150`),
- * que es cuando Headless UI devuelve el foco a quien abrio.
+ * Lo minimo que hace falta saber de un producto para ponerlo en el ticket.
+ * Es lo que tiene un resultado de busqueda, un favorito y --reconstruido-- una
+ * linea que se vuelve a pesar.
  */
+type ProductoVendible = Pick<
+  Product,
+  'id' | 'name' | 'barcode' | 'price' | 'sellableStock' | 'expiredStock' | 'saleUnit'
+>
+
 /**
  * Por que un producto no entra al ticket, en palabras.
  *
@@ -56,7 +71,7 @@ const RESULTADOS_VISIBLES = 8
  * cuatro segundos, daba los numeros. El cajero se quedaba con la mitad
  * equivocada.
  */
-function motivoDeStock(p: Product, caso: 'sin-stock' | 'tope-de-stock'): string {
+function motivoDeStock(p: ProductoVendible, caso: 'sin-stock' | 'tope-de-stock'): string {
   const con = (c: TextoCantidad) => formatearCantidadConUnidad(c, p.saleUnit)
   const hayVencido = aMilesimas(p.expiredStock) > 0
 
@@ -70,9 +85,30 @@ function motivoDeStock(p: Product, caso: 'sin-stock' | 'tope-de-stock'): string 
     : 'no queda más stock'
 }
 
-const MS_ESPERA_FOCO = 600
-const MS_ENTRE_INTENTOS = 40
+/** Lo que el dialogo de peso necesita saber de una linea que ya esta en el ticket. */
+function productoDeLinea(linea: CartLine): ProductoVendible {
+  return {
+    id: linea.productId,
+    name: linea.name,
+    barcode: linea.barcode,
+    price: linea.price,
+    saleUnit: linea.saleUnit,
+    sellableStock: linea.stock,
+    expiredStock: '0.000',
+  }
+}
 
+/**
+ * El punto de venta. UX V2, Fase 1.
+ *
+ * Un solo campo --"Escaneá o buscá un producto"--, el ticket siempre a la
+ * vista con una linea seleccionada que se mueve con las flechas, y Enter para
+ * cobrar. La gramatica entera esta en `teclado.ts`; esta pantalla ejecuta.
+ *
+ * Lo que no cambio: el lector escribe en el campo y manda Enter, sin ningun
+ * clic previo; el precio, el stock y el credito los decide el servidor; el
+ * ticket sobrevive a un F5 y se restaura con precios frescos.
+ */
 export default function VentaPage() {
   const { session } = useSession()
   const hayCapa = useHayCapaAbierta()
@@ -105,16 +141,24 @@ export default function VentaPage() {
   const hidratar = useCartStore((s) => s.hidratar)
   const usarSucursal = useCartStore((s) => s.usarSucursal)
 
+  /** Lo escrito en el campo unico. Digitos: codigo. Letras: busqueda. */
+  const [texto, setTexto] = useState('')
   const [resaltado, setResaltado] = useState(0)
+  /** Producto de la linea del ticket elegida con el teclado. */
+  const [seleccionada, setSeleccionada] = useState<number | null>(null)
   const [editandoCantidad, setEditandoCantidad] = useState(false)
-  const [escribiendoCodigo, setEscribiendoCodigo] = useState(false)
+  const [escribiendo, setEscribiendo] = useState(false)
   const [cobroAbierto, setCobroAbierto] = useState(false)
   const [ticketAbierto, setTicketAbierto] = useState(false)
   const [camaraAbierta, setCamaraAbierta] = useState(false)
-  /** El producto cuyo peso se esta pidiendo. Null: no hay dialogo de peso. */
-  const [pesando, setPesando] = useState<Product | null>(null)
+  /** Lo que se esta pesando: un producto nuevo, o una linea que se corrige. */
+  const [pesando, setPesando] = useState<{
+    producto: ProductoVendible
+    linea: CartLine | null
+  } | null>(null)
   const [estadoCodigo, setEstadoCodigo] = useState<BarcodeStatus>('idle')
   const [mensajeCodigo, setMensajeCodigo] = useState<string | null>(null)
+  /** Solo cuando la restauracion CAMBIO algo; si no, un aviso efimero alcanza. */
   const [avisoRestauracion, setAvisoRestauracion] = useState<string | null>(null)
   /**
    * El ultimo codigo que NO se resolvio en una linea del ticket.
@@ -123,72 +167,44 @@ export default function VentaPage() {
    * nada extra y sigue siendo instantaneo.
    */
   const [sinResolver, setSinResolver] = useState<EstadoDelCodigo | null>(null)
-  /** Codigo con el que se abre el alta rapida. `null` = alta manual. */
   const [altaAbierta, setAltaAbierta] = useState(false)
+  /** Codigo con el que se abre el alta rapida. `null` = alta manual. */
   const [codigoDelAlta, setCodigoDelAlta] = useState<string | null>(null)
+  /** Cambia tras cada venta: los favoritos vuelven a pedir precio y stock. */
+  const [recargaFavoritos, setRecargaFavoritos] = useState(0)
 
-  const campoCodigo = useRef<HTMLInputElement>(null)
-  const campoBusqueda = useRef<HTMLInputElement>(null)
+  const campo = useRef<HTMLInputElement>(null)
 
   const total = useMemo(() => totalDelTicket(items), [items])
   const articulos = articulosDelTicket(items)
+  const favoritos = useFavoritos(session?.branchId ?? null)
+
+  const buscando = modoDelCampo(texto) === 'busqueda'
+  const visibles = buscando ? products.slice(0, RESULTADOS_VISIBLES) : []
 
   /**
-   * El escaner escucha salvo cuando molestaria.
+   * El escaner global escucha salvo cuando molestaria.
    *
    * Con un dialogo o un cajon abierto, mientras se edita una cantidad y
-   * mientras el cursor esta en el campo de codigo --que se maneja solo--.
-   * Es lo que impide que un escaneo agregue productos detras de la pantalla
-   * de cobro.
+   * mientras el cursor esta en el campo --que se maneja solo--. Es lo que
+   * impide que un escaneo agregue productos detras de la pantalla de cobro.
    */
   const escanerActivo =
     !hayCapa &&
     !editandoCantidad &&
-    !escribiendoCodigo &&
+    !escribiendo &&
     !cobroAbierto &&
     pesando === null &&
     !altaAbierta
 
-  const visibles = products.slice(0, RESULTADOS_VISIBLES)
+  const devolverFoco = useCallback(() => {
+    devolverFocoA(() => campo.current)
+  }, [])
 
   // ---------------------------------------------------------------- ticket
 
-  /**
-   * El foco vuelve al lector, y se INSISTE hasta que quede.
-   *
-   * Un `setTimeout` de cero no alcanza. Headless UI devuelve el foco al elemento
-   * que lo tenia antes de abrir, y lo hace cuando termina la transicion de
-   * salida, no al desmontar. Mientras el abridor desaparecia junto con el
-   * dialogo --el boton de cobrar, el de peso-- no se notaba: no habia adonde
-   * devolverlo. Con el alta rapida si, porque el boton "Crear producto" sigue en
-   * pantalla y se lleva el foco despues de que nosotros lo pusimos.
-   *
-   * Se insiste en vez de esperar un numero fijo porque la duracion depende de la
-   * transicion y de la maquina, y un numero fijo es una carrera que se gana casi
-   * siempre. Casi siempre no sirve: el sintoma es que el escaneo siguiente no
-   * entra en ningun lado, y eso en una caja es el sistema roto.
-   *
-   * Lo encontro la prueba 7 de `e2e/alta-rapida.spec.ts`.
-   */
-  const devolverFoco = useCallback(() => {
-    const campo = campoCodigo.current
-    if (!campo) return
-
-    campo.focus()
-
-    // Se insiste toda la ventana, SIN cortar al primer acierto. Cortar ahi era
-    // el error de la primera version: el foco quedaba en el campo a los 240 ms,
-    // el intervalo se detenia, y Headless UI lo devolvia al abridor a los 300.
-    let restantes = Math.ceil(MS_ESPERA_FOCO / MS_ENTRE_INTENTOS)
-    const id = setInterval(() => {
-      campo.focus()
-      restantes--
-      if (restantes <= 0) clearInterval(id)
-    }, MS_ENTRE_INTENTOS)
-  }, [])
-
   const agregarProducto = useCallback(
-    (p: Product, cantidad?: TextoCantidad): string | null => {
+    (p: ProductoVendible, cantidad?: TextoCantidad): string | null => {
       const r = agregar(
         {
           id: p.id,
@@ -202,18 +218,19 @@ export default function VentaPage() {
       )
       if (r === 'sin-stock') return motivoDeStock(p, 'sin-stock')
       if (r === 'tope-de-stock') return motivoDeStock(p, 'tope-de-stock')
+      // Lo que se acaba de agregar queda elegido: → suma una, Supr lo quita.
+      setSeleccionada(p.id)
       return null
     },
     [agregar],
   )
 
   /**
-   * Lo que pasa al elegir un producto, por escaneo o por busqueda.
+   * Lo que pasa al elegir un producto, por escaneo, busqueda o favorito.
    *
    * Un producto por unidad se agrega y listo. Uno que se pesa abre el dialogo
    * INMEDIATAMENTE, sin pasos intermedios: despues de pasar un queso por el
-   * lector, lo unico que puede seguir es el peso. Pedir un clic mas seria
-   * hacerle avisar al cajero algo que el sistema ya sabe.
+   * lector, lo unico que puede seguir es el peso.
    */
   const elegirProducto = useCallback(
     (p: Product): string | null => {
@@ -226,7 +243,7 @@ export default function VentaPage() {
         return motivo
       }
       if (esFraccionable(p.saleUnit)) {
-        setPesando(p)
+        setPesando({ producto: p, linea: null })
         return null
       }
       const motivo = agregarProducto(p)
@@ -236,19 +253,19 @@ export default function VentaPage() {
     [agregarProducto],
   )
 
+  const limpiarBusqueda = useCallback(() => {
+    setTexto('')
+    setResaltado(0)
+    setSearchTerm('')
+  }, [setSearchTerm])
+
   // --------------------------------------------------------------- escaneo
 
   /**
    * Que hacer con un codigo leido.
    *
-   * UNA sola consulta, con `soloActivos: false`. Antes eran dos --primero entre
-   * los activos y despues entre todos-- lo que duplicaba el trabajo del camino
-   * mas frecuente de todos los que fallan: el codigo que no existe pagaba dos
-   * viajes al servidor para enterarse de lo mismo. Las dos consultas eran
-   * ademas literalmente la misma: el filtro de activo se aplica despues de leer
-   * la fila, no en la consulta.
-   *
-   * Los cinco desenlaces se distinguen, y cada uno tiene su siguiente paso:
+   * UNA sola consulta, con `soloActivos: false`. Los cinco desenlaces se
+   * distinguen, y cada uno tiene su siguiente paso:
    *
    *   invalido      el codigo no puede existir. Ni se consulta.
    *   encontrado    se agrega, o se pide el peso. Sin ruido.
@@ -277,10 +294,6 @@ export default function VentaPage() {
 
         if (!producto) {
           setEstadoCodigo('error')
-          // La linea del campo y el bloque de abajo NO dicen lo mismo: repetir
-          // la misma frase dos veces en la misma pantalla es ruido, y ademas
-          // haria imposible referirse a una de las dos. Acá va el código --que
-          // el campo ya vació-- y el bloque explica qué se puede hacer.
           setMensajeCodigo(`${codigo} · sin resultado`)
           setSinResolver({ tipo: 'no-registrado', codigo })
           return
@@ -290,9 +303,6 @@ export default function VentaPage() {
         // de venta", y el cajero necesita poder decirselo al cliente.
         if (!producto.isActive) {
           setEstadoCodigo('error')
-          // Corto, por lo mismo que arriba: el bloque de abajo ya explica el
-          // caso entero y ofrece reactivar. Repetir la frase completa deja dos
-          // veces el mismo texto en la misma pantalla.
           setMensajeCodigo(`${producto.name} · dado de baja`)
           setSinResolver({
             tipo: 'inactivo',
@@ -303,10 +313,6 @@ export default function VentaPage() {
           return
         }
 
-        // El MISMO texto que el aviso: la linea del campo queda en pantalla y
-        // el aviso se va, asi que decir "sin stock disponible" en la linea
-        // mientras el aviso explica que hay doce vencidos deja al cajero con la
-        // mitad de la historia --justo la mitad que no sirve--.
         const motivo = elegirProducto(producto)
         setEstadoCodigo(motivo === null ? 'ok' : 'error')
         setMensajeCodigo(
@@ -353,8 +359,6 @@ export default function VentaPage() {
         await apiRequest(`/api/products/${String(productId)}`, {
           method: 'PUT',
           body: { isActive: true },
-          // La respuesta no se usa: lo que interesa es el estado nuevo, y ese
-          // se relee escaneando otra vez el mismo codigo.
           parse: () => null,
         })
         setSinResolver(null)
@@ -375,7 +379,6 @@ export default function VentaPage() {
 
   // ------------------------------------------------------- carrito guardado
 
-  // Sucursal primero: si cambio, el ticket guardado no vale y se descarta.
   useEffect(() => {
     if (!session) return
     usarSucursal(session.branchId)
@@ -419,7 +422,6 @@ export default function VentaPage() {
               `${p.name}: solo quedan ${formatearCantidadConUnidad(p.sellableStock, p.saleUnit)} vendibles`,
             )
           }
-          // El store acota al stock por su cuenta, con el paso de la unidad.
           agregar(
             {
               id: p.id,
@@ -435,15 +437,17 @@ export default function VentaPage() {
         }
 
         if (restauradas > 0) {
-          setAvisoRestauracion(
-            cambios.length > 0
-              ? `Se recuperó el ticket. Cambios: ${cambios.join('; ')}.`
-              : 'Se recuperó el ticket que había quedado abierto.',
-          )
+          if (cambios.length > 0) {
+            // Algo cambio: se queda en pantalla hasta que alguien lo lea.
+            setAvisoRestauracion(`Cambios: ${cambios.join('; ')}.`)
+          } else {
+            // Todo igual: un aviso que se va solo, no un cartel con boton.
+            aviso.info(
+              `Ticket recuperado: ${String(restauradas)} ${restauradas === 1 ? 'artículo' : 'artículos'}.`,
+            )
+          }
         }
       } catch {
-        // Sin red no se restaura nada. Es preferible a restaurar con precios
-        // viejos del navegador, que es justamente lo que no debe pasar.
         setAvisoRestauracion('No se pudo recuperar el ticket anterior: no hubo respuesta del servidor.') // prettier-ignore
       }
     }
@@ -452,22 +456,141 @@ export default function VentaPage() {
     return () => {
       vivo = false
     }
-    // Depende SOLO de la sucursal. `agregar` e `hidratar` son estables
-    // (vienen del store de zustand y no cambian de identidad), y agregarlas
-    // no cambiaria nada; lo que si importa es que este efecto no se vuelva a
-    // ejecutar por otro motivo, porque restaurar dos veces duplicaria las
-    // lineas del ticket.
+    // Depende SOLO de la sucursal: restaurar dos veces duplicaria las lineas.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ver comentario
   }, [sucursal])
 
-  // El foco arranca en el codigo: es lo que hace que el lector funcione sin
+  // El foco arranca en el campo: es lo que hace que el lector funcione sin
   // ningun click previo.
   useEffect(() => {
-    campoCodigo.current?.focus()
+    campo.current?.focus()
   }, [])
 
-  // --------------------------------------------------------------- atajos
+  // ------------------------------------------------------------- seleccion
 
+  const ids = useMemo(() => items.map((l) => l.productId), [items])
+
+  // Si la linea elegida desaparece (vaciar, sincronizar), no queda apuntando
+  // a la nada.
+  useEffect(() => {
+    if (seleccionada !== null && !ids.includes(seleccionada)) setSeleccionada(null)
+  }, [ids, seleccionada])
+
+  const abrirCobro = useCallback(() => {
+    if (items.length > 0 && !cobroAbierto) setCobroAbierto(true)
+  }, [items.length, cobroAbierto])
+
+  const editarPeso = useCallback(
+    (productId: number) => {
+      const linea = items.find((l) => l.productId === productId)
+      if (!linea) return
+      setPesando({ producto: productoDeLinea(linea), linea })
+    },
+    [items],
+  )
+
+  const ajustarSeleccionada = useCallback(
+    (delta: -1 | 1) => {
+      const linea = items.find((l) => l.productId === seleccionada)
+      if (!linea) return
+      const cantidad = cantidadAjustada(linea, delta)
+      // Un producto que se pesa no tiene "una unidad mas": se abre el peso.
+      if (cantidad === null) editarPeso(linea.productId)
+      else cambiarCantidad(linea.productId, cantidad)
+    },
+    [items, seleccionada, cambiarCantidad, editarPeso],
+  )
+
+  const quitarLinea = useCallback(
+    (productId: number) => {
+      const siguiente = seleccionTrasQuitar(ids, productId)
+      quitar(productId)
+      setSeleccionada(siguiente)
+    },
+    [ids, quitar],
+  )
+
+  // --------------------------------------------------------------- teclado
+
+  /** Lo que se escribe en el campo unico: letras buscan, digitos esperan Enter. */
+  function alEscribir(t: string) {
+    setTexto(t)
+    if (sinResolver !== null) setSinResolver(null)
+    if (modoDelCampo(t) === 'busqueda') {
+      setSearchTerm(t)
+      setResaltado(0)
+    } else if (searchTerm !== '') {
+      setSearchTerm('')
+      setResaltado(0)
+    }
+  }
+
+  function alPresionarEnElCampo(tecla: TeclaDelLector, textoActual: string): boolean {
+    const accion = accionDeTecla(tecla, {
+      texto: textoActual,
+      hayLineas: items.length > 0,
+      haySeleccion: seleccionada !== null,
+      hayResultados: visibles.length > 0,
+      hayAviso: sinResolver !== null,
+    })
+
+    switch (accion) {
+      case 'buscar-codigo':
+        setTexto('')
+        void procesarCodigo(textoActual)
+        return true
+      case 'agregar-resultado': {
+        const elegido = visibles[resaltado]
+        if (elegido) {
+          elegirProducto(elegido)
+          limpiarBusqueda()
+        }
+        return true
+      }
+      case 'cobrar':
+        abrirCobro()
+        return true
+      case 'resultado-anterior':
+        setResaltado((i) => Math.max(0, i - 1))
+        return true
+      case 'resultado-siguiente':
+        setResaltado((i) => Math.min(i + 1, Math.max(0, visibles.length - 1)))
+        return true
+      case 'linea-anterior':
+        setSeleccionada(moverSeleccion(ids, seleccionada, -1))
+        return true
+      case 'linea-siguiente':
+        setSeleccionada(moverSeleccion(ids, seleccionada, 1))
+        return true
+      case 'cantidad-menos':
+        ajustarSeleccionada(-1)
+        return true
+      case 'cantidad-mas':
+        ajustarSeleccionada(1)
+        return true
+      case 'quitar-linea':
+        if (seleccionada !== null) quitarLinea(seleccionada)
+        return true
+      case 'limpiar-campo':
+        limpiarBusqueda()
+        return true
+      case 'deseleccionar':
+        setSeleccionada(null)
+        return true
+      case 'cerrar-aviso':
+        setSinResolver(null)
+        setEstadoCodigo('idle')
+        setMensajeCodigo(null)
+        return true
+      case 'nada':
+        return false
+    }
+  }
+
+  /**
+   * Los alias de siempre, para quien ya los tenia en los dedos. No se
+   * muestran en ningun boton: la gramatica principal se descubre sola.
+   */
   useEffect(() => {
     function alPresionar(e: KeyboardEvent) {
       const enCampo =
@@ -478,16 +601,14 @@ export default function VentaPage() {
       // herramientas de desarrollo, y en una caja eso no le sirve a nadie.
       if (e.key === 'F12') {
         e.preventDefault()
-        if (items.length > 0 && !cobroAbierto) setCobroAbierto(true)
+        abrirCobro()
         return
       }
 
       if (hayCapa || cobroAbierto) return
 
-      // Alt+N abre el alta rapida manual. No choca con nada: los atajos que ya
-      // existian son F12, Ctrl+K, "/" y las flechas, y Alt+N no lo usa el
-      // navegador. Sin permiso no hace nada, en vez de abrir un formulario que
-      // el servidor va a rechazar.
+      // Alt+N abre el alta rapida manual. Sin permiso no hace nada, en vez de
+      // abrir un formulario que el servidor va a rechazar.
       if (e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault()
         if (puedeCrearProducto) {
@@ -497,23 +618,11 @@ export default function VentaPage() {
         return
       }
 
-      // Ctrl+K y "/" llevan a la busqueda. La barra sola no, si se esta
-      // escribiendo: seria imposible tipear una fraccion.
+      // Ctrl+K y "/" llevan al campo unico. La barra sola no, si se esta
+      // escribiendo en otro campo.
       if ((e.ctrlKey && e.key.toLowerCase() === 'k') || (e.key === '/' && !enCampo)) {
         e.preventDefault()
-        campoBusqueda.current?.focus()
-        return
-      }
-
-      if (enCampo) return
-
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setResaltado((i) => Math.min(i + 1, Math.max(0, visibles.length - 1)))
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setResaltado((i) => Math.max(0, i - 1))
+        campo.current?.focus()
       }
     }
 
@@ -521,37 +630,7 @@ export default function VentaPage() {
     return () => {
       window.removeEventListener('keydown', alPresionar)
     }
-  }, [cobroAbierto, hayCapa, items.length, visibles.length, puedeCrearProducto])
-
-  /** Atajos de la lista de resultados, mientras el foco esta en el buscador. */
-  function atajosDeBusqueda(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setResaltado((i) => Math.min(i + 1, Math.max(0, visibles.length - 1)))
-      return
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setResaltado((i) => Math.max(0, i - 1))
-      return
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      const elegido = visibles[resaltado]
-      if (elegido) {
-        elegirProducto(elegido)
-        setSearchTerm('')
-        setResaltado(0)
-        campoCodigo.current?.focus()
-      }
-      return
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      setSearchTerm('')
-      campoCodigo.current?.focus()
-    }
-  }
+  }, [abrirCobro, cobroAbierto, hayCapa, puedeCrearProducto])
 
   // ---------------------------------------------------------------- cobro
 
@@ -564,9 +643,6 @@ export default function VentaPage() {
       body: {
         items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
         payments: pagos,
-        // Las dos claves solo van si corresponden: `.strict()` acepta que
-        // falten, y mandar `clientId: null` en cada venta al mostrador seria
-        // decir algo donde no hay nada que decir.
         ...(extra.clientId === null ? {} : { clientId: extra.clientId }),
         ...(extra.autorizarExcesoDeCredito ? { autorizarExcesoDeCredito: true } : {}),
       },
@@ -581,11 +657,12 @@ export default function VentaPage() {
     setCobroAbierto(false)
     setTicketAbierto(false)
     setPesando(null)
-    setSearchTerm('')
-    setResaltado(0)
+    setSeleccionada(null)
+    limpiarBusqueda()
     setEstadoCodigo('idle')
     setMensajeCodigo(null)
     setSinResolver(null)
+    setRecargaFavoritos((n) => n + 1)
     void fetchProducts()
     devolverFoco()
   }
@@ -595,23 +672,33 @@ export default function VentaPage() {
       lineas={items}
       total={total}
       articulos={articulos}
+      seleccionada={seleccionada}
+      onSeleccionar={setSeleccionada}
       onCantidad={cambiarCantidad}
-      onQuitar={quitar}
+      onQuitar={quitarLinea}
+      onEditarPeso={editarPeso}
       onEditando={setEditandoCantidad}
       onVaciar={() => {
         vaciar()
+        setSeleccionada(null)
         devolverFoco()
       }}
-      onCobrar={() => {
-        setCobroAbierto(true)
+      onCobrar={abrirCobro}
+      onSalir={() => {
+        campo.current?.focus()
       }}
       puedeCobrar={items.length > 0}
       className="h-full"
     />
   )
 
+  const cerrarPeso = () => {
+    setPesando(null)
+    devolverFoco()
+  }
+
   return (
-    <div className="flex h-full min-h-0">
+    <PageContainer width="operational">
       <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-3 sm:p-4">
         <AvisoCajaCerrada />
 
@@ -635,77 +722,79 @@ export default function VentaPage() {
           </Alert>
         )}
 
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <div className="flex items-start gap-2 sm:max-w-sm sm:flex-1">
-            <BarcodeInput
-              ref={campoCodigo}
-              status={estadoCodigo}
-              message={mensajeCodigo}
-              onEditingChange={setEscribiendoCodigo}
-              onSubmit={(codigo) => {
-                void procesarCodigo(codigo)
-              }}
-            />
-            <IconButton
-              label="Escanear con la cámara"
-              variant="secondary"
-              onClick={() => {
-                setCamaraAbierta(true)
-              }}
-              className="shrink-0"
+        <div className="flex items-start gap-2">
+          <ScannerInput
+            ref={campo}
+            value={texto}
+            onValueChange={alEscribir}
+            onKey={alPresionarEnElCampo}
+            status={estadoCodigo}
+            message={mensajeCodigo}
+            loading={buscando && isLoading}
+            hint="↑↓ elegir · ←→ cantidad · Enter cobrar · Supr quitar"
+            onEditingChange={setEscribiendo}
+            className="min-w-0 flex-1"
+          />
+          <IconButton
+            label="Escanear con la cámara"
+            variant="secondary"
+            size="lg"
+            onClick={() => {
+              setCamaraAbierta(true)
+            }}
+            className="shrink-0"
+          >
+            <svg
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              aria-hidden="true"
             >
-              <svg
-                className="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                aria-hidden="true"
-              >
-                <path d="M4 8.5h2.5L8 6h8l1.5 2.5H20v10H4z" strokeLinejoin="round" />
-                <circle cx="12" cy="13" r="3" />
-              </svg>
-            </IconButton>
-          </div>
+              <path d="M4 8.5h2.5L8 6h8l1.5 2.5H20v10H4z" strokeLinejoin="round" />
+              <circle cx="12" cy="13" r="3" />
+            </svg>
+          </IconButton>
           {/* Alta manual: para el producto sin codigo, el artesanal o la
               etiqueta rota. Discreto a proposito --no es la operacion normal
               de una caja-- y ausente sin permiso, en vez de deshabilitado. */}
           {puedeCrearProducto && (
-            <Button
-              variant="secondary"
-              className="shrink-0"
-              onClick={() => {
-                setCodigoDelAlta(null)
-                setAltaAbierta(true)
-              }}
-            >
-              + Producto
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="lg"
+                className="hidden shrink-0 sm:inline-flex"
+                onClick={() => {
+                  setCodigoDelAlta(null)
+                  setAltaAbierta(true)
+                }}
+              >
+                Nuevo producto
+              </Button>
+              <IconButton
+                label="Nuevo producto"
+                variant="ghost"
+                size="lg"
+                className="shrink-0 sm:hidden"
+                onClick={() => {
+                  setCodigoDelAlta(null)
+                  setAltaAbierta(true)
+                }}
+              >
+                <span aria-hidden="true" className="text-xl leading-none">
+                  +
+                </span>
+              </IconButton>
+            </>
           )}
-          <div className="flex-1">
-            <SearchInput
-              ref={campoBusqueda}
-              label="Buscar un producto por nombre"
-              placeholder="Buscar por nombre…"
-              hint="Ctrl+K o / para buscar · ↑ ↓ para elegir · Enter para agregar"
-              value={searchTerm}
-              loading={isLoading && searchTerm !== ''}
-              onKeyDown={atajosDeBusqueda}
-              onClear={() => {
-                setSearchTerm('')
-                setResaltado(0)
-              }}
-              onChange={(e) => {
-                setSearchTerm(e.target.value)
-                setResaltado(0)
-              }}
-            />
-          </div>
+          <AyudaAtajos className="hidden self-center lg:inline-flex" />
         </div>
 
         {/* Lo que pasó con el último código, cuando no terminó en el ticket.
             Va acá arriba, no en un aviso flotante: un toast que se va solo es
-            justamente lo que hacía que el cajero no se enterara. */}
+            justamente lo que hacía que el cajero no se enterara. Se limpia
+            con la siguiente tecla. */}
         {sinResolver && (
           <CodigoSinResolver
             estado={sinResolver}
@@ -735,77 +824,87 @@ export default function VentaPage() {
             <Alert tone="danger" title="No se pudo buscar">
               {error}
             </Alert>
-          ) : searchTerm === '' ? (
-            <EmptyState
-              title="Escaneá o buscá un producto"
-              description="El lector funciona sin tocar nada. Para buscar por nombre, Ctrl+K."
-              className="h-full"
-            />
-          ) : isLoading ? (
-            <SkeletonRows rows={4} />
-          ) : visibles.length === 0 ? (
-            <EmptyState
-              title="Ningún producto coincide"
-              description={`No hay resultados activos para "${searchTerm}".`}
-            />
+          ) : buscando ? (
+            isLoading && visibles.length === 0 ? (
+              <SkeletonRows rows={4} />
+            ) : visibles.length === 0 ? (
+              <EmptyState
+                title="Ningún producto coincide"
+                description={`No hay resultados activos para "${texto.trim()}".`}
+              />
+            ) : (
+              <ul className="flex flex-col gap-1.5" aria-label="Resultados de la búsqueda">
+                {visibles.map((p, i) => (
+                  <ResultadoBusqueda
+                    key={p.id}
+                    producto={p}
+                    resaltada={i === resaltado}
+                    favorito={favoritos.esFavorito(p.id)}
+                    onFavorito={() => {
+                      favoritos.alternar(p.id)
+                    }}
+                    onHover={() => {
+                      setResaltado(i)
+                    }}
+                    onAgregar={() => {
+                      elegirProducto(p)
+                      limpiarBusqueda()
+                      campo.current?.focus()
+                    }}
+                  />
+                ))}
+              </ul>
+            )
           ) : (
-            <ul className="flex flex-col gap-1.5">
-              {visibles.map((p, i) => (
-                <ResultadoBusqueda
-                  key={p.id}
-                  producto={p}
-                  resaltada={i === resaltado}
-                  onHover={() => {
-                    setResaltado(i)
-                  }}
-                  onAgregar={() => {
-                    elegirProducto(p)
-                    campoCodigo.current?.focus()
-                  }}
+            <div className="flex flex-col gap-4">
+              <Favoritos
+                ids={favoritos.ids}
+                recarga={recargaFavoritos}
+                onElegir={(p) => {
+                  elegirProducto(p)
+                  campo.current?.focus()
+                }}
+                onQuitar={favoritos.alternar}
+              />
+              {favoritos.ids.length === 0 && (
+                <EmptyState
+                  title="Escaneá un código o escribí un nombre"
+                  description="Marcá con ★ los productos sin código —pan, verdura, fiambre— para tenerlos acá, a un toque."
                 />
-              ))}
-            </ul>
+              )}
+            </div>
           )}
         </div>
 
-        <AyudaAtajos />
+        {/* Deja aire abajo para que la barra fija no tape el ultimo resultado. */}
+        <div aria-hidden="true" className="h-24 shrink-0 lg:hidden" />
       </div>
 
       {/* Escritorio: el ticket vive en el layout, siempre visible. */}
       <div className="hidden w-ticket shrink-0 border-l border-line lg:flex">{panelTicket}</div>
 
-      {/* Movil y tablet: barra fija con el total y acceso al ticket. */}
-      <div
-        className={cn(
-          'fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t border-line bg-surface px-3 py-2.5 lg:hidden',
-        )}
-      >
-        <Button
-          variant="secondary"
-          size="lg"
-          className="flex-1"
+      {/* Movil y tablet: barra fija con el total, el acceso al ticket y el cobro. */}
+      <div className="fixed inset-x-0 bottom-0 z-30 flex items-stretch gap-2 border-t border-line bg-surface px-3 py-2 safe-bottom lg:hidden">
+        <button
+          type="button"
           onClick={() => {
             setTicketAbierto(true)
           }}
+          className="flex min-h-control-lg min-w-0 flex-1 flex-col items-start justify-center rounded-lg border border-line bg-raised px-3 text-left transition-colors hover:border-line-strong"
         >
-          Ticket
-          {articulos > 0 && (
-            <span
-              className="ml-1.5 rounded-full bg-primary px-2 py-0.5 text-xs text-ink-on-solid"
-              data-numeric=""
-            >
-              {articulos}
-            </span>
-          )}
-        </Button>
+          <span className="text-xs text-ink-muted">
+            Ticket
+            {articulos > 0 &&
+              ` · ${String(articulos)} ${articulos === 1 ? 'artículo' : 'artículos'}`}
+          </span>
+          <Money amount={total} size="lg" />
+        </button>
         <Button
           variant="confirm"
           size="lg"
-          className="flex-[1.6]"
+          className="flex-[1.1]"
           disabled={items.length === 0}
-          onClick={() => {
-            setCobroAbierto(true)
-          }}
+          onClick={abrirCobro}
         >
           Cobrar
         </Button>
@@ -817,31 +916,36 @@ export default function VentaPage() {
           setTicketAbierto(false)
         }}
         title="Ticket"
-        side="right"
-        className="w-[92vw] max-w-md"
+        side="bottom"
       >
-        {panelTicket}
+        <div className="flex h-[70dvh] flex-col">{panelTicket}</div>
       </Drawer>
 
       <DialogoPeso
         abierto={pesando !== null}
-        producto={pesando}
-        onCerrar={() => {
-          setPesando(null)
-          devolverFoco()
-        }}
+        producto={pesando?.producto ?? null}
+        inicial={pesando?.linea?.quantity ?? null}
+        onCerrar={cerrarPeso}
         onConfirmar={(cantidad) => {
-          // El peso confirmado puede seguir sin entrar --el diálogo acota al
-          // vendible, pero entre que se abrió y se confirmó pudo cambiar-- y
-          // entonces hay que decirlo, no perderlo en silencio.
-          const motivo = pesando ? agregarProducto(pesando, cantidad) : null
-          if (pesando && motivo !== null) {
-            aviso.atencion(`${pesando.name}: ${motivo}.`)
-            setEstadoCodigo('error')
-            setMensajeCodigo(`${pesando.name} · ${motivo}`)
+          if (!pesando) return
+          if (pesando.linea) {
+            cambiarCantidad(pesando.linea.productId, cantidad)
+            setSeleccionada(pesando.linea.productId)
+          } else {
+            // El peso confirmado puede seguir sin entrar --el diálogo acota al
+            // vendible, pero entre que se abrió y se confirmó pudo cambiar-- y
+            // entonces hay que decirlo, no perderlo en silencio.
+            const motivo = agregarProducto(pesando.producto, cantidad)
+            if (motivo !== null) {
+              aviso.atencion(`${pesando.producto.name}: ${motivo}.`)
+              setEstadoCodigo('error')
+              setMensajeCodigo(`${pesando.producto.name} · ${motivo}`)
+            } else {
+              setEstadoCodigo('ok')
+              setMensajeCodigo(`${pesando.producto.name} · agregado`)
+            }
           }
-          setPesando(null)
-          devolverFoco()
+          cerrarPeso()
         }}
       />
 
@@ -882,9 +986,6 @@ export default function VentaPage() {
         onCobrar={cobrar}
         onNuevaVenta={nuevaVenta}
       />
-
-      {/* Deja aire abajo para que la barra fija no tape el ultimo resultado. */}
-      <div aria-hidden="true" className="h-16 lg:hidden" />
-    </div>
+    </PageContainer>
   )
 }

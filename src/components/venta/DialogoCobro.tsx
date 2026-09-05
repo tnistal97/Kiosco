@@ -5,20 +5,20 @@ import {
   Alert,
   Button,
   Dialog,
-  Field,
-  IconButton,
-  Input,
+  Kbd,
   Money,
-  Select,
+  MoneyInput,
   formatMoney,
+  montoDesdeTextoLocal,
+  textoLocalDeMonto,
 } from '@/components/ui'
 import type { CartLine } from '@/store/cart'
 import {
   CERO,
+  absMonto,
   esCero,
   esNegativo,
   esPositivo,
-  montoDesdeTexto,
   restarMontos,
   sumarMontos,
   type Monto,
@@ -34,6 +34,9 @@ import {
 } from '@/modules/sales/payment-methods'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { SelectorDeCliente } from './SelectorDeCliente'
+import { PaymentSelector, medioDeTecla } from './PaymentSelector'
+import { sugerenciasDeRecibido } from './cobro'
+import { esEditable } from './foco'
 import { apiRequest } from '@/lib/api-client'
 import {
   parseEstadoDeCredito,
@@ -42,28 +45,26 @@ import {
 } from '@/modules/clients/dto'
 
 /**
- * Cobro, con pago combinado.
+ * Cobro. UX V2, Fase 1.
  *
- * Desde la Fase 3 una venta puede cobrarse con varios medios. El caso que da
- * sentido a todo:
+ * Lo que se ve: el total en grande, los medios como botones, y --en
+ * efectivo-- "paga con" con el foco puesto, tres importes rapidos y el vuelto
+ * en grande. El pie es fijo: "Cobrar" se ve siempre, en 1366 x 768 y en un
+ * telefono (auditoria, H-01, H-16, H-17).
  *
- *   Total: $32.000     Efectivo $12.000 + Transferencia $20.000
+ * Lo que NO cambio, porque esta probado y es dinero de verdad:
  *
- * La caja fisica sube $12.000, NO $32.000. Eso lo decide el servidor; lo que
- * hace esta pantalla es no dejar enviar una venta cuyos pagos no sumen el
- * total, para que el rechazo no llegue con el cliente enfrente.
+ *  - una venta puede cobrarse con varios medios ("Dividir el pago"), y esta
+ *    pantalla no deja enviar una cuyos pagos no sumen el total;
+ *  - el restante se calcula en centavos enteros, nunca en punto flotante;
+ *  - el boton se bloquea en cuanto se envia y no se libera si salio bien;
+ *  - el dialogo no se cierra con la venta en vuelo;
+ *  - el precio, el total y el reparto los decide el servidor.
  *
- * El restante se calcula en centavos enteros. En punto flotante,
- * `32000 - 12000 - 19999.99` da 0.00999999999839929, y compararlo contra cero
- * para habilitar el boton dejaria pasar una venta con un centavo de menos.
- *
- * Proteccion contra el doble cobro, que es lo que de verdad importa aca:
- *
- *  - el boton se bloquea en cuanto se envia y no se libera si la peticion
- *    salio bien;
- *  - el dialogo deja de cerrarse mientras la venta esta en vuelo, asi que ni
- *    Escape ni un clic afuera dejan la pantalla en un estado ambiguo;
- *  - F12 y Enter pasan por el mismo camino que el boton.
+ * Teclado: E D R T F O eligen el medio (tambien mientras se escribe con
+ * cuanto paga), J pone el importe justo, Enter cobra, Escape vuelve. Enter no
+ * cobra en los primeros 300 ms: es lo que separa "Enter, Enter" a proposito
+ * de un Enter que rebota.
  */
 
 /** Un renglon de pago mientras se arma. Los importes son texto: se tipean. */
@@ -105,6 +106,9 @@ function frenadoPorLimiteAlEnviar(credito: EstadoDeCreditoDTO | null): boolean {
   return credito !== null && !credito.entra
 }
 
+/** Cuanto hay que esperar desde que se abre para que Enter cobre. */
+const MS_ANTES_DE_COBRAR = 300
+
 export function DialogoCobro({
   abierto,
   onCerrar,
@@ -123,6 +127,7 @@ export function DialogoCobro({
   onNuevaVenta: () => void
 }) {
   const [pagos, setPagos] = useState<LineaDePago[]>([nuevaLinea(0)])
+  const [dividido, setDividido] = useState(false)
   const [siguienteClave, setSiguienteClave] = useState(1)
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -134,12 +139,16 @@ export function DialogoCobro({
   const puedeAutorizar = usePermiso('accounts.overrideLimit')
 
   const botonCobrar = useRef<HTMLButtonElement>(null)
+  const campoPagaCon = useRef<HTMLInputElement>(null)
+  const abiertoEn = useRef(0)
 
   // Cada apertura arranca limpia. Sin esto, el vuelto de la venta anterior
   // sigue escrito en el campo.
   useEffect(() => {
     if (!abierto) return
+    abiertoEn.current = Date.now()
     setPagos([nuevaLinea(0)])
+    setDividido(false)
     setSiguienteClave(1)
     setError(null)
     setHecha(null)
@@ -149,6 +158,8 @@ export function DialogoCobro({
     setAutorizarExceso(false)
   }, [abierto])
 
+  const principal = pagos[0] ?? nuevaLinea(0)
+
   /**
    * Importes resueltos.
    *
@@ -157,7 +168,7 @@ export function DialogoCobro({
    * total para cobrarlo entero.
    */
   const resueltos = useMemo(() => {
-    const declarados = pagos.map((p) => montoDesdeTexto(p.importe))
+    const declarados = pagos.map((p) => montoDesdeTextoLocal(p.importe))
     const sumaDeclarada = declarados.reduce<Monto>(
       (acc, m) => (m === null ? acc : sumarMontos(acc, m)),
       CERO,
@@ -181,12 +192,12 @@ export function DialogoCobro({
   const cuadra = esCero(restante)
   const seFueDeMano = esNegativo(restante)
 
-  /** Vuelto de cada renglon en efectivo con "recibido" declarado. */
+  /** Vuelto de cada renglon en efectivo con "recibido" declarado. Negativo: falta. */
   const vueltos = useMemo(
     () =>
       resueltos.map((p) => {
         if (!esEfectivo(p.method)) return null
-        const recibido = montoDesdeTexto(p.recibido)
+        const recibido = montoDesdeTextoLocal(p.recibido)
         if (recibido === null || !esPositivo(recibido)) return null
         return restarMontos(recibido, p.monto)
       }),
@@ -242,23 +253,65 @@ export function DialogoCobro({
   const puedeCobrar =
     cuadra && !faltaEnAlgunEfectivo && !faltaCliente && !frenadoPorLimite && !enviando
 
+  // Al cambiar de medio el campo "paga con" aparece o desaparece. Si
+  // desaparece con el foco adentro, el foco cae al body y Enter deja de
+  // cobrar; se lo lleva al boton. Si aparece, entra en el campo.
+  const medioPrincipal = principal.method
+  useEffect(() => {
+    if (!abierto || hecha) return
+    const id = requestAnimationFrame(() => {
+      const activo = document.activeElement
+      if (activo instanceof HTMLElement) {
+        // Quien escribe, o recorre los medios con las flechas, no pierde el foco.
+        if (esEditable(activo)) return
+        if (activo.closest('[role="radiogroup"]')) return
+      }
+      if (esEfectivo(medioPrincipal) && !dividido) campoPagaCon.current?.focus()
+      else botonCobrar.current?.focus()
+    })
+    return () => {
+      cancelAnimationFrame(id)
+    }
+  }, [abierto, hecha, medioPrincipal, dividido])
+
   function actualizar(clave: number, cambio: Partial<LineaDePago>) {
     setPagos((actuales) => actuales.map((p) => (p.clave === clave ? { ...p, ...cambio } : p)))
   }
 
+  function elegirMedio(clave: number, method: MedioCobrable) {
+    actualizar(clave, { method, recibido: '' })
+  }
+
+  function dividir() {
+    // El primer renglon queda con el importe vacio (= el resto) y el segundo
+    // arranca en el medio mas usado despues del efectivo. Se puede corregir.
+    const sugerido = MEDIOS_COBRABLES.find((m) => m !== principal.method) ?? 'OTHER'
+    setDividido(true)
+    setPagos((actuales) => [...actuales, nuevaLinea(siguienteClave, sugerido)])
+    setSiguienteClave((n) => n + 1)
+  }
+
   function agregarMedio() {
-    // El renglon nuevo arranca con el restante ya escrito: es lo que se quiere
-    // el 90 % de las veces, y se puede corregir.
     const yaUsados = new Set(pagos.map((p) => p.method))
     const sugerido = MEDIOS_COBRABLES.find((m) => !yaUsados.has(m)) ?? 'OTHER'
-    setPagos((actuales) => [...actuales, { ...nuevaLinea(siguienteClave, sugerido), importe: '' }])
+    setPagos((actuales) => [...actuales, nuevaLinea(siguienteClave, sugerido)])
     setSiguienteClave((n) => n + 1)
   }
 
   function quitar(clave: number) {
-    setPagos((actuales) =>
-      actuales.length === 1 ? actuales : actuales.filter((p) => p.clave !== clave),
-    )
+    setPagos((actuales) => {
+      const restantes = actuales.length === 1 ? actuales : actuales.filter((p) => p.clave !== clave)
+      if (restantes.length === 1) {
+        setDividido(false)
+        // Un solo renglon vuelve a llevarse el total entero.
+        return restantes.map((p) => ({ ...p, importe: '' }))
+      }
+      return restantes
+    })
+  }
+
+  function ponerRecibido(clave: number, monto: Monto) {
+    actualizar(clave, { recibido: textoLocalDeMonto(monto) })
   }
 
   async function cobrar() {
@@ -269,7 +322,7 @@ export function DialogoCobro({
       const aEnviar: PagoParaEnviar[] = resueltos
         .filter((p) => esPositivo(p.monto))
         .map((p) => {
-          const recibido = esEfectivo(p.method) ? montoDesdeTexto(p.recibido) : null
+          const recibido = esEfectivo(p.method) ? montoDesdeTextoLocal(p.recibido) : null
           return {
             method: p.method,
             amount: p.monto,
@@ -300,6 +353,47 @@ export function DialogoCobro({
     }
   }
 
+  /**
+   * Las teclas del cobro. Van en el cuerpo, no en la ventana: solo valen con
+   * el dialogo abierto y no pisan lo que el selector de cliente hace con
+   * Enter y con las letras.
+   */
+  function teclas(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (hecha || enviando) return
+    const objetivo = e.target
+    const elemento = objetivo instanceof HTMLElement ? objetivo : null
+    if (elemento?.closest('[data-selector-cliente]')) return
+
+    if (e.key === 'Enter') {
+      // Un boton con el foco hace lo suyo con Enter (Volver, Justo, un medio).
+      if (elemento?.tagName === 'BUTTON') return
+      if (!puedeCobrar) return
+      if (Date.now() - abiertoEn.current < MS_ANTES_DE_COBRAR) return
+      e.preventDefault()
+      void cobrar()
+      return
+    }
+
+    if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) return
+    // En un campo de texto comun las letras son texto. En el de "paga con"
+    // no pueden serlo --solo acepta numeros--, asi que ahi si eligen medio.
+    const enCampoDeTexto = esEditable(objetivo) && !elemento?.hasAttribute('data-money-input')
+    if (enCampoDeTexto) return
+
+    if (e.key.toUpperCase() === 'J' && esEfectivo(principal.method) && !dividido) {
+      e.preventDefault()
+      ponerRecibido(principal.clave, total)
+      return
+    }
+    const medio = medioDeTecla(e.key)
+    if (medio !== null && !dividido) {
+      e.preventDefault()
+      elegirMedio(principal.clave, medio)
+    }
+  }
+
+  const sugerencias = useMemo(() => sugerenciasDeRecibido(total), [total])
+
   if (hecha) {
     return (
       <Dialog
@@ -308,26 +402,40 @@ export function DialogoCobro({
         title="Venta registrada"
         size="sm"
         footer={
-          <Button variant="confirm" size="lg" block onClick={onNuevaVenta}>
+          <Button variant="confirm" size="lg" block autoFocus onClick={onNuevaVenta}>
             Nueva venta
+            <Kbd>Enter</Kbd>
           </Button>
         }
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col items-center gap-1 rounded-lg bg-success-quiet py-5">
-            <span aria-hidden="true" className="text-3xl text-success">
-              ✓
-            </span>
             <p className="text-sm text-ink-muted">
+              <span aria-hidden="true" className="mr-1.5 text-success">
+                ✓
+              </span>
               Venta{' '}
               <span className="font-semibold text-ink" data-numeric="">
                 #{hecha.id}
               </span>
             </p>
-            <Money amount={hecha.total} size="xl" />
+            {hecha.vuelto !== null ? (
+              <>
+                <span className="mt-2 text-sm font-medium text-ink-muted">Vuelto</span>
+                <Money amount={hecha.vuelto} size="hero" tone="in" />
+              </>
+            ) : (
+              <Money amount={hecha.total} size="xl" />
+            )}
           </div>
 
           <dl className="flex flex-col gap-2 text-sm">
+            <div className="flex justify-between gap-3">
+              <dt className="text-ink-muted">Total</dt>
+              <dd>
+                <Money amount={hecha.total} size="sm" />
+              </dd>
+            </div>
             {hecha.pagos.map((p, i) => (
               // El indice como clave: dos pagos pueden compartir medio e
               // importe --$5.000 en efectivo y otros $5.000 en efectivo-- y no
@@ -341,99 +449,307 @@ export function DialogoCobro({
                 </dd>
               </div>
             ))}
-            {hecha.vuelto !== null && (
-              <div className="flex justify-between gap-3 border-t border-line pt-2">
-                <dt className="text-ink-muted">Vuelto</dt>
-                <dd>
-                  <Money amount={hecha.vuelto} size="md" />
-                </dd>
-              </div>
-            )}
           </dl>
         </div>
       </Dialog>
     )
   }
 
+  const vueltoPrincipal = vueltos[0] ?? null
+
   return (
     <Dialog
       open={abierto}
       onClose={onCerrar}
       title="Cobrar"
-      size="md"
+      size="lg"
       dismissible={!enviando}
-      initialFocus={botonCobrar}
+      initialFocus={esEfectivo(principal.method) ? campoPagaCon : botonCobrar}
+      fullScreenMobile
+      onKeyDown={teclas}
       footer={
-        <>
-          <Button variant="secondary" onClick={onCerrar} disabled={enviando}>
-            Volver
-          </Button>
-          <Button
-            ref={botonCobrar}
-            variant="confirm"
-            size="lg"
-            loading={enviando}
-            disabled={!puedeCobrar}
-            onClick={() => void cobrar()}
-            className="sm:min-w-48"
-          >
-            {enviando ? 'Registrando…' : `Cobrar ${formatMoney(total)}`}
-          </Button>
-        </>
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm" aria-live="polite">
+            {cuadra ? (
+              <span className="font-medium text-success">✓ Cubierto</span>
+            ) : seFueDeMano ? (
+              <span className="text-warning">
+                Se pasa por <Money amount={absMonto(restante)} size="md" tone="out" />
+              </span>
+            ) : (
+              <span className="text-warning">
+                Pendiente <Money amount={restante} size="md" tone="out" />
+              </span>
+            )}
+          </p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button variant="secondary" onClick={onCerrar} disabled={enviando}>
+              Volver
+              <Kbd>Esc</Kbd>
+            </Button>
+            <Button
+              ref={botonCobrar}
+              variant="confirm"
+              size="lg"
+              loading={enviando}
+              disabled={!puedeCobrar}
+              onClick={() => void cobrar()}
+              className="sm:min-w-56"
+            >
+              {enviando ? 'Registrando…' : `Cobrar ${formatMoney(total)}`}
+              {!enviando && <Kbd>Enter</Kbd>}
+            </Button>
+          </div>
+        </div>
       }
     >
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
         {error && (
           <Alert tone="danger" title="No se registró la venta">
             {error} Podés reintentar; no se cobró nada.
           </Alert>
         )}
 
-        <div className="rounded-lg border border-line bg-sunken">
-          <ul className="max-h-40 divide-y divide-line overflow-y-auto px-3">
-            {lineas.map((l) => (
-              <li key={l.productId} className="flex items-center gap-3 py-2 text-sm">
-                <span className="w-16 shrink-0 text-right text-ink-muted" data-numeric="">
-                  {formatearCantidadConUnidad(l.quantity, l.saleUnit)}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-ink">{l.name}</span>
-                <Money amount={precioPorCantidad(l.price, l.quantity)} size="sm" />
-              </li>
-            ))}
-          </ul>
-          <div className="flex items-baseline justify-between border-t border-line px-3 py-3">
-            <span className="text-sm text-ink-muted">Total</span>
+        {/* El total, y los articulos plegados: en escritorio el ticket se ve
+            detras, y en el telefono lo que importa es la cifra. */}
+        <div className="rounded-lg border border-line bg-sunken px-4 py-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-sm font-medium text-ink-muted">Total</span>
             <Money amount={total} size="hero" />
+          </div>
+          <details className="mt-1 text-sm">
+            <summary className="cursor-pointer select-none text-ink-muted hover:text-ink">
+              {lineas.length} {lineas.length === 1 ? 'artículo' : 'artículos'}
+            </summary>
+            <ul className="mt-2 max-h-32 divide-y divide-line overflow-y-auto">
+              {lineas.map((l) => (
+                <li key={l.productId} className="flex items-center gap-3 py-1.5">
+                  <span className="w-16 shrink-0 text-right text-ink-muted" data-numeric="">
+                    {formatearCantidadConUnidad(l.quantity, l.saleUnit)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-ink">{l.name}</span>
+                  <Money amount={precioPorCantidad(l.price, l.quantity)} size="sm" />
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+
+        {!dividido && (
+          <>
+            <PaymentSelector
+              value={principal.method}
+              disabled={enviando}
+              onChange={(m) => {
+                elegirMedio(principal.clave, m)
+              }}
+            />
+
+            {esEfectivo(principal.method) && (
+              <div className="flex flex-col gap-3 rounded-lg border border-line bg-sunken p-4">
+                <MoneyInput
+                  ref={campoPagaCon}
+                  label="Paga con"
+                  labelVisible
+                  size="lg"
+                  placeholder={textoLocalDeMonto(total)}
+                  value={principal.recibido}
+                  disabled={enviando}
+                  onChange={(texto) => {
+                    actualizar(principal.clave, { recibido: texto })
+                  }}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={enviando}
+                    onClick={() => {
+                      ponerRecibido(principal.clave, total)
+                    }}
+                  >
+                    Justo
+                    <Kbd>J</Kbd>
+                  </Button>
+                  {sugerencias.map((s) => (
+                    <Button
+                      key={s}
+                      size="sm"
+                      variant="secondary"
+                      disabled={enviando}
+                      onClick={() => {
+                        ponerRecibido(principal.clave, s)
+                      }}
+                    >
+                      {formatMoney(s)}
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
+                  <span className="text-sm font-medium text-ink-muted">Vuelto</span>
+                  {vueltoPrincipal === null ? (
+                    <span className="text-2xl text-ink-faint" data-numeric="">
+                      —
+                    </span>
+                  ) : esNegativo(vueltoPrincipal) ? (
+                    <span className="text-right text-sm text-warning" role="status">
+                      Falta <Money amount={absMonto(vueltoPrincipal)} size="md" tone="out" />
+                      <span className="block text-xs">se recibió menos que el total</span>
+                    </span>
+                  ) : (
+                    <Money amount={vueltoPrincipal} size="xl" tone="in" />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {principal.method === 'TRANSFER' && (
+              <p className="text-sm text-ink-muted">
+                Confirmá cuando veas la transferencia acreditada. No entra al cajón, así que no suma
+                al efectivo de la caja.
+              </p>
+            )}
+            {(principal.method === 'DEBIT_CARD' || principal.method === 'CREDIT_CARD') && (
+              <p className="text-sm text-ink-muted">
+                Pasá la tarjeta por el posnet y confirmá acá. No entra al cajón.
+              </p>
+            )}
+          </>
+        )}
+
+        {dividido && (
+          <div className="flex flex-col gap-3">
+            {resueltos.map((p, i) => {
+              const vuelto = vueltos[i] ?? null
+              return (
+                <div
+                  key={p.clave}
+                  className="flex flex-col gap-3 rounded-lg border border-line bg-sunken p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold tracking-wide text-ink-faint uppercase">
+                      Pago {i + 1}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={enviando}
+                      onClick={() => {
+                        quitar(p.clave)
+                      }}
+                    >
+                      Quitar
+                    </Button>
+                  </div>
+                  <PaymentSelector
+                    compacto
+                    label={`Medio del pago ${String(i + 1)}`}
+                    value={p.method}
+                    disabled={enviando}
+                    onChange={(m) => {
+                      elegirMedio(p.clave, m)
+                    }}
+                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <MoneyInput
+                      label={`Importe del pago ${String(i + 1)}`}
+                      labelVisible
+                      value={p.importe}
+                      placeholder={p.importe === '' ? textoLocalDeMonto(p.monto) : undefined}
+                      disabled={enviando}
+                      onChange={(texto) => {
+                        actualizar(p.clave, { importe: texto })
+                      }}
+                    />
+                    {esEfectivo(p.method) && (
+                      <MoneyInput
+                        label={`Paga con (pago ${String(i + 1)})`}
+                        labelVisible
+                        value={p.recibido}
+                        disabled={enviando}
+                        onChange={(texto) => {
+                          actualizar(p.clave, { recibido: texto })
+                        }}
+                      />
+                    )}
+                  </div>
+                  {vuelto !== null && !esNegativo(vuelto) && (
+                    <p className="text-sm text-ink-muted">
+                      Vuelto <Money amount={vuelto} size="md" tone="in" />
+                    </p>
+                  )}
+                  {vuelto !== null && esNegativo(vuelto) && (
+                    <p className="text-sm text-warning" role="status">
+                      Falta <Money amount={absMonto(vuelto)} size="sm" tone="out" />: se recibió
+                      menos que este pago.
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {pagos.length < MEDIOS_COBRABLES.length && (
+                <Button size="sm" variant="secondary" disabled={enviando} onClick={agregarMedio}>
+                  Agregar medio de pago
+                </Button>
+              )}
+            </div>
+
+            <dl className="flex flex-col gap-1 rounded-lg border border-line px-4 py-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-muted">Total</dt>
+                <dd>
+                  <Money amount={total} size="sm" />
+                </dd>
+              </div>
+              {resueltos.map((p) => (
+                <div key={p.clave} className="flex justify-between gap-3">
+                  <dt className="text-ink-muted">{etiquetaDeMedio(p.method)}</dt>
+                  <dd>
+                    <Money amount={p.monto} size="sm" />
+                  </dd>
+                </div>
+              ))}
+              <div className="flex justify-between gap-3 border-t border-line pt-1 font-medium">
+                <dt className="text-ink-muted">{seFueDeMano ? 'Se pasa por' : 'Pendiente'}</dt>
+                <dd>
+                  <Money amount={absMonto(restante)} size="sm" tone={cuadra ? 'neutral' : 'out'} />
+                </dd>
+              </div>
+            </dl>
+          </div>
+        )}
+
+        {/*
+          El cliente. Cuando hay una linea a cuenta, elegirlo es obligatorio y
+          el selector se abre solo: una deuda sin deudor no se puede cobrar.
+          Si no, es opcional y discreto: la venta queda en su historial.
+        */}
+        <div
+          data-selector-cliente=""
+          className="flex flex-col gap-2 border-t border-line pt-4 sm:flex-row sm:items-start sm:justify-between"
+        >
+          <span className="shrink-0 text-sm font-medium text-ink-muted">
+            Cliente{hayFiado ? <span className="ml-1 text-danger">*</span> : ' (opcional)'}
+          </span>
+          <div className="min-w-0 sm:flex-1">
+            <SelectorDeCliente
+              cliente={cliente}
+              obligatorio={hayFiado}
+              deshabilitado={enviando}
+              onElegir={(c) => {
+                setCliente(c)
+                setAutorizarExceso(false)
+              }}
+            />
           </div>
         </div>
 
         {/*
-          El cliente. Va ARRIBA de los medios y no adentro: una venta puede
-          tener cliente sin tener fiado --queda asociada a su historial-- y el
-          fiado no es lo unico que lo justifica.
-
-          Cuando hay una linea `ACCOUNT`, el selector pasa a ser obligatorio y
-          se abre solo: una deuda sin deudor no se puede cobrar.
-        */}
-        <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-ink">
-            Cliente {hayFiado && <span className="text-danger">*</span>}
-          </span>
-          <SelectorDeCliente
-            cliente={cliente}
-            obligatorio={hayFiado}
-            deshabilitado={enviando}
-            onElegir={(c) => {
-              setCliente(c)
-              setAutorizarExceso(false)
-            }}
-          />
-        </div>
-
-        {/*
-          Los cinco numeros del objetivo 23, mostrados ANTES de confirmar. Un
-          409 pelado obliga a quien atiende a adivinar por que no se pudo, con
-          el cliente enfrente.
+          Los cinco numeros del credito, mostrados ANTES de confirmar. Un 409
+          pelado obliga a quien atiende a adivinar por que no se pudo, con el
+          cliente enfrente.
         */}
         {credito !== null && (
           <div
@@ -448,12 +764,12 @@ export function DialogoCobro({
               <div className="flex justify-between gap-3">
                 <dt className="text-ink-muted">Saldo actual</dt>
                 <dd data-numeric="">
-                  <Money amount={credito.balance.replace('-', '')} size="sm" />
+                  <Money amount={absMonto(credito.balance)} size="sm" />
                   {esNegativo(credito.balance) && ' a favor'}
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-ink-muted">Compra a cuenta</dt>
+                <dt className="text-ink-muted">Esta venta</dt>
                 <dd data-numeric="">
                   <Money amount={aCuenta} size="sm" />
                 </dd>
@@ -461,7 +777,7 @@ export function DialogoCobro({
               <div className="flex justify-between gap-3 border-t border-line pt-1 font-medium">
                 <dt className="text-ink-muted">Saldo resultante</dt>
                 <dd data-numeric="">
-                  <Money amount={credito.saldoResultante.replace('-', '')} size="sm" />
+                  <Money amount={absMonto(credito.saldoResultante)} size="sm" />
                   {esNegativo(credito.saldoResultante) && ' a favor'}
                 </dd>
               </div>
@@ -527,126 +843,15 @@ export function DialogoCobro({
           </Alert>
         )}
 
-        <fieldset className="flex flex-col gap-3">
-          <legend className="mb-1 text-sm font-medium text-ink">Cómo paga</legend>
-
-          {resueltos.map((p, i) => (
-            <div key={p.clave} className="flex flex-wrap items-end gap-2">
-              <Field label="Medio" className="min-w-36 flex-1">
-                <Select
-                  value={p.method}
-                  disabled={enviando}
-                  onChange={(e) => {
-                    actualizar(p.clave, { method: e.target.value as MedioCobrable, recibido: '' })
-                  }}
-                >
-                  {MEDIOS_COBRABLES.map((m) => (
-                    <option key={m} value={m}>
-                      {etiquetaDeMedio(m)}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-
-              <Field
-                label="Importe"
-                className="min-w-28 flex-1"
-                hint={pagos.length === 1 ? 'Vacío = el total' : undefined}
-              >
-                <Input
-                  inputMode="decimal"
-                  placeholder={p.monto}
-                  value={p.importe}
-                  disabled={enviando}
-                  onChange={(e) => {
-                    actualizar(p.clave, { importe: e.target.value })
-                  }}
-                />
-              </Field>
-
-              {esEfectivo(p.method) && (
-                <Field label="Con cuánto paga" className="min-w-28 flex-1">
-                  <Input
-                    inputMode="decimal"
-                    placeholder="0,00"
-                    value={p.recibido}
-                    disabled={enviando}
-                    onChange={(e) => {
-                      actualizar(p.clave, { recibido: e.target.value })
-                    }}
-                  />
-                </Field>
-              )}
-
-              {pagos.length > 1 && (
-                <IconButton
-                  label={`Quitar el pago con ${etiquetaDeMedio(p.method)}`}
-                  variant="danger"
-                  disabled={enviando}
-                  onClick={() => {
-                    quitar(p.clave)
-                  }}
-                >
-                  <svg
-                    className="h-5 w-5"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M5 12h14" />
-                  </svg>
-                </IconButton>
-              )}
-
-              {vueltos[i] !== null && vueltos[i] !== undefined && !esNegativo(vueltos[i]) && (
-                <p className="w-full text-sm text-ink-muted">
-                  Vuelto: <Money amount={vueltos[i]} size="sm" />
-                </p>
-              )}
-            </div>
-          ))}
-
-          {pagos.length < MEDIOS_COBRABLES.length && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={enviando}
-              onClick={agregarMedio}
-              className="self-start"
-            >
-              + Agregar otro medio
+        {!dividido && (
+          <div>
+            <Button size="sm" variant="ghost" disabled={enviando} onClick={dividir}>
+              Dividir el pago
             </Button>
-          )}
-        </fieldset>
+          </div>
+        )}
 
-        {/*
-          El restante, siempre a la vista. Es lo unico que decide si el boton
-          de cobrar esta habilitado, asi que tiene que poder leerse sin buscar.
-        */}
-        <div
-          className={
-            cuadra
-              ? 'flex items-baseline justify-between rounded-lg border border-line bg-raised px-4 py-3'
-              : 'flex items-baseline justify-between rounded-lg border border-warning/45 bg-warning-quiet px-4 py-3'
-          }
-        >
-          <span className="text-sm text-ink-muted">
-            {cuadra ? 'Cubierto' : seFueDeMano ? 'Se pasa por' : 'Restante'}
-          </span>
-          {cuadra ? (
-            <span className="text-sm font-medium text-success">✓ Todo cubierto</span>
-          ) : (
-            <Money
-              amount={seFueDeMano ? restarMontos(CERO, restante) : restante}
-              size="xl"
-              tone="out"
-            />
-          )}
-        </div>
-
-        {faltaEnAlgunEfectivo && (
+        {faltaEnAlgunEfectivo && dividido && (
           <Alert tone="warning">
             En un pago en efectivo se recibió menos de lo que ese pago cubre.
           </Alert>

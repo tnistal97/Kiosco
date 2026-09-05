@@ -11,6 +11,7 @@ import {
 import { CERO, type Monto } from '@/lib/money'
 import {
   denominadorDePrecio,
+  formatearCantidad,
   formatearCantidadConUnidad,
   motivoDeCantidadInvalida,
   politicaDe,
@@ -44,10 +45,16 @@ import { balanzaActual } from '@/lib/scale'
 export function DialogoPeso({
   abierto,
   producto,
+  inicial = null,
   onCerrar,
   onConfirmar,
 }: {
   abierto: boolean
+  /**
+   * Peso con el que arranca el campo, para EDITAR una linea que ya esta en el
+   * ticket. `null` --lo normal-- es un producto recien escaneado: arranca vacio.
+   */
+  inicial?: TextoCantidad | null
   producto: {
     name: string
     price: Monto
@@ -62,10 +69,13 @@ export function DialogoPeso({
   const [texto, setTexto] = useState('')
 
   // Cada apertura arranca vacia. Conservar el peso anterior haria que confirmar
-  // sin mirar cobrara el queso del cliente de antes.
+  // sin mirar cobrara el queso del cliente de antes. Al editar una linea, en
+  // cambio, arranca con el peso que tiene y seleccionado: se pisa escribiendo.
   useEffect(() => {
-    if (abierto) setTexto('')
-  }, [abierto, producto])
+    if (!abierto) return
+    setTexto(inicial === null ? '' : formatearCantidad(inicial, producto?.saleUnit ?? 'KG'))
+    setTimeout(() => campo.current?.select(), 60)
+  }, [abierto, producto, inicial])
 
   const unidad = producto?.saleUnit ?? 'KG'
   const politica = politicaDe(unidad)
@@ -131,7 +141,7 @@ export function DialogoPeso({
             onClick={confirmar}
             className="sm:w-auto"
           >
-            Agregar
+            {inicial === null ? 'Agregar' : 'Guardar'}
           </Button>
         </div>
       }

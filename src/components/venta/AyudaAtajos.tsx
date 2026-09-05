@@ -1,47 +1,69 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Dialog } from '@/components/ui'
+import { Dialog, IconButton } from '@/components/ui'
 
 /**
- * Atajos de la caja.
+ * Las teclas de la caja, en un solo lugar.
  *
- * Ayuda discreta: un enlace chico al pie, no un panel permanente. Quien ya
- * los sabe no necesita verlos todo el dia, y quien no, los encuentra.
+ * La gramatica principal va primero y se explica sola: flechas, Enter,
+ * Escape, Supr. Los atajos viejos --F12, Alt+N, Ctrl+K-- siguen funcionando
+ * para quien ya los tenia en los dedos, pero van al final y no se muestran en
+ * ningun boton (auditoria, H-07).
  */
-const ATAJOS: Array<{ teclas: string[]; que: string }> = [
-  { teclas: ['Ctrl', 'K'], que: 'Ir al buscador' },
-  { teclas: ['/'], que: 'Ir al buscador (fuera de un campo)' },
-  { teclas: ['↑', '↓'], que: 'Elegir un resultado' },
-  { teclas: ['Enter'], que: 'Agregar el resultado elegido' },
-  { teclas: ['+', '−'], que: 'Cambiar la cantidad de una línea' },
-  { teclas: ['Supr'], que: 'Quitar la línea (con el foco en la cantidad)' },
-  { teclas: ['F12'], que: 'Cobrar' },
-  // Fase 5A.1. `Alt` y no `Ctrl`: Ctrl+N es "ventana nueva" en todos los
-  // navegadores y no se puede interceptar desde una pagina.
-  { teclas: ['Alt', 'N'], que: 'Dar de alta un producto' },
-  { teclas: ['Esc'], que: 'Cerrar el diálogo o vaciar la búsqueda' },
+const GRAMATICA: Array<{ teclas: string[]; que: string }> = [
+  { teclas: ['↑', '↓'], que: 'Elegir una línea del ticket, o un resultado si estás buscando' },
+  { teclas: ['←', '→'], que: 'Una unidad menos o más en la línea elegida' },
+  {
+    teclas: ['Enter'],
+    que: 'Busca el código, agrega el resultado, o abre el cobro con el campo vacío',
+  },
+  { teclas: ['Esc'], que: 'Vuelve un paso: vacía el campo, deselecciona, cierra' },
+  { teclas: ['Supr'], que: 'Quita la línea elegida' },
 ]
 
-export function AyudaAtajos() {
+const ALIAS: Array<{ teclas: string[]; que: string }> = [
+  { teclas: ['F12'], que: 'Cobrar' },
+  { teclas: ['Alt', 'N'], que: 'Producto nuevo' },
+  { teclas: ['Ctrl', 'K'], que: 'Ir al campo de escaneo' },
+  { teclas: ['E', 'D', 'R', 'T', 'F', 'O'], que: 'En el cobro, elegir el medio de pago' },
+]
+
+function Fila({ teclas, que }: { teclas: string[]; que: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <dt className="flex shrink-0 gap-1">
+        {teclas.map((t) => (
+          <kbd
+            key={t}
+            className="rounded border border-line-strong bg-raised px-2 py-0.5 font-mono text-xs text-ink"
+          >
+            {t}
+          </kbd>
+        ))}
+      </dt>
+      <dd className="min-w-0 text-right text-sm text-ink-muted">{que}</dd>
+    </div>
+  )
+}
+
+export function AyudaAtajos({ className }: { className?: string }) {
   const [abierto, setAbierto] = useState(false)
 
   return (
     <>
-      <div className="flex justify-end">
-        {/* `sm` y no `xs`: es un boton que se toca, y en la caja tambien se
-            usa desde una tablet. `xs` mide 32 px y queda por debajo del
-            minimo tactil. */}
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            setAbierto(true)
-          }}
-        >
-          Atajos de teclado
-        </Button>
-      </div>
+      <IconButton
+        label="Atajos de teclado"
+        variant="ghost"
+        className={className}
+        onClick={() => {
+          setAbierto(true)
+        }}
+      >
+        <span aria-hidden="true" className="text-base font-semibold">
+          ?
+        </span>
+      </IconButton>
 
       <Dialog
         open={abierto}
@@ -49,24 +71,20 @@ export function AyudaAtajos() {
           setAbierto(false)
         }}
         title="Atajos de teclado"
-        description="La caja se puede usar entera sin mouse."
+        description="La caja se usa entera sin mouse."
         size="sm"
       >
         <dl className="flex flex-col gap-2.5">
-          {ATAJOS.map((a) => (
-            <div key={a.que} className="flex items-center justify-between gap-4">
-              <dt className="flex shrink-0 gap-1">
-                {a.teclas.map((t) => (
-                  <kbd
-                    key={t}
-                    className="rounded border border-line-strong bg-raised px-2 py-0.5 font-mono text-xs text-ink"
-                  >
-                    {t}
-                  </kbd>
-                ))}
-              </dt>
-              <dd className="min-w-0 text-right text-sm text-ink-muted">{a.que}</dd>
-            </div>
+          {GRAMATICA.map((a) => (
+            <Fila key={a.que} {...a} />
+          ))}
+        </dl>
+        <p className="mt-5 mb-2 text-xs font-semibold tracking-wide text-ink-faint uppercase">
+          También funcionan
+        </p>
+        <dl className="flex flex-col gap-2.5">
+          {ALIAS.map((a) => (
+            <Fila key={a.que} {...a} />
           ))}
         </dl>
       </Dialog>

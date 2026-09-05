@@ -1,115 +1,125 @@
 'use client'
 
-import { memo } from 'react'
-import { Button, EmptyState, IconButton, Money, QuantityInput, cn } from '@/components/ui'
+import { memo, useEffect, useId, useRef } from 'react'
+import { Button, EmptyState, Kbd, Money, QuantityInput, cn } from '@/components/ui'
 import type { CartLine } from '@/store/cart'
 import type { Monto } from '@/lib/money'
 import { aMilesimas, desdeMilesimas, precioPorCantidad, type TextoCantidad } from '@/lib/cantidad'
-import { denominadorDePrecio, politicaDe } from '@/modules/products/units'
+import {
+  denominadorDePrecio,
+  esFraccionable,
+  formatearCantidadConUnidad,
+  politicaDe,
+} from '@/modules/products/units'
+import { esEditable } from './foco'
+import { moverSeleccion } from './teclado'
 
 /**
  * El ticket en curso.
  *
- * Cada linea muestra lo que hay que poder comprobar de un vistazo: producto,
- * precio unitario, cantidad, subtotal y cuanto stock queda.
+ * Una linea por producto, densa: nombre y subtotal en el primer renglon,
+ * "2 u. × $ 4.850" en el segundo. Los controles --cantidad y quitar-- solo se
+ * dibujan en la linea SELECCIONADA: es lo que permite once lineas a la vista
+ * en 1366 x 768 en vez de cuatro (auditoria, §22), y lo que hace que un toque
+ * en una tablet sea "elegir" y el segundo "corregir".
+ *
+ * La seleccion es una idea de teclado, no de foco: se mueve con ↑ ↓ desde el
+ * campo de escaneo sin que el cursor salga de ahi, y se marca con una barra y
+ * un fondo, no solo con color. El foco real solo entra al ticket con Tab, y
+ * entonces las mismas teclas funcionan desde aca.
  *
  * `memo` en la linea no es un adorno: con quince lineas y una cantidad que
  * cambia con cada tecla, volver a renderizar el ticket entero se nota en una
  * tablet. Solo se redibuja la linea que cambio.
  */
 
+/**
+ * La cantidad de una linea un paso mas arriba o abajo, o `null` si la linea
+ * se pesa: para un producto por kilo no hay un "paso" que tenga sentido, y se
+ * edita el peso entero.
+ */
+export function cantidadAjustada(linea: CartLine, delta: -1 | 1): TextoCantidad | null {
+  if (esFraccionable(linea.saleUnit)) return null
+  const paso = aMilesimas(politicaDe(linea.saleUnit).paso)
+  return desdeMilesimas(aMilesimas(linea.quantity) + delta * paso)
+}
+
 export const LineaTicket = memo(function LineaTicket({
   linea,
+  seleccionada,
+  onSeleccionar,
   onCantidad,
   onQuitar,
   onEditando,
 }: {
   linea: CartLine
+  seleccionada: boolean
+  onSeleccionar: (productId: number) => void
   onCantidad: (productId: number, cantidad: TextoCantidad) => void
   onQuitar: (productId: number) => void
   onEditando: (editando: boolean) => void
 }) {
   const subtotal = precioPorCantidad(linea.price, linea.quantity)
   const enElTope = aMilesimas(linea.quantity) >= aMilesimas(linea.stock)
-  const paso = aMilesimas(politicaDe(linea.saleUnit).paso)
+  const ref = useRef<HTMLLIElement>(null)
 
-  /**
-   * Atajos de la linea, activos mientras el foco esta dentro de ella.
-   *
-   *   +  y  −   cambian la cantidad. En el campo numerico no hacen nada por
-   *             su cuenta (filtra todo lo que no sea un digito), asi que
-   *             interceptarlos no le quita nada al usuario.
-   *   Supr      quita la linea. Backspace sigue editando el numero: son dos
-   *             teclas distintas y hacen dos cosas distintas.
-   */
-  function atajos(e: React.KeyboardEvent<HTMLLIElement>) {
-    if (e.key === '+') {
-      e.preventDefault()
-      onCantidad(linea.productId, desdeMilesimas(aMilesimas(linea.quantity) + paso))
-      return
-    }
-    if (e.key === '-' || e.key === '−') {
-      e.preventDefault()
-      onCantidad(linea.productId, desdeMilesimas(aMilesimas(linea.quantity) - paso))
-      return
-    }
-    if (e.key === 'Delete') {
-      e.preventDefault()
-      onQuitar(linea.productId)
-    }
-  }
+  // La seleccionada siempre a la vista: con veinte lineas, ↓ tiene que mostrar
+  // la que eligio y no dejarla debajo del pliegue.
+  useEffect(() => {
+    if (seleccionada) ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [seleccionada])
 
   return (
     <li
-      onKeyDown={atajos}
-      className="flex flex-col gap-2 border-b border-line px-3 py-3 last:border-b-0"
+      ref={ref}
+      id={`linea-${String(linea.productId)}`}
+      data-linea={linea.productId}
+      aria-current={seleccionada || undefined}
+      onClick={() => {
+        onSeleccionar(linea.productId)
+      }}
+      className={cn(
+        'flex flex-col gap-1 border-b border-l-[3px] border-b-line px-3 py-2.5 transition-colors last:border-b-0',
+        seleccionada ? 'border-l-primary bg-selection' : 'border-l-transparent hover:bg-raised/60',
+      )}
     >
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-ink">{linea.name}</p>
-          <p className="mt-0.5 text-xs text-ink-faint">
-            <Money amount={linea.price} size="sm" tone="muted" />{' '}
-            {denominadorDePrecio(linea.saleUnit) || 'c/u'}
-            {enElTope && <span className="ml-2 text-warning">· sin más stock</span>}
-          </p>
-        </div>
-        <IconButton
-          label={`Quitar ${linea.name} del ticket`}
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            onQuitar(linea.productId)
-          }}
-          className="-mt-1 -mr-1 shrink-0 text-ink-faint hover:text-danger"
-        >
-          <svg
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            aria-hidden="true"
-          >
-            <path d="M6 6 18 18M18 6 6 18" />
-          </svg>
-        </IconButton>
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{linea.name}</p>
+        <Money amount={subtotal} size="md" />
       </div>
+      <p className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-ink-muted" data-numeric="">
+        <span>{formatearCantidadConUnidad(linea.quantity, linea.saleUnit)}</span>
+        <span aria-hidden="true">×</span>
+        <Money amount={linea.price} size="sm" tone="muted" />
+        {denominadorDePrecio(linea.saleUnit) && <span>{denominadorDePrecio(linea.saleUnit)}</span>}
+        {enElTope && <span className="text-warning">· sin más stock</span>}
+      </p>
 
-      <div className="flex items-center justify-between gap-2">
-        <QuantityInput
-          size="sm"
-          value={linea.quantity}
-          unit={linea.saleUnit}
-          max={linea.stock}
-          label={`Cantidad de ${linea.name}`}
-          onChange={(q) => {
-            onCantidad(linea.productId, q)
-          }}
-          onEditingChange={onEditando}
-        />
-        <Money amount={subtotal} size="lg" />
-      </div>
+      {seleccionada && (
+        <div className="flex items-center justify-between gap-2 pt-1.5">
+          <QuantityInput
+            value={linea.quantity}
+            unit={linea.saleUnit}
+            max={linea.stock}
+            label={`Cantidad de ${linea.name}`}
+            onChange={(q) => {
+              onCantidad(linea.productId, q)
+            }}
+            onEditingChange={onEditando}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-ink-muted hover:text-danger"
+            onClick={() => {
+              onQuitar(linea.productId)
+            }}
+          >
+            Quitar
+            <Kbd>Supr</Kbd>
+          </Button>
+        </div>
+      )}
     </li>
   )
 })
@@ -118,11 +128,15 @@ export function Ticket({
   lineas,
   total,
   articulos,
+  seleccionada,
+  onSeleccionar,
   onCantidad,
   onQuitar,
+  onEditarPeso,
   onEditando,
   onVaciar,
   onCobrar,
+  onSalir,
   puedeCobrar,
   className,
 }: {
@@ -135,22 +149,99 @@ export function Ticket({
    * con 0,425 kg de queso daria 3,425 de nada.
    */
   articulos: number
+  /** Producto de la linea seleccionada con el teclado, o null. */
+  seleccionada: number | null
+  onSeleccionar: (productId: number | null) => void
   onCantidad: (productId: number, cantidad: TextoCantidad) => void
   onQuitar: (productId: number) => void
+  /** Enter sobre una linea que se pesa: abre el peso para corregirlo. */
+  onEditarPeso: (productId: number) => void
   onEditando: (editando: boolean) => void
   onVaciar: () => void
   onCobrar: () => void
+  /** Escape con el foco en el ticket: vuelve al campo de escaneo. */
+  onSalir?: () => void
   puedeCobrar: boolean
   className?: string
 }) {
   const vacio = lineas.length === 0
+  const idAyuda = useId()
+  const lineaSeleccionada = lineas.find((l) => l.productId === seleccionada) ?? null
+
+  /**
+   * Las mismas teclas que en el campo de escaneo, cuando el foco esta en el
+   * ticket. Se ignoran con el foco en un campo de texto: dentro del campo de
+   * cantidad las flechas ya suben y bajan el numero, y Supr borra un digito.
+   *
+   * El grupo enfocable es un `div` alrededor de la lista, y no la lista con
+   * otro rol: un `ul` con `role="group"` deja a sus `li` sin lista que los
+   * contenga, y eso es una falta de accesibilidad.
+   */
+  function alPresionar(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (esEditable(e.target)) return
+    const ids = lineas.map((l) => l.productId)
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        onSeleccionar(moverSeleccion(ids, seleccionada, 1))
+        return
+      case 'ArrowUp':
+        e.preventDefault()
+        onSeleccionar(moverSeleccion(ids, seleccionada, -1))
+        return
+      case 'ArrowRight':
+      case '+':
+        if (lineaSeleccionada) {
+          e.preventDefault()
+          ajustar(lineaSeleccionada, 1)
+        }
+        return
+      case 'ArrowLeft':
+      case '-':
+      case '−':
+        if (lineaSeleccionada) {
+          e.preventDefault()
+          ajustar(lineaSeleccionada, -1)
+        }
+        return
+      case 'Delete':
+        if (lineaSeleccionada) {
+          e.preventDefault()
+          onQuitar(lineaSeleccionada.productId)
+        }
+        return
+      case 'Enter':
+        if (lineaSeleccionada) {
+          e.preventDefault()
+          if (esFraccionable(lineaSeleccionada.saleUnit)) {
+            onEditarPeso(lineaSeleccionada.productId)
+          } else {
+            e.currentTarget
+              .querySelector<HTMLInputElement>('[aria-current] input[role="spinbutton"]')
+              ?.focus()
+          }
+        }
+        return
+      case 'Escape':
+        e.preventDefault()
+        onSalir?.()
+        return
+    }
+  }
+
+  function ajustar(linea: CartLine, delta: -1 | 1) {
+    const cantidad = cantidadAjustada(linea, delta)
+    if (cantidad === null) onEditarPeso(linea.productId)
+    else onCantidad(linea.productId, cantidad)
+  }
 
   return (
     <section
       aria-label="Ticket en curso"
       className={cn('flex min-h-0 flex-col border-line bg-surface', className)}
     >
-      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-3">
+      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-2.5">
         <h2 className="text-sm font-semibold text-ink">
           Ticket
           {!vacio && (
@@ -166,6 +257,18 @@ export function Ticket({
         )}
       </header>
 
+      {/* Lo que se anuncia al elegir una linea con el teclado, para quien no
+          la ve resaltarse. */}
+      <p className="sr-only" aria-live="polite">
+        {lineaSeleccionada
+          ? `${lineaSeleccionada.name}, ${formatearCantidadConUnidad(lineaSeleccionada.quantity, lineaSeleccionada.saleUnit)}`
+          : ''}
+      </p>
+      <p id={idAyuda} className="sr-only">
+        Flechas arriba y abajo eligen una línea; izquierda y derecha cambian la cantidad; Suprimir
+        la quita; Enter la edita.
+      </p>
+
       <div className="min-h-0 flex-1 overflow-y-auto">
         {vacio ? (
           <div className="p-4">
@@ -176,17 +279,28 @@ export function Ticket({
             />
           </div>
         ) : (
-          <ul>
-            {lineas.map((l) => (
-              <LineaTicket
-                key={l.productId}
-                linea={l}
-                onCantidad={onCantidad}
-                onQuitar={onQuitar}
-                onEditando={onEditando}
-              />
-            ))}
-          </ul>
+          <div
+            role="group"
+            tabIndex={0}
+            aria-label="Líneas del ticket"
+            aria-describedby={idAyuda}
+            onKeyDown={alPresionar}
+            className="outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px]"
+          >
+            <ul>
+              {lineas.map((l) => (
+                <LineaTicket
+                  key={l.productId}
+                  linea={l}
+                  seleccionada={l.productId === seleccionada}
+                  onSeleccionar={onSeleccionar}
+                  onCantidad={onCantidad}
+                  onQuitar={onQuitar}
+                  onEditando={onEditando}
+                />
+              ))}
+            </ul>
+          </div>
         )}
       </div>
 
@@ -202,16 +316,14 @@ export function Ticket({
         </div>
         <Button
           variant="confirm"
-          size="lg"
+          size="xl"
           block
           disabled={!puedeCobrar}
           onClick={onCobrar}
           className="text-lg"
         >
           Cobrar
-          <kbd className="ml-2 rounded border border-current/30 px-1.5 py-0.5 text-xs font-normal opacity-75">
-            F12
-          </kbd>
+          <Kbd>Enter</Kbd>
         </Button>
       </footer>
     </section>

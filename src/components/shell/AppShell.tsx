@@ -29,21 +29,27 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const { session, permisos } = useSession()
   const [cajonAbierto, setCajonAbierto] = useState(false)
-  const [contraida, setContraida] = useState(false)
+  // `null` = sin preferencia guardada. Entonces la barra arranca contraida en la
+  // caja y expandida en el resto: en 1366 px, los 168 px que gana el ticket son
+  // siete lineas mas a la vista (auditoria, §22). Quien la expanda queda con
+  // su eleccion en todas las pantallas.
+  const [preferencia, setPreferencia] = useState<boolean | null>(null)
+  const contraida = preferencia ?? pathname === '/venta'
 
   // La preferencia se lee al montar, no en el render inicial: el servidor no
   // tiene localStorage y leerlo antes daria un HTML distinto al del cliente.
   useEffect(() => {
     try {
-      setContraida(localStorage.getItem(CLAVE_CONTRAIDA) === '1')
+      const guardada = localStorage.getItem(CLAVE_CONTRAIDA)
+      if (guardada === '1' || guardada === '0') setPreferencia(guardada === '1')
     } catch {
       // Sin almacenamiento, la barra arranca expandida.
     }
   }, [])
 
   function alternarContraida() {
-    setContraida((v) => {
-      const nuevo = !v
+    setPreferencia(() => {
+      const nuevo = !contraida
       try {
         localStorage.setItem(CLAVE_CONTRAIDA, nuevo ? '1' : '0')
       } catch {
