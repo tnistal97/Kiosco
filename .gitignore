@@ -15,6 +15,9 @@
 
 # next.js
 /.next/
+# El servidor de desarrollo escribe aparte para no pisar la construccion de
+# produccion (next.config.ts, distDir). Ver docs/DEV_ENVIRONMENT.md.
+/.next-dev/
 /out/
 
 # production

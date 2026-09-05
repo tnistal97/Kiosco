@@ -72,7 +72,23 @@ export default defineConfig({
   webServer: {
     command: `npx next start -p ${PUERTO}`,
     url: BASE,
-    reuseExistingServer: !process.env.CI,
+    /**
+     * NO se reutiliza un servidor que ya estuviera escuchando.
+     *
+     * Antes decia `!process.env.CI`, y en este equipo eso costo dos tardes.
+     * Cuando una corrida se corta a la mitad, el `next start` queda huerfano
+     * en el 3101; la corrida siguiente lo reutilizaba y se probaba contra una
+     * construccion vieja. Peor: el limite de intentos de login vive en la
+     * memoria de ESE proceso, asi que los logins fallidos de la corrida
+     * anterior bloqueaban al usuario y las 289 pruebas fallaban en la primera
+     * pantalla, con un error que no se parecia en nada a la causa.
+     *
+     * Con `false`, si el puerto esta ocupado Playwright lo dice y se planta
+     * --"Port 3101 is used, make sure that nothing is running on the port"--
+     * que es exactamente el aviso que hacia falta. Para reutilizarlo a
+     * proposito: `E2E_REUSE=1 npm run e2e`.
+     */
+    reuseExistingServer: process.env.E2E_REUSE === '1',
     timeout: 120_000,
     env: { DATABASE_URL, NODE_ENV: 'production' },
   },

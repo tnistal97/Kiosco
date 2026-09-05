@@ -281,6 +281,8 @@ export default tseslint.config(
   {
     ignores: [
       '.next/**',
+      // El servidor de desarrollo construye aparte (next.config.ts, distDir).
+      '.next-dev/**',
       'node_modules/**',
       'coverage/**',
       'out/**',

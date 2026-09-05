@@ -1,5 +1,6 @@
 # Artefactos de compilacion y dependencias
 .next/
+.next-dev/
 node_modules/
 coverage/
 out/

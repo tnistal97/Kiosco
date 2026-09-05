@@ -55,6 +55,14 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    // El servidor de desarrollo construye en `.next-dev` (next.config.ts).
+    // Sin esta linea, Next reescribe el archivo entero en cada arranque.
+    ".next-dev/types/**/*.ts"
+  ],
   "exclude": ["node_modules"]
 }

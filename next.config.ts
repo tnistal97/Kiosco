@@ -49,6 +49,30 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
 
   /**
+   * El servidor de desarrollo NO escribe donde escribe la construccion.
+   *
+   * `next dev --turbopack` y `next build` usaban los dos `.next`. Con un
+   * servidor de desarrollo olvidado en el puerto 3000, la construccion de
+   * produccion quedaba mezclada con artefactos de Turbopack y el servidor
+   * levantaba roto:
+   *
+   *   Error: Cannot find module '../chunks/ssr/[turbopack]_runtime.js'
+   *   TypeError: routesManifest.dataRoutes is not iterable
+   *
+   * y todas las paginas contestaban 500 DESPUES de que el login respondiera
+   * 200, con lo cual la suite de extremo a extremo fallaba en `waitForURL` y
+   * el sintoma no se parecia en nada a la causa. Paso dos veces (fases 1 y 2).
+   *
+   * Con `.next-dev` aparte, desarrollo y construccion pueden convivir: son
+   * dos carpetas distintas y ninguna pisa a la otra. `next start`, el
+   * artefacto de release y el despliegue siguen usando `.next` como siempre.
+   *
+   * `next dev` pone NODE_ENV en 'development' antes de leer esta configuracion;
+   * `next build` y `next start`, en 'production'.
+   */
+  distDir: process.env.NODE_ENV === 'development' ? '.next-dev' : '.next',
+
+  /**
    * La raiz del proyecto es esta carpeta.
    *
    * Sin esto Next elige la raiz sola mirando donde hay un `package-lock.json`,
