@@ -270,7 +270,8 @@ test.describe('Caja', () => {
 
     await expect(page.getByText(/caja abierta por/i)).toBeVisible()
     await expect(page.getByText('Tiene que haber').first()).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Cerrar la caja' })).toBeVisible()
+    // Desde la Fase 2 cerrar es una pantalla propia: el panel lleva a ella.
+    await expect(page.getByRole('link', { name: 'Cerrar la caja' })).toBeVisible()
   })
 
   test('el historial de turnos muestra el turno en curso', async ({ page }) => {

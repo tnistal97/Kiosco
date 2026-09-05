@@ -160,6 +160,33 @@ test.describe('accesibilidad automatizada', () => {
     expect(detalle(violations)).toBe('sin faltas')
   })
 
+  // Fase 2: abrir y cerrar la caja son pantallas propias.
+  test('/caja/abrir no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/caja/abrir')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+    await page
+      .getByRole('link', { name: /ir a vender|volver/i })
+      .first()
+      .waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('/caja/cerrar no tiene faltas, con la diferencia a la vista', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/caja/cerrar')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+    const contado = page.getByLabel('Efectivo contado')
+    await contado.waitFor()
+    await contado.fill('100')
+    await page.getByRole('status').first().waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
   test('/ventas no tiene faltas', async ({ page }) => {
     await entrar(page, 'duenio')
     await page.goto('/ventas')

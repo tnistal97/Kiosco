@@ -300,7 +300,8 @@ test.describe('el escaneo dice qué pasó', () => {
 
     // Lo escrito sigue ahí: no hay que volver a tipearlo.
     await expect(dialogo(page).getByLabel('Nombre')).toHaveValue('Se va a caer')
-    await expect(dialogo(page).getByLabel(/^Precio/)).toHaveValue('800')
+    // El campo normaliza al salir: lo escrito se conserva, ya con su formato.
+    await expect(dialogo(page).getByLabel(/^Precio/)).toHaveValue('800,00')
     await expect(dialogo(page).getByText(/no se creó el producto/i)).toBeVisible()
   })
 

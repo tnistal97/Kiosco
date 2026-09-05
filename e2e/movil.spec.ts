@@ -13,7 +13,7 @@ import { PRODUCTOS, entrar, escanear } from './ayudantes'
  * rutas y 164 objetivos tactiles por debajo de 44 px, el mas chico de 20.
  */
 
-const RUTAS = ['/', '/venta', '/caja', '/ventas', '/productos', '/stock', '/auditoria', '/usuarios', '/compras', '/compras/nueva', '/proveedores', '/proveedores/2', '/reportes', '/clientes', '/devoluciones', '/stock/lotes', '/stock/lotes/1', '/stock/movimientos', '/inventarios', '/inventarios/1'] // prettier-ignore
+const RUTAS = ['/', '/venta', '/caja', '/caja/abrir', '/caja/cerrar', '/ventas', '/productos', '/stock', '/auditoria', '/usuarios', '/compras', '/compras/nueva', '/proveedores', '/proveedores/2', '/reportes', '/clientes', '/devoluciones', '/stock/lotes', '/stock/lotes/1', '/stock/movimientos', '/inventarios', '/inventarios/1'] // prettier-ignore
 
 /**
  * true si la PAGINA se desplaza al costado.
@@ -238,6 +238,12 @@ for (const [ancho, codigo] of [
     const confirmar = dialogo.getByRole('button', { name: /crear y agregar/i })
     await confirmar.scrollIntoViewIfNeeded()
     await confirmar.click()
+
+    // Se vende por kilo: recien creado, pide el peso. Tambien con la coma.
+    const peso = page.getByLabel(/^Peso$/)
+    await expect(peso).toHaveAttribute('inputmode', 'decimal')
+    await peso.fill('1,5')
+    await page.getByRole('button', { name: 'Agregar' }).click()
 
     await page.getByRole('button', { name: /^ticket/i }).click()
     await expect(

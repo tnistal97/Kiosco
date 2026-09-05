@@ -46,6 +46,22 @@ interface ProductoAPI {
   totalStock: string
 }
 
+/** Abre la ficha de un producto desde el menu de su fila en /productos. */
+async function abrirFicha(page: Page, nombre: string): Promise<void> {
+  await page.goto('/productos')
+  await page.getByRole('searchbox').first().fill(nombre)
+  await page.waitForTimeout(900)
+  await page
+    .getByRole('row')
+    .filter({ hasText: nombre })
+    .first()
+    .locator('button[aria-expanded]')
+    .first()
+    .click()
+  await page.getByRole('menuitem', { name: 'Editar' }).click()
+  await dialogo(page).getByRole('heading').first().waitFor()
+}
+
 async function buscarProducto(page: Page, nombre: string): Promise<ProductoAPI | null> {
   return page.evaluate(async (n: string) => {
     const r = await fetch(`/api/products?q=${encodeURIComponent(n)}&pageSize=10&estado=todos`)
@@ -84,12 +100,7 @@ test.describe('Un entero pelado entra en todos lados', () => {
 
   test('2. la ficha muestra el precio ya escrito como se escribe', async ({ page }) => {
     await entrar(page, 'admin')
-    await page.goto('/productos')
-    await page.getByRole('searchbox').first().fill('Numérico de prueba')
-    await page
-      .getByRole('button', { name: /Numérico de prueba/ })
-      .first()
-      .click()
+    await abrirFicha(page, 'Numérico de prueba')
 
     const precio = dialogo(page).getByLabel(/^Precio/)
     // Antes traia "1500.00", el texto del cable, y habia que tipear en ese
@@ -219,7 +230,7 @@ test.describe('Un entero pelado entra en todos lados', () => {
     await expect(page.getByText(/se guardaron/i).first()).toBeVisible({ timeout: 15_000 })
 
     const contado = await page.evaluate(async (sesion: number) => {
-      const r = await fetch(`/api/inventarios/${String(sesion)}/lineas?pageSize=200`)
+      const r = await fetch(`/api/inventarios/${String(sesion)}/lineas?pageSize=100`)
       const c = (await r.json()) as {
         data: Array<{ productName: string; countedQuantity: string | null }>
       }
@@ -233,12 +244,7 @@ test.describe('Un entero pelado entra en todos lados', () => {
 test.describe('El "1.500" de cada campo', () => {
   test('7. en un importe es mil quinientos', async ({ page }) => {
     await entrar(page, 'admin')
-    await page.goto('/productos')
-    await page.getByRole('searchbox').first().fill('Numérico de prueba')
-    await page
-      .getByRole('button', { name: /Numérico de prueba/ })
-      .first()
-      .click()
+    await abrirFicha(page, 'Numérico de prueba')
 
     const precio = dialogo(page).getByLabel(/^Precio/)
     await precio.click()

@@ -194,7 +194,7 @@ test.describe('El circuito completo: 5 cajas de 8, en dos entregas', () => {
     const ficha = page.getByRole('dialog')
 
     // $8.800 la caja de 8 = $1.100 la botella.
-    await expect(ficha.getByLabel(/^Costo/i).first()).toHaveValue(/1100/)
+    await expect(ficha.getByLabel(/^Costo/i).first()).toHaveValue(/1\.100/)
     // Y la actividad reciente lo explica.
     await expect(ficha.getByText(/Recepción de OC-/).first()).toBeVisible()
   })
