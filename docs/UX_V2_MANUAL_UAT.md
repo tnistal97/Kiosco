@@ -62,6 +62,28 @@
 - [ ] **Código desconocido**: ¿entiende «Código no registrado»? ¿Sabe qué hacer?
 - [ ] **Números a mano**: en «Paga con» escribir `20000` (sin coma ni centavos), en el peso `1,5`, en el alta rápida un costo `0` y un precio `1.500`. Anotar si en algún momento la persona intenta escribir `,00` o si el sistema le pide otro formato. Debe aceptar todo tal cual y mostrarlo como `20.000,00`, `1,500 kg`, `0,00` y `1.500,00`.
 
+## Fase 2: la meta de los cinco y los quince minutos
+
+Con la misma persona y la misma consigna («Esta es la caja.»), pero arrancando con la caja CERRADA. Se cronometra desde que ve la pantalla.
+
+**En menos de 5 minutos**, sin ayuda:
+
+- [ ] abre la caja (encuentra «Abrir caja» en el aviso de la venta o en Caja; escribe el efectivo inicial como quiere: `25000`, `25.000`, `0`);
+- [ ] vende 3 productos: al menos uno escaneado y al menos uno **tocado en la grilla** (sin escribir el nombre);
+- [ ] cambia una cantidad (con → / ← o con el − / +);
+- [ ] saca una línea (Supr o «Quitar»);
+- [ ] cobra en efectivo, ve el vuelto y cierra la venta con «Nueva venta».
+
+**En menos de 15 minutos**:
+
+- [ ] cobra una venta por transferencia y otra con débito;
+- [ ] cobra una venta dividida en dos medios (ve «Cargado / Falta» y «Cubre el total»);
+- [ ] cierra la caja: entiende «Tiene que haber», cuenta, ve «Cuadra» o «Falta $X», confirma;
+- [ ] encuentra la venta que hizo en «Ventas»;
+- [ ] explica con sus palabras qué hace cada pantalla (venta, cobro, caja) sin usar ninguna palabra técnica.
+
+Anotar en qué momento dudó, qué tocó primero cuando la caja estaba cerrada, y si en el teléfono llegó a «Cobrar» sin desplazarse.
+
 ## Resultado
 
 | Persona | Fecha | Equipo | Venta 1 (s) | Venta 2 (s) | Clics | Preguntas | Aprobado |
