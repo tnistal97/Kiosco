@@ -20,6 +20,10 @@ const GRAMATICA: Array<{ teclas: string[]; que: string }> = [
   },
   { teclas: ['Esc'], que: 'Vuelve un paso: vacía el campo, deselecciona, cierra' },
   { teclas: ['Supr'], que: 'Quita la línea elegida' },
+  {
+    teclas: ['Tab'],
+    que: 'Entra a los productos (también ↓ con el ticket vacío): las flechas los recorren, Enter agrega, Esc vuelve',
+  },
 ]
 
 const ALIAS: Array<{ teclas: string[]; que: string }> = [

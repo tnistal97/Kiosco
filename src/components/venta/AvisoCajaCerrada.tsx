@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Alert, ButtonLink } from '@/components/ui'
+import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest } from '@/lib/api-client'
 import { parseEstadoDeCaja } from '@/modules/cash/dto'
 
@@ -10,13 +11,19 @@ import { parseEstadoDeCaja } from '@/modules/cash/dto'
  *
  * Sin turno abierto el servidor rechaza la venta, y el cajero se enteraria
  * recien al apretar "Cobrar" --con el cliente enfrente y el ticket armado--.
- * Esto lo dice al entrar, y ofrece el camino para resolverlo.
+ * Esto lo dice al entrar y, desde la Fase 2, lleva DIRECTO a la apertura y
+ * vuelve aca: antes mandaba a la pantalla de caja y de ahi habia que
+ * encontrar el boton (auditoria, §6 08:00, "navegacion de ida y vuelta").
+ *
+ * Quien no puede abrirla ve a quien pedirselo, en vez de un boton que va a
+ * fallar.
  *
  * Se consulta una sola vez al montar y cuando la caja cambia. No hay sondeo:
  * el estado de la caja cambia cuando alguien hace algo, no solo.
  */
 export function AvisoCajaCerrada() {
   const [cerrada, setCerrada] = useState(false)
+  const puedeAbrir = usePermiso('cash.shift.open')
 
   useEffect(() => {
     let vivo = true
@@ -59,12 +66,16 @@ export function AvisoCajaCerrada() {
       tone="warning"
       title="La caja está cerrada"
       action={
-        <ButtonLink href="/caja" size="sm" variant="secondary">
-          Ir a la caja
-        </ButtonLink>
+        puedeAbrir ? (
+          <ButtonLink href="/caja/abrir?volver=/venta" size="sm" variant="primary">
+            Abrir caja
+          </ButtonLink>
+        ) : undefined
       }
     >
-      No se puede cobrar hasta abrirla. Contá el efectivo del cajón y abrila.
+      {puedeAbrir
+        ? 'Se puede armar el ticket, pero no cobrar. Contá el efectivo del cajón y abrila: es un minuto.'
+        : 'Se puede armar el ticket, pero no cobrar. Pedile a un encargado que abra la caja.'}
     </Alert>
   )
 }

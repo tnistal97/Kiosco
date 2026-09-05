@@ -50,6 +50,7 @@ export type AccionDelPos =
   | 'limpiar-campo'
   | 'deseleccionar'
   | 'cerrar-aviso'
+  | 'ir-a-grilla'
   | 'nada'
 
 export interface ContextoDelPos {
@@ -59,6 +60,8 @@ export interface ContextoDelPos {
   hayResultados: boolean
   /** Hay un bloque de "codigo no registrado" o similar en pantalla. */
   hayAviso: boolean
+  /** Hay tarjetas en la grilla de productos. Fase 2. */
+  hayGrilla?: boolean
 }
 
 export function accionDeTecla(tecla: TeclaDelLector, ctx: ContextoDelPos): AccionDelPos {
@@ -82,7 +85,12 @@ export function accionDeTecla(tecla: TeclaDelLector, ctx: ContextoDelPos): Accio
 
     case 'ArrowDown':
       if (modo === 'busqueda') return ctx.hayResultados ? 'resultado-siguiente' : 'nada'
-      if (modo === 'vacio') return ctx.hayLineas ? 'linea-siguiente' : 'nada'
+      // Con el ticket vacio no hay linea que elegir: ↓ entra a la grilla, que
+      // es lo unico que hay para recorrer. Con lineas, sigue eligiendo lineas.
+      if (modo === 'vacio') {
+        if (ctx.hayLineas) return 'linea-siguiente'
+        return ctx.hayGrilla === true ? 'ir-a-grilla' : 'nada'
+      }
       return 'nada'
 
     case 'ArrowLeft':
@@ -127,4 +135,69 @@ export function seleccionTrasQuitar(ids: readonly number[], quitado: number): nu
   const restantes = ids.filter((id) => id !== quitado)
   if (restantes.length === 0) return null
   return restantes[Math.min(Math.max(indice, 0), restantes.length - 1)] ?? null
+}
+
+// ---------------------------------------------------------------------------
+// La grilla de productos. UX V2, Fase 2.
+//
+// Desde la Fase 2 el punto de venta muestra una grilla de productos aunque
+// nadie haya escrito nada, y esa grilla se recorre con el teclado como
+// cualquier lista: ↑ ↓ ← → mueven, Enter agrega, Escape vuelve al lector. La
+// aritmetica de "que tarjeta sigue" vive aca, sin DOM, para probarla sola.
+// ---------------------------------------------------------------------------
+
+export type TeclaDeGrilla = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'Home' | 'End'
+
+const TECLAS_DE_GRILLA = new Set<string>([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Home',
+  'End',
+])
+
+export function esTeclaDeGrilla(tecla: string): tecla is TeclaDeGrilla {
+  return TECLAS_DE_GRILLA.has(tecla)
+}
+
+/**
+ * Que tarjeta queda enfocada al moverse por la grilla.
+ *
+ * ← → van de a una; ↑ ↓ de a una fila, que son `columnas` tarjetas. En los
+ * bordes no se da la vuelta --pasar de la ultima a la primera sin querer es
+ * como se agrega el producto equivocado-- y bajar desde una fila incompleta
+ * lleva a la ultima tarjeta, que es a la que se queria llegar.
+ */
+export function moverEnGrilla(
+  indice: number,
+  tecla: TeclaDeGrilla,
+  total: number,
+  columnas: number,
+): number {
+  if (total <= 0) return -1
+  const ultimo = total - 1
+  const cols = Math.max(1, columnas)
+  const actual = Math.min(ultimo, Math.max(0, indice))
+
+  switch (tecla) {
+    case 'ArrowLeft':
+      return Math.max(0, actual - 1)
+    case 'ArrowRight':
+      return Math.min(ultimo, actual + 1)
+    case 'ArrowUp':
+      return actual - cols >= 0 ? actual - cols : actual
+    case 'ArrowDown': {
+      if (actual + cols <= ultimo) return actual + cols
+      // Queda una fila incompleta abajo: se va a la ultima tarjeta. Si ya se
+      // esta en la ultima fila, no hay adonde ir.
+      const filaActual = Math.floor(actual / cols)
+      const ultimaFila = Math.floor(ultimo / cols)
+      return filaActual < ultimaFila ? ultimo : actual
+    }
+    case 'Home':
+      return 0
+    case 'End':
+      return ultimo
+  }
 }

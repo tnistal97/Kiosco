@@ -611,6 +611,30 @@ export function DialogoCobro({
 
         {dividido && (
           <div className="flex flex-col gap-3">
+            {/* Lo ya cargado y lo que falta, arriba de todo y en una linea:
+                es lo unico que hay que mirar mientras se arma un pago
+                combinado. */}
+            <div
+              className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-lg border border-line bg-raised px-4 py-2.5 text-sm"
+              aria-live="polite"
+            >
+              <span className="text-ink-muted">
+                Cargado <Money amount={sumaDePagos} size="md" />
+              </span>
+              <span className={cuadra ? 'font-medium text-success' : 'font-medium text-warning'}>
+                {cuadra ? (
+                  '✓ Cubre el total'
+                ) : seFueDeMano ? (
+                  <>
+                    Se pasa por <Money amount={absMonto(restante)} size="md" tone="out" />
+                  </>
+                ) : (
+                  <>
+                    Falta <Money amount={restante} size="md" tone="out" />
+                  </>
+                )}
+              </span>
+            </div>
             {resueltos.map((p, i) => {
               const vuelto = vueltos[i] ?? null
               return (

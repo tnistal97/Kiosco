@@ -4,18 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Button,
-  Drawer,
-  EmptyState,
   IconButton,
-  Money,
-  PageContainer,
   ScannerInput,
-  SkeletonRows,
   aviso,
   type BarcodeStatus,
   type TeclaDelLector,
 } from '@/components/ui'
-import { ResultadoBusqueda } from '@/components/venta/ResultadoBusqueda'
 import { Ticket, cantidadAjustada } from '@/components/venta/Ticket'
 import { DialogoPeso } from '@/components/venta/DialogoPeso'
 import {
@@ -28,8 +22,15 @@ import { AvisoCajaCerrada } from '@/components/venta/AvisoCajaCerrada'
 import { EscanerCamara } from '@/components/venta/EscanerCamara'
 import { DialogoAltaRapida } from '@/components/venta/DialogoAltaRapida'
 import { CodigoSinResolver, type EstadoDelCodigo } from '@/components/venta/CodigoSinResolver'
-import { Favoritos } from '@/components/venta/Favoritos'
+import {
+  ProductBrowser,
+  type ProductBrowserHandle,
+  type SeccionDelCatalogo,
+} from '@/components/venta/ProductBrowser'
+import { POSLayout } from '@/components/venta/POSLayout'
 import { useFavoritos } from '@/components/venta/useFavoritos'
+import { useFrecuentes } from '@/components/venta/useFrecuentes'
+import { useProductosPorIds } from '@/components/venta/useProductosPorIds'
 import { devolverFocoA } from '@/components/venta/foco'
 import {
   accionDeTecla,
@@ -49,13 +50,21 @@ import { aMilesimas, type TextoCantidad } from '@/lib/cantidad'
 import { esFraccionable, formatearCantidadConUnidad } from '@/modules/products/units'
 import { motivoDeCodigoInvalido, normalizarCodigo } from '@/modules/products/barcode'
 
-/** Cuantos resultados se muestran. Mas no entran en pantalla sin scroll. */
-const RESULTADOS_VISIBLES = 8
+/**
+ * Cuantas tarjetas trae cada consulta del catalogo.
+ *
+ * Sesenta entran en dos o tres pantallas de grilla. Con mas, la grilla pide
+ * buscar por nombre, que es mas rapido que desplazar cien tarjetas.
+ */
+const TARJETAS_POR_CONSULTA = 60
+
+/** Cuantos productos entran en "Frecuentes": favoritos primero, despues los mas vendidos. */
+const TOPE_DE_FRECUENTES = 24
 
 /**
  * Lo minimo que hace falta saber de un producto para ponerlo en el ticket.
- * Es lo que tiene un resultado de busqueda, un favorito y --reconstruido-- una
- * linea que se vuelve a pesar.
+ * Es lo que tiene una tarjeta del catalogo y --reconstruido-- una linea que
+ * se vuelve a pesar.
  */
 type ProductoVendible = Pick<
   Product,
@@ -99,11 +108,13 @@ function productoDeLinea(linea: CartLine): ProductoVendible {
 }
 
 /**
- * El punto de venta. UX V2, Fase 1.
+ * El punto de venta. UX V2, Fase 2.
  *
- * Un solo campo --"Escaneá o buscá un producto"--, el ticket siempre a la
- * vista con una linea seleccionada que se mueve con las flechas, y Enter para
- * cobrar. La gramatica entera esta en `teclado.ts`; esta pantalla ejecuta.
+ * Desde el primer momento se ve la estructura entera: el lector, el catalogo
+ * --frecuentes, categorias o resultados-- y el ticket con su total y "Cobrar".
+ * Se vende de dos maneras que terminan en el mismo lugar: escaneando, o
+ * tocando una tarjeta. La gramatica de teclado esta en `teclado.ts`; esta
+ * pantalla ejecuta.
  *
  * Lo que no cambio: el lector escribe en el campo y manda Enter, sin ningun
  * clic previo; el precio, el stock y el credito los decide el servidor; el
@@ -120,6 +131,8 @@ export default function VentaPage() {
     categories,
     searchTerm,
     setSearchTerm,
+    aplicarFiltros,
+    total: totalDelCatalogo,
     buscarPorCodigo,
     isLoading,
     error,
@@ -127,10 +140,9 @@ export default function VentaPage() {
     fetchCategories,
   } = useProducts({
     enServidor: true,
-    pageSize: RESULTADOS_VISIBLES,
-    // Un producto dado de baja no se vende, asi que tampoco aparece entre
-    // los resultados de la caja.
-    filtrosIniciales: { estado: 'activos' },
+    pageSize: TARJETAS_POR_CONSULTA,
+    // Un producto dado de baja no se vende, asi que tampoco aparece en la caja.
+    filtrosIniciales: { estado: 'activos', sortBy: 'name', sortDir: 'asc' },
   })
 
   const items = useCartStore((s) => s.items)
@@ -143,6 +155,7 @@ export default function VentaPage() {
 
   /** Lo escrito en el campo unico. Digitos: codigo. Letras: busqueda. */
   const [texto, setTexto] = useState('')
+  /** Tarjeta resaltada desde el campo, mientras se busca. */
   const [resaltado, setResaltado] = useState(0)
   /** Producto de la linea del ticket elegida con el teclado. */
   const [seleccionada, setSeleccionada] = useState<number | null>(null)
@@ -170,17 +183,76 @@ export default function VentaPage() {
   const [altaAbierta, setAltaAbierta] = useState(false)
   /** Codigo con el que se abre el alta rapida. `null` = alta manual. */
   const [codigoDelAlta, setCodigoDelAlta] = useState<string | null>(null)
-  /** Cambia tras cada venta: los favoritos vuelven a pedir precio y stock. */
-  const [recargaFavoritos, setRecargaFavoritos] = useState(0)
+  /** Cambia tras cada venta: los frecuentes vuelven a pedir precio y stock. */
+  const [recargaDeFrecuentes, setRecargaDeFrecuentes] = useState(0)
 
   const campo = useRef<HTMLInputElement>(null)
+  const catalogo = useRef<ProductBrowserHandle>(null)
 
   const total = useMemo(() => totalDelTicket(items), [items])
   const articulos = articulosDelTicket(items)
-  const favoritos = useFavoritos(session?.branchId ?? null)
+
+  const branchId = session?.branchId ?? null
+  const favoritos = useFavoritos(branchId)
+  const frecuentes = useFrecuentes(branchId)
 
   const buscando = modoDelCampo(texto) === 'busqueda'
-  const visibles = buscando ? products.slice(0, RESULTADOS_VISIBLES) : []
+
+  // ------------------------------------------------------------- catalogo
+
+  /**
+   * "Frecuentes": los favoritos marcados a mano primero, despues lo que mas
+   * se vendio en esta caja. Los dos viven en este equipo; ver useFrecuentes.
+   */
+  const idsDeFrecuentes = useMemo(() => {
+    const marcados = new Set(favoritos.ids)
+    return [...favoritos.ids, ...frecuentes.ids.filter((id) => !marcados.has(id))].slice(
+      0,
+      TOPE_DE_FRECUENTES,
+    )
+  }, [favoritos.ids, frecuentes.ids])
+
+  const { productos: productosFrecuentes, cargando: cargandoFrecuentes } = useProductosPorIds(
+    idsDeFrecuentes,
+    recargaDeFrecuentes,
+  )
+  const hayFrecuentes = idsDeFrecuentes.length > 0
+
+  const [seccion, setSeccion] = useState<SeccionDelCatalogo>('todos')
+  const seccionElegidaAMano = useRef(false)
+
+  // Arranca en "Frecuentes" en cuanto hay alguno, salvo que ya se haya
+  // elegido otra cosa a mano. Un equipo nuevo arranca en "Todos".
+  useEffect(() => {
+    if (hayFrecuentes && !seccionElegidaAMano.current) setSeccion('frecuentes')
+  }, [hayFrecuentes])
+
+  const elegirSeccion = useCallback((s: SeccionDelCatalogo) => {
+    seccionElegidaAMano.current = true
+    setSeccion(s)
+    setResaltado(0)
+  }, [])
+
+  // La categoria filtra el catalogo, pero NO la busqueda: "yerba" escrito
+  // desde Bebidas tiene que encontrar la yerba.
+  const filtrosAplicados = useRef('')
+  useEffect(() => {
+    const categoryId = !buscando && typeof seccion === 'number' ? seccion : undefined
+    const clave = String(categoryId ?? '')
+    if (filtrosAplicados.current === clave) return
+    filtrosAplicados.current = clave
+    aplicarFiltros({
+      estado: 'activos',
+      sortBy: 'name',
+      sortDir: 'asc',
+      ...(categoryId === undefined ? {} : { categoryId }),
+    })
+  }, [buscando, seccion, aplicarFiltros])
+
+  const enFrecuentes = !buscando && seccion === 'frecuentes'
+  const visibles = enFrecuentes ? productosFrecuentes : products
+  const cargandoCatalogo = enFrecuentes ? cargandoFrecuentes : isLoading
+  const totalVisible = enFrecuentes ? productosFrecuentes.length : totalDelCatalogo
 
   /**
    * El escaner global escucha salvo cuando molestaria.
@@ -203,6 +275,8 @@ export default function VentaPage() {
 
   // ---------------------------------------------------------------- ticket
 
+  const registrarFrecuente = frecuentes.registrar
+
   const agregarProducto = useCallback(
     (p: ProductoVendible, cantidad?: TextoCantidad): string | null => {
       const r = agregar(
@@ -220,13 +294,14 @@ export default function VentaPage() {
       if (r === 'tope-de-stock') return motivoDeStock(p, 'tope-de-stock')
       // Lo que se acaba de agregar queda elegido: → suma una, Supr lo quita.
       setSeleccionada(p.id)
+      registrarFrecuente(p.id)
       return null
     },
-    [agregar],
+    [agregar, registrarFrecuente],
   )
 
   /**
-   * Lo que pasa al elegir un producto, por escaneo, busqueda o favorito.
+   * Lo que pasa al elegir un producto, por escaneo, busqueda o tarjeta.
    *
    * Un producto por unidad se agrega y listo. Uno que se pesa abre el dialogo
    * INMEDIATAMENTE, sin pasos intermedios: despues de pasar un queso por el
@@ -258,6 +333,18 @@ export default function VentaPage() {
     setResaltado(0)
     setSearchTerm('')
   }, [setSearchTerm])
+
+  /** Una tarjeta del catalogo, tocada o elegida con Enter. */
+  const elegirDelCatalogo = useCallback(
+    (p: Product, desdeElTeclado: boolean) => {
+      elegirProducto(p)
+      if (buscando) limpiarBusqueda()
+      // Quien toca vuelve al lector: ahi cae el proximo codigo. Quien navega
+      // con el teclado se queda en la grilla para seguir eligiendo.
+      if (!desdeElTeclado) campo.current?.focus()
+    },
+    [elegirProducto, buscando, limpiarBusqueda],
+  )
 
   // --------------------------------------------------------------- escaneo
 
@@ -384,15 +471,13 @@ export default function VentaPage() {
     usarSucursal(session.branchId)
   }, [session, usarSucursal])
 
-  const sucursal = session?.branchId ?? null
-
   useEffect(() => {
-    if (sucursal === null) return
+    if (branchId === null) return
 
     let vivo = true
 
-    async function restaurar(branchId: number) {
-      const guardadas = hidratar(branchId)
+    async function restaurar(sucursal: number) {
+      const guardadas = hidratar(sucursal)
       if (guardadas.length === 0) return
 
       try {
@@ -452,13 +537,13 @@ export default function VentaPage() {
       }
     }
 
-    void restaurar(sucursal)
+    void restaurar(branchId)
     return () => {
       vivo = false
     }
     // Depende SOLO de la sucursal: restaurar dos veces duplicaria las lineas.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ver comentario
-  }, [sucursal])
+  }, [branchId])
 
   // El foco arranca en el campo: es lo que hace que el lector funcione sin
   // ningun click previo.
@@ -530,8 +615,9 @@ export default function VentaPage() {
       texto: textoActual,
       hayLineas: items.length > 0,
       haySeleccion: seleccionada !== null,
-      hayResultados: visibles.length > 0,
+      hayResultados: buscando && visibles.length > 0,
       hayAviso: sinResolver !== null,
+      hayGrilla: visibles.length > 0,
     })
 
     switch (accion) {
@@ -561,6 +647,9 @@ export default function VentaPage() {
         return true
       case 'linea-siguiente':
         setSeleccionada(moverSeleccion(ids, seleccionada, 1))
+        return true
+      case 'ir-a-grilla':
+        catalogo.current?.enfocar()
         return true
       case 'cantidad-menos':
         ajustarSeleccionada(-1)
@@ -662,8 +751,13 @@ export default function VentaPage() {
     setEstadoCodigo('idle')
     setMensajeCodigo(null)
     setSinResolver(null)
-    setRecargaFavoritos((n) => n + 1)
+    setRecargaDeFrecuentes((n) => n + 1)
     void fetchProducts()
+    devolverFoco()
+  }
+
+  const cerrarPeso = () => {
+    setPesando(null)
     devolverFoco()
   }
 
@@ -692,241 +786,179 @@ export default function VentaPage() {
     />
   )
 
-  const cerrarPeso = () => {
-    setPesando(null)
-    devolverFoco()
-  }
+  const cabecera = (
+    <div className="flex items-start gap-2">
+      <ScannerInput
+        ref={campo}
+        value={texto}
+        onValueChange={alEscribir}
+        onKey={alPresionarEnElCampo}
+        status={estadoCodigo}
+        message={mensajeCodigo}
+        loading={buscando && isLoading}
+        hint="↑↓ elegir · ←→ cantidad · Enter cobrar · Supr quitar"
+        onEditingChange={setEscribiendo}
+        className="min-w-0 flex-1"
+      />
+      <IconButton
+        label="Escanear con la cámara"
+        variant="secondary"
+        size="lg"
+        onClick={() => {
+          setCamaraAbierta(true)
+        }}
+        className="shrink-0"
+      >
+        <svg
+          className="h-5 w-5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          aria-hidden="true"
+        >
+          <path d="M4 8.5h2.5L8 6h8l1.5 2.5H20v10H4z" strokeLinejoin="round" />
+          <circle cx="12" cy="13" r="3" />
+        </svg>
+      </IconButton>
+      {/* Alta manual: para el producto sin codigo, el artesanal o la
+          etiqueta rota. Discreto a proposito --no es la operacion normal
+          de una caja-- y ausente sin permiso, en vez de deshabilitado. */}
+      {/* Las clases de visibilidad van en un envoltorio y no en el boton: el
+          boton ya declara su `display`, y dos utilidades de `display` en el
+          mismo elemento se resuelven por el orden del CSS, no del `className`. */}
+      {puedeCrearProducto && (
+        <>
+          <div className="hidden shrink-0 sm:block">
+            <Button
+              variant="ghost"
+              size="lg"
+              onClick={() => {
+                setCodigoDelAlta(null)
+                setAltaAbierta(true)
+              }}
+            >
+              Nuevo producto
+            </Button>
+          </div>
+          <div className="shrink-0 sm:hidden">
+            <IconButton
+              label="Nuevo producto"
+              variant="ghost"
+              size="lg"
+              onClick={() => {
+                setCodigoDelAlta(null)
+                setAltaAbierta(true)
+              }}
+            >
+              <span aria-hidden="true" className="text-xl leading-none">
+                +
+              </span>
+            </IconButton>
+          </div>
+        </>
+      )}
+      <div className="hidden self-center lg:block">
+        <AyudaAtajos />
+      </div>
+    </div>
+  )
+
+  const avisos = (
+    <>
+      <AvisoCajaCerrada />
+
+      {avisoRestauracion && (
+        <Alert
+          tone="info"
+          title="Ticket recuperado"
+          action={
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setAvisoRestauracion(null)
+              }}
+            >
+              Entendido
+            </Button>
+          }
+        >
+          {avisoRestauracion}
+        </Alert>
+      )}
+
+      {/* Lo que pasó con el último código, cuando no terminó en el ticket.
+          Va acá arriba, no en un aviso flotante: un toast que se va solo es
+          justamente lo que hacía que el cajero no se enterara. Se limpia
+          con la siguiente tecla. */}
+      {sinResolver && (
+        <CodigoSinResolver
+          estado={sinResolver}
+          puedeCrear={puedeCrearProducto}
+          puedeReactivar={puedeReactivar}
+          onCrear={() => {
+            setCodigoDelAlta(sinResolver.codigo)
+            setAltaAbierta(true)
+          }}
+          onReactivar={() => {
+            if (sinResolver.tipo === 'inactivo') {
+              void reactivar(sinResolver.productId, sinResolver.codigo)
+            }
+          }}
+          onReintentar={() => {
+            void procesarCodigo(sinResolver.codigo)
+          }}
+          onCerrar={() => {
+            setSinResolver(null)
+            devolverFoco()
+          }}
+        />
+      )}
+    </>
+  )
 
   return (
-    <PageContainer width="operational">
-      <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-3 sm:p-4">
-        <AvisoCajaCerrada />
-
-        {avisoRestauracion && (
-          <Alert
-            tone="info"
-            title="Ticket recuperado"
-            action={
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setAvisoRestauracion(null)
-                }}
-              >
-                Entendido
-              </Button>
-            }
-          >
-            {avisoRestauracion}
-          </Alert>
-        )}
-
-        <div className="flex items-start gap-2">
-          <ScannerInput
-            ref={campo}
-            value={texto}
-            onValueChange={alEscribir}
-            onKey={alPresionarEnElCampo}
-            status={estadoCodigo}
-            message={mensajeCodigo}
-            loading={buscando && isLoading}
-            hint="↑↓ elegir · ←→ cantidad · Enter cobrar · Supr quitar"
-            onEditingChange={setEscribiendo}
-            className="min-w-0 flex-1"
+    <>
+      <POSLayout
+        cabecera={cabecera}
+        avisos={avisos}
+        catalogo={
+          <ProductBrowser
+            ref={catalogo}
+            busqueda={buscando ? texto : null}
+            seccion={seccion}
+            onSeccion={elegirSeccion}
+            categorias={categories}
+            hayFrecuentes={hayFrecuentes}
+            productos={visibles}
+            cargando={cargandoCatalogo}
+            error={error}
+            total={totalVisible}
+            resaltado={buscando ? resaltado : -1}
+            onResaltar={setResaltado}
+            onElegir={elegirDelCatalogo}
+            esFavorito={favoritos.esFavorito}
+            onFavorito={favoritos.alternar}
+            onVolverAlLector={() => {
+              campo.current?.focus()
+            }}
+            className="h-full"
           />
-          <IconButton
-            label="Escanear con la cámara"
-            variant="secondary"
-            size="lg"
-            onClick={() => {
-              setCamaraAbierta(true)
-            }}
-            className="shrink-0"
-          >
-            <svg
-              className="h-5 w-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              aria-hidden="true"
-            >
-              <path d="M4 8.5h2.5L8 6h8l1.5 2.5H20v10H4z" strokeLinejoin="round" />
-              <circle cx="12" cy="13" r="3" />
-            </svg>
-          </IconButton>
-          {/* Alta manual: para el producto sin codigo, el artesanal o la
-              etiqueta rota. Discreto a proposito --no es la operacion normal
-              de una caja-- y ausente sin permiso, en vez de deshabilitado. */}
-          {/* Las clases de visibilidad van en un envoltorio y no en el boton: el
-              boton ya declara su `display`, y dos utilidades de `display` en el
-              mismo elemento se resuelven por el orden del CSS, no del `className`. */}
-          {puedeCrearProducto && (
-            <>
-              <div className="hidden shrink-0 sm:block">
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  onClick={() => {
-                    setCodigoDelAlta(null)
-                    setAltaAbierta(true)
-                  }}
-                >
-                  Nuevo producto
-                </Button>
-              </div>
-              <div className="shrink-0 sm:hidden">
-                <IconButton
-                  label="Nuevo producto"
-                  variant="ghost"
-                  size="lg"
-                  onClick={() => {
-                    setCodigoDelAlta(null)
-                    setAltaAbierta(true)
-                  }}
-                >
-                  <span aria-hidden="true" className="text-xl leading-none">
-                    +
-                  </span>
-                </IconButton>
-              </div>
-            </>
-          )}
-          <div className="hidden self-center lg:block">
-            <AyudaAtajos />
-          </div>
-        </div>
-
-        {/* Lo que pasó con el último código, cuando no terminó en el ticket.
-            Va acá arriba, no en un aviso flotante: un toast que se va solo es
-            justamente lo que hacía que el cajero no se enterara. Se limpia
-            con la siguiente tecla. */}
-        {sinResolver && (
-          <CodigoSinResolver
-            estado={sinResolver}
-            puedeCrear={puedeCrearProducto}
-            puedeReactivar={puedeReactivar}
-            onCrear={() => {
-              setCodigoDelAlta(sinResolver.codigo)
-              setAltaAbierta(true)
-            }}
-            onReactivar={() => {
-              if (sinResolver.tipo === 'inactivo') {
-                void reactivar(sinResolver.productId, sinResolver.codigo)
-              }
-            }}
-            onReintentar={() => {
-              void procesarCodigo(sinResolver.codigo)
-            }}
-            onCerrar={() => {
-              setSinResolver(null)
-              devolverFoco()
-            }}
-          />
-        )}
-
-        <div className="min-h-0 flex-1">
-          {error ? (
-            <Alert tone="danger" title="No se pudo buscar">
-              {error}
-            </Alert>
-          ) : buscando ? (
-            isLoading && visibles.length === 0 ? (
-              <SkeletonRows rows={4} />
-            ) : visibles.length === 0 ? (
-              <EmptyState
-                title="Ningún producto coincide"
-                description={`No hay resultados activos para "${texto.trim()}".`}
-              />
-            ) : (
-              <ul className="flex flex-col gap-1.5" aria-label="Resultados de la búsqueda">
-                {visibles.map((p, i) => (
-                  <ResultadoBusqueda
-                    key={p.id}
-                    producto={p}
-                    resaltada={i === resaltado}
-                    favorito={favoritos.esFavorito(p.id)}
-                    onFavorito={() => {
-                      favoritos.alternar(p.id)
-                    }}
-                    onHover={() => {
-                      setResaltado(i)
-                    }}
-                    onAgregar={() => {
-                      elegirProducto(p)
-                      limpiarBusqueda()
-                      campo.current?.focus()
-                    }}
-                  />
-                ))}
-              </ul>
-            )
-          ) : (
-            <div className="flex flex-col gap-4">
-              <Favoritos
-                ids={favoritos.ids}
-                recarga={recargaFavoritos}
-                onElegir={(p) => {
-                  elegirProducto(p)
-                  campo.current?.focus()
-                }}
-                onQuitar={favoritos.alternar}
-              />
-              {favoritos.ids.length === 0 && (
-                <EmptyState
-                  title="Escaneá un código o escribí un nombre"
-                  description="Marcá con ★ los productos sin código —pan, verdura, fiambre— para tenerlos acá, a un toque."
-                />
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Deja aire abajo para que la barra fija no tape el ultimo resultado. */}
-        <div aria-hidden="true" className="h-24 shrink-0 lg:hidden" />
-      </div>
-
-      {/* Escritorio: el ticket vive en el layout, siempre visible. */}
-      <div className="hidden w-ticket shrink-0 border-l border-line lg:flex">{panelTicket}</div>
-
-      {/* Movil y tablet: barra fija con el total, el acceso al ticket y el cobro. */}
-      <div className="fixed inset-x-0 bottom-0 z-30 flex items-stretch gap-2 border-t border-line bg-surface px-3 py-2 safe-bottom lg:hidden">
-        <button
-          type="button"
-          onClick={() => {
-            setTicketAbierto(true)
-          }}
-          className="flex min-h-control-lg min-w-0 flex-1 flex-col items-start justify-center rounded-lg border border-line bg-raised px-3 text-left transition-colors hover:border-line-strong"
-        >
-          <span className="text-xs text-ink-muted">
-            Ticket
-            {articulos > 0 &&
-              ` · ${String(articulos)} ${articulos === 1 ? 'artículo' : 'artículos'}`}
-          </span>
-          <Money amount={total} size="lg" />
-        </button>
-        <Button
-          variant="confirm"
-          size="lg"
-          className="flex-[1.1]"
-          disabled={items.length === 0}
-          onClick={abrirCobro}
-        >
-          Cobrar
-        </Button>
-      </div>
-
-      <Drawer
-        open={ticketAbierto}
-        onClose={() => {
+        }
+        ticket={panelTicket}
+        articulos={articulos}
+        total={total}
+        puedeCobrar={items.length > 0}
+        ticketAbierto={ticketAbierto}
+        onAbrirTicket={() => {
+          setTicketAbierto(true)
+        }}
+        onCerrarTicket={() => {
           setTicketAbierto(false)
         }}
-        title="Ticket"
-        side="bottom"
-      >
-        <div className="flex h-[70dvh] flex-col">{panelTicket}</div>
-      </Drawer>
+        onCobrar={abrirCobro}
+      />
 
       <DialogoPeso
         abierto={pesando !== null}
@@ -993,6 +1025,6 @@ export default function VentaPage() {
         onCobrar={cobrar}
         onNuevaVenta={nuevaVenta}
       />
-    </PageContainer>
+    </>
   )
 }

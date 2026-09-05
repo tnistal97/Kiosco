@@ -9,7 +9,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   accionDeTecla,
+  esTeclaDeGrilla,
   modoDelCampo,
+  moverEnGrilla,
   moverSeleccion,
   seleccionTrasQuitar,
   type ContextoDelPos,
@@ -64,6 +66,15 @@ describe('Flechas', () => {
     const ctx = { ...VACIO, hayLineas: true }
     expect(accionDeTecla('ArrowDown', ctx)).toBe('linea-siguiente')
     expect(accionDeTecla('ArrowUp', ctx)).toBe('linea-anterior')
+  })
+
+  it('con el ticket vacio, abajo entra a la grilla de productos', () => {
+    expect(accionDeTecla('ArrowDown', { ...VACIO, hayGrilla: true })).toBe('ir-a-grilla')
+    expect(accionDeTecla('ArrowDown', { ...VACIO, hayGrilla: false })).toBe('nada')
+    // Con lineas, las lineas mandan: la grilla se alcanza con Tab.
+    expect(accionDeTecla('ArrowDown', { ...VACIO, hayLineas: true, hayGrilla: true })).toBe(
+      'linea-siguiente',
+    )
   })
 
   it('arriba NUNCA cambia la cantidad', () => {
@@ -133,5 +144,50 @@ describe('Donde queda la seleccion', () => {
     expect(seleccionTrasQuitar(IDS, 30)).toBe(20)
     expect(seleccionTrasQuitar(IDS, 10)).toBe(20)
     expect(seleccionTrasQuitar([10], 10)).toBeNull()
+  })
+})
+
+describe('La grilla de productos', () => {
+  // Siete tarjetas en tres columnas: dos filas enteras y una de una sola.
+  //   0 1 2
+  //   3 4 5
+  //   6
+  const T = 7
+  const C = 3
+
+  it('izquierda y derecha van de a una, sin dar la vuelta', () => {
+    expect(moverEnGrilla(0, 'ArrowRight', T, C)).toBe(1)
+    expect(moverEnGrilla(1, 'ArrowLeft', T, C)).toBe(0)
+    expect(moverEnGrilla(0, 'ArrowLeft', T, C)).toBe(0)
+    expect(moverEnGrilla(6, 'ArrowRight', T, C)).toBe(6)
+  })
+
+  it('arriba y abajo van de a una fila', () => {
+    expect(moverEnGrilla(0, 'ArrowDown', T, C)).toBe(3)
+    expect(moverEnGrilla(3, 'ArrowDown', T, C)).toBe(6)
+    expect(moverEnGrilla(4, 'ArrowUp', T, C)).toBe(1)
+    expect(moverEnGrilla(1, 'ArrowUp', T, C)).toBe(1)
+  })
+
+  it('bajar desde una fila incompleta lleva a la ultima tarjeta', () => {
+    expect(moverEnGrilla(4, 'ArrowDown', T, C)).toBe(6)
+    expect(moverEnGrilla(5, 'ArrowDown', T, C)).toBe(6)
+    expect(moverEnGrilla(6, 'ArrowDown', T, C)).toBe(6)
+  })
+
+  it('Inicio y Fin van a los extremos; sin tarjetas no hay foco', () => {
+    expect(moverEnGrilla(4, 'Home', T, C)).toBe(0)
+    expect(moverEnGrilla(0, 'End', T, C)).toBe(6)
+    expect(moverEnGrilla(0, 'ArrowDown', 0, C)).toBe(-1)
+  })
+
+  it('un indice fuera de rango se acota antes de moverse', () => {
+    expect(moverEnGrilla(99, 'ArrowLeft', T, C)).toBe(5)
+    expect(moverEnGrilla(-5, 'ArrowRight', T, C)).toBe(1)
+  })
+
+  it('sabe cuales son sus teclas', () => {
+    expect(esTeclaDeGrilla('ArrowDown')).toBe(true)
+    expect(esTeclaDeGrilla('Enter')).toBe(false)
   })
 })
