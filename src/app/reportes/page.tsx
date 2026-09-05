@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import {
+  formatQuantity,
+  PageContainer,
   Alert,
   Button,
   Card,
@@ -187,7 +189,7 @@ export default function ReportesPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <PageContainer width="wide" className="gap-5">
       <Card>
         <form
           className="flex flex-wrap items-end gap-3"
@@ -334,7 +336,7 @@ export default function ReportesPage() {
             cabeceras={['Producto', 'Unidades', 'Facturado']}
             filas={prods.masVendidos.map((p) => [
               p.producto,
-              p.unidades,
+              formatQuantity(p.unidades, null),
               <Money key="f" amount={p.facturado} />,
             ])}
           />
@@ -343,7 +345,7 @@ export default function ReportesPage() {
             cabeceras={['Producto', 'Unidades', 'Facturado']}
             filas={prods.menosVendidos.map((p) => [
               p.producto,
-              p.unidades,
+              formatQuantity(p.unidades, null),
               <Money key="f" amount={p.facturado} />,
             ])}
           />
@@ -581,7 +583,7 @@ export default function ReportesPage() {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Dato
               titulo="Unidades perdidas"
-              valor={mermas.totalUnidades}
+              valor={formatQuantity(mermas.totalUnidades, null)}
               detalle="No incluye las diferencias de inventario"
             />
             {mermas.totalACostoActual !== null && (
@@ -610,7 +612,7 @@ export default function ReportesPage() {
                 ) : (
                   r.etiqueta
                 ),
-                r.unidades,
+                formatQuantity(r.unidades, null),
                 String(r.movimientos),
               ]
               return r.valorACostoActual === null
@@ -624,7 +626,7 @@ export default function ReportesPage() {
             cabeceras={['Producto', 'Causa', 'Unidades']}
             filas={mermas.porProducto
               .slice(0, 15)
-              .map((p) => [p.productName, p.categoria, p.unidades])}
+              .map((p) => [p.productName, p.categoria, formatQuantity(p.unidades, null)])}
           />
         </Card>
       )}
@@ -697,13 +699,13 @@ export default function ReportesPage() {
                 key={t.tramo}
                 titulo={t.etiqueta}
                 valor={`${String(t.lotes)} lote(s)`}
-                detalle={`${t.unidades} unidades · ${String(t.productos)} producto(s)`}
+                detalle={`${formatQuantity(t.unidades, null)} unidades · ${String(t.productos)} producto(s)`}
               />
             ))}
             <Dato
               titulo="Sin vencimiento"
               valor={`${String(vencimientos.sinFecha.lotes)} lote(s)`}
-              detalle={`${vencimientos.sinFecha.unidades} unidades — no hay nada que controlar`}
+              detalle={`${formatQuantity(vencimientos.sinFecha.unidades, null)} unidades — no hay nada que controlar`}
             />
           </div>
 
@@ -834,7 +836,7 @@ export default function ReportesPage() {
           )}
         </Card>
       )}
-    </div>
+    </PageContainer>
   )
 }
 

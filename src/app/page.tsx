@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
+  formatQuantity,
+  PageContainer,
   Alert,
   Button,
   ButtonLink,
@@ -322,7 +324,7 @@ export default function InicioPage() {
     datos.ultimasVentas.length === 0
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-5">
+    <PageContainer>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-ink">
@@ -497,7 +499,7 @@ export default function InicioPage() {
               value={datos.vencimientos.lotesVencidos}
               detail={
                 datos.vencimientos.lotesVencidos > 0
-                  ? `${datos.vencimientos.unidadesVencidas} unidades · ${String(datos.vencimientos.lotesEnSieteDias)} vence(n) en 7 días`
+                  ? `${formatQuantity(datos.vencimientos.unidadesVencidas, null)} unidades · ${String(datos.vencimientos.lotesEnSieteDias)} vence(n) en 7 días`
                   : datos.vencimientos.lotesEnSieteDias > 0
                     ? `${String(datos.vencimientos.lotesEnSieteDias)} vence(n) en 7 días · ${String(datos.vencimientos.lotesEnTreintaDias)} en 30`
                     : `${String(datos.vencimientos.lotesEnTreintaDias)} vence(n) en 30 días`
@@ -666,6 +668,6 @@ export default function InicioPage() {
           </Button>
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import {
+  ResponsiveData,
+  PageContainer,
   Button,
   Card,
   CardHeader,
@@ -125,7 +127,7 @@ export default function CajaPage() {
   const ultimoArqueo = arqueos[0]
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-5">
+    <PageContainer>
       {/*
         El turno primero. Es la respuesta a la unica pregunta que se hace en el
         mostrador: "empece con esto, paso esto, tengo que tener esto".
@@ -247,60 +249,69 @@ export default function CajaPage() {
             />
           ) : (
             <>
-              {/* Escritorio: tabla. */}
-              <div className="hidden lg:block">
-                <TableWrap className="border-0">
-                  <Table caption="Movimientos de caja">
-                    <THead>
-                      <TR>
-                        <TH>Tipo</TH>
-                        <TH>Fecha</TH>
-                        <TH>Detalle</TH>
-                        <TH>Medio</TH>
-                        <TH>Usuario</TH>
-                        <TH align="right">Importe</TH>
-                        <TH align="center">
-                          <span className="sr-only">Ver detalle</span>
-                        </TH>
-                      </TR>
-                    </THead>
-                    <TBody>
-                      {movimientos.map((m) => (
-                        <MovimientoRow key={m.id} movimiento={m} />
-                      ))}
-                    </TBody>
-                  </Table>
-                </TableWrap>
-              </div>
-
-              {/* Móvil: tarjetas. Una tabla de siete columnas a 375 px no se
-                  arregla achicando la fuente. */}
-              <CardList className="lg:hidden">
-                {movimientos.map((m) => {
-                  const t = tipoDe(m.type)
-                  return (
-                    <CardListItem key={m.id}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-ink">
-                            <span aria-hidden="true" className="mr-1.5">
-                              {t.glifo}
-                            </span>
-                            {t.etiqueta}
-                          </p>
-                          <p className="mt-0.5 truncate text-xs text-ink-muted">
-                            {m.description ?? '—'}
-                          </p>
-                          <p className="mt-1 text-xs text-ink-faint">
-                            {fechaCorta(m.date)} · {medioLegible(m.paymentMethod)} · {m.user.name}
-                          </p>
-                        </div>
-                        <Money amount={m.amount} signed tone={tonoPorSigno(m.amount)} size="md" />
-                      </div>
-                    </CardListItem>
-                  )
-                })}
-              </CardList>
+              {/* Escritorio: tabla. Movil: tarjetas. Una sola de las dos. */}
+              <ResponsiveData
+                table={
+                  <>
+                    <TableWrap className="border-0">
+                      <Table caption="Movimientos de caja">
+                        <THead>
+                          <TR>
+                            <TH>Tipo</TH>
+                            <TH>Fecha</TH>
+                            <TH>Detalle</TH>
+                            <TH>Medio</TH>
+                            <TH>Usuario</TH>
+                            <TH align="right">Importe</TH>
+                            <TH align="center">
+                              <span className="sr-only">Ver detalle</span>
+                            </TH>
+                          </TR>
+                        </THead>
+                        <TBody>
+                          {movimientos.map((m) => (
+                            <MovimientoRow key={m.id} movimiento={m} />
+                          ))}
+                        </TBody>
+                      </Table>
+                    </TableWrap>
+                  </>
+                }
+                cards={
+                  <CardList>
+                    {movimientos.map((m) => {
+                      const t = tipoDe(m.type)
+                      return (
+                        <CardListItem key={m.id}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-ink">
+                                <span aria-hidden="true" className="mr-1.5">
+                                  {t.glifo}
+                                </span>
+                                {t.etiqueta}
+                              </p>
+                              <p className="mt-0.5 truncate text-xs text-ink-muted">
+                                {m.description ?? '—'}
+                              </p>
+                              <p className="mt-1 text-xs text-ink-faint">
+                                {fechaCorta(m.date)} · {medioLegible(m.paymentMethod)} ·{' '}
+                                {m.user.name}
+                              </p>
+                            </div>
+                            <Money
+                              amount={m.amount}
+                              signed
+                              tone={tonoPorSigno(m.amount)}
+                              size="md"
+                            />
+                          </div>
+                        </CardListItem>
+                      )
+                    })}
+                  </CardList>
+                }
+              />
 
               <Pagination
                 className="mt-4"
@@ -399,6 +410,6 @@ export default function CajaPage() {
           void cargar()
         }}
       />
-    </div>
+    </PageContainer>
   )
 }

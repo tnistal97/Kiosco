@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { Button, Card, ErrorState, Money, SkeletonRows } from '@/components/ui'
+import { PageContainer, Button, Card, ErrorState, Money, SkeletonRows } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { esNegativo } from '@/lib/money'
 import { parseComprobante, type ComprobanteDTO } from '@/modules/clients/dto'
@@ -78,7 +78,7 @@ export default function ComprobantePage() {
   const c = comprobante
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageContainer className="gap-5">
       {/*
         Los controles NO se imprimen: `print:hidden` los saca del papel. Sin
         esto, el comprobante sale con dos botones dibujados encima.
@@ -174,6 +174,6 @@ export default function ComprobantePage() {
           </div>
         </div>
       </Card>
-    </div>
+    </PageContainer>
   )
 }

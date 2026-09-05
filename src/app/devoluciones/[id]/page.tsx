@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
+  PageContainer,
   Alert,
   Badge,
   Button,
@@ -136,7 +137,7 @@ export default function DevolucionPage() {
   const d = devolucion
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageContainer className="gap-5">
       <Card className="p-4">
         <CardHeader
           title={d.number}
@@ -247,7 +248,7 @@ export default function DevolucionPage() {
                 <TR key={l.productId}>
                   <TD>
                     <Link
-                      href={`/productos/${String(l.productId)}`}
+                      href={`/productos?producto=${String(l.productId)}`}
                       className="text-ink hover:text-primary"
                     >
                       {l.productName}
@@ -320,6 +321,6 @@ export default function DevolucionPage() {
           />
         </Field>
       </ConfirmationDialog>
-    </div>
+    </PageContainer>
   )
 }

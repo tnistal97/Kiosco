@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { Button, Card, ErrorState, Money, SkeletonRows } from '@/components/ui'
+import { PageContainer, Button, Card, ErrorState, Money, SkeletonRows } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { esNegativo, esPositivo } from '@/lib/money'
 import { parseComprobanteDePago, type ComprobanteDePagoDTO } from '@/modules/suppliers/dto.cuenta'
@@ -81,7 +81,7 @@ export default function ComprobanteDeProveedorPage() {
   const c = comprobante
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageContainer className="gap-5">
       {/* Los controles NO se imprimen: sin esto el papel sale con dos botones. */}
       <header className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <Link
@@ -192,6 +192,6 @@ export default function ComprobanteDeProveedorPage() {
           </div>
         </div>
       </Card>
-    </div>
+    </PageContainer>
   )
 }

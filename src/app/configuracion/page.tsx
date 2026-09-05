@@ -1,6 +1,6 @@
 'use client'
 
-import { Alert, Badge, Card, CardHeader } from '@/components/ui'
+import { PageContainer, Alert, Badge, Card, CardHeader } from '@/components/ui'
 import { rolLegible } from '@/components/shell/UserMenu'
 import { ThemeToggle } from '@/components/shell/ThemeToggle'
 import { useSession } from '@/components/shell/SessionProvider'
@@ -19,7 +19,7 @@ export default function ConfiguracionPage() {
   const { session, permisos } = useSession()
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 p-3 sm:p-5">
+    <PageContainer width="narrow">
       <Card>
         <CardHeader title="Apariencia" description="Se guarda solo en este navegador." />
         <div className="flex items-center justify-between gap-4 rounded-lg border border-line bg-sunken px-4 py-3">
@@ -93,6 +93,6 @@ export default function ConfiguracionPage() {
           <li>Venta sin conexión.</li>
         </ul>
       </Card>
-    </div>
+    </PageContainer>
   )
 }

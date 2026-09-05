@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Dialog, Field, Input, RadioGroup, Select, Textarea } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
+import { MEDIOS_DE_COBRANZA, etiquetaDeMedio } from '@/modules/sales/payment-methods'
 
 /**
  * Movimiento manual de caja.
@@ -34,7 +35,7 @@ export function DialogoMovimiento({
 }) {
   const [tipo, setTipo] = useState<Tipo>('ingreso')
   const [monto, setMonto] = useState('')
-  const [medio, setMedio] = useState('efectivo')
+  const [medio, setMedio] = useState<string>('CASH')
   const [detalle, setDetalle] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -43,7 +44,7 @@ export function DialogoMovimiento({
     if (!abierto) return
     setTipo('ingreso')
     setMonto('')
-    setMedio('efectivo')
+    setMedio('CASH')
     setDetalle('')
     setError(null)
     setEnviando(false)
@@ -51,7 +52,7 @@ export function DialogoMovimiento({
 
   // Cambiar a retiro o deposito fuerza efectivo: es la regla del servidor.
   useEffect(() => {
-    if (tipo !== 'ingreso') setMedio('efectivo')
+    if (tipo !== 'ingreso') setMedio('CASH')
   }, [tipo])
 
   const importe = Number(monto.replace(',', '.'))
@@ -143,9 +144,13 @@ export function DialogoMovimiento({
               setMedio(e.target.value)
             }}
           >
-            <option value="efectivo">Efectivo</option>
-            <option value="tarjeta">Tarjeta</option>
-            <option value="mercado_pago">Mercado Pago</option>
+            {/* Los medios reales del sistema, con su nombre. Antes ofrecia los tres
+                del vocabulario anterior a la Fase 3 (auditoria, D8). */}
+            {MEDIOS_DE_COBRANZA.map((m) => (
+              <option key={m} value={m}>
+                {etiquetaDeMedio(m)}
+              </option>
+            ))}
           </Select>
         </Field>
 

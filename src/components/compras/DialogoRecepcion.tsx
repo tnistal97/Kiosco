@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import {
+  formatQuantity,
   Alert,
   Button,
   Checkbox,
@@ -324,8 +325,11 @@ export function DialogoRecepcion({
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="font-medium text-ink">{e.linea.product.name}</span>
                 <span className="text-xs text-ink-faint" data-numeric="">
-                  Pedido {e.linea.orderedQuantity} · Recibido {e.linea.receivedQuantity} ·{' '}
-                  <strong className="text-ink-muted">Pendiente {e.linea.pendingQuantity}</strong>{' '}
+                  Pedido {formatQuantity(e.linea.orderedQuantity, e.linea.purchaseUnit, false)} ·
+                  Recibido {formatQuantity(e.linea.receivedQuantity, e.linea.purchaseUnit, false)} ·{' '}
+                  <strong className="text-ink-muted">
+                    Pendiente {formatQuantity(e.linea.pendingQuantity, e.linea.purchaseUnit, false)}
+                  </strong>{' '}
                   {NOMBRE_DE_UNIDAD_DE_COMPRA[e.linea.purchaseUnit].toLowerCase()}
                 </span>
               </div>
@@ -335,7 +339,7 @@ export function DialogoRecepcion({
                   label={`Recibir ahora (${NOMBRE_DE_UNIDAD_DE_COMPRA[e.linea.purchaseUnit].toLowerCase()})`}
                   error={
                     e.excede
-                      ? `No se puede recibir más de lo pendiente (${e.linea.pendingQuantity})`
+                      ? `No se puede recibir más de lo pendiente (${formatQuantity(e.linea.pendingQuantity, e.linea.purchaseUnit)})`
                       : !e.vacia && e.cantidad === null
                         ? 'No es una cantidad válida'
                         : null

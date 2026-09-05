@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
+  PageContainer,
   Badge,
   Button,
   Card,
@@ -113,7 +114,7 @@ export default function ProveedoresPage() {
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageContainer className="gap-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         {/*
           Sin `<h1>`: la cabecera de la aplicacion ya pone uno con el nombre de
@@ -300,6 +301,6 @@ export default function ProveedoresPage() {
           void cargar()
         }}
       />
-    </div>
+    </PageContainer>
   )
 }

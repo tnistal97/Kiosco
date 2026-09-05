@@ -1,7 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
+  PageContainer,
   Badge,
   Button,
   Card,
@@ -33,7 +35,7 @@ import { DialogoProducto } from '@/components/productos/DialogoProducto'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { useProducts, type CampoOrden, type Product } from '@/hooks/useProducts'
 import { apiRequest, lista, mensajeDeError, esObjeto, numero, texto } from '@/lib/api-client'
-import type { ProveedorDTO } from '@/modules/products/dto'
+import { parseProducto, type ProveedorDTO } from '@/modules/products/dto'
 
 const POR_PAGINA = 25
 
@@ -45,7 +47,19 @@ function parseProveedores(raw: unknown): ProveedorDTO[] {
   })
 }
 
+/**
+ * `useSearchParams` obliga a un limite de Suspense: sin el, el build de Next
+ * falla al prerenderizar la pagina.
+ */
 export default function ProductosPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProductosContenido />
+    </Suspense>
+  )
+}
+
+function ProductosContenido() {
   const puedeCrear = usePermiso('products.create')
   const puedeEditar = usePermiso('products.update')
   const puedeBorrar = usePermiso('products.delete')
@@ -70,6 +84,29 @@ export default function ProductosPage() {
   const [editando, setEditando] = useState<Product | null>(null)
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
   const [borrando, setBorrando] = useState<Product | null>(null)
+
+  // `?producto=12` abre la ficha de ese producto: es a donde enlazan el detalle
+  // de una devolucion y la ficha de un proveedor (auditoria, H-04).
+  const params = useSearchParams()
+  const productoPedido = params.get('producto')
+  useEffect(() => {
+    if (productoPedido === null) return
+    const id = Number(productoPedido)
+    if (!Number.isInteger(id) || id <= 0) return
+    let vivo = true
+    apiRequest(`/api/products/${String(id)}`, { parse: parseProducto })
+      .then((p) => {
+        if (!vivo) return
+        setEditando(p)
+        setDialogoAbierto(true)
+      })
+      .catch(() => {
+        if (vivo) aviso.error('No encontramos ese producto.')
+      })
+    return () => {
+      vivo = false
+    }
+  }, [productoPedido])
 
   useEffect(() => {
     // Solo los ACTIVOS y hasta cien: es la lista del selector de la ficha, y
@@ -114,7 +151,7 @@ export default function ProductosPage() {
   const dir = filtros.sortDir ?? 'asc'
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-4 p-3 sm:p-5">
+    <PageContainer width="wide">
       <Card padded={false}>
         <div className="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-end">
           <div className="lg:max-w-md lg:flex-1">
@@ -391,7 +428,7 @@ export default function ProductosPage() {
           </>
         }
       />
-    </div>
+    </PageContainer>
   )
 }
 

@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Button,
   Card,
@@ -12,7 +13,9 @@ import {
   Input,
   MetricCard,
   Money,
+  PageContainer,
   Pagination,
+  ResponsiveData,
   SaleStatusBadge,
   Select,
   SkeletonRows,
@@ -32,6 +35,7 @@ import { notificarCambioDeCaja } from '@/components/shell/EstadoCaja'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { CERO, multiplicarMonto, sumarMontos } from '@/lib/money'
 import { parsePaginaVentas, type TotalesVentas, type VentaDTO } from '@/modules/sales/dto'
+import { MEDIOS_DE_CAJA, etiquetaDeMedio } from '@/modules/sales/payment-methods'
 import { medioLegible } from '@/components/caja/MovimientoRow'
 
 const POR_PAGINA = 25
@@ -57,14 +61,39 @@ function fechaLarga(isoStr: string): string {
   })
 }
 
+/** El numero de venta que viene en `?venta=`, o null si no es uno. */
+function numeroDeVenta(crudo: string | null): number | null {
+  if (crudo === null) return null
+  const n = Number(crudo)
+  return Number.isInteger(n) && n > 0 ? n : null
+}
+
+/**
+ * `useSearchParams` obliga a un limite de Suspense: sin el, el build de Next
+ * falla al prerenderizar la pagina.
+ */
 export default function VentasPage() {
+  return (
+    <Suspense fallback={null}>
+      <Ventas />
+    </Suspense>
+  )
+}
+
+function Ventas() {
   const puedeAnular = usePermiso('sales.cancel')
 
-  const [desde, setDesde] = useState(() => haceDias(7))
+  // `?venta=482` --desde el libro de movimientos-- abre esa venta, este del
+  // rango que este: se busca por numero en los ultimos diez anios y se deja
+  // desplegada (auditoria, H-04).
+  const params = useSearchParams()
+  const ventaPedida = numeroDeVenta(params.get('venta'))
+
+  const [desde, setDesde] = useState(() => (ventaPedida === null ? haceDias(7) : haceDias(3650)))
   const [hasta, setHasta] = useState(() => iso(new Date()))
   const [estado, setEstado] = useState('todas')
   const [medio, setMedio] = useState('')
-  const [numero, setNumero] = useState('')
+  const [numero, setNumero] = useState(() => (ventaPedida === null ? '' : String(ventaPedida)))
   const [pagina, setPagina] = useState(1)
 
   const [ventas, setVentas] = useState<VentaDTO[]>([])
@@ -76,7 +105,7 @@ export default function VentasPage() {
   })
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [expandida, setExpandida] = useState<number | null>(null)
+  const [expandida, setExpandida] = useState<number | null>(ventaPedida)
   const [anulando, setAnulando] = useState<VentaDTO | null>(null)
 
   const cargar = useCallback(async () => {
@@ -125,8 +154,129 @@ export default function VentasPage() {
     return vigentes.length === 0 ? CERO : sumarMontos(...vigentes.map((v) => v.total))
   }, [ventas])
 
+  const tabla = (
+    <TableWrap className="border-0">
+      <Table caption="Ventas del período">
+        <THead>
+          <TR>
+            <TH>N°</TH>
+            <TH>Fecha</TH>
+            <TH>Estado</TH>
+            <TH>Cajero</TH>
+            <TH>Medio</TH>
+            <TH align="right">Total</TH>
+            <TH align="right">
+              <span className="sr-only">Acciones</span>
+            </TH>
+          </TR>
+        </THead>
+        <TBody>
+          {ventas.map((v) => {
+            const anulada = v.status === 'canceled'
+            const abierta = expandida === v.id
+            return [
+              <TR
+                key={v.id}
+                interactive
+                selected={abierta}
+                onClick={() => {
+                  setExpandida(abierta ? null : v.id)
+                }}
+              >
+                <TD>
+                  <span
+                    className={cn('font-medium', anulada && 'line-through opacity-70')}
+                    data-numeric=""
+                  >
+                    #{v.id}
+                  </span>
+                </TD>
+                <TD className="text-ink-muted">{fechaLarga(v.date)}</TD>
+                <TD>
+                  <SaleStatusBadge status={v.status} />
+                </TD>
+                <TD className="text-ink-muted">{v.user.name}</TD>
+                <TD className="text-ink-muted">
+                  {v.paymentMethod ? medioLegible(v.paymentMethod) : '—'}
+                </TD>
+                <TD align="right">
+                  <Money
+                    amount={v.total}
+                    tone={anulada ? 'muted' : 'neutral'}
+                    className={cn(anulada && 'line-through')}
+                  />
+                </TD>
+                <TD align="right">
+                  {puedeAnular && !anulada && (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setAnulando(v)
+                      }}
+                    >
+                      Anular
+                    </Button>
+                  )}
+                </TD>
+              </TR>,
+              abierta ? (
+                <tr key={`${v.id}-detalle`}>
+                  <td colSpan={7} className="bg-sunken px-6 py-3">
+                    <DetalleVenta venta={v} />
+                  </td>
+                </tr>
+              ) : null,
+            ]
+          })}
+        </TBody>
+      </Table>
+    </TableWrap>
+  )
+
+  const tarjetas = (
+    <CardList>
+      {ventas.map((v) => {
+        const anulada = v.status === 'canceled'
+        return (
+          <CardListItem key={v.id}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-sm font-medium text-ink">
+                  <span data-numeric="">#{v.id}</span>
+                  <SaleStatusBadge status={v.status} />
+                </p>
+                <p className="mt-1 text-xs text-ink-faint">
+                  {fechaLarga(v.date)} · {v.user.name}
+                  {v.paymentMethod ? ` · ${medioLegible(v.paymentMethod)}` : ''}
+                </p>
+              </div>
+              <Money amount={v.total} tone={anulada ? 'muted' : 'neutral'} />
+            </div>
+            <div className="mt-2">
+              <DetalleVenta venta={v} />
+            </div>
+            {puedeAnular && !anulada && (
+              <Button
+                size="sm"
+                variant="danger"
+                className="mt-3 w-full"
+                onClick={() => {
+                  setAnulando(v)
+                }}
+              >
+                Anular
+              </Button>
+            )}
+          </CardListItem>
+        )
+      })}
+    </CardList>
+  )
+
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-4 p-3 sm:p-5">
+    <PageContainer width="wide">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <MetricCard label="Ventas vigentes" value={totales.ventas} />
         <MetricCard
@@ -181,9 +331,14 @@ export default function VentasPage() {
               }}
             >
               <option value="">Todos</option>
-              <option value="efectivo">Efectivo</option>
-              <option value="tarjeta">Tarjeta</option>
-              <option value="mercado_pago">Mercado Pago</option>
+              {/* Los medios que de verdad existen, con su nombre. El filtro
+                  anterior ofrecia "Tarjeta" y "Mercado Pago", que ya no
+                  coinciden con nada (auditoria, H-05). */}
+              {MEDIOS_DE_CAJA.map((m) => (
+                <option key={m} value={m}>
+                  {etiquetaDeMedio(m)}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label="N° de venta">
@@ -210,124 +365,7 @@ export default function VentasPage() {
             />
           ) : (
             <>
-              <div className="hidden lg:block">
-                <TableWrap className="border-0">
-                  <Table caption="Ventas del período">
-                    <THead>
-                      <TR>
-                        <TH>N°</TH>
-                        <TH>Fecha</TH>
-                        <TH>Estado</TH>
-                        <TH>Cajero</TH>
-                        <TH>Medio</TH>
-                        <TH align="right">Total</TH>
-                        <TH align="right">
-                          <span className="sr-only">Acciones</span>
-                        </TH>
-                      </TR>
-                    </THead>
-                    <TBody>
-                      {ventas.map((v) => {
-                        const anulada = v.status === 'canceled'
-                        const abierta = expandida === v.id
-                        return [
-                          <TR
-                            key={v.id}
-                            interactive
-                            selected={abierta}
-                            onClick={() => {
-                              setExpandida(abierta ? null : v.id)
-                            }}
-                          >
-                            <TD>
-                              <span
-                                className={cn('font-medium', anulada && 'line-through opacity-70')}
-                                data-numeric=""
-                              >
-                                #{v.id}
-                              </span>
-                            </TD>
-                            <TD className="text-ink-muted">{fechaLarga(v.date)}</TD>
-                            <TD>
-                              <SaleStatusBadge status={v.status} />
-                            </TD>
-                            <TD className="text-ink-muted">{v.user.name}</TD>
-                            <TD className="text-ink-muted">
-                              {v.paymentMethod ? medioLegible(v.paymentMethod) : '—'}
-                            </TD>
-                            <TD align="right">
-                              <Money
-                                amount={v.total}
-                                tone={anulada ? 'muted' : 'neutral'}
-                                className={cn(anulada && 'line-through')}
-                              />
-                            </TD>
-                            <TD align="right">
-                              {puedeAnular && !anulada && (
-                                <Button
-                                  size="sm"
-                                  variant="danger"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setAnulando(v)
-                                  }}
-                                >
-                                  Anular
-                                </Button>
-                              )}
-                            </TD>
-                          </TR>,
-                          abierta ? (
-                            <tr key={`${v.id}-detalle`}>
-                              <td colSpan={7} className="bg-sunken px-6 py-3">
-                                <DetalleVenta venta={v} />
-                              </td>
-                            </tr>
-                          ) : null,
-                        ]
-                      })}
-                    </TBody>
-                  </Table>
-                </TableWrap>
-              </div>
-
-              <CardList className="lg:hidden">
-                {ventas.map((v) => {
-                  const anulada = v.status === 'canceled'
-                  return (
-                    <CardListItem key={v.id}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="flex items-center gap-2 text-sm font-medium text-ink">
-                            <span data-numeric="">#{v.id}</span>
-                            <SaleStatusBadge status={v.status} />
-                          </p>
-                          <p className="mt-1 text-xs text-ink-faint">
-                            {fechaLarga(v.date)} · {v.user.name}
-                            {v.paymentMethod ? ` · ${medioLegible(v.paymentMethod)}` : ''}
-                          </p>
-                        </div>
-                        <Money amount={v.total} tone={anulada ? 'muted' : 'neutral'} />
-                      </div>
-                      <div className="mt-2">
-                        <DetalleVenta venta={v} />
-                      </div>
-                      {puedeAnular && !anulada && (
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          className="mt-3 w-full"
-                          onClick={() => {
-                            setAnulando(v)
-                          }}
-                        >
-                          Anular
-                        </Button>
-                      )}
-                    </CardListItem>
-                  )
-                })}
-              </CardList>
+              <ResponsiveData table={tabla} cards={tarjetas} />
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-ink-muted">
@@ -359,7 +397,7 @@ export default function VentasPage() {
           void cargar()
         }}
       />
-    </div>
+    </PageContainer>
   )
 }
 

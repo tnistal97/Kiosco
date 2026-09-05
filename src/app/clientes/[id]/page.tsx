@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
+  PageContainer,
   Alert,
   Badge,
   Button,
@@ -166,7 +167,7 @@ export default function ClienteDetallePage() {
   const aFavor = esNegativo(cliente.balance)
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageContainer className="gap-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-ink">{cliente.name}</h2>
@@ -497,6 +498,6 @@ export default function ClienteDetallePage() {
           recargarTodo()
         }}
       />
-    </div>
+    </PageContainer>
   )
 }

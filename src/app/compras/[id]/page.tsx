@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
+  QuantityText,
+  PageContainer,
   Alert,
   Badge,
   Button,
@@ -65,6 +67,15 @@ export default function CompraPage() {
   const puedeCancelar = usePermiso('purchases.cancel')
 
   const [orden, setOrden] = useState<DetalleOrdenDTO | null>(null)
+
+  // El ancla del historial (`#recepcion-12`) apunta a un bloque que todavia no
+  // existe cuando carga la pagina: se lo lleva a la vista cuando llega.
+  useEffect(() => {
+    if (!orden) return
+    const hash = window.location.hash
+    if (!hash.startsWith('#recepcion-')) return
+    document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'start' })
+  }, [orden])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [recibiendo, setRecibiendo] = useState(false)
@@ -139,7 +150,7 @@ export default function CompraPage() {
   const conCostos = orden.expectedTotal !== undefined
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageContainer className="gap-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <Link href="/compras" className="text-sm text-ink-muted hover:text-ink">
@@ -258,16 +269,30 @@ export default function CompraPage() {
                       </div>
                     </TD>
                     <TD className="text-right" data-numeric="">
-                      {i.orderedQuantity}
+                      <QuantityText
+                        value={i.orderedQuantity}
+                        unit={i.purchaseUnit}
+                        showUnit={false}
+                      />
                     </TD>
                     <TD className="text-right" data-numeric="">
-                      {i.receivedQuantity}
+                      <QuantityText
+                        value={i.receivedQuantity}
+                        unit={i.purchaseUnit}
+                        showUnit={false}
+                      />
                     </TD>
                     <TD className="text-right" data-numeric="">
                       {i.pendingQuantity === '0.000' ? (
                         <Badge tone="success">Completa</Badge>
                       ) : (
-                        <span className="text-warning">{i.pendingQuantity}</span>
+                        <span className="text-warning">
+                          <QuantityText
+                            value={i.pendingQuantity}
+                            unit={i.purchaseUnit}
+                            showUnit={false}
+                          />
+                        </span>
                       )}
                     </TD>
                     {conCostos && (
@@ -321,7 +346,11 @@ export default function CompraPage() {
         ) : (
           <div className="flex flex-col gap-4">
             {orden.receipts.map((r, i) => (
-              <div key={r.id} className="rounded-lg border border-line bg-sunken p-3">
+              <div
+                key={r.id}
+                id={`recepcion-${String(r.id)}`}
+                className="scroll-mt-4 rounded-lg border border-line bg-sunken p-3 target:border-primary"
+              >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h3 className="text-sm font-semibold text-ink">
                     Recepción #{i + 1}{' '}
@@ -365,8 +394,7 @@ export default function CompraPage() {
                         <TR key={li.id}>
                           <TD className="text-ink">{li.product.name}</TD>
                           <TD className="text-right" data-numeric="">
-                            {li.receivedQuantity}{' '}
-                            {NOMBRE_DE_UNIDAD_DE_COMPRA[li.purchaseUnit].toLowerCase()}
+                            <QuantityText value={li.receivedQuantity} unit={li.purchaseUnit} />
                           </TD>
                           {/*
                             Lo recibido NO se pisa con el neto: son dos hechos
@@ -542,6 +570,6 @@ export default function CompraPage() {
           />
         </Field>
       </ConfirmationDialog>
-    </div>
+    </PageContainer>
   )
 }

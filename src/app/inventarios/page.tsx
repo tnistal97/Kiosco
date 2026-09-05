@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Badge,
+  EstadoBadge,
+  ResponsiveData,
+  PageContainer,
   Button,
   Card,
   CardList,
@@ -23,11 +25,7 @@ import {
 import { DialogoNuevoInventario } from '@/components/inventarios/DialogoNuevoInventario'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest } from '@/lib/api-client'
-import {
-  ESTADOS_DE_INVENTARIO,
-  etiquetaDeEstado,
-  tonoDeEstado,
-} from '@/modules/inventory-counts/estados'
+import { ESTADOS_DE_INVENTARIO, etiquetaDeEstado } from '@/modules/inventory-counts/estados'
 
 const POR_PAGINA = 25
 
@@ -101,7 +99,7 @@ export default function InventariosPage() {
   useEffect(() => cargar(), [cargar])
 
   return (
-    <div className="space-y-6">
+    <PageContainer className="gap-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-ink">Inventarios físicos</h2>
@@ -167,62 +165,69 @@ export default function InventariosPage() {
 
         {error === null && !cargando && datos !== null && datos.data.length > 0 && (
           <>
-            <TableWrap>
-              <Table>
-                <THead>
-                  <TR>
-                    <TH>Número</TH>
-                    <TH>Alcance</TH>
-                    <TH>Estado</TH>
-                    <TH>Líneas</TH>
-                    <TH>Diferencias</TH>
-                    <TH>Inició</TH>
-                  </TR>
-                </THead>
-                <TBody>
+            <ResponsiveData
+              table={
+                <TableWrap>
+                  <Table>
+                    <THead>
+                      <TR>
+                        <TH>Número</TH>
+                        <TH>Alcance</TH>
+                        <TH>Estado</TH>
+                        <TH>Líneas</TH>
+                        <TH>Diferencias</TH>
+                        <TH>Inició</TH>
+                      </TR>
+                    </THead>
+                    <TBody>
+                      {datos.data.map((s) => (
+                        <TR key={s.id}>
+                          <TD>
+                            <a className="hover:underline" href={`/inventarios/${String(s.id)}`}>
+                              {s.number}
+                            </a>
+                          </TD>
+                          <TD>
+                            {s.scopeLabel}
+                            {s.categoryName === null ? '' : ` · ${s.categoryName}`}
+                            {s.blindCount ? ' · a ciegas' : ''}
+                          </TD>
+                          <TD>
+                            <EstadoBadge dominio="inventario" estado={s.status} />
+                          </TD>
+                          <TD>
+                            {s.lineas.contadas} de {s.lineas.total}
+                            {s.lineas.sinResolver > 0
+                              ? ` · ${s.lineas.sinResolver} sin resolver`
+                              : ''}
+                          </TD>
+                          <TD>{s.lineas.conDiferencia}</TD>
+                          <TD className="text-ink-muted">{s.startedByName}</TD>
+                        </TR>
+                      ))}
+                    </TBody>
+                  </Table>
+                </TableWrap>
+              }
+              cards={
+                <CardList>
                   {datos.data.map((s) => (
-                    <TR key={s.id}>
-                      <TD>
-                        <a className="hover:underline" href={`/inventarios/${String(s.id)}`}>
+                    <CardListItem key={s.id}>
+                      <div className="flex items-start justify-between gap-2">
+                        <a className="font-medium text-ink" href={`/inventarios/${String(s.id)}`}>
                           {s.number}
                         </a>
-                      </TD>
-                      <TD>
-                        {s.scopeLabel}
-                        {s.categoryName === null ? '' : ` · ${s.categoryName}`}
-                        {s.blindCount ? ' · a ciegas' : ''}
-                      </TD>
-                      <TD>
-                        <Badge tone={tonoDeEstado(s.status)}>{s.statusLabel}</Badge>
-                      </TD>
-                      <TD>
-                        {s.lineas.contadas} de {s.lineas.total}
-                        {s.lineas.sinResolver > 0 ? ` · ${s.lineas.sinResolver} sin resolver` : ''}
-                      </TD>
-                      <TD>{s.lineas.conDiferencia}</TD>
-                      <TD className="text-ink-muted">{s.startedByName}</TD>
-                    </TR>
+                        <EstadoBadge dominio="inventario" estado={s.status} />
+                      </div>
+                      <p className="mt-1 text-sm text-ink-muted">
+                        {s.lineas.contadas} de {s.lineas.total} líneas · {s.lineas.conDiferencia}{' '}
+                        diferencia(s)
+                      </p>
+                    </CardListItem>
                   ))}
-                </TBody>
-              </Table>
-            </TableWrap>
-
-            <CardList>
-              {datos.data.map((s) => (
-                <CardListItem key={s.id}>
-                  <div className="flex items-start justify-between gap-2">
-                    <a className="font-medium text-ink" href={`/inventarios/${String(s.id)}`}>
-                      {s.number}
-                    </a>
-                    <Badge tone={tonoDeEstado(s.status)}>{s.statusLabel}</Badge>
-                  </div>
-                  <p className="mt-1 text-sm text-ink-muted">
-                    {s.lineas.contadas} de {s.lineas.total} líneas · {s.lineas.conDiferencia}{' '}
-                    diferencia(s)
-                  </p>
-                </CardListItem>
-              ))}
-            </CardList>
+                </CardList>
+              }
+            />
 
             <Pagination
               page={datos.pagination.page}
@@ -237,6 +242,6 @@ export default function InventariosPage() {
           </>
         )}
       </Card>
-    </div>
+    </PageContainer>
   )
 }

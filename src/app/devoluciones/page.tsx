@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
+  PageContainer,
   Badge,
   Card,
   CardHeader,
@@ -80,7 +81,7 @@ export default function DevolucionesPage() {
   }, [cargar])
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageContainer className="gap-5">
       <Card className="p-4">
         <CardHeader
           title="Devoluciones a proveedor"
@@ -175,6 +176,6 @@ export default function DevolucionesPage() {
           </>
         )}
       </Card>
-    </div>
+    </PageContainer>
   )
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import {
+  PageContainer,
   Alert,
   Badge,
   Button,
@@ -117,7 +118,7 @@ export default function UsuariosPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-5">
+    <PageContainer>
       <Card padded={false}>
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
           <Select
@@ -336,7 +337,7 @@ export default function UsuariosPage() {
           )
         }
       />
-    </div>
+    </PageContainer>
   )
 }
 

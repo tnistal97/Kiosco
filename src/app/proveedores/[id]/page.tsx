@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
+  PageContainer,
   Alert,
   Badge,
   Button,
@@ -102,7 +103,7 @@ export default function ProveedorPage() {
   if (!proveedor) return null
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageContainer className="gap-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <Link href="/proveedores" className="text-sm text-ink-muted hover:text-ink">
@@ -320,6 +321,6 @@ export default function ProveedorPage() {
             : 'Vuelve a estar disponible para nuevas compras.'
         }
       />
-    </div>
+    </PageContainer>
   )
 }

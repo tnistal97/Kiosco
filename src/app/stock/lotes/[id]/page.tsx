@@ -2,6 +2,7 @@
 
 import { use, useCallback, useEffect, useState } from 'react'
 import {
+  PageContainer,
   Badge,
   Card,
   ErrorState,
@@ -85,7 +86,7 @@ export default function LotePage({ params }: { params: Promise<{ id: string }> }
   const unidad = lote.product.saleUnit as 'UNIT'
 
   return (
-    <div className="space-y-6">
+    <PageContainer className="gap-6">
       <header>
         <p className="text-sm text-ink-muted">{lote.product.name}</p>
         <h2 className="flex items-center gap-3 text-2xl font-semibold text-ink">
@@ -135,6 +136,6 @@ export default function LotePage({ params }: { params: Promise<{ id: string }> }
           </Table>
         </TableWrap>
       </Card>
-    </div>
+    </PageContainer>
   )
 }

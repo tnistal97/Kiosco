@@ -2,6 +2,9 @@
 
 import { use, useCallback, useEffect, useState } from 'react'
 import {
+  ResponsiveData,
+  formatQuantity,
+  PageContainer,
   Alert,
   Badge,
   Button,
@@ -25,6 +28,7 @@ import {
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest } from '@/lib/api-client'
 import { etiquetaDeLinea, tonoDeEstado } from '@/modules/inventory-counts/estados'
+import { unidadDeVentaODefecto } from '@/modules/products/units'
 
 interface Sesion {
   id: number
@@ -197,7 +201,7 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
   const aCiegas = sesion.blindCount && contando
 
   return (
-    <div className="space-y-6">
+    <PageContainer className="gap-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-3 text-2xl font-semibold text-ink">
@@ -344,79 +348,112 @@ export default function InventarioPage({ params }: { params: Promise<{ id: strin
           </div>
         )}
 
-        <TableWrap>
-          <Table>
-            <THead>
-              <TR>
-                <TH>Producto</TH>
-                <TH>Lote</TH>
-                {!aCiegas && <TH>Esperado</TH>}
-                <TH>Contado</TH>
-                {!aCiegas && <TH>Diferencia</TH>}
-                <TH>Estado</TH>
-              </TR>
-            </THead>
-            <TBody>
+        <ResponsiveData
+          table={
+            <TableWrap>
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Producto</TH>
+                    <TH>Lote</TH>
+                    {!aCiegas && <TH>Esperado</TH>}
+                    <TH>Contado</TH>
+                    {!aCiegas && <TH>Diferencia</TH>}
+                    <TH>Estado</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {lineas.data.map((l) => (
+                    <TR key={l.id}>
+                      <TD>{l.productName}</TD>
+                      <TD className="font-mono text-xs">
+                        {l.lotCode ?? <span className="text-ink-muted">sin asignar</span>}
+                      </TD>
+                      {!aCiegas && (
+                        <TD>
+                          {l.expectedAtCount === null
+                            ? '—'
+                            : formatQuantity(l.expectedAtCount, unidadDeVentaODefecto(l.saleUnit))}
+                        </TD>
+                      )}
+                      <TD>
+                        {contando && puedeContar ? (
+                          <Input
+                            aria-label={`Contado de ${l.productName}${l.lotCode === null ? '' : ` lote ${l.lotCode}`}`}
+                            inputMode="decimal"
+                            className="w-24"
+                            value={borradores[l.id] ?? l.countedQuantity ?? ''}
+                            onChange={(e) => {
+                              setBorradores((b) => ({ ...b, [l.id]: e.target.value }))
+                            }}
+                          />
+                        ) : l.countedQuantity === null ? (
+                          '—'
+                        ) : (
+                          formatQuantity(l.countedQuantity, unidadDeVentaODefecto(l.saleUnit))
+                        )}
+                      </TD>
+                      {!aCiegas && (
+                        <TD>
+                          {l.variance === null
+                            ? '—'
+                            : formatQuantity(l.variance, unidadDeVentaODefecto(l.saleUnit))}
+                        </TD>
+                      )}
+                      <TD>{etiquetaDeLinea(l.status)}</TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </TableWrap>
+          }
+          cards={
+            <CardList>
               {lineas.data.map((l) => (
-                <TR key={l.id}>
-                  <TD>{l.productName}</TD>
-                  <TD className="font-mono text-xs">
-                    {l.lotCode ?? <span className="text-ink-muted">sin asignar</span>}
-                  </TD>
-                  {!aCiegas && <TD>{l.expectedAtCount ?? '—'}</TD>}
-                  <TD>
+                <CardListItem key={l.id}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-ink">{l.productName}</p>
+                      <p className="font-mono text-xs text-ink-muted">
+                        {l.lotCode ?? 'sin asignar'}
+                      </p>
+                    </div>
+                    <span className="text-sm text-ink-muted">{l.statusLabel}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2 text-sm">
                     {contando && puedeContar ? (
                       <Input
-                        aria-label={`Contado de ${l.productName}${l.lotCode === null ? '' : ` lote ${l.lotCode}`}`}
+                        aria-label={`Contado de ${l.productName} (móvil)`}
                         inputMode="decimal"
-                        className="w-24"
+                        className="w-28"
                         value={borradores[l.id] ?? l.countedQuantity ?? ''}
                         onChange={(e) => {
                           setBorradores((b) => ({ ...b, [l.id]: e.target.value }))
                         }}
                       />
                     ) : (
-                      (l.countedQuantity ?? '—')
+                      <span>
+                        Contado:{' '}
+                        {l.countedQuantity === null
+                          ? '—'
+                          : formatQuantity(l.countedQuantity, unidadDeVentaODefecto(l.saleUnit))}
+                      </span>
                     )}
-                  </TD>
-                  {!aCiegas && <TD>{l.variance ?? '—'}</TD>}
-                  <TD>{etiquetaDeLinea(l.status)}</TD>
-                </TR>
+                    {!aCiegas && (
+                      <span className="text-ink-muted">
+                        Dif.{' '}
+                        {l.variance === null
+                          ? '—'
+                          : formatQuantity(l.variance, unidadDeVentaODefecto(l.saleUnit))}
+                      </span>
+                    )}
+                  </div>
+                </CardListItem>
               ))}
-            </TBody>
-          </Table>
-        </TableWrap>
-
-        <CardList>
-          {lineas.data.map((l) => (
-            <CardListItem key={l.id}>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-medium text-ink">{l.productName}</p>
-                  <p className="font-mono text-xs text-ink-muted">{l.lotCode ?? 'sin asignar'}</p>
-                </div>
-                <span className="text-sm text-ink-muted">{l.statusLabel}</span>
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-2 text-sm">
-                {contando && puedeContar ? (
-                  <Input
-                    aria-label={`Contado de ${l.productName} (móvil)`}
-                    inputMode="decimal"
-                    className="w-28"
-                    value={borradores[l.id] ?? l.countedQuantity ?? ''}
-                    onChange={(e) => {
-                      setBorradores((b) => ({ ...b, [l.id]: e.target.value }))
-                    }}
-                  />
-                ) : (
-                  <span>Contado: {l.countedQuantity ?? '—'}</span>
-                )}
-                {!aCiegas && <span className="text-ink-muted">Dif. {l.variance ?? '—'}</span>}
-              </div>
-            </CardListItem>
-          ))}
-        </CardList>
+            </CardList>
+          }
+        />
       </Card>
-    </div>
+    </PageContainer>
   )
 }

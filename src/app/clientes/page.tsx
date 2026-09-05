@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
+  PageContainer,
   Badge,
   Button,
   Card,
@@ -129,7 +130,7 @@ export default function ClientesPage() {
   }, [cargar])
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageContainer className="gap-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-ink-muted">
           {total === 0 ? 'Ningún cliente todavía' : `${String(total)} en total`}
@@ -349,6 +350,6 @@ export default function ClientesPage() {
           void cargar()
         }}
       />
-    </div>
+    </PageContainer>
   )
 }

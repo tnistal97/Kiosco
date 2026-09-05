@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import {
+  PageContainer,
   Alert,
   Button,
   ButtonLink,
@@ -84,7 +85,7 @@ export default function StockPage() {
   }, [recargarReposicion])
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-5">
+    <PageContainer>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <MetricCard label="Productos en esta página" value={products.length} />
         <MetricCard
@@ -304,6 +305,6 @@ export default function StockPage() {
           recargarReposicion()
         }}
       />
-    </div>
+    </PageContainer>
   )
 }

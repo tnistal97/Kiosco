@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
+  PageContainer,
   Alert,
   Button,
   Card,
@@ -253,7 +254,7 @@ export default function NuevaCompraPage() {
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageContainer className="gap-5">
       <header>
         <Link href="/compras" className="text-sm text-ink-muted hover:text-ink">
           ← Compras
@@ -551,6 +552,6 @@ export default function NuevaCompraPage() {
         }}
         onCategoriaCreada={cargarCategorias}
       />
-    </div>
+    </PageContainer>
   )
 }

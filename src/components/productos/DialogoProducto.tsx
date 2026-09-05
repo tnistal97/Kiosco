@@ -20,6 +20,7 @@ import { aMilesimas, cantidadDesdeTexto } from '@/lib/cantidad'
 import { montoDesdeTexto } from '@/lib/money'
 import { calcularRentabilidad, formatearPorcentaje } from '@/modules/products/margen'
 import {
+  formatearCantidadParaEditar,
   NOMBRE_DE_UNIDAD_DE_COMPRA,
   POLITICA_DE_UNIDAD,
   UNIDADES_DE_COMPRA,
@@ -111,10 +112,19 @@ export function DialogoProducto({
     setMotivoCosto('')
     setUnidadVenta(unidad)
     setUnidadCompra(producto?.purchaseUnit ?? 'UNIT')
-    setPorCompra(producto?.unitsPerPurchaseUnit ?? '1')
+    // Formateados para leer: "8", no "8.000" (auditoria, H-02). Al guardar se
+    // vuelven a interpretar con `cantidadDesdeTexto`, que acepta la coma.
+    setPorCompra(
+      producto ? formatearCantidadParaEditar(producto.unitsPerPurchaseUnit, unidad) : '1',
+    )
     setActivo(producto?.isActive ?? true)
     setStockInicial('0')
-    setMinimo(producto ? producto.minimumStock : minimoSugerido(unidad))
+    setMinimo(
+      formatearCantidadParaEditar(
+        producto ? producto.minimumStock : minimoSugerido(unidad),
+        unidad,
+      ),
+    )
     setError(null)
     setEnviando(false)
   }, [abierto, producto, categorias])
@@ -360,7 +370,7 @@ export function DialogoProducto({
                 onChange={(e) => {
                   const u = e.target.value as UnidadDeVenta
                   setUnidadVenta(u)
-                  if (esAlta) setMinimo(minimoSugerido(u))
+                  if (esAlta) setMinimo(formatearCantidadParaEditar(minimoSugerido(u), u))
                 }}
               >
                 {UNIDADES_DE_VENTA.map((u) => (

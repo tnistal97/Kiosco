@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import {
+  PageContainer,
   Alert,
   Badge,
   Card,
@@ -70,7 +71,7 @@ export default function SucursalesPage() {
   }, [])
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-4 p-3 sm:p-5">
+    <PageContainer>
       <Alert tone="info">
         Cada usuario trabaja siempre en su sucursal. El servidor la toma de la sesión y nunca del
         navegador: los productos, la caja y las ventas de otra sucursal no son accesibles ni
@@ -119,6 +120,6 @@ export default function SucursalesPage() {
           })}
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }

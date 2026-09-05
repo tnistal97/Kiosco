@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  PageContainer,
   Alert,
   Button,
   Card,
@@ -157,21 +158,21 @@ export default function MovimientosPage() {
 
   if (!puedeVer) {
     return (
-      <div className="mx-auto max-w-3xl p-3 sm:p-5">
+      <PageContainer width="narrow">
         <Card>
           <EmptyState
             title="No tenés acceso al historial"
             description="Ver quién movió cada unidad es información de control. Pedíselo a quien administra el sistema."
           />
         </Card>
-      </div>
+      </PageContainer>
     )
   }
 
   const hayFiltros = filtros.q !== '' || filtros.tipo !== '' || filtros.desde !== '' || filtros.hasta !== '' // prettier-ignore
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-3 sm:p-5">
+    <PageContainer>
       <Alert tone="info" title="Este libro no se edita">
         Un movimiento queda como está para siempre. Si algo se cargó mal, se corrige con otro
         movimiento y los dos quedan a la vista.
@@ -325,7 +326,7 @@ export default function MovimientosPage() {
                               <Variacion cantidad={m.quantity} unidad={m.product.saleUnit} />
                             </TD>
                             <TD align="right" className="text-ink-muted tabular-nums">
-                              {m.previousQuantity}
+                              {formatearCantidad(m.previousQuantity, m.product.saleUnit)}
                             </TD>
                             <TD align="right" className="font-medium text-ink tabular-nums">
                               {formatearCantidad(m.resultingQuantity, m.product.saleUnit)}
@@ -385,6 +386,6 @@ export default function MovimientosPage() {
           )}
         </div>
       </Card>
-    </div>
+    </PageContainer>
   )
 }

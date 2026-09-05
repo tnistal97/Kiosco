@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
+  PageContainer,
   Badge,
   ButtonLink,
   Card,
@@ -125,7 +126,7 @@ export default function ComprasPage() {
   }, [cargar])
 
   return (
-    <div className="flex flex-col gap-5">
+    <PageContainer className="gap-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         {/* El `<h1>` lo pone la cabecera de la aplicacion. */}
         <p className="text-sm text-ink-muted">
@@ -317,6 +318,6 @@ export default function ComprasPage() {
           </>
         )}
       </Card>
-    </div>
+    </PageContainer>
   )
 }

@@ -4,37 +4,30 @@ import { useState } from 'react'
 import { Badge, Money, TD, TR, cn, tonoPorSigno } from '@/components/ui'
 import { multiplicarMonto } from '@/lib/money'
 import type { MovimientoDTO } from '@/modules/cash/dto'
+import { describirMovimientoDeCaja } from '@/modules/cash/movement-types'
+import { etiquetaDeMedio, normalizarMedio } from '@/modules/sales/payment-methods'
 
 /**
- * Como se ve cada tipo de movimiento.
+ * Una fila del listado de caja.
  *
- * El glifo y la palabra hacen el trabajo; el color acompania. Antes todos los
- * importes salian en verde --ingresos y egresos por igual-- y un retiro de
- * quince mil se veia igual que una venta de trece mil.
+ * El tipo y el medio salen de los vocabularios centrales, no de una tabla
+ * propia: hasta la Fase 1 de UX V2 este archivo solo conocia cinco tipos y los
+ * tres medios viejos, y `customer_payment`, `CASH` y `DEBIT_CARD` llegaban a
+ * la pantalla tal cual (auditoria, H-05). Las tres funciones exportadas se
+ * conservan porque las usan Caja y Ventas.
  */
-export const TIPOS: Record<
-  string,
-  { etiqueta: string; glifo: string; tono: 'success' | 'danger' | 'neutral' | 'warning' }
-> = {
-  sale: { etiqueta: 'Venta', glifo: '↓', tono: 'success' },
-  sale_cancel: { etiqueta: 'Anulación', glifo: '↺', tono: 'danger' },
-  ingreso: { etiqueta: 'Ingreso', glifo: '↓', tono: 'success' },
-  deposito: { etiqueta: 'Depósito', glifo: '↓', tono: 'success' },
-  retiro: { etiqueta: 'Retiro', glifo: '↑', tono: 'warning' },
-}
 
+/** Como se ve un tipo de movimiento. Delegado al vocabulario de caja. */
 export function tipoDe(type: string) {
-  return TIPOS[type] ?? { etiqueta: type, glifo: '•', tono: 'neutral' as const }
+  return describirMovimientoDeCaja(type)
 }
 
-const MEDIOS: Record<string, string> = {
-  efectivo: 'Efectivo',
-  tarjeta: 'Tarjeta',
-  mercado_pago: 'Mercado Pago',
-}
-
+/**
+ * Nombre humano de un medio, tambien para los guardados con el vocabulario
+ * anterior a la Fase 3 (`efectivo`, `tarjeta`, `mercado_pago`).
+ */
 export function medioLegible(m: string): string {
-  return MEDIOS[m] ?? m
+  return etiquetaDeMedio(normalizarMedio(m))
 }
 
 export function fechaCorta(iso: string): string {

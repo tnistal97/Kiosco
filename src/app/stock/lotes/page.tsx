@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import {
+  ResponsiveData,
+  formatQuantity,
+  PageContainer,
   Badge,
   Card,
   CardList,
@@ -132,7 +135,7 @@ export default function LotesPage() {
   }, [])
 
   return (
-    <div className="space-y-6">
+    <PageContainer className="gap-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-ink">Lotes</h2>
@@ -147,19 +150,19 @@ export default function LotesPage() {
           <MetricCard
             label="Vencidos"
             value={String(resumen.lotesVencidos)}
-            detail={`${resumen.unidadesVencidas} unidades`}
+            detail={`${formatQuantity(resumen.unidadesVencidas, null)} unidades`}
             tone={resumen.lotesVencidos > 0 ? 'danger' : 'neutral'}
           />
           <MetricCard
             label="Vencen en 7 días"
             value={String(resumen.lotesEnSieteDias)}
-            detail={`${resumen.unidadesEnSieteDias} unidades`}
+            detail={`${formatQuantity(resumen.unidadesEnSieteDias, null)} unidades`}
             tone={resumen.lotesEnSieteDias > 0 ? 'warning' : 'neutral'}
           />
           <MetricCard
             label="Vencen en 30 días"
             value={String(resumen.lotesEnTreintaDias)}
-            detail={`${resumen.unidadesEnTreintaDias} unidades`}
+            detail={`${formatQuantity(resumen.unidadesEnTreintaDias, null)} unidades`}
           />
           <MetricCard label="Productos afectados" value={String(resumen.productosAfectados)} />
         </div>
@@ -227,68 +230,73 @@ export default function LotesPage() {
 
         {error === null && !cargando && datos !== null && datos.data.length > 0 && (
           <>
-            <TableWrap>
-              <Table>
-                <THead>
-                  <TR>
-                    <TH>Producto</TH>
-                    <TH>Lote</TH>
-                    <TH>Cantidad</TH>
-                    <TH>Vencimiento</TH>
-                    <TH>Días</TH>
-                    <TH>Estado</TH>
-                  </TR>
-                </THead>
-                <TBody>
+            {/* Una sola representacion: tabla en escritorio, tarjetas en el
+                telefono. Antes se dibujaban las dos (auditoria, H-10). */}
+            <ResponsiveData
+              table={
+                <TableWrap>
+                  <Table>
+                    <THead>
+                      <TR>
+                        <TH>Producto</TH>
+                        <TH>Lote</TH>
+                        <TH>Cantidad</TH>
+                        <TH>Vencimiento</TH>
+                        <TH>Días</TH>
+                        <TH>Estado</TH>
+                      </TR>
+                    </THead>
+                    <TBody>
+                      {datos.data.map((l) => (
+                        <TR key={l.id}>
+                          <TD>
+                            <a className="hover:underline" href={`/stock/lotes/${String(l.id)}`}>
+                              {l.product.name}
+                            </a>
+                          </TD>
+                          <TD className="font-mono text-xs">{l.code}</TD>
+                          <TD>
+                            {formatearCantidadConUnidad(l.quantity, l.product.saleUnit as 'UNIT')}
+                          </TD>
+                          <TD>{l.expirationDate ?? '—'}</TD>
+                          <TD className="text-ink-muted">{diasEnPalabras(l.dias)}</TD>
+                          <TD>
+                            <Badge tone={tonoDeVencimiento(l.estado)}>
+                              {etiquetaDeVencimiento(l.estado)}
+                            </Badge>
+                          </TD>
+                        </TR>
+                      ))}
+                    </TBody>
+                  </Table>
+                </TableWrap>
+              }
+              cards={
+                <CardList>
                   {datos.data.map((l) => (
-                    <TR key={l.id}>
-                      <TD>
-                        <a className="hover:underline" href={`/stock/lotes/${String(l.id)}`}>
-                          {l.product.name}
-                        </a>
-                      </TD>
-                      <TD className="font-mono text-xs">{l.code}</TD>
-                      <TD>
-                        {formatearCantidadConUnidad(l.quantity, l.product.saleUnit as 'UNIT')}
-                      </TD>
-                      <TD>{l.expirationDate ?? '—'}</TD>
-                      <TD className="text-ink-muted">{diasEnPalabras(l.dias)}</TD>
-                      <TD>
+                    <CardListItem key={l.id}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-medium text-ink">{l.product.name}</p>
+                          <p className="font-mono text-xs text-ink-muted">{l.code}</p>
+                        </div>
                         <Badge tone={tonoDeVencimiento(l.estado)}>
                           {etiquetaDeVencimiento(l.estado)}
                         </Badge>
-                      </TD>
-                    </TR>
+                      </div>
+                      <div className="mt-2 flex justify-between text-sm text-ink-muted">
+                        <span>
+                          {formatearCantidadConUnidad(l.quantity, l.product.saleUnit as 'UNIT')}
+                        </span>
+                        <span>
+                          {l.expirationDate ?? 'sin fecha'} · {diasEnPalabras(l.dias)}
+                        </span>
+                      </div>
+                    </CardListItem>
                   ))}
-                </TBody>
-              </Table>
-            </TableWrap>
-
-            {/* En movil la tabla se convierte en tarjetas: seis columnas no
-                entran en 375 px sin desplazamiento lateral. */}
-            <CardList>
-              {datos.data.map((l) => (
-                <CardListItem key={l.id}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-medium text-ink">{l.product.name}</p>
-                      <p className="font-mono text-xs text-ink-muted">{l.code}</p>
-                    </div>
-                    <Badge tone={tonoDeVencimiento(l.estado)}>
-                      {etiquetaDeVencimiento(l.estado)}
-                    </Badge>
-                  </div>
-                  <div className="mt-2 flex justify-between text-sm text-ink-muted">
-                    <span>
-                      {formatearCantidadConUnidad(l.quantity, l.product.saleUnit as 'UNIT')}
-                    </span>
-                    <span>
-                      {l.expirationDate ?? 'sin fecha'} · {diasEnPalabras(l.dias)}
-                    </span>
-                  </div>
-                </CardListItem>
-              ))}
-            </CardList>
+                </CardList>
+              }
+            />
 
             <Pagination
               page={datos.pagination.page}
@@ -303,6 +311,6 @@ export default function LotesPage() {
           </>
         )}
       </Card>
-    </div>
+    </PageContainer>
   )
 }
