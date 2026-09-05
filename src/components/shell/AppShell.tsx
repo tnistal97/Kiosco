@@ -9,8 +9,12 @@ import { ThemeToggle } from './ThemeToggle'
 import { UserMenu } from './UserMenu'
 import { EstadoCaja } from './EstadoCaja'
 import { useSession, type SesionCliente } from './SessionProvider'
+import { AvisoDeSesionVencida, SesionVencida } from './SesionVencida'
 
 const CLAVE_CONTRAIDA = 'kiosco:menu-contraido'
+
+/** Pantallas que se dibujan solas, sin barra lateral ni cabecera. */
+const SIN_ARMAZON = ['/login', '/offline']
 
 /**
  * Armazon de la aplicacion.
@@ -65,7 +69,23 @@ export function AppShell({ children }: { children: ReactNode }) {
     setCajonAbierto(false)
   }, [pathname])
 
-  if (!session) return <>{children}</>
+  // Sin sesion hay dos casos distintos y hasta la 2.1 se trataban igual.
+  //
+  // En /login y /offline no hay nada que envolver: son pantallas propias, sin
+  // navegacion, y asi tienen que verse.
+  //
+  // En cualquier OTRA pantalla, quedarse sin sesion y dibujar el contenido
+  // pelado --sin barra lateral, sin cabecera-- es lo peor de los dos mundos:
+  // parece que la aplicacion se rompio y no se entiende que hay que volver a
+  // entrar. Pasa cuando el token todavia tiene firma valida (el middleware lo
+  // deja pasar) pero la base ya no lo acepta: usuario dado de baja, sesion
+  // revocada o sucursal cambiada.
+  if (!session) {
+    if (SIN_ARMAZON.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+      return <>{children}</>
+    }
+    return <SesionVencida pathname={pathname} />
+  }
 
   const grupos = navegacionPara(permisos)
   const titulo = tituloDe(pathname)
@@ -115,6 +135,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+
+      {/* Un 401 en cualquier consulta, desde cualquier pantalla, termina aca. */}
+      <AvisoDeSesionVencida />
     </div>
   )
 }

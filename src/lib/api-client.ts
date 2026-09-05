@@ -74,6 +74,15 @@ function problemaDe(item: unknown): string | null {
   return typeof problema === 'string' ? problema : null
 }
 
+/**
+ * Nombre del evento con el que se avisa que la sesion dejo de valer.
+ *
+ * Lo escucha el armazon (`AvisoDeSesionVencida`) y muestra un solo mensaje,
+ * en vez de que cada pantalla traduzca el 401 a su manera --"Error al cargar
+ * productos"-- y la persona no se entere de que tiene que volver a entrar.
+ */
+export const EVENTO_SESION_VENCIDA = 'kiosco:sesion-vencida'
+
 /** Error de red: no hubo respuesta. Distinto de "el servidor dijo que no". */
 export class NetworkError extends Error {
   constructor(cause: unknown) {
@@ -142,6 +151,14 @@ export async function apiRequest<T>(path: string, options: RequestOptions<T>): P
   const data = await leerJson(res)
 
   if (!res.ok) {
+    // 401 es siempre lo mismo: el servidor ya no reconoce la sesion. Se avisa
+    // una vez, desde aca, para que ninguna pantalla tenga que acordarse.
+    // `/api/auth/*` queda afuera: ahi el 401 es "esa contrasena no es", que es
+    // otra cosa y ya tiene su mensaje en la pantalla de ingreso.
+    if (res.status === 401 && !path.startsWith('/api/auth/') && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(EVENTO_SESION_VENCIDA))
+    }
+
     if (esCuerpoDeError(data)) {
       throw new ApiError({
         code: data.error.code,

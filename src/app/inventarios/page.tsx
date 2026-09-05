@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import {
   EstadoBadge,
@@ -62,6 +63,7 @@ interface Respuesta {
  * esta lista para cerrar y una con doscientas no.
  */
 export default function InventariosPage() {
+  const router = useRouter()
   const [datos, setDatos] = useState<Respuesta | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -124,7 +126,10 @@ export default function InventariosPage() {
           setCreando(false)
         }}
         onCreado={(id) => {
-          window.location.href = `/inventarios/${String(id)}`
+          // `router.push`, no `window.location`: recargar el documento entero
+          // vuelve a montar el armazon --barra lateral incluida-- y a pedir la
+          // sesion contra la base. Era la unica navegacion dura que quedaba.
+          router.push(`/inventarios/${String(id)}`)
         }}
       />
 
