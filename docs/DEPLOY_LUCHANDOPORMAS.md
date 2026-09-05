@@ -11,17 +11,17 @@
 
 ## Qué corre y dónde
 
-| Pieza          | Valor                                                       |
-| -------------- | ----------------------------------------------------------- |
-| Código         | `/srv/kiosco/app` — clon de `release/almacen-v1`             |
+| Pieza          | Valor                                                         |
+| -------------- | ------------------------------------------------------------- |
+| Código         | `/srv/kiosco/app` — clon de `release/almacen-v1`              |
 | Usuario        | `kiosco` (UID 116, de sistema, **sin sudo**, shell `nologin`) |
-| Proceso        | systemd, unidad `kiosco.service`                            |
-| Puerto interno | **127.0.0.1:3099** — nunca `0.0.0.0`                        |
-| Node           | 22.23.2 LTS (`apt-mark hold`, no sube solo a 24)            |
-| Base           | PostgreSQL 14.24, `kiosco`, escucha solo en `localhost`     |
-| Rol de base    | `kiosco` — no superusuario, sin `CREATEDB` ni `CREATEROLE`  |
-| Proxy          | Nginx 1.18, único servicio público                          |
-| Secretos       | `/srv/kiosco/app/.env` — `600 kiosco:kiosco`                |
+| Proceso        | systemd, unidad `kiosco.service`                              |
+| Puerto interno | **127.0.0.1:3099** — nunca `0.0.0.0`                          |
+| Node           | 22.23.2 LTS (`apt-mark hold`, no sube solo a 24)              |
+| Base           | PostgreSQL 14.24, `kiosco`, escucha solo en `localhost`       |
+| Rol de base    | `kiosco` — no superusuario, sin `CREATEDB` ni `CREATEROLE`    |
+| Proxy          | Nginx 1.18, único servicio público                            |
+| Secretos       | `/srv/kiosco/app/.env` — `600 kiosco:kiosco`                  |
 
 ### Por qué systemd y no PM2
 
@@ -87,11 +87,11 @@ despliegue (abajo) y recién después mover el código.
 
 ## Respaldos
 
-| Qué                | Dónde                            |
-| ------------------ | -------------------------------- |
+| Qué                  | Dónde                           |
+| -------------------- | ------------------------------- |
 | Base (`pg_dump -Fc`) | `/var/backups/kiosco/db/`       |
-| Secretos y config  | `/var/backups/kiosco/config/`    |
-| Config del servidor| `/var/backups/kiosco/config-*/`  |
+| Secretos y config    | `/var/backups/kiosco/config/`   |
+| Config del servidor  | `/var/backups/kiosco/config-*/` |
 
 - Automático: `kiosco-backup.timer`, todos los días a las **03:15 UTC**
   (00:15 en Argentina), con `Persistent=true` — si la máquina estaba apagada,
@@ -149,21 +149,21 @@ clave desde la aplicación— pero nadie entra con la del repositorio.
 
 ## Seguridad del servidor
 
-| Control              | Estado                                                    |
-| -------------------- | --------------------------------------------------------- |
-| Puertos públicos     | 22, 80, 443 y nada más                                    |
-| UFW                  | activo, `deny (incoming)` por omisión                     |
-| Fail2ban             | 3 jaulas: `sshd`, `nginx-limit-req`, `nginx-botsearch`    |
-| Bloqueo              | 1 h de base, **creciente** (×2, hasta 1 semana)           |
-| SSH root             | `PermitRootLogin no`                                      |
-| SSH contraseña       | `PasswordAuthentication no` — solo clave pública          |
-| Intentos SSH         | `MaxAuthTries 3`, `LoginGraceTime 30`                     |
-| Base de datos        | solo `127.0.0.1:5432`, nunca expuesta                     |
-| Aplicación           | solo `127.0.0.1:3099`, nunca expuesta                     |
-| Actualizaciones      | `unattended-upgrades` activo, repos de seguridad y ESM    |
-| `rpcbind`            | **deshabilitado** — 0 montajes NFS, nada dependía de él   |
-| Swap                 | 2 GB, `vm.swappiness=10`, persistente en `/etc/fstab`     |
-| Journal              | tope de 500 MB, retención 1 mes                           |
+| Control          | Estado                                                  |
+| ---------------- | ------------------------------------------------------- |
+| Puertos públicos | 22, 80, 443 y nada más                                  |
+| UFW              | activo, `deny (incoming)` por omisión                   |
+| Fail2ban         | 3 jaulas: `sshd`, `nginx-limit-req`, `nginx-botsearch`  |
+| Bloqueo          | 1 h de base, **creciente** (×2, hasta 1 semana)         |
+| SSH root         | `PermitRootLogin no`                                    |
+| SSH contraseña   | `PasswordAuthentication no` — solo clave pública        |
+| Intentos SSH     | `MaxAuthTries 3`, `LoginGraceTime 30`                   |
+| Base de datos    | solo `127.0.0.1:5432`, nunca expuesta                   |
+| Aplicación       | solo `127.0.0.1:3099`, nunca expuesta                   |
+| Actualizaciones  | `unattended-upgrades` activo, repos de seguridad y ESM  |
+| `rpcbind`        | **deshabilitado** — 0 montajes NFS, nada dependía de él |
+| Swap             | 2 GB, `vm.swappiness=10`, persistente en `/etc/fstab`   |
+| Journal          | tope de 500 MB, retención 1 mes                         |
 
 ### Las dos capas de firewall
 
@@ -177,7 +177,7 @@ persistieron con `netfilter-persistent`.
 Tras el reinicio el orden quedó al revés (UFW primero), pero las reglas están
 en los dos caminos, así que el resultado es el mismo por cualquiera de ellos.
 
-**Hay una tercera capa, fuera de la máquina:** la *Security List* de la VCN.
+**Hay una tercera capa, fuera de la máquina:** la _Security List_ de la VCN.
 Se administra desde la consola de Oracle Cloud y ninguna configuración del
 servidor la sustituye.
 
@@ -228,14 +228,14 @@ se silencia.
 
 ## HTTPS
 
-| Dato          | Valor                                          |
-| ------------- | ---------------------------------------------- |
-| Emisor        | Let's Encrypt                                  |
-| Nombres       | `luchandopormas.com`, `www.luchandopormas.com` |
-| Emitido       | 2026-09-03                                     |
-| Vence         | **2026-12-02**                                 |
-| Renovación    | `certbot.timer`, dos veces por día             |
-| Método        | `webroot` sobre `/var/www/certbot`             |
+| Dato       | Valor                                          |
+| ---------- | ---------------------------------------------- |
+| Emisor     | Let's Encrypt                                  |
+| Nombres    | `luchandopormas.com`, `www.luchandopormas.com` |
+| Emitido    | 2026-09-03                                     |
+| Vence      | **2026-12-02**                                 |
+| Renovación | `certbot.timer`, dos veces por día             |
+| Método     | `webroot` sobre `/var/www/certbot`             |
 
 El certificado se pidió con `certonly --webroot` **a propósito**: el plugin
 de nginx reescribe el vhost, y este lleva CSP, límites de petición y cabeceras
@@ -281,11 +281,11 @@ de direcciones en `https://localhost:3099/login`. El sitio era inusable.
 que escucha el proceso, `127.0.0.1:3099`. Pedido a la aplicación sin Nginx
 delante:
 
-| Cabeceras enviadas                | `Location` que devolvía          |
-| --------------------------------- | -------------------------------- |
-| ninguna                           | `http://localhost:3099/login`    |
-| `Host: luchandopormas.com`        | `http://localhost:3099/login` ←  la ignora |
-| `Host:` + `X-Forwarded-Proto`     | `https://localhost:3099/login` ← solo cambia el esquema |
+| Cabeceras enviadas            | `Location` que devolvía                                 |
+| ----------------------------- | ------------------------------------------------------- |
+| ninguna                       | `http://localhost:3099/login`                           |
+| `Host: luchandopormas.com`    | `http://localhost:3099/login` ← la ignora               |
+| `Host:` + `X-Forwarded-Proto` | `https://localhost:3099/login` ← solo cambia el esquema |
 
 **Por qué la verificación anterior no lo vio:** se comprobó que
 `/login` respondía 200 y se siguieron redirecciones sin mirar el `Location`.
@@ -314,7 +314,7 @@ al dominio real.
   petición, y las redirecciones no se precachean. Nadie necesita limpiar nada.
 
 Si aun así alguien quiere partir de cero en su navegador: DevTools →
-Application → Service Workers → *Unregister*, y *Clear storage*. O una recarga
+Application → Service Workers → _Unregister_, y _Clear storage_. O una recarga
 forzada con Ctrl-Shift-R. El `sw.js` se sirve con `cache-control: max-age=0` y
 lleva `skipWaiting`/`clientsClaim`, así que la versión nueva entra sola en la
 siguiente visita.

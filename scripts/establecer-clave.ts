@@ -65,7 +65,9 @@ async function main(): Promise<void> {
 
   const clave = await leerDeEntradaEstandar()
   if (clave.length < MINIMO) {
-    throw new Error(`Muy corta: ${String(clave.length)} caracteres, el minimo es ${String(MINIMO)}.`)
+    throw new Error(
+      `Muy corta: ${String(clave.length)} caracteres, el minimo es ${String(MINIMO)}.`,
+    )
   }
 
   const hash = await bcrypt.hash(clave, RONDAS)

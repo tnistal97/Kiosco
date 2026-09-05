@@ -81,16 +81,21 @@ const HOSTS_PUBLICOS = new Set([
 ])
 
 /**
- * La propia maquina. El chequeo de salud y el diagnostico entran por aca
- * --`curl http://127.0.0.1:3099/api/health`-- y no pasan por Nginx, asi que
- * su `Host` nunca va a ser un dominio publico.
+ * La propia maquina, en cualquier puerto.
+ *
+ * El chequeo de salud y el diagnostico entran por aca --`curl
+ * http://127.0.0.1:3099/api/health`-- y no pasan por Nginx, asi que su `Host`
+ * nunca va a ser un dominio publico. Se acepta CUALQUIER puerto y no solo el
+ * 3099: `next dev` escucha en el 3000, la suite de extremo a extremo levanta
+ * la aplicacion en el 3101 y `pwa:check` en el 3100, y con la lista fija de
+ * antes los tres recibian "Host no reconocido" (auditoria UX, H-40). Un nombre
+ * de loopback con otro puerto sigue siendo esta maquina: lo que la lista
+ * protege es que un `Host` inventado no se conteste, y eso no cambia.
  */
-const HOSTS_LOCALES = new Set([
-  '127.0.0.1:3099',
-  'localhost:3099',
-  '127.0.0.1',
-  'localhost',
-])
+function esHostLocal(host: string): boolean {
+  const nombre = host.split(':')[0] ?? ''
+  return nombre === 'localhost' || nombre === '127.0.0.1'
+}
 
 /**
  * El nombre por el que preguntan, si es uno de los que servimos. Si no, `null`.
@@ -108,7 +113,7 @@ function hostDeLaPeticion(req: NextRequest): string | null {
   const crudo = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? ''
   const host = (crudo.split(',')[0] ?? '').trim().toLowerCase()
 
-  if (HOSTS_PUBLICOS.has(host) || HOSTS_LOCALES.has(host)) return host
+  if (HOSTS_PUBLICOS.has(host) || esHostLocal(host)) return host
 
   return null
 }
@@ -127,11 +132,7 @@ function hostDeLaPeticion(req: NextRequest): string | null {
 function origenDe(req: NextRequest, host: string): string {
   const declarado = (req.headers.get('x-forwarded-proto')?.split(',')[0] ?? '').trim().toLowerCase()
   const esquema =
-    declarado === 'https' || declarado === 'http'
-      ? declarado
-      : HOSTS_LOCALES.has(host)
-        ? 'http'
-        : 'https'
+    declarado === 'https' || declarado === 'http' ? declarado : esHostLocal(host) ? 'http' : 'https'
 
   return `${esquema}://${host}`
 }
