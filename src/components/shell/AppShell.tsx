@@ -1,7 +1,7 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Drawer, IconButton, cn } from '@/components/ui'
 import { navegacionPara, tituloDe } from './navigation'
 import { ListaGrupos, Marca, Sidebar } from './Sidebar'
@@ -15,6 +15,52 @@ const CLAVE_CONTRAIDA = 'kiosco:menu-contraido'
 
 /** Pantallas que se dibujan solas, sin barra lateral ni cabecera. */
 const SIN_ARMAZON = ['/login', '/offline']
+
+/**
+ * Si lo que hay en pantalla ES la pantalla de sin conexion guardada.
+ *
+ * El service worker sirve el documento de `/offline` para cualquier direccion
+ * --se pide /productos sin red y llega esa pantalla--, con lo cual la
+ * direccion del navegador NO dice que se esta mostrando. La marca del propio
+ * documento si. Se lee del DOM que se esta hidratando, que todavia es el HTML
+ * que mando el servidor.
+ *
+ * Hace falta ademas de `useHayRed` porque `navigator.onLine` no es confiable:
+ * con la red emulada de las pruebas sigue diciendo `true`, y en un equipo
+ * conectado a un wifi sin salida tambien.
+ */
+function usePantallaSinConexion(): boolean {
+  return useSyncExternalStore(
+    () => () => undefined,
+    () => document.querySelector('[data-pantalla="sin-conexion"]') !== null,
+    () => false,
+  )
+}
+
+/**
+ * Si el navegador dice que hay red.
+ *
+ * Se pregunta con `useSyncExternalStore` --y no con un `useState` en un
+ * efecto-- porque el servidor tambien dibuja este componente: la instantanea
+ * del servidor es "hay red", y si el navegador dice otra cosa React vuelve a
+ * dibujar solo, sin queja de hidratacion.
+ */
+function useHayRed(): boolean {
+  const suscribir = useCallback((avisar: () => void) => {
+    window.addEventListener('online', avisar)
+    window.addEventListener('offline', avisar)
+    return () => {
+      window.removeEventListener('online', avisar)
+      window.removeEventListener('offline', avisar)
+    }
+  }, [])
+
+  return useSyncExternalStore(
+    suscribir,
+    () => navigator.onLine,
+    () => true,
+  )
+}
 
 /**
  * Armazon de la aplicacion.
@@ -38,6 +84,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   // siete lineas mas a la vista (auditoria, §22). Quien la expanda queda con
   // su eleccion en todas las pantallas.
   const [preferencia, setPreferencia] = useState<boolean | null>(null)
+  const hayRed = useHayRed()
+  const sinConexion = usePantallaSinConexion()
   const contraida = preferencia ?? pathname === '/venta'
 
   // La preferencia se lee al montar, no en el render inicial: el servidor no
@@ -84,6 +132,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (SIN_ARMAZON.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
       return <>{children}</>
     }
+    // Sin red no hay sesion que comprobar, y ademas el service worker esta
+    // sirviendo la pantalla de "sin conexion" GUARDADA bajo la direccion a la
+    // que se quiso ir. Decir "tu sesion vencio" cuando lo que falta es la
+    // conexion es mentir, y encima tapa el mensaje correcto, que ya viene
+    // dibujado en el documento.
+    if (!hayRed || sinConexion) return <>{children}</>
     return <SesionVencida pathname={pathname} />
   }
 

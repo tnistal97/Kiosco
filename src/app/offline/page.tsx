@@ -17,10 +17,19 @@ export const metadata: Metadata = {
  *
  * Sin `use client` a proposito: es HTML estatico. Si dependiera de JavaScript,
  * fallaria justo en el momento en que hace falta.
+ *
+ * `data-pantalla="sin-conexion"` no es decoracion: el service worker guarda
+ * ESTE documento y lo sirve para CUALQUIER direccion --se pide /productos y
+ * llega esta pantalla--, asi que el armazon no puede reconocerla por la
+ * direccion. La marca es como se entera de que lo que esta envolviendo es la
+ * pantalla de sin conexion y no una pantalla sin sesion (`AppShell`).
  */
 export default function OfflinePage() {
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-5 bg-bg px-6 text-center">
+    <div
+      data-pantalla="sin-conexion"
+      className="flex min-h-dvh flex-col items-center justify-center gap-5 bg-bg px-6 text-center"
+    >
       <span
         aria-hidden="true"
         className="flex h-16 w-16 items-center justify-center rounded-2xl border border-line bg-surface"
