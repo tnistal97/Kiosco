@@ -207,6 +207,32 @@ caja, arqueos y bitácora. Diez usuarios, **uno por rol**, todos con la clave
 El seed **se niega a correr** si la base no termina en `_dev`. Es la misma
 guarda que usa la suite de pruebas.
 
+## Desarrollo y construcción no comparten carpeta
+
+`next dev` construye en `.next-dev` y `next build` / `next start` en `.next`
+(`next.config.ts`, `distDir`). No es una manía: mientras compartieron carpeta,
+un servidor de desarrollo olvidado en el 3000 dejó **dos veces** la
+construcción de producción inservible, con este error al arrancar:
+
+```
+TypeError: routesManifest.dataRoutes is not iterable
+Error: Cannot find module '../chunks/ssr/[turbopack]_runtime.js'
+```
+
+y el síntoma no se parecía en nada a la causa: todas las páginas contestaban
+500 **después** de que el login respondiera 200, así que las pruebas de
+extremo a extremo fallaban al esperar la redirección. Con las carpetas
+separadas se puede construir con el servidor de desarrollo encendido.
+
+**Si el desarrollo se pone raro después de agregar o mover archivos de ruta**
+—por ejemplo, todas las pantallas se quedan en el esqueleto de carga aunque
+el servidor conteste 200— la caché de Turbopack quedó vieja:
+
+```bash
+rm -rf .next-dev
+npm run dev
+```
+
 ## Pruebas de extremo a extremo
 
 Corren contra la construcción de producción, con un navegador de verdad y la
@@ -220,6 +246,13 @@ npm run e2e
 
 `npm run e2e:ui` abre el modo interactivo de Playwright, que es lo más rápido
 para entender por qué falla una.
+
+Playwright **no reutiliza** un servidor que ya esté escuchando en el 3101: si
+el puerto está ocupado, se planta y lo dice. Un `next start` huérfano de una
+corrida cortada sirve una construcción vieja y además conserva en memoria el
+bloqueo por intentos de ingreso fallidos, con lo cual la corrida siguiente
+falla entera en la primera pantalla. Para reutilizarlo a propósito:
+`E2E_REUSE=1 npm run e2e`.
 
 ## Comprobación de la PWA
 
@@ -240,6 +273,15 @@ privada guardada en disco.
 npm run dev
 npm run screenshots -- after    # docs/screenshots/phase2-after/
 npm run ui:metrics -- after     # docs/metrics/phase2-after.json
+```
+
+La navegación se mide aparte y **contra la construcción de producción**, que es
+donde los números significan algo:
+
+```bash
+npm run build
+npx next start -p 3099
+npm run nav:metrics -- despues  # docs/metrics/phase2_1-navegacion-despues.json
 ```
 
 Las dos se niegan a apuntar a otra cosa que no sea `localhost`.

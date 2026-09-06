@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { SignJWT } from 'jose'
 import { entrar } from './ayudantes'
 
 /**
@@ -17,6 +19,20 @@ import { entrar } from './ayudantes'
  *     error de la pantalla;
  *   - un 403 NO es una sesion vencida, y se sigue distinguiendo.
  */
+
+/**
+ * El secreto con el que la aplicación firma la sesión.
+ *
+ * Se lee del mismo `.env.local` que usa el servidor de pruebas. Sirve para
+ * fabricar un token VENCIDO y no tener que esperar doce horas para
+ * comprobar qué pasa cuando vence.
+ */
+function secretoDeSesion(): Uint8Array {
+  const env = readFileSync('.env.local', 'utf8')
+  const secreto = /^JWT_SECRET=(.+)$/m.exec(env)?.[1]?.trim() ?? ''
+  if (secreto.length < 32) throw new Error('No se pudo leer JWT_SECRET de .env.local')
+  return new TextEncoder().encode(secreto)
+}
 
 /** Marca el nodo actual de la barra lateral para reconocerlo despues. */
 async function marcarArmazon(page: import('@playwright/test').Page): Promise<void> {
@@ -140,6 +156,44 @@ test.describe('Cuando la sesión ya no vale', () => {
     )
     // El armazon sigue entero detras del aviso.
     await expect(page.locator('aside')).toBeVisible()
+  })
+
+  test('8. un token VENCIDO: la pantalla manda al ingreso y la API lo dice', async ({ page }) => {
+    // El escenario controlado que pedía la fase, sin esperar doce horas: se
+    // toma la sesión real, se le vuelven a firmar los mismos datos con la
+    // fecha de vencimiento en el pasado, y se prueba con eso.
+    await entrar(page, 'encargado')
+    const original = (await page.context().cookies()).find((c) => c.name === 'token')?.value ?? ''
+    expect(original).not.toBe('')
+
+    const claims = JSON.parse(
+      Buffer.from(original.split('.')[1] ?? '', 'base64url').toString('utf8'),
+    ) as Record<string, unknown>
+    const ahora = Math.floor(Date.now() / 1000)
+    const vencido = await new SignJWT({
+      userId: claims.userId,
+      branchId: claims.branchId,
+      role: claims.role,
+      sv: claims.sv,
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt(ahora - 13 * 3600)
+      .setExpirationTime(ahora - 3600)
+      .sign(secretoDeSesion())
+
+    await page
+      .context()
+      .addCookies([{ name: 'token', value: vencido, domain: '127.0.0.1', path: '/' }])
+
+    // La API lo distingue de "no hay sesión": es SESSION_EXPIRED y ademas
+    // limpia la cookie para no reintentar en bucle.
+    const api = await page.request.get('/api/products?pageSize=1')
+    expect(api.status()).toBe(401)
+    expect(((await api.json()) as { error: { code: string } }).error.code).toBe('SESSION_EXPIRED')
+
+    // Y la navegación termina en el ingreso, conservando a dónde iba.
+    await page.goto('/caja')
+    await expect(page).toHaveURL(/\/login\?next=%2Fcaja/)
   })
 
   test('7. un 403 NO dice que la sesión venció: es un permiso que falta', async ({ page }) => {

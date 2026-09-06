@@ -84,6 +84,26 @@ Con la misma persona y la misma consigna («Esta es la caja.»), pero arrancando
 
 Anotar en qué momento dudó, qué tocó primero cuando la caja estaba cerrada, y si en el teléfono llegó a «Cobrar» sin desplazarse.
 
+## Fase 2.1: la lista y el ir y venir
+
+Se agrega a la prueba anterior, sin repetirla. Con la caja abierta y el
+catálogo a la vista:
+
+- [ ] **encuentra un producto por la lista** —sin escanear y sin escribir el
+      nombre— y dice en voz alta cuánto cuesta y cuánto queda antes de tocarlo;
+- [ ] usa una categoría para acortar la lista y vuelve a «Todos»;
+- [ ] con el teclado: ↓ entra a la lista, ↑ ↓ recorren, Enter agrega, Escape
+      vuelve al lector (sin tocar el mouse);
+- [ ] en el teléfono: toca una fila con el dedo, sin hacer zoom ni errarle;
+- [ ] va a Inicio, vuelve a Venta y sigue vendiendo: anotar si en algún momento
+      **le pareció que la aplicación se colgaba** o que faltaba el menú.
+
+Preguntas después (sin sugerir la respuesta):
+
+- ¿Qué mirás primero de cada renglón?
+- ¿Te faltó algún dato de los que necesitás para vender?
+- ¿Se te hizo lenta alguna pantalla? ¿Cuál?
+
 ## Resultado
 
 | Persona | Fecha | Equipo | Venta 1 (s) | Venta 2 (s) | Clics | Preguntas | Aprobado |
