@@ -15,8 +15,19 @@ export type Category = CategoriaDTO
 /** Tope por peticion. Coincide con PAGE_SIZE_MAX del servidor. */
 const PAGE_SIZE_MAX = 100
 
-/** Espera antes de consultar al servidor mientras el usuario escribe. */
-const DEBOUNCE_MS = 250
+/**
+ * Espera antes de consultar al servidor mientras el usuario ESCRIBE.
+ *
+ * Solo para el texto: cada letra seria una consulta, y con el lector se
+ * tipean trece digitos en medio segundo. Un cambio de categoria, de pagina o
+ * de filtro no espera nada --es una decision ya tomada, y hacerla esperar
+ * convertia un clic de 35 ms de servidor en 315 ms de pantalla quieta
+ * (medicion V3, `docs/metrics/venta-v3-antes.json`)--.
+ *
+ * 120 ms y no 250: es lo que tarda en llegar la siguiente letra de alguien
+ * que tipea rapido, y se nota menos que el parpadeo de la lista.
+ */
+const DEBOUNCE_TEXTO_MS = 120
 
 export type CampoOrden = 'name' | 'price' | 'id'
 
@@ -81,6 +92,14 @@ export function useProducts(options: UseProductsOptions = {}) {
   const tamanoPagina = Math.min(pageSize, PAGE_SIZE_MAX)
 
   const [products, setProducts] = useState<Product[]>([])
+  /**
+   * El termino que corresponde a lo que hay en `products`.
+   *
+   * Lo usa la caja para no mostrar filas viejas mientras la consulta viaja:
+   * con la lista anterior en pantalla, escribir y bajar enseguida elegia el
+   * producto equivocado. Ver `esperandoResultados` en /venta.
+   */
+  const [terminoAplicado, setTerminoAplicado] = useState<string>('')
   const [categories, setCategories] = useState<Category[]>([])
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [page, setPage] = useState<number>(1)
@@ -93,8 +112,11 @@ export function useProducts(options: UseProductsOptions = {}) {
   /** Aborta la consulta anterior si el usuario sigue escribiendo. */
   const enCurso = useRef<AbortController | null>(null)
 
+  /** Ultima pagina que se trajo. La carga incremental sigue desde aca. */
+  const paginaCargada = useRef(1)
+
   const consultar = useCallback(
-    async (termino: string, pagina: number, f: FiltrosProductos) => {
+    async (termino: string, pagina: number, f: FiltrosProductos, agregar = false) => {
       setIsLoading(true)
       enCurso.current?.abort()
       const control = new AbortController()
@@ -119,7 +141,12 @@ export function useProducts(options: UseProductsOptions = {}) {
           signal: control.signal,
         })
 
-        setProducts(resultado.data)
+        // Incremental: la pagina nueva se SUMA a lo que ya se estaba mirando.
+        // Reemplazarla haria saltar la lista bajo el dedo justo cuando se
+        // llego al final desplazandose.
+        setProducts((anteriores) => (agregar ? [...anteriores, ...resultado.data] : resultado.data))
+        paginaCargada.current = pagina
+        setTerminoAplicado(q)
         setTotal(resultado.total)
         setTotalPages(resultado.totalPages)
         setError(null)
@@ -140,6 +167,23 @@ export function useProducts(options: UseProductsOptions = {}) {
     () => consultar(searchTerm, page, filtros),
     [consultar, searchTerm, page, filtros],
   )
+
+  /**
+   * Trae la pagina siguiente y la SUMA a la lista. UX V3.
+   *
+   * Reemplaza al cartel "Se muestran 60 de 200: buscá por nombre", que era
+   * una pared: con doscientos productos no habia forma de ver el 61. No toca
+   * `page` --que es la paginacion clasica de /productos-- para no disparar
+   * otra consulta desde el efecto principal.
+   */
+  const cargarMas = useCallback(() => {
+    if (isLoading) return
+    if (products.length >= total) return
+    void consultar(searchTerm, paginaCargada.current + 1, filtros, true)
+  }, [consultar, isLoading, products.length, total, searchTerm, filtros])
+
+  /** Quedan productos que no estan en la lista. */
+  const hayMas = products.length < total
 
   /**
    * Busca un producto por codigo de barras exacto, contra el servidor.
@@ -197,13 +241,22 @@ export function useProducts(options: UseProductsOptions = {}) {
     void fetchCategories()
   }, [fetchCategories])
 
+  /** El termino con el que se consulto la ultima vez. Decide si hay que esperar. */
+  const terminoConsultado = useRef(searchTerm)
+
   // Carga inicial y recarga al cambiar busqueda, pagina o filtros.
   useEffect(() => {
     if (!enServidor) {
       void consultar('', 1, {})
       return
     }
-    const t = setTimeout(() => void consultar(searchTerm, page, filtros), DEBOUNCE_MS)
+    // Espera SOLO si lo que cambio es el texto. La primera carga, un chip de
+    // categoria y un cambio de pagina salen en el mismo cuadro.
+    const espera = terminoConsultado.current === searchTerm ? 0 : DEBOUNCE_TEXTO_MS
+    const t = setTimeout(() => {
+      terminoConsultado.current = searchTerm
+      void consultar(searchTerm, page, filtros)
+    }, espera)
     return () => clearTimeout(t)
   }, [enServidor, searchTerm, page, filtros, consultar])
 
@@ -220,6 +273,10 @@ export function useProducts(options: UseProductsOptions = {}) {
 
   return {
     products,
+    /** El termino con el que se pidieron los productos que hay ahora. */
+    terminoAplicado,
+    cargarMas,
+    hayMas,
     categories,
     searchTerm,
     setSearchTerm: buscar,
