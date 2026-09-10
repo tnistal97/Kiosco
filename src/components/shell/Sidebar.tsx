@@ -31,7 +31,11 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        'hidden shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-150 lg:flex',
+        // Sin `transition-[width]`: animar el ancho de la barra mueve la
+        // pantalla entera durante nueve cuadros. Contraerla es un clic
+        // deliberado y no necesita animacion; entrar a una pantalla no tiene
+        // por que moverla (V3, CLS).
+        'hidden shrink-0 flex-col border-r border-line bg-surface lg:flex',
         collapsed ? 'w-sidebar-tight' : 'w-sidebar',
       )}
     >

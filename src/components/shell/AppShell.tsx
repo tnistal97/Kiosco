@@ -79,14 +79,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const { session, permisos } = useSession()
   const [cajonAbierto, setCajonAbierto] = useState(false)
-  // `null` = sin preferencia guardada. Entonces la barra arranca contraida en la
-  // caja y expandida en el resto: en 1366 px, los 168 px que gana el ticket son
-  // siete lineas mas a la vista (auditoria, §22). Quien la expanda queda con
-  // su eleccion en todas las pantallas.
+  /**
+   * `null` = sin preferencia guardada; entonces la barra arranca expandida.
+   *
+   * HASTA LA V3 arrancaba contraida en `/venta` --"si la ruta es la caja,
+   * 236 px pasan a 68"--, y eso costaba un CLS de 0,6 medido: al entrar a la
+   * caja la barra se encogia con una transicion de ancho y TODA la columna
+   * principal se reacomodaba debajo del cursor. La regla por ruta no existe
+   * mas. Quien quiera el riel lo contrae una vez y queda contraido en todas
+   * las pantallas y en todas las sesiones, que ademas es lo que uno espera de
+   * un boton de contraer.
+   */
   const [preferencia, setPreferencia] = useState<boolean | null>(null)
   const hayRed = useHayRed()
   const sinConexion = usePantallaSinConexion()
-  const contraida = preferencia ?? pathname === '/venta'
+  const contraida = preferencia ?? false
 
   // La preferencia se lee al montar, no en el render inicial: el servidor no
   // tiene localStorage y leerlo antes daria un HTML distinto al del cliente.
