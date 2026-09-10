@@ -126,7 +126,9 @@ test.describe('Un entero pelado entra en todos lados', () => {
     // Kilo y medio: 1,5 × $9.800 = $14.700.
     await expect(ticket(page).getByText('1,500 kg', { exact: true })).toBeVisible()
 
-    await ticket(page).getByRole('button', { name: 'Cobrar' }).click()
+    await ticket(page)
+      .getByRole('button', { name: /^Cobrar/ })
+      .click()
 
     const cobro = dialogo(page)
     const pagaCon = cobro.getByLabel(/^paga con/i)

@@ -22,7 +22,9 @@ const fila = (page: Page, nombre: string) =>
   page.getByRole('group', { name: 'Productos' }).getByRole('button', { name: new RegExp(`^${nombre}, `) }) // prettier-ignore
 
 async function cobrarEnEfectivo(page: Page, recibido: string): Promise<void> {
-  await ticket(page).getByRole('button', { name: 'Cobrar' }).click()
+  await ticket(page)
+    .getByRole('button', { name: /^Cobrar/ })
+    .click()
   const cobro = page.getByRole('dialog')
   await cobro.getByLabel(/^paga con/i).fill(recibido)
   await page.waitForTimeout(400)
@@ -116,13 +118,14 @@ test.describe('Vender', () => {
     await expect(page.getByRole('button', { name: 'Todos' })).toBeVisible()
     await expect(page.getByRole('group', { name: 'Productos' })).toBeVisible()
     await expect(fila(page, PRODUCTOS.yerba.nombre)).toBeVisible()
-    // La lista, con sus columnas: producto, categoria, stock y precio.
+    // Cada fila dice lo que hace falta para vender: nombre, estado y precio.
+    // La categoria solo aparece desde 1536 px, y esto corre en 1366.
     const primera = page.locator('[data-fila]').first()
     await expect(primera).toContainText('$')
-    await expect(fila(page, PRODUCTOS.yerba.nombre)).toContainText('Almacen')
+    await expect(fila(page, PRODUCTOS.yerba.nombre)).toContainText('u.')
     // Y el ticket vacio dice que hacer, con "Cobrar" a la vista pero apagado.
     await expect(page.getByText('El ticket está vacío')).toBeVisible()
-    await expect(ticket(page).getByRole('button', { name: 'Cobrar' })).toBeDisabled()
+    await expect(ticket(page).getByRole('button', { name: /^Cobrar/ })).toBeDisabled()
   })
 
   test('9. elegir un producto de la lista visible, tocando', async ({ page }) => {
@@ -145,7 +148,9 @@ test.describe('Vender', () => {
   })
 
   test('9. elegir un producto de la lista visible, con el teclado', async ({ page }) => {
-    // Con el ticket vacio, ↓ entra a la lista; ↑ ↓ la recorren y Enter agrega.
+    // ↓ elige una fila SIN mover el foco: el lector tiene que seguir
+    // funcionando mientras se recorre la lista (V3). ↑ ↓ la recorren y Enter
+    // agrega.
     await page.getByRole('button', { name: 'Todos' }).click()
     await campo(page).click()
     await expect(campo(page)).toBeFocused()
@@ -153,16 +158,29 @@ test.describe('Vender', () => {
     await expect(page.locator('[data-fila]').first()).toBeVisible()
     await page.keyboard.press('ArrowDown')
     const filas = page.locator('[data-fila]')
-    await expect(filas.first()).toBeFocused()
+    await expect(filas.first()).toHaveAttribute('data-elegida')
+    await expect(campo(page)).toBeFocused()
 
     await page.keyboard.press('ArrowDown')
     const segunda = filas.nth(1)
-    await expect(segunda).toBeFocused()
+    await expect(segunda).toHaveAttribute('data-elegida')
     const nombre = (await segunda.getAttribute('aria-label'))?.split(', ')[0] ?? ''
     await page.keyboard.press('Enter')
     await expect(ticket(page).getByText(nombre, { exact: true })).toBeVisible()
 
-    // Escape devuelve el foco al lector.
+    // Y el foco nunca se fue del campo.
+    await expect(campo(page)).toBeFocused()
+  })
+
+  test('9b. Tab tambien entra a la lista, y ahi el foco es real', async ({ page }) => {
+    // El camino de quien usa lector de pantalla: Tab entra, las flechas
+    // mueven el foco de verdad, Enter agrega y Escape vuelve al lector.
+    await page.getByRole('button', { name: 'Todos' }).click()
+    const primera = page.locator('[data-fila]').first()
+    await expect(primera).toBeVisible()
+    await primera.focus()
+    await page.keyboard.press('ArrowDown')
+    await expect(page.locator('[data-fila]').nth(1)).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(campo(page)).toBeFocused()
   })
@@ -180,7 +198,9 @@ test.describe('Vender', () => {
     await escanear(page, PRODUCTOS.leche.codigo)
     await expect(ticket(page).getByText(PRODUCTOS.leche.nombre, { exact: true })).toBeVisible()
 
-    await ticket(page).getByRole('button', { name: 'Cobrar' }).click()
+    await ticket(page)
+      .getByRole('button', { name: /^Cobrar/ })
+      .click()
     const cobro = page.getByRole('dialog')
     await expect(cobro.getByRole('radio', { name: 'Efectivo' })).toBeChecked()
     await cobro.getByLabel(/^paga con/i).fill('20000')
@@ -201,7 +221,9 @@ test.describe('Vender', () => {
 
   test('4. cobrar por transferencia: un toque y confirmar', async ({ page }) => {
     await escanear(page, PRODUCTOS.gaseosa.codigo)
-    await ticket(page).getByRole('button', { name: 'Cobrar' }).click()
+    await ticket(page)
+      .getByRole('button', { name: /^Cobrar/ })
+      .click()
     const cobro = page.getByRole('dialog')
 
     await cobro.getByRole('radio', { name: 'Transferencia' }).click()
@@ -216,7 +238,9 @@ test.describe('Vender', () => {
   test('5. cobrar combinado: lo cargado y lo que falta, siempre a la vista', async ({ page }) => {
     await escanear(page, PRODUCTOS.yerba.codigo)
     await escanear(page, PRODUCTOS.gaseosa.codigo)
-    await ticket(page).getByRole('button', { name: 'Cobrar' }).click()
+    await ticket(page)
+      .getByRole('button', { name: /^Cobrar/ })
+      .click()
     const cobro = page.getByRole('dialog')
 
     await cobro.getByRole('button', { name: 'Dividir el pago' }).click()
@@ -260,7 +284,7 @@ test.describe('Vender', () => {
     await ticket(page).getByText(PRODUCTOS.leche.nombre, { exact: true }).click()
     await ticket(page).getByRole('button', { name: 'Quitar', exact: true }).click()
     await expect(page.getByText('El ticket está vacío')).toBeVisible()
-    await expect(ticket(page).getByRole('button', { name: 'Cobrar' })).toBeDisabled()
+    await expect(ticket(page).getByRole('button', { name: /^Cobrar/ })).toBeDisabled()
   })
 
   test('caso: un producto agotado se ve, se explica y no entra', async ({ page }) => {

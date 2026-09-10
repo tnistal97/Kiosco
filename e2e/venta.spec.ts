@@ -118,7 +118,9 @@ test('Ctrl+K lleva al campo unico, donde tambien se busca por nombre', async ({ 
   // nombre cuando lo que se escribe tiene letras. Ctrl+K sigue como alias.
   await page.getByRole('button', { name: 'Escanear con la cámara' }).focus()
   await page.keyboard.press('Control+k')
-  const buscador = page.getByPlaceholder('Escaneá o buscá un producto')
+  // El texto del campo cambia con el modo del equipo --"Escaneá un código" o
+  // "Buscá un producto por nombre"--, asi que se lo busca por lo que ES.
+  const buscador = page.locator('[data-barcode-input]')
   await expect(buscador).toBeFocused()
 
   await buscador.type('Yerba')

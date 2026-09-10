@@ -21,6 +21,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DialogoCobro, type PagoParaEnviar } from '@/components/venta/DialogoCobro'
+import { pagoDeclarado } from '@/components/venta/cobro'
 import type { CartLine } from '@/store/cart'
 import { sumarMontos } from '@/lib/money'
 import { precioPorCantidad } from '@/lib/cantidad'
@@ -66,13 +67,39 @@ function abrirCobro(onCobrar: (pagos: PagoParaEnviar[]) => Promise<number>) {
 
 const pagaCon = () => screen.getByLabelText(/^paga con/i)
 
+describe('Cuando el pago esta declarado', () => {
+  const efectivo = { method: 'CASH' as const, importe: '', recibido: '' }
+  const efectivoVacio = [efectivo]
+
+  it('el arranque --efectivo, sin importe-- es una suposicion, no una declaracion', () => {
+    expect(pagoDeclarado(efectivoVacio, false)).toBe(false)
+  })
+
+  it('escribir con cuanto paga, o el importe, alcanza', () => {
+    expect(pagoDeclarado([{ ...efectivo, recibido: '15000' }], false)).toBe(true)
+    expect(pagoDeclarado([{ ...efectivo, importe: '11390' }], false)).toBe(true)
+  })
+
+  it('elegir un medio distinto tambien: nadie lo puso ahi por casualidad', () => {
+    expect(pagoDeclarado([{ method: 'TRANSFER', importe: '', recibido: '' }], false)).toBe(true)
+  })
+
+  it('y volver a efectivo despues de haber elegido sigue siendo una eleccion', () => {
+    expect(pagoDeclarado(efectivoVacio, true)).toBe(true)
+  })
+})
+
 describe('Resumen y vuelto', () => {
   it('muestra las lineas y el total', async () => {
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
-    expect(screen.getByText('Yerba mate 1 kg')).toBeInTheDocument()
-    expect(screen.getByText('Leche entera 1 L')).toBeInTheDocument()
+    // Dos veces cada uno: plegados para el telefono y a la vista en
+    // escritorio. Lo que importa es que en escritorio NO haya que desplegar
+    // nada para ver lo que se esta por cobrar (V3).
+    expect(screen.getAllByText('Yerba mate 1 kg')).toHaveLength(2)
+    expect(screen.getAllByText('Leche entera 1 L')).toHaveLength(2)
+    expect(screen.getAllByText('2 artículos')).toHaveLength(2)
     expect(screen.getAllByText(/11\.390/).length).toBeGreaterThan(0)
   })
 
@@ -214,6 +241,53 @@ describe('Teclado del cobro', () => {
 
     await usuario.keyboard('{Enter}')
     expect(cobrar).not.toHaveBeenCalled()
+  })
+
+  it('Enter NO cobra mientras nadie dijo con cuanto paga', async () => {
+    // El caso que mas importa de la V3: dos Enter distraidos desde el
+    // buscador no pueden terminar en una venta registrada. El campo esta
+    // vacio --lo que se ve en gris es un placeholder-- asi que no hay pago
+    // declarado, y Enter no vende por mucho que se espere.
+    const usuario = userEvent.setup()
+    const cobrar = vi.fn(() => Promise.resolve(9))
+    abrirCobro(cobrar)
+    await screen.findByRole('dialog')
+    await esperar(350)
+
+    await usuario.keyboard('{Enter}')
+    await usuario.keyboard('{Enter}')
+    expect(cobrar).not.toHaveBeenCalled()
+    expect(screen.getByText(/falta decir cómo se paga/i)).toBeInTheDocument()
+
+    // Y en cuanto se declara --J pone el importe justo--, cobra.
+    await usuario.keyboard('j')
+    await usuario.keyboard('{Enter}')
+    await screen.findByText(/venta registrada/i)
+    expect(cobrar).toHaveBeenCalledTimes(1)
+  })
+
+  it('el campo "paga con" no propone el total como si estuviera cargado', async () => {
+    abrirCobro(() => Promise.resolve(1))
+    await screen.findByRole('dialog')
+
+    expect(pagaCon()).toHaveValue('')
+    expect(pagaCon().getAttribute('placeholder')).not.toMatch(/11\.390/)
+    expect(screen.getByText(/sin declarar/i)).toBeInTheDocument()
+  })
+
+  it('elegir un medio ya es declarar como se paga: Enter confirma', async () => {
+    const usuario = userEvent.setup()
+    const cobrar = vi.fn(() => Promise.resolve(9))
+    abrirCobro(cobrar)
+    await screen.findByRole('dialog')
+    await esperar(350)
+
+    await usuario.keyboard('t')
+    expect(screen.getByRole('radio', { name: 'Transferencia' })).toBeChecked()
+    await usuario.keyboard('{Enter}')
+
+    await screen.findByText(/venta registrada/i)
+    expect(cobrar).toHaveBeenCalledTimes(1)
   })
 })
 

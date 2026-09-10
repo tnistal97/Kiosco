@@ -48,6 +48,7 @@ const QUESO: CartLine = {
 function montar(props: Partial<Parameters<typeof Ticket>[0]> = {}) {
   const onSeleccionar = vi.fn()
   const onCantidad = vi.fn()
+  const onAjustar = vi.fn()
   const onQuitar = vi.fn()
   const onEditarPeso = vi.fn()
   const onSalir = vi.fn()
@@ -59,6 +60,7 @@ function montar(props: Partial<Parameters<typeof Ticket>[0]> = {}) {
       seleccionada={1}
       onSeleccionar={onSeleccionar}
       onCantidad={onCantidad}
+      onAjustar={onAjustar}
       onQuitar={onQuitar}
       onEditarPeso={onEditarPeso}
       onEditando={() => undefined}
@@ -69,7 +71,7 @@ function montar(props: Partial<Parameters<typeof Ticket>[0]> = {}) {
       {...props}
     />,
   )
-  return { onSeleccionar, onCantidad, onQuitar, onEditarPeso, onSalir }
+  return { onSeleccionar, onCantidad, onAjustar, onQuitar, onEditarPeso, onSalir }
 }
 
 const grupo = () => screen.getByRole('group', { name: 'Líneas del ticket' })
@@ -115,23 +117,28 @@ describe('Teclado con el foco en el ticket', () => {
     expect(onSeleccionar).toHaveBeenLastCalledWith(1)
   })
 
-  it('derecha e izquierda cambian la cantidad de a una unidad', async () => {
+  it('derecha e izquierda piden una unidad mas o menos sobre la elegida', async () => {
+    // El ticket no decide que pasa con la cantidad --si llega a cero se quita,
+    // y eso lo sabe la pantalla--: pide el ajuste y ya. La aritmetica sigue
+    // siendo la misma funcion pura.
     const usuario = userEvent.setup()
-    const { onCantidad } = montar()
+    const { onAjustar } = montar()
     grupo().focus()
     await usuario.keyboard('{ArrowRight}')
-    expect(onCantidad).toHaveBeenLastCalledWith(1, '3.000')
+    expect(onAjustar).toHaveBeenLastCalledWith(YERBA, 1)
     await usuario.keyboard('{ArrowLeft}')
-    expect(onCantidad).toHaveBeenLastCalledWith(1, '1.000')
+    expect(onAjustar).toHaveBeenLastCalledWith(YERBA, -1)
+    expect(cantidadAjustada(YERBA, 1)).toBe('3.000')
+    expect(cantidadAjustada(YERBA, -1)).toBe('1.000')
   })
 
-  it('en un producto que se pesa, derecha abre el peso en vez de sumar de a uno', async () => {
+  it('en un producto que se pesa no hay "una unidad mas": se ajusta abriendo el peso', async () => {
     const usuario = userEvent.setup()
-    const { onCantidad, onEditarPeso } = montar({ seleccionada: 3 })
+    const { onCantidad, onAjustar } = montar({ seleccionada: 3 })
     grupo().focus()
     await usuario.keyboard('{ArrowRight}')
     expect(onCantidad).not.toHaveBeenCalled()
-    expect(onEditarPeso).toHaveBeenCalledWith(3)
+    expect(onAjustar).toHaveBeenCalledWith(QUESO, 1)
     expect(cantidadAjustada(QUESO, 1)).toBeNull()
   })
 
@@ -149,6 +156,7 @@ describe('Teclado con el foco en el ticket', () => {
           seleccionada={seleccionada}
           onSeleccionar={setSeleccionada}
           onCantidad={() => undefined}
+          onAjustar={() => undefined}
           onQuitar={(id) => {
             setLineas((l) => l.filter((x) => x.productId !== id))
             setSeleccionada(2)
@@ -206,8 +214,31 @@ describe('El pie', () => {
   it('muestra el total y un boton de cobrar que no dice F12', () => {
     montar()
     expect(screen.getByText('Total')).toBeInTheDocument()
-    const cobrar = screen.getByRole('button', { name: 'Cobrar' })
+    const cobrar = screen.getByRole('button', { name: /^Cobrar/ })
     expect(cobrar).toBeEnabled()
     expect(screen.queryByText('F12')).toBeNull()
+  })
+
+  it('el importe va EN el boton: es lo ultimo que se mira antes de cobrar', () => {
+    montar()
+    const cobrar = screen.getByRole('button', { name: /^Cobrar/ })
+    expect(cobrar.textContent).toContain('16.000,00')
+  })
+
+  it('sin ticket, cobrar no se ve como un boton verde apagado', () => {
+    montar({ lineas: [], articulos: 0, total: '0.00', puedeCobrar: false })
+    const cobrar = screen.getByRole('button', { name: 'Cobrar' })
+    expect(cobrar).toBeDisabled()
+    expect(cobrar.className).not.toContain('bg-success')
+  })
+
+  it('revisando, el panel dice que hacen las teclas', () => {
+    montar({ revisando: true })
+    expect(screen.getByText(/Revisá el ticket/)).toBeInTheDocument()
+  })
+
+  it('sin revisar no hay ayuda de teclas ocupando lugar', () => {
+    montar()
+    expect(screen.queryByText(/Revisá el ticket/)).toBeNull()
   })
 })

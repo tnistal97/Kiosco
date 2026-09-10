@@ -1,9 +1,12 @@
 /**
- * La gramatica de teclado del punto de venta, tecla por tecla.
+ * La gramatica de teclado del punto de venta, tecla por tecla. UX V3.
  *
  * Es una funcion pura: no hace falta montar la pantalla para comprobar que
- * ↑ nunca suba la cantidad, que Enter con el campo vacio cobre, y que Supr
- * solo quite con una linea elegida.
+ * ← mueva el cursor mientras se escribe, que Enter no cobre desde el campo, y
+ * que Supr solo quite con una linea a la vista.
+ *
+ * Las tres zonas y por que existen estan en `teclado.ts`. Lo que se prueba
+ * aca es la tabla completa, incluidos los casos que la V2 hacia mal.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -12,17 +15,36 @@ import {
   esTeclaDeGrilla,
   modoDelCampo,
   moverEnGrilla,
+  moverResaltado,
   moverSeleccion,
   seleccionTrasQuitar,
   type ContextoDelPos,
 } from '@/components/venta/teclado'
 
-const VACIO: ContextoDelPos = {
+/** Escribiendo, sin nada elegido y con el ticket vacio. */
+const CAMPO: ContextoDelPos = {
+  zona: 'campo',
   texto: '',
   hayLineas: false,
   haySeleccion: false,
   hayResultados: false,
+  resaltado: 0,
   hayAviso: false,
+}
+
+/** Escribiendo "coca", con resultados a la vista. */
+const ESCRIBIENDO: ContextoDelPos = { ...CAMPO, texto: 'coca', hayResultados: true }
+
+/** Con una fila elegida --se apreto ↓--, todavia con "coca" escrito. */
+const ELIGIENDO: ContextoDelPos = { ...ESCRIBIENDO, zona: 'lista', resaltado: 1 }
+
+/** Revisando el ticket, con una linea elegida. */
+const REVISANDO: ContextoDelPos = {
+  ...CAMPO,
+  zona: 'ticket',
+  hayLineas: true,
+  haySeleccion: true,
+  hayResultados: true,
 }
 
 describe('Que es lo que hay escrito', () => {
@@ -37,94 +59,158 @@ describe('Que es lo que hay escrito', () => {
   })
 })
 
-describe('Enter', () => {
+describe('Escribiendo: las flechas horizontales son del cursor', () => {
+  it('← y → no tocan cantidades mientras se escribe, ni con ticket ni con seleccion', () => {
+    // El caso que la V2 hacia mal: con el ticket armado, corregir "coca colaa"
+    // era imposible porque ← restaba una unidad.
+    const conTicket: ContextoDelPos = {
+      ...ESCRIBIENDO,
+      texto: 'coca colaa',
+      hayLineas: true,
+      haySeleccion: true,
+    }
+    expect(accionDeTecla('ArrowLeft', conTicket)).toBe('nada')
+    expect(accionDeTecla('ArrowRight', conTicket)).toBe('nada')
+  })
+
+  it('tampoco con el campo vacio: sin nada elegido no hay a que sumarle', () => {
+    const vacioConTicket: ContextoDelPos = { ...CAMPO, hayLineas: true, hayResultados: true }
+    expect(accionDeTecla('ArrowLeft', vacioConTicket)).toBe('nada')
+    expect(accionDeTecla('ArrowRight', vacioConTicket)).toBe('nada')
+  })
+
+  it('↓ es lo unico que saca del texto, y solo si hay lista', () => {
+    expect(accionDeTecla('ArrowDown', ESCRIBIENDO)).toBe('entrar-a-la-lista')
+    expect(accionDeTecla('ArrowDown', { ...CAMPO, hayResultados: true })).toBe('entrar-a-la-lista')
+    expect(accionDeTecla('ArrowDown', CAMPO)).toBe('nada')
+  })
+
+  it('↑ no hace nada: se entra a la lista por abajo', () => {
+    expect(accionDeTecla('ArrowUp', ESCRIBIENDO)).toBe('nada')
+  })
+
+  it('Supr borra texto, no lineas', () => {
+    const conTicket: ContextoDelPos = { ...ESCRIBIENDO, hayLineas: true, haySeleccion: true }
+    expect(accionDeTecla('Delete', conTicket)).toBe('nada')
+  })
+})
+
+describe('Eligiendo un producto de la lista', () => {
+  it('↑ y ↓ recorren; desde la primera, ↑ devuelve el mando al texto', () => {
+    expect(accionDeTecla('ArrowDown', ELIGIENDO)).toBe('resultado-siguiente')
+    expect(accionDeTecla('ArrowUp', ELIGIENDO)).toBe('resultado-anterior')
+    expect(accionDeTecla('ArrowUp', { ...ELIGIENDO, resaltado: 0 })).toBe('volver-al-campo')
+  })
+
+  it('→ suma una unidad y ← quita una, sobre el producto elegido', () => {
+    expect(accionDeTecla('ArrowRight', ELIGIENDO)).toBe('sumar-resaltado')
+    expect(accionDeTecla('ArrowLeft', ELIGIENDO)).toBe('restar-resaltado')
+  })
+
+  it('Enter agrega el elegido', () => {
+    expect(accionDeTecla('Enter', ELIGIENDO)).toBe('agregar-resaltado')
+  })
+
+  it('Escape suelta la fila; el texto escrito no se pierde', () => {
+    expect(accionDeTecla('Escape', ELIGIENDO)).toBe('volver-al-campo')
+  })
+
+  it('sin filas, las flechas no hacen nada', () => {
+    expect(accionDeTecla('ArrowRight', { ...ELIGIENDO, hayResultados: false })).toBe('nada')
+  })
+})
+
+describe('Enter no cobra: primero revisar', () => {
   it('con digitos busca el codigo', () => {
-    expect(accionDeTecla('Enter', { ...VACIO, texto: '7790001000011' })).toBe('buscar-codigo')
+    expect(accionDeTecla('Enter', { ...CAMPO, texto: '7790001000011' })).toBe('buscar-codigo')
   })
 
-  it('con letras agrega el resultado elegido, si hay', () => {
-    expect(accionDeTecla('Enter', { ...VACIO, texto: 'yer', hayResultados: true })).toBe(
-      'agregar-resultado',
-    )
-    expect(accionDeTecla('Enter', { ...VACIO, texto: 'zzz', hayResultados: false })).toBe('nada')
+  it('con letras agrega el primer resultado, si hay', () => {
+    expect(accionDeTecla('Enter', ESCRIBIENDO)).toBe('agregar-resaltado')
+    expect(accionDeTecla('Enter', { ...CAMPO, texto: 'zzz' })).toBe('nada')
   })
 
-  it('con el campo vacio abre el cobro, solo si hay ticket', () => {
-    expect(accionDeTecla('Enter', { ...VACIO, hayLineas: true })).toBe('cobrar')
-    expect(accionDeTecla('Enter', VACIO)).toBe('nada')
-  })
-})
-
-describe('Flechas', () => {
-  it('arriba y abajo recorren los resultados mientras se busca', () => {
-    const ctx = { ...VACIO, texto: 'yer', hayResultados: true }
-    expect(accionDeTecla('ArrowDown', ctx)).toBe('resultado-siguiente')
-    expect(accionDeTecla('ArrowUp', ctx)).toBe('resultado-anterior')
+  it('con el campo vacio y ticket pasa a revisar, NO al cobro', () => {
+    const accion = accionDeTecla('Enter', { ...CAMPO, hayLineas: true })
+    expect(accion).toBe('revisar-ticket')
+    expect(accion).not.toBe('cobrar')
   })
 
-  it('arriba y abajo recorren el ticket con el campo vacio', () => {
-    const ctx = { ...VACIO, hayLineas: true }
-    expect(accionDeTecla('ArrowDown', ctx)).toBe('linea-siguiente')
-    expect(accionDeTecla('ArrowUp', ctx)).toBe('linea-anterior')
+  it('con el ticket vacio no hace nada', () => {
+    expect(accionDeTecla('Enter', CAMPO)).toBe('nada')
   })
 
-  it('con el ticket vacio, abajo entra a la grilla de productos', () => {
-    expect(accionDeTecla('ArrowDown', { ...VACIO, hayLista: true })).toBe('ir-a-la-lista')
-    expect(accionDeTecla('ArrowDown', { ...VACIO, hayLista: false })).toBe('nada')
-    // Con lineas, las lineas mandan: la grilla se alcanza con Tab.
-    expect(accionDeTecla('ArrowDown', { ...VACIO, hayLineas: true, hayLista: true })).toBe(
-      'linea-siguiente',
-    )
-  })
-
-  it('arriba NUNCA cambia la cantidad', () => {
-    const ctx = { ...VACIO, hayLineas: true, haySeleccion: true }
-    expect(accionDeTecla('ArrowUp', ctx)).not.toBe('cantidad-mas')
-    expect(accionDeTecla('ArrowDown', ctx)).not.toBe('cantidad-menos')
-  })
-
-  it('izquierda y derecha cambian la cantidad de la linea elegida', () => {
-    const ctx = { ...VACIO, hayLineas: true, haySeleccion: true }
-    expect(accionDeTecla('ArrowRight', ctx)).toBe('cantidad-mas')
-    expect(accionDeTecla('ArrowLeft', ctx)).toBe('cantidad-menos')
-    expect(accionDeTecla('+', ctx)).toBe('cantidad-mas')
-    expect(accionDeTecla('-', ctx)).toBe('cantidad-menos')
-  })
-
-  it('sin linea elegida, izquierda y derecha no hacen nada', () => {
-    const ctx = { ...VACIO, hayLineas: true }
-    expect(accionDeTecla('ArrowRight', ctx)).toBe('nada')
-    expect(accionDeTecla('ArrowLeft', ctx)).toBe('nada')
-  })
-
-  it('mientras se escribe un codigo, las flechas mueven el cursor', () => {
-    const ctx = { ...VACIO, texto: '779', hayLineas: true, haySeleccion: true }
-    expect(accionDeTecla('ArrowRight', ctx)).toBe('nada')
-    expect(accionDeTecla('ArrowUp', ctx)).toBe('nada')
-    expect(accionDeTecla('Delete', ctx)).toBe('nada')
+  it('recien el segundo Enter --ya revisando-- abre el cobro', () => {
+    expect(accionDeTecla('Enter', REVISANDO)).toBe('cobrar')
   })
 })
 
-describe('Supr y Escape', () => {
+describe('Revisando el ticket', () => {
+  it('↑ y ↓ eligen linea', () => {
+    expect(accionDeTecla('ArrowDown', REVISANDO)).toBe('linea-siguiente')
+    expect(accionDeTecla('ArrowUp', REVISANDO)).toBe('linea-anterior')
+  })
+
+  it('← y → cambian la cantidad de la linea elegida', () => {
+    expect(accionDeTecla('ArrowRight', REVISANDO)).toBe('cantidad-mas')
+    expect(accionDeTecla('ArrowLeft', REVISANDO)).toBe('cantidad-menos')
+    expect(accionDeTecla('+', REVISANDO)).toBe('cantidad-mas')
+    expect(accionDeTecla('-', REVISANDO)).toBe('cantidad-menos')
+  })
+
+  it('sin linea elegida, ← y → no hacen nada', () => {
+    expect(accionDeTecla('ArrowRight', { ...REVISANDO, haySeleccion: false })).toBe('nada')
+  })
+
   it('Supr quita la linea elegida, y solo esa', () => {
-    expect(accionDeTecla('Delete', { ...VACIO, hayLineas: true, haySeleccion: true })).toBe(
-      'quitar-linea',
-    )
-    expect(accionDeTecla('Delete', { ...VACIO, hayLineas: true })).toBe('nada')
+    expect(accionDeTecla('Delete', REVISANDO)).toBe('quitar-linea')
+    expect(accionDeTecla('Delete', { ...REVISANDO, haySeleccion: false })).toBe('nada')
   })
 
-  it('Escape vuelve un paso por vez', () => {
-    expect(accionDeTecla('Escape', { ...VACIO, texto: 'yer' })).toBe('limpiar-campo')
-    expect(accionDeTecla('Escape', { ...VACIO, haySeleccion: true })).toBe('deseleccionar')
-    expect(accionDeTecla('Escape', { ...VACIO, hayAviso: true })).toBe('cerrar-aviso')
-    expect(accionDeTecla('Escape', VACIO)).toBe('nada')
+  it('Escape vuelve al campo', () => {
+    expect(accionDeTecla('Escape', REVISANDO)).toBe('volver-al-campo')
+  })
+
+  it('↑ NUNCA cambia la cantidad', () => {
+    expect(accionDeTecla('ArrowUp', REVISANDO)).not.toBe('cantidad-mas')
+    expect(accionDeTecla('ArrowDown', REVISANDO)).not.toBe('cantidad-menos')
   })
 })
 
-describe('Donde queda la seleccion', () => {
+describe('Los alias + y −', () => {
+  it('valen con el campo vacio', () => {
+    expect(accionDeTecla('+', { ...ELIGIENDO, texto: '' })).toBe('sumar-resaltado')
+    expect(accionDeTecla('-', { ...ELIGIENDO, texto: '' })).toBe('restar-resaltado')
+  })
+
+  it('pero NO mientras se escribe: en "coca-cola" el guion es una letra', () => {
+    expect(accionDeTecla('-', ELIGIENDO)).toBe('nada')
+    expect(accionDeTecla('+', ELIGIENDO)).toBe('nada')
+    expect(accionDeTecla('-', ESCRIBIENDO)).toBe('nada')
+  })
+})
+
+describe('Escape, un paso por vez', () => {
+  it('primero suelta lo elegido, despues limpia el campo, despues cierra el aviso', () => {
+    expect(accionDeTecla('Escape', ELIGIENDO)).toBe('volver-al-campo')
+    expect(accionDeTecla('Escape', ESCRIBIENDO)).toBe('limpiar-campo')
+    expect(accionDeTecla('Escape', { ...CAMPO, hayAviso: true })).toBe('cerrar-aviso')
+    expect(accionDeTecla('Escape', CAMPO)).toBe('nada')
+  })
+})
+
+describe('Donde queda lo elegido', () => {
   const IDS = [10, 20, 30]
 
-  it('sin seleccion, abajo elige la primera y arriba la ultima', () => {
+  it('la fila de la lista no da la vuelta en los bordes', () => {
+    expect(moverResaltado(0, 1, 3)).toBe(1)
+    expect(moverResaltado(2, 1, 3)).toBe(2)
+    expect(moverResaltado(0, -1, 3)).toBe(0)
+    expect(moverResaltado(9, -1, 3)).toBe(1)
+    expect(moverResaltado(0, 1, 0)).toBe(-1)
+  })
+
+  it('sin seleccion, abajo elige la primera linea y arriba la ultima', () => {
     expect(moverSeleccion(IDS, null, 1)).toBe(10)
     expect(moverSeleccion(IDS, null, -1)).toBe(30)
   })
@@ -147,7 +233,7 @@ describe('Donde queda la seleccion', () => {
   })
 })
 
-describe('La grilla de productos', () => {
+describe('El foco real dentro de la lista', () => {
   // Siete tarjetas en tres columnas: dos filas enteras y una de una sola.
   //   0 1 2
   //   3 4 5
@@ -173,6 +259,11 @@ describe('La grilla de productos', () => {
     expect(moverEnGrilla(4, 'ArrowDown', T, C)).toBe(6)
     expect(moverEnGrilla(5, 'ArrowDown', T, C)).toBe(6)
     expect(moverEnGrilla(6, 'ArrowDown', T, C)).toBe(6)
+  })
+
+  it('en una sola columna las cuatro flechas mueven de a una fila', () => {
+    expect(moverEnGrilla(3, 'ArrowDown', T, 1)).toBe(4)
+    expect(moverEnGrilla(3, 'ArrowUp', T, 1)).toBe(2)
   })
 
   it('Inicio y Fin van a los extremos; sin tarjetas no hay foco', () => {

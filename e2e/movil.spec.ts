@@ -135,7 +135,7 @@ test('con el dedo: tocar una fila de la lista la manda al ticket', async ({ page
   await expect(page.getByRole('button', { name: /^ticket/i })).toContainText('1 artículo')
   await page.getByRole('button', { name: /^ticket/i }).click()
   await expect(
-    page.getByRole('dialog', { name: 'Ticket' }).getByText(nombre, { exact: true }),
+    page.getByRole('dialog', { name: /ticket/i }).getByText(nombre, { exact: true }),
   ).toBeVisible()
 })
 
@@ -149,7 +149,7 @@ test('el total y el boton de cobrar se ven sin desplazarse', async ({ page }) =>
   await expect(cobrar).toBeInViewport()
 
   await page.getByRole('button', { name: /^ticket/i }).click()
-  const ticket = page.getByRole('dialog', { name: 'Ticket' })
+  const ticket = page.getByRole('dialog', { name: /ticket/i })
   await expect(ticket.getByText('Total')).toBeVisible()
 })
 
@@ -214,7 +214,7 @@ test('el alta rápida entra en 375 px y se puede completar', async ({ page }) =>
   await page.getByRole('button', { name: /^ticket/i }).click()
   await expect(
     page
-      .getByRole('dialog', { name: 'Ticket' })
+      .getByRole('dialog', { name: /ticket/i })
       .getByText('Creado desde el teléfono', { exact: true }),
   ).toBeVisible()
 })
@@ -270,7 +270,7 @@ for (const [ancho, codigo] of [
 
     await page.getByRole('button', { name: /^ticket/i }).click()
     await expect(
-      page.getByRole('dialog', { name: 'Ticket' }).getByText(nombre, { exact: true }),
+      page.getByRole('dialog', { name: /ticket/i }).getByText(nombre, { exact: true }),
     ).toBeVisible()
 
     // Diez kilos y medio en el servidor: ni 10.500 ni un 400.
