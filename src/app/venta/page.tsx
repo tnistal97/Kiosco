@@ -7,6 +7,7 @@ import {
   IconButton,
   ScannerInput,
   aviso,
+  cn,
   type BarcodeStatus,
   type TeclaDelLector,
 } from '@/components/ui'
@@ -22,21 +23,23 @@ import { AvisoCajaCerrada } from '@/components/venta/AvisoCajaCerrada'
 import { EscanerCamara } from '@/components/venta/EscanerCamara'
 import { DialogoAltaRapida } from '@/components/venta/DialogoAltaRapida'
 import { CodigoSinResolver, type EstadoDelCodigo } from '@/components/venta/CodigoSinResolver'
-import {
-  ProductBrowser,
-  type ProductBrowserHandle,
-  type SeccionDelCatalogo,
-} from '@/components/venta/ProductBrowser'
+import { ProductBrowser } from '@/components/venta/ProductBrowser'
+import { Secciones, type SeccionDelCatalogo } from '@/components/venta/Secciones'
+import { SelectorDeModo } from '@/components/venta/SelectorDeModo'
+import { useModoDeVenta } from '@/components/venta/useModoDeVenta'
 import { POSLayout } from '@/components/venta/POSLayout'
 import { useFavoritos } from '@/components/venta/useFavoritos'
 import { useFrecuentes } from '@/components/venta/useFrecuentes'
 import { useProductosPorIds } from '@/components/venta/useProductosPorIds'
-import { devolverFocoA } from '@/components/venta/foco'
+import { enfocarCampo } from '@/components/venta/foco'
+import { useEstadoInmediato } from '@/components/venta/useEstadoInmediato'
 import {
   accionDeTecla,
   modoDelCampo,
+  moverResaltado,
   moverSeleccion,
   seleccionTrasQuitar,
+  type ZonaDelPos,
 } from '@/components/venta/teclado'
 import { useSession, usePermiso } from '@/components/shell/SessionProvider'
 import { notificarCambioDeCaja } from '@/components/shell/EstadoCaja'
@@ -46,16 +49,20 @@ import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { parseVenta } from '@/modules/sales/dto'
 import { useHayCapaAbierta } from '@/store/overlays'
 import { articulosDelTicket, totalDelTicket, useCartStore, type CartLine } from '@/store/cart'
+import type { Monto } from '@/lib/money'
 import { aMilesimas, type TextoCantidad } from '@/lib/cantidad'
-import { esFraccionable, formatearCantidadConUnidad } from '@/modules/products/units'
+import { esFraccionable, formatearCantidadConUnidad, politicaDe } from '@/modules/products/units'
 import { motivoDeCodigoInvalido, normalizarCodigo } from '@/modules/products/barcode'
 
 /**
  * Cuantas filas trae cada consulta del catalogo.
  *
- * Sesenta son cuatro o cinco pantallas de lista. Con mas, la lista dice
- * cuantos hay y pide buscar por nombre, que es mas rapido que desplazar cien
- * filas. Sesenta filas tampoco piden virtualizar nada: son sesenta botones.
+ * Sesenta son cuatro pantallas de lista: alcanzan para el catalogo entero de
+ * un almacen chico y, cuando no, la lista SIGUE --se cargan las siguientes
+ * sesenta y se suman a las que ya estan (`cargarMas`)--. Hasta la V3 el tope
+ * era una pared: "Se muestran 60 de 200, buscá por nombre".
+ *
+ * Sesenta filas tampoco piden virtualizar nada: son sesenta botones.
  */
 const FILAS_POR_CONSULTA = 60
 
@@ -109,13 +116,24 @@ function productoDeLinea(linea: CartLine): ProductoVendible {
 }
 
 /**
- * El punto de venta. UX V2, Fase 2.
+ * El punto de venta. UX V3.
  *
- * Desde el primer momento se ve la estructura entera: el lector, el catalogo
- * --frecuentes, categorias o resultados-- y el ticket con su total y "Cobrar".
- * Se vende de dos maneras que terminan en el mismo lugar: escaneando, o
- * tocando una fila. La gramatica de teclado esta en `teclado.ts`; esta
- * pantalla ejecuta.
+ * Desde el primer momento se ve la estructura entera: el modo, el campo, las
+ * secciones, la lista de productos y el ticket con su total y "Cobrar". Se
+ * vende de tres maneras que terminan en el mismo lugar: escaneando, tocando
+ * una fila, o escribiendo el nombre y eligiendo con las flechas.
+ *
+ * TRES IDEAS QUE HAY QUE ENTENDER ANTES DE TOCAR ESTO
+ * ---------------------------------------------------
+ * 1. EL FOCO VIVE EN EL CAMPO. Lo elegido en la lista y en el ticket es
+ *    estado, no foco: por eso el lector sigue funcionando mientras se
+ *    recorre el catalogo. Solo un dialogo se lleva el foco, y vuelve solo.
+ * 2. LA TECLA SIGNIFICA LO QUE DICE LA ZONA. `campo`, `lista` o `ticket`;
+ *    la tabla completa esta en `teclado.ts` y es una funcion pura. Esta
+ *    pantalla ejecuta, no decide.
+ * 3. ENTER NO COBRA. Campo vacio con ticket pasa a REVISAR; revisando abre
+ *    el cobro; el cobro exige un pago declarado. Tres pasos deliberados
+ *    entre el ultimo producto y una venta registrada.
  *
  * Lo que no cambio: el lector escribe en el campo y manda Enter, sin ningun
  * clic previo; el precio, el stock y el credito los decide el servidor; el
@@ -129,6 +147,9 @@ export default function VentaPage() {
 
   const {
     products,
+    terminoAplicado,
+    cargarMas,
+    hayMas,
     categories,
     searchTerm,
     setSearchTerm,
@@ -156,10 +177,21 @@ export default function VentaPage() {
 
   /** Lo escrito en el campo unico. Digitos: codigo. Letras: busqueda. */
   const [texto, setTexto] = useState('')
-  /** Tarjeta resaltada desde el campo, mientras se busca. */
-  const [resaltado, setResaltado] = useState(0)
+  /**
+   * A que responden las flechas: al texto, a la lista, o al ticket.
+   *
+   * El foco del navegador no se mueve --vive en el campo, por el lector--,
+   * asi que esto es lo unico que distingue "estoy escribiendo" de "tengo un
+   * producto elegido". Ver `teclado.ts`.
+   */
+  // Los tres se leen y se escriben dentro de la misma rafaga de teclas, asi
+  // que van con `useEstadoInmediato`: el manejador de la tecla siguiente
+  // tiene que ver lo que hizo la anterior, no el estado del ultimo dibujo.
+  const [zona, setZona, zonaRef] = useEstadoInmediato<ZonaDelPos>('campo')
+  /** Fila de la lista elegida con ↑ ↓. */
+  const [resaltado, setResaltado, resaltadoRef] = useEstadoInmediato(0)
   /** Producto de la linea del ticket elegida con el teclado. */
-  const [seleccionada, setSeleccionada] = useState<number | null>(null)
+  const [seleccionada, setSeleccionada, seleccionadaRef] = useEstadoInmediato<number | null>(null)
   const [editandoCantidad, setEditandoCantidad] = useState(false)
   const [escribiendo, setEscribiendo] = useState(false)
   const [cobroAbierto, setCobroAbierto] = useState(false)
@@ -169,6 +201,8 @@ export default function VentaPage() {
   const [pesando, setPesando] = useState<{
     producto: ProductoVendible
     linea: CartLine | null
+    /** Al cerrar, ¿se limpia la busqueda? No cuando se llego con →. */
+    limpiar: boolean
   } | null>(null)
   const [estadoCodigo, setEstadoCodigo] = useState<BarcodeStatus>('idle')
   const [mensajeCodigo, setMensajeCodigo] = useState<string | null>(null)
@@ -186,14 +220,16 @@ export default function VentaPage() {
   const [codigoDelAlta, setCodigoDelAlta] = useState<string | null>(null)
   /** Cambia tras cada venta: los frecuentes vuelven a pedir precio y stock. */
   const [recargaDeFrecuentes, setRecargaDeFrecuentes] = useState(0)
+  /** La ultima venta registrada en esta pantalla. Referencia, nada mas. */
+  const [ultimaVenta, setUltimaVenta] = useState<{ id: number; total: Monto } | null>(null)
 
   const campo = useRef<HTMLInputElement>(null)
-  const catalogo = useRef<ProductBrowserHandle>(null)
 
   const total = useMemo(() => totalDelTicket(items), [items])
   const articulos = articulosDelTicket(items)
 
   const branchId = session?.branchId ?? null
+  const { modo, elegir: elegirModo } = useModoDeVenta()
   const favoritos = useFavoritos(branchId)
   const frecuentes = useFrecuentes(branchId)
 
@@ -219,20 +255,24 @@ export default function VentaPage() {
   )
   const hayFrecuentes = idsDeFrecuentes.length > 0
 
+  /**
+   * Que se esta mirando: frecuentes, todos, o una categoria.
+   *
+   * NUNCA cambia sola (V3). Hasta la 2.1 saltaba a "Frecuentes" en cuanto
+   * habia alguno: se escaneaban dos productos y, en medio de la venta, la
+   * lista de cincuenta y siete pasaba a tres y la pantalla parecia vaciarse.
+   * La lista que el cajero esta mirando no se toca sin que la toque el.
+   */
   const [seccion, setSeccion] = useState<SeccionDelCatalogo>('todos')
-  const seccionElegidaAMano = useRef(false)
 
-  // Arranca en "Frecuentes" en cuanto hay alguno, salvo que ya se haya
-  // elegido otra cosa a mano. Un equipo nuevo arranca en "Todos".
-  useEffect(() => {
-    if (hayFrecuentes && !seccionElegidaAMano.current) setSeccion('frecuentes')
-  }, [hayFrecuentes])
-
-  const elegirSeccion = useCallback((s: SeccionDelCatalogo) => {
-    seccionElegidaAMano.current = true
-    setSeccion(s)
-    setResaltado(0)
-  }, [])
+  const elegirSeccion = useCallback(
+    (s: SeccionDelCatalogo) => {
+      setSeccion(s)
+      setResaltado(0)
+      setZona('campo')
+    },
+    [setResaltado, setZona],
+  )
 
   // La categoria filtra el catalogo, pero NO la busqueda: "yerba" escrito
   // desde Bebidas tiene que encontrar la yerba.
@@ -251,9 +291,45 @@ export default function VentaPage() {
   }, [buscando, seccion, aplicarFiltros])
 
   const enFrecuentes = !buscando && seccion === 'frecuentes'
-  const visibles = enFrecuentes ? productosFrecuentes : products
+
+  /**
+   * Lo que se ve en la lista, sin filas viejas.
+   *
+   * Mientras la consulta viaja --120 ms de espera mas lo que tarde el
+   * servidor-- la lista seguia mostrando los resultados anteriores. Escribir
+   * "yerba" y bajar enseguida elegia la primera fila de la lista VIEJA, y →
+   * agregaba ese producto. Ahora, mientras el servidor no haya contestado
+   * para lo que hay escrito, se muestra lo ya cargado que coincide: mismo
+   * criterio que el servidor --el nombre contiene el texto, sin distinguir
+   * mayusculas-- y una lista que nunca miente.
+   */
+  const termino = texto.trim()
+  const esperandoResultados = buscando && terminoAplicado !== termino
+  const encontrados = useMemo(() => {
+    if (!esperandoResultados) return products
+    const t = termino.toLowerCase()
+    return products.filter((p) => p.name.toLowerCase().includes(t))
+  }, [products, esperandoResultados, termino])
+
+  const visibles = enFrecuentes ? productosFrecuentes : encontrados
   const cargandoCatalogo = enFrecuentes ? cargandoFrecuentes : isLoading
-  const totalVisible = enFrecuentes ? productosFrecuentes.length : totalDelCatalogo
+  const totalVisible = enFrecuentes
+    ? productosFrecuentes.length
+    : esperandoResultados
+      ? encontrados.length
+      : totalDelCatalogo
+  // En "Frecuentes" la lista esta completa por definicion: son veinticuatro
+  // como mucho y ya estan todos.
+  const hayMasParaVer = !enFrecuentes && !esperandoResultados && hayMas
+
+  /**
+   * Que fila se marca.
+   *
+   * Eligiendo, la que dicen las flechas. Escribiendo, la PRIMERA y con una
+   * marca mas floja: es la que agregaria Enter, y conviene que se vea cual es
+   * antes de apretarlo.
+   */
+  const indiceResaltado = zona === 'lista' ? resaltado : buscando && visibles.length > 0 ? 0 : -1
 
   /**
    * El escaner global escucha salvo cuando molestaria.
@@ -270,9 +346,28 @@ export default function VentaPage() {
     pesando === null &&
     !altaAbierta
 
-  const devolverFoco = useCallback(() => {
-    devolverFocoA(() => campo.current)
+  /** El foco vuelve al campo, en el mismo cuadro. Ver `foco.ts`. */
+  const enfocar = useCallback(() => {
+    enfocarCampo(() => campo.current)
   }, [])
+
+  /**
+   * Abre una capa --cobro, peso, alta, camara-- con el foco ya en el campo.
+   *
+   * Headless UI devuelve el foco al elemento que estaba activo cuando el
+   * dialogo se monto. Si se llego con el mouse, ese elemento es el boton que
+   * se toco, y al cerrar el foco quedaba ahi: el lector dejaba de funcionar
+   * hasta que alguien hiciera clic en el campo. Poniendo el foco en el campo
+   * ANTES de abrir, la restauracion cae siempre donde tiene que caer, sin
+   * reintentos ni temporizadores.
+   */
+  const abrirCapa = useCallback(
+    (abrir: () => void) => {
+      enfocar()
+      abrir()
+    },
+    [enfocar],
+  )
 
   // ---------------------------------------------------------------- ticket
 
@@ -298,7 +393,7 @@ export default function VentaPage() {
       registrarFrecuente(p.id)
       return null
     },
-    [agregar, registrarFrecuente],
+    [agregar, registrarFrecuente, setSeleccionada],
   )
 
   /**
@@ -306,10 +401,14 @@ export default function VentaPage() {
    *
    * Un producto por unidad se agrega y listo. Uno que se pesa abre el dialogo
    * INMEDIATAMENTE, sin pasos intermedios: despues de pasar un queso por el
-   * lector, lo unico que puede seguir es el peso.
+   * lector, lo unico que puede seguir es el peso. Vale igual para → sobre una
+   * fila: un producto por kilo no tiene "una unidad mas" (decision V3).
    */
   const elegirProducto = useCallback(
-    (p: Product): string | null => {
+    (
+      p: ProductoVendible,
+      opciones: { limpiar?: boolean; linea?: CartLine | null } = {},
+    ): string | null => {
       // Lo VENDIBLE, no el total: con 10 unidades de las que 7 estan vencidas
       // hay 3 para vender, y dejar armar el ticket con 10 solo mueve el
       // rechazo al momento de cobrar.
@@ -319,32 +418,39 @@ export default function VentaPage() {
         return motivo
       }
       if (esFraccionable(p.saleUnit)) {
-        setPesando({ producto: p, linea: null })
+        const limpiar = opciones.limpiar ?? true
+        const linea = opciones.linea ?? null
+        // El foco al campo ANTES de abrir el peso, para que al cerrarlo vuelva
+        // solo. Si ya hay una capa abierta --la camara-- no se la toca.
+        if (!hayCapa) enfocar()
+        setPesando({ producto: p, linea, limpiar })
         return null
       }
       const motivo = agregarProducto(p)
       if (motivo !== null) aviso.atencion(`${p.name}: ${motivo}.`)
       return motivo
     },
-    [agregarProducto],
+    [agregarProducto, enfocar, hayCapa],
   )
 
   const limpiarBusqueda = useCallback(() => {
     setTexto('')
     setResaltado(0)
+    setZona('campo')
     setSearchTerm('')
-  }, [setSearchTerm])
+  }, [setSearchTerm, setResaltado, setZona])
 
-  /** Una fila del catalogo, tocada o elegida con Enter. */
+  /** Una fila del catalogo, tocada o elegida con Enter desde la lista. */
   const elegirDelCatalogo = useCallback(
     (p: Product, desdeElTeclado: boolean) => {
-      elegirProducto(p)
+      elegirProducto(p, { limpiar: true })
       if (buscando) limpiarBusqueda()
+      setZona('campo')
       // Quien toca vuelve al lector: ahi cae el proximo codigo. Quien navega
       // con el teclado se queda en la lista para seguir eligiendo.
       if (!desdeElTeclado) campo.current?.focus()
     },
-    [elegirProducto, buscando, limpiarBusqueda],
+    [elegirProducto, buscando, limpiarBusqueda, setZona],
   )
 
   // --------------------------------------------------------------- escaneo
@@ -366,6 +472,9 @@ export default function VentaPage() {
     async (crudo: string) => {
       const codigo = normalizarCodigo(crudo)
       setSinResolver(null)
+      // Un codigo leido manda: lo elegido en la lista o en el ticket se suelta
+      // y la pantalla vuelve a estar lista para el siguiente.
+      setZona('campo')
 
       const roto = motivoDeCodigoInvalido(codigo)
       if (roto !== null) {
@@ -417,7 +526,7 @@ export default function VentaPage() {
         setSinResolver({ tipo: 'sin-red', codigo, mensaje })
       }
     },
-    [elegirProducto, buscarPorCodigo],
+    [elegirProducto, buscarPorCodigo, setZona],
   )
 
   /** El producto recien creado entra al ticket por el MISMO camino que uno viejo. */
@@ -435,9 +544,9 @@ export default function VentaPage() {
           : `${p.name} · ${motivo}`,
       )
       void fetchProducts()
-      devolverFoco()
+      enfocar()
     },
-    [elegirProducto, fetchProducts, devolverFoco],
+    [elegirProducto, fetchProducts, enfocar],
   )
 
   /** Reactivar un producto dado de baja, sin salir de la caja. */
@@ -560,40 +669,136 @@ export default function VentaPage() {
   // a la nada.
   useEffect(() => {
     if (seleccionada !== null && !ids.includes(seleccionada)) setSeleccionada(null)
-  }, [ids, seleccionada])
+  }, [ids, seleccionada, setSeleccionada])
 
   const abrirCobro = useCallback(() => {
-    if (items.length > 0 && !cobroAbierto) setCobroAbierto(true)
-  }, [items.length, cobroAbierto])
+    if (items.length > 0 && !cobroAbierto) {
+      abrirCapa(() => {
+        setCobroAbierto(true)
+      })
+    }
+  }, [items.length, cobroAbierto, abrirCapa])
 
   const editarPeso = useCallback(
-    (productId: number) => {
+    (productId: number, limpiar = true) => {
       const linea = items.find((l) => l.productId === productId)
       if (!linea) return
-      setPesando({ producto: productoDeLinea(linea), linea })
+      abrirCapa(() => {
+        setPesando({ producto: productoDeLinea(linea), linea, limpiar })
+      })
     },
-    [items],
+    [items, abrirCapa],
   )
 
-  const ajustarSeleccionada = useCallback(
-    (delta: -1 | 1) => {
-      const linea = items.find((l) => l.productId === seleccionada)
-      if (!linea) return
-      const cantidad = cantidadAjustada(linea, delta)
-      // Un producto que se pesa no tiene "una unidad mas": se abre el peso.
-      if (cantidad === null) editarPeso(linea.productId)
-      else cambiarCantidad(linea.productId, cantidad)
+  /**
+   * Volver atras una accion destructiva del ticket.
+   *
+   * No hay confirmacion antes de quitar ni de vaciar: un modal en medio de una
+   * venta cuesta mas que el error que evita. Lo que hay es vuelta atras, con
+   * el ticket entero guardado --lineas, cantidades y orden-- y ocho segundos
+   * para arrepentirse.
+   *
+   * Se reconstruye con `add`, que es el mismo camino que usa el escaneo: las
+   * reglas de stock se vuelven a aplicar, no se inyecta estado a mano.
+   */
+  const restaurarTicket = useCallback(
+    (guardado: CartLine[]) => {
+      vaciar()
+      for (const l of guardado) {
+        agregar(
+          {
+            id: l.productId,
+            name: l.name,
+            barcode: l.barcode,
+            price: l.price,
+            sellableStock: l.stock,
+            saleUnit: l.saleUnit,
+          },
+          l.quantity,
+        )
+      }
+      setSeleccionada(null)
+      enfocar()
     },
-    [items, seleccionada, cambiarCantidad, editarPeso],
+    [vaciar, agregar, enfocar, setSeleccionada],
+  )
+
+  const conDeshacer = useCallback(
+    (mensaje: string, accion: () => void) => {
+      const antes = items
+      accion()
+      aviso.deshacer(mensaje, () => {
+        restaurarTicket(antes)
+      })
+    },
+    [items, restaurarTicket],
   )
 
   const quitarLinea = useCallback(
     (productId: number) => {
+      const linea = items.find((l) => l.productId === productId)
       const siguiente = seleccionTrasQuitar(ids, productId)
-      quitar(productId)
-      setSeleccionada(siguiente)
+      conDeshacer(linea ? `${linea.name} · quitado` : 'Producto quitado', () => {
+        quitar(productId)
+        setSeleccionada(siguiente)
+      })
     },
-    [ids, quitar],
+    [ids, items, quitar, conDeshacer, setSeleccionada],
+  )
+
+  /**
+   * Una unidad mas o menos sobre una linea del ticket.
+   *
+   * Con una sola unidad, ← la quita: es lo que se espera cuando se resta
+   * hasta cero, y volver atras esta a un toque. Un producto por peso no tiene
+   * paso: abre el peso.
+   */
+  const ajustarLinea = useCallback(
+    (linea: CartLine, delta: -1 | 1) => {
+      const cantidad = cantidadAjustada(linea, delta)
+      if (cantidad === null) {
+        editarPeso(linea.productId, false)
+        return
+      }
+      const minimo = aMilesimas(politicaDe(linea.saleUnit).minimo)
+      if (delta === -1 && aMilesimas(cantidad) < minimo) {
+        quitarLinea(linea.productId)
+        return
+      }
+      cambiarCantidad(linea.productId, cantidad)
+    },
+    [cambiarCantidad, editarPeso, quitarLinea],
+  )
+
+  const ajustarSeleccionada = useCallback(
+    (delta: -1 | 1) => {
+      const linea = items.find((l) => l.productId === seleccionadaRef.current)
+      if (linea) ajustarLinea(linea, delta)
+    },
+    [items, seleccionadaRef, ajustarLinea],
+  )
+
+  /**
+   * → y ← sobre la fila resaltada de la LISTA.
+   *
+   * Suma o resta una unidad de ese producto sin salir de la busqueda y sin
+   * mover el foco: escribir "coca", bajar y apretar → tres veces deja tres
+   * gaseosas en el ticket con el nombre todavia escrito.
+   */
+  const ajustarResaltado = useCallback(
+    (delta: -1 | 1) => {
+      const p = visibles[resaltadoRef.current]
+      if (!p) return
+      const linea = items.find((l) => l.productId === p.id)
+      if (delta === 1) {
+        if (linea && esFraccionable(linea.saleUnit)) editarPeso(linea.productId, false)
+        else elegirProducto(p, { limpiar: false })
+        return
+      }
+      // Restar de lo que no esta en el ticket no hace nada: no hay de donde.
+      if (linea) ajustarLinea(linea, -1)
+    },
+    [visibles, resaltadoRef, items, elegirProducto, editarPeso, ajustarLinea],
   )
 
   // --------------------------------------------------------------- teclado
@@ -601,56 +806,83 @@ export default function VentaPage() {
   /** Lo que se escribe en el campo unico: letras buscan, digitos esperan Enter. */
   function alEscribir(t: string) {
     setTexto(t)
+    // Escribir SIEMPRE devuelve el mando al texto: ← y → vuelven a mover el
+    // cursor en cuanto se toca una letra, aunque hubiera una fila elegida.
+    setZona('campo')
+    setResaltado(0)
     if (sinResolver !== null) setSinResolver(null)
-    if (modoDelCampo(t) === 'busqueda') {
-      setSearchTerm(t)
-      setResaltado(0)
-    } else if (searchTerm !== '') {
-      setSearchTerm('')
-      setResaltado(0)
-    }
+    if (modoDelCampo(t) === 'busqueda') setSearchTerm(t)
+    else if (searchTerm !== '') setSearchTerm('')
   }
 
   function alPresionarEnElCampo(tecla: TeclaDelLector, textoActual: string): boolean {
+    // Del `ref` y no del render: dos teclas seguidas llegan mas rapido de lo
+    // que React vuelve a dibujar.
+    const zonaActual = zonaRef.current
+    const resaltadoActual = resaltadoRef.current
+    const seleccionadaActual = seleccionadaRef.current
     const accion = accionDeTecla(tecla, {
+      zona: zonaActual,
       texto: textoActual,
       hayLineas: items.length > 0,
-      haySeleccion: seleccionada !== null,
-      hayResultados: buscando && visibles.length > 0,
+      haySeleccion: seleccionadaActual !== null,
+      hayResultados: visibles.length > 0,
+      resaltado: resaltadoActual,
       hayAviso: sinResolver !== null,
-      hayLista: visibles.length > 0,
     })
 
     switch (accion) {
       case 'buscar-codigo':
         setTexto('')
+        setZona('campo')
         void procesarCodigo(textoActual)
         return true
-      case 'agregar-resultado': {
-        const elegido = visibles[resaltado]
+      case 'agregar-resaltado': {
+        // Con texto y sin haber bajado todavia, Enter agrega el PRIMERO: es
+        // lo que dice la lista con la marca tenue del primer renglon.
+        const elegido = visibles[zonaActual === 'lista' ? resaltadoActual : 0]
         if (elegido) {
-          elegirProducto(elegido)
+          elegirProducto(elegido, { limpiar: true })
           limpiarBusqueda()
         }
         return true
       }
+      case 'revisar-ticket':
+        // Enter con el campo vacio NO cobra: pasa a revisar el ticket, que es
+        // donde se ve lo que se esta por cobrar. El segundo Enter abre el cobro.
+        setZona('ticket')
+        setSeleccionada((s) => s ?? ids[0] ?? null)
+        return true
       case 'cobrar':
         abrirCobro()
         return true
+      case 'entrar-a-la-lista':
+        setZona('lista')
+        setResaltado(0)
+        return true
       case 'resultado-anterior':
-        setResaltado((i) => Math.max(0, i - 1))
+        setResaltado((i) => moverResaltado(i, -1, visibles.length))
         return true
       case 'resultado-siguiente':
-        setResaltado((i) => Math.min(i + 1, Math.max(0, visibles.length - 1)))
+        setResaltado((i) => {
+          const siguiente = moverResaltado(i, 1, visibles.length)
+          // Bajar desde la ultima trae mas, en vez de quedarse trabado en el
+          // final de la pagina cargada.
+          if (siguiente === i && hayMas) cargarMas()
+          return siguiente
+        })
+        return true
+      case 'sumar-resaltado':
+        ajustarResaltado(1)
+        return true
+      case 'restar-resaltado':
+        ajustarResaltado(-1)
         return true
       case 'linea-anterior':
-        setSeleccionada(moverSeleccion(ids, seleccionada, -1))
+        setSeleccionada(moverSeleccion(ids, seleccionadaActual, -1))
         return true
       case 'linea-siguiente':
-        setSeleccionada(moverSeleccion(ids, seleccionada, 1))
-        return true
-      case 'ir-a-la-lista':
-        catalogo.current?.enfocar()
+        setSeleccionada(moverSeleccion(ids, seleccionadaActual, 1))
         return true
       case 'cantidad-menos':
         ajustarSeleccionada(-1)
@@ -659,12 +891,15 @@ export default function VentaPage() {
         ajustarSeleccionada(1)
         return true
       case 'quitar-linea':
-        if (seleccionada !== null) quitarLinea(seleccionada)
+        if (seleccionadaActual !== null) quitarLinea(seleccionadaActual)
         return true
       case 'limpiar-campo':
         limpiarBusqueda()
         return true
-      case 'deseleccionar':
+      case 'volver-al-campo':
+        // Escape suelta lo elegido y devuelve el mando al texto, que queda
+        // como estaba: un paso atras, sin perder nada.
+        setZona('campo')
         setSeleccionada(null)
         return true
       case 'cerrar-aviso':
@@ -702,8 +937,10 @@ export default function VentaPage() {
       if (e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault()
         if (puedeCrearProducto) {
-          setCodigoDelAlta(null)
-          setAltaAbierta(true)
+          abrirCapa(() => {
+            setCodigoDelAlta(null)
+            setAltaAbierta(true)
+          })
         }
         return
       }
@@ -720,7 +957,7 @@ export default function VentaPage() {
     return () => {
       window.removeEventListener('keydown', alPresionar)
     }
-  }, [abrirCobro, cobroAbierto, hayCapa, puedeCrearProducto])
+  }, [abrirCobro, abrirCapa, cobroAbierto, hayCapa, puedeCrearProducto])
 
   // ---------------------------------------------------------------- cobro
 
@@ -739,6 +976,7 @@ export default function VentaPage() {
       parse: parseVenta,
     })
     notificarCambioDeCaja()
+    setUltimaVenta({ id: venta.id, total })
     return venta.id
   }
 
@@ -754,12 +992,15 @@ export default function VentaPage() {
     setSinResolver(null)
     setRecargaDeFrecuentes((n) => n + 1)
     void fetchProducts()
-    devolverFoco()
+    enfocar()
   }
 
   const cerrarPeso = () => {
+    // Se vuelve exactamente al contexto anterior: si se llego con → desde la
+    // lista, el nombre buscado sigue escrito y la fila sigue elegida.
+    if (pesando?.limpiar === true) limpiarBusqueda()
     setPesando(null)
-    devolverFoco()
+    enfocar()
   }
 
   const panelTicket = (
@@ -768,18 +1009,29 @@ export default function VentaPage() {
       total={total}
       articulos={articulos}
       seleccionada={seleccionada}
-      onSeleccionar={setSeleccionada}
+      revisando={zona === 'ticket'}
+      ultimaVenta={ultimaVenta}
+      onSeleccionar={(id) => {
+        setSeleccionada(id)
+        setZona(id === null ? 'campo' : 'ticket')
+      }}
       onCantidad={cambiarCantidad}
+      onAjustar={ajustarLinea}
       onQuitar={quitarLinea}
       onEditarPeso={editarPeso}
       onEditando={setEditandoCantidad}
       onVaciar={() => {
-        vaciar()
-        setSeleccionada(null)
-        devolverFoco()
+        conDeshacer('Ticket vaciado', () => {
+          vaciar()
+          setSeleccionada(null)
+          setZona('campo')
+          enfocar()
+        })
       }}
       onCobrar={abrirCobro}
       onSalir={() => {
+        setZona('campo')
+        setSeleccionada(null)
         campo.current?.focus()
       }}
       puedeCobrar={items.length > 0}
@@ -787,8 +1039,41 @@ export default function VentaPage() {
     />
   )
 
+  /**
+   * La ayuda del campo dice lo que hacen las teclas AHORA.
+   *
+   * Es la mitad de la seniial de en que estado esta el teclado --la otra
+   * mitad es la fila resaltada o el ticket senialado-- y evita el cartel de
+   * "modo" que nadie lee. Cambia sola y nunca miente.
+   */
+  const ayudaDeTeclado =
+    zona === 'ticket'
+      ? '↑↓ línea · ←→ cantidad · Supr quita · Enter cobrar · Esc volver'
+      : zona === 'lista'
+        ? '↑↓ elegir · → suma · ← quita · Enter agrega · Esc volver'
+        : buscando
+          ? '↓ elegir de la lista · Enter agrega el primero'
+          : items.length > 0
+            ? '↓ elegir producto · Enter revisar el ticket'
+            : '↓ elegir producto de la lista'
+
+  const selectorDeModo = (className: string) => (
+    <SelectorDeModo
+      modo={modo}
+      onModo={(m) => {
+        elegirModo(m)
+        enfocar()
+      }}
+      leyendo={estadoCodigo === 'reading' || estadoCodigo === 'ok'}
+      className={className}
+    />
+  )
+
   const cabecera = (
-    <div className="flex items-start gap-2">
+    <div className="flex items-center gap-2">
+      {/* En el telefono el selector no entra al lado de un campo utilizable:
+          baja al renglon de las secciones, que ahi mide 44 px igual. */}
+      {selectorDeModo('hidden sm:flex')}
       <ScannerInput
         ref={campo}
         value={texto}
@@ -797,7 +1082,12 @@ export default function VentaPage() {
         status={estadoCodigo}
         message={mensajeCodigo}
         loading={buscando && isLoading}
-        hint="↑↓ elegir · ←→ cantidad · Enter cobrar · Supr quitar"
+        hint={ayudaDeTeclado}
+        pie={false}
+        label={modo === 'lector' ? 'Escaneá un código de barras' : 'Buscá un producto por nombre'}
+        placeholder={
+          modo === 'lector' ? 'Escaneá un código de barras' : 'Buscá un producto por nombre…'
+        }
         onEditingChange={setEscribiendo}
         className="min-w-0 flex-1"
       />
@@ -806,7 +1096,9 @@ export default function VentaPage() {
         variant="secondary"
         size="lg"
         onClick={() => {
-          setCamaraAbierta(true)
+          abrirCapa(() => {
+            setCamaraAbierta(true)
+          })
         }}
         className="shrink-0"
       >
@@ -835,8 +1127,10 @@ export default function VentaPage() {
               variant="ghost"
               size="lg"
               onClick={() => {
-                setCodigoDelAlta(null)
-                setAltaAbierta(true)
+                abrirCapa(() => {
+                  setCodigoDelAlta(null)
+                  setAltaAbierta(true)
+                })
               }}
             >
               Nuevo producto
@@ -848,8 +1142,10 @@ export default function VentaPage() {
               variant="ghost"
               size="lg"
               onClick={() => {
-                setCodigoDelAlta(null)
-                setAltaAbierta(true)
+                abrirCapa(() => {
+                  setCodigoDelAlta(null)
+                  setAltaAbierta(true)
+                })
               }}
             >
               <span aria-hidden="true" className="text-xl leading-none">
@@ -862,6 +1158,61 @@ export default function VentaPage() {
       <div className="hidden self-center lg:block">
         <AyudaAtajos />
       </div>
+    </div>
+  )
+
+  /**
+   * El renglon de abajo del campo: las secciones y lo ultimo que paso.
+   *
+   * Uno solo, de 28 px, y SIEMPRE presente --tambien mientras se busca--.
+   * Antes eran dos: los chips, que desaparecian al buscar y hacian saltar la
+   * lista 40 px, y el pie del campo. Juntos costaban una fila y media de
+   * producto y se movian solos.
+   */
+  /**
+   * Lo elegido con las flechas, para quien no lo ve.
+   *
+   * El foco no se mueve --vive en el campo, por el lector-- asi que nada lo
+   * anuncia solo. Es el mismo recurso que ya usa el ticket para su linea
+   * elegida, y con el mismo texto que dice la fila.
+   */
+  const productoElegido = zona === 'lista' ? visibles[resaltado] : undefined
+  const anuncioDeSeleccion = (
+    // `aria-live` sin `role="status"`: el resultado del lector ya es el
+    // `status` de esta pantalla, y dos regiones con el mismo rol se pisan.
+    <p className="sr-only" aria-live="polite">
+      {productoElegido
+        ? `${productoElegido.name}, ${formatearCantidadConUnidad(productoElegido.sellableStock, productoElegido.saleUnit)}`
+        : ''}
+    </p>
+  )
+
+  const barraDeSecciones = (
+    <div className="flex min-h-7 shrink-0 items-center gap-3">
+      {selectorDeModo('sm:hidden')}
+      <Secciones
+        seccion={seccion}
+        onSeccion={elegirSeccion}
+        categorias={categories}
+        hayFrecuentes={hayFrecuentes}
+        deshabilitado={buscando}
+        className="min-w-0 flex-1"
+      />
+      {/* El resultado del ultimo codigo, o lo que hacen las teclas ahora. El
+          error se queda; la ayuda solo donde hay ancho. */}
+      <p
+        aria-hidden="true"
+        className={cn(
+          'shrink-0 truncate text-xs',
+          estadoCodigo === 'error'
+            ? 'max-w-[45%] font-medium text-danger'
+            : mensajeCodigo
+              ? 'hidden max-w-[45%] text-ink-muted sm:block'
+              : 'hidden text-ink-faint lg:block',
+        )}
+      >
+        {mensajeCodigo ?? ayudaDeTeclado}
+      </p>
     </div>
   )
 
@@ -899,8 +1250,10 @@ export default function VentaPage() {
           puedeCrear={puedeCrearProducto}
           puedeReactivar={puedeReactivar}
           onCrear={() => {
-            setCodigoDelAlta(sinResolver.codigo)
-            setAltaAbierta(true)
+            abrirCapa(() => {
+              setCodigoDelAlta(sinResolver.codigo)
+              setAltaAbierta(true)
+            })
           }}
           onReactivar={() => {
             if (sinResolver.tipo === 'inactivo') {
@@ -912,7 +1265,7 @@ export default function VentaPage() {
           }}
           onCerrar={() => {
             setSinResolver(null)
-            devolverFoco()
+            enfocar()
           }}
         />
       )}
@@ -921,27 +1274,29 @@ export default function VentaPage() {
 
   return (
     <>
+      {anuncioDeSeleccion}
       <POSLayout
         cabecera={cabecera}
+        secciones={barraDeSecciones}
         avisos={avisos}
         catalogo={
           <ProductBrowser
-            ref={catalogo}
             busqueda={buscando ? texto : null}
             seccion={seccion}
-            onSeccion={elegirSeccion}
-            categorias={categories}
-            hayFrecuentes={hayFrecuentes}
             productos={visibles}
             cargando={cargandoCatalogo}
             error={error}
             total={totalVisible}
-            resaltado={buscando ? resaltado : -1}
+            hayMas={hayMasParaVer}
+            onCargarMas={cargarMas}
+            resaltado={indiceResaltado}
+            listaActiva={zona === 'lista'}
             onResaltar={setResaltado}
             onElegir={elegirDelCatalogo}
             esFavorito={favoritos.esFavorito}
             onFavorito={favoritos.alternar}
             onVolverAlLector={() => {
+              setZona('campo')
               campo.current?.focus()
             }}
             className="h-full"
@@ -953,7 +1308,9 @@ export default function VentaPage() {
         puedeCobrar={items.length > 0}
         ticketAbierto={ticketAbierto}
         onAbrirTicket={() => {
-          setTicketAbierto(true)
+          abrirCapa(() => {
+            setTicketAbierto(true)
+          })
         }}
         onCerrarTicket={() => {
           setTicketAbierto(false)
@@ -995,7 +1352,7 @@ export default function VentaPage() {
         categorias={categories}
         onCerrar={() => {
           setAltaAbierta(false)
-          devolverFoco()
+          enfocar()
         }}
         onCreado={usarProductoNuevo}
         onYaExistia={usarProductoNuevo}
@@ -1008,7 +1365,7 @@ export default function VentaPage() {
         abierto={camaraAbierta}
         onCerrar={() => {
           setCamaraAbierta(false)
-          devolverFoco()
+          enfocar()
         }}
         onCodigo={(codigo) => {
           void procesarCodigo(codigo)
@@ -1019,7 +1376,7 @@ export default function VentaPage() {
         abierto={cobroAbierto}
         onCerrar={() => {
           setCobroAbierto(false)
-          devolverFoco()
+          enfocar()
         }}
         lineas={items}
         total={total}

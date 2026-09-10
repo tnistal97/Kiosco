@@ -10,19 +10,23 @@ import { Dialog, IconButton } from '@/components/ui'
  * Escape, Supr. Los atajos viejos --F12, Alt+N, Ctrl+K-- siguen funcionando
  * para quien ya los tenia en los dedos, pero van al final y no se muestran en
  * ningun boton (auditoria, H-07).
+ *
+ * Esto es un recordatorio, no el manual: lo que hacen las teclas AHORA lo
+ * dice la linea debajo del campo, que cambia sola. Ver `teclado.ts`.
  */
 const GRAMATICA: Array<{ teclas: string[]; que: string }> = [
-  { teclas: ['↑', '↓'], que: 'Elegir una línea del ticket, o un resultado si estás buscando' },
-  { teclas: ['←', '→'], que: 'Una unidad menos o más en la línea elegida' },
+  { teclas: ['↓'], que: 'Elegir un producto de la lista. Después ↑ ↓ la recorren' },
+  { teclas: ['←', '→'], que: 'Una unidad menos o más del producto elegido. Escribiendo, mueven el cursor' }, // prettier-ignore
   {
     teclas: ['Enter'],
-    que: 'Busca el código, agrega el resultado, o abre el cobro con el campo vacío',
+    que: 'Busca el código, agrega el producto elegido, o —con el campo vacío— pasa a revisar el ticket',
   },
-  { teclas: ['Esc'], que: 'Vuelve un paso: vacía el campo, deselecciona, cierra' },
-  { teclas: ['Supr'], que: 'Quita la línea elegida' },
+  { teclas: ['Enter'], que: 'Revisando, abre el cobro. Cobrar pide además decir cómo se paga' },
+  { teclas: ['Esc'], que: 'Vuelve un paso: suelta lo elegido, vacía el campo, cierra' },
+  { teclas: ['Supr'], que: 'Revisando, quita la línea elegida. Se puede deshacer' },
   {
     teclas: ['Tab'],
-    que: 'Entra a los productos (también ↓ con el ticket vacío): las flechas los recorren, Enter agrega, Esc vuelve',
+    que: 'Entra a los productos con el foco: las flechas los recorren, Enter agrega, Esc vuelve',
   },
 ]
 

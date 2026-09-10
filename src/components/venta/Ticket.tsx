@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useEffect, useId, useRef } from 'react'
-import { Button, EmptyState, Kbd, Money, QuantityInput, cn } from '@/components/ui'
+import { Button, EmptyState, Kbd, Money, QuantityInput, cn, formatMoney } from '@/components/ui'
 import type { CartLine } from '@/store/cart'
 import type { Monto } from '@/lib/money'
 import { aMilesimas, desdeMilesimas, precioPorCantidad, type TextoCantidad } from '@/lib/cantidad'
@@ -27,6 +27,12 @@ import { moverSeleccion } from './teclado'
  * campo de escaneo sin que el cursor salga de ahi, y se marca con una barra y
  * un fondo, no solo con color. El foco real solo entra al ticket con Tab, y
  * entonces las mismas teclas funcionan desde aca.
+ *
+ * REVISAR (V3). Enter con el campo vacio no cobra: enciende `revisando`, y
+ * entonces este panel es el que manda --se enmarca, dice que hacen las teclas
+ * y el Enter siguiente abre el cobro--. Es el paso que faltaba entre "sigo
+ * agregando" y "estoy por cobrar", y el que hace que dos Enter distraidos ya
+ * no registren una venta.
  *
  * `memo` en la linea no es un adorno: con quince lineas y una cantidad que
  * cambia con cada tecla, volver a renderizar el ticket entero se nota en una
@@ -129,14 +135,17 @@ export function Ticket({
   total,
   articulos,
   seleccionada,
+  revisando = false,
   onSeleccionar,
   onCantidad,
+  onAjustar,
   onQuitar,
   onEditarPeso,
   onEditando,
   onVaciar,
   onCobrar,
   onSalir,
+  ultimaVenta = null,
   puedeCobrar,
   className,
 }: {
@@ -151,14 +160,27 @@ export function Ticket({
   articulos: number
   /** Producto de la linea seleccionada con el teclado, o null. */
   seleccionada: number | null
+  /**
+   * El teclado esta puesto ACA: se esta revisando antes de cobrar.
+   *
+   * Se llega con Enter desde el campo vacio. El panel se enmarca y dice que
+   * hacen las teclas; no es un dialogo ni un paso obligatorio --Escape vuelve
+   * y el ticket queda igual-- pero es lo que separa "sigo agregando" de
+   * "estoy por cobrar".
+   */
+  revisando?: boolean
   onSeleccionar: (productId: number | null) => void
   onCantidad: (productId: number, cantidad: TextoCantidad) => void
+  /** Una unidad mas o menos. La pantalla decide que pasa al llegar a cero. */
+  onAjustar: (linea: CartLine, delta: -1 | 1) => void
   onQuitar: (productId: number) => void
   /** Enter sobre una linea que se pesa: abre el peso para corregirlo. */
   onEditarPeso: (productId: number) => void
   onEditando: (editando: boolean) => void
   onVaciar: () => void
   onCobrar: () => void
+  /** La venta anterior, para tenerla a mano sin salir de la caja. */
+  ultimaVenta?: { id: number; total: Monto } | null
   /** Escape con el foco en el ticket: vuelve al campo de escaneo. */
   onSalir?: () => void
   puedeCobrar: boolean
@@ -194,7 +216,7 @@ export function Ticket({
       case '+':
         if (lineaSeleccionada) {
           e.preventDefault()
-          ajustar(lineaSeleccionada, 1)
+          onAjustar(lineaSeleccionada, 1)
         }
         return
       case 'ArrowLeft':
@@ -202,7 +224,7 @@ export function Ticket({
       case '−':
         if (lineaSeleccionada) {
           e.preventDefault()
-          ajustar(lineaSeleccionada, -1)
+          onAjustar(lineaSeleccionada, -1)
         }
         return
       case 'Delete':
@@ -230,16 +252,17 @@ export function Ticket({
     }
   }
 
-  function ajustar(linea: CartLine, delta: -1 | 1) {
-    const cantidad = cantidadAjustada(linea, delta)
-    if (cantidad === null) onEditarPeso(linea.productId)
-    else onCantidad(linea.productId, cantidad)
-  }
-
   return (
     <section
       aria-label="Ticket en curso"
-      className={cn('flex min-h-0 flex-col border-line bg-surface', className)}
+      data-revisando={revisando || undefined}
+      className={cn(
+        'flex min-h-0 flex-col border-line bg-surface transition-colors',
+        // Revisando, el panel entero se marca: es donde estan puestas las
+        // teclas, y tiene que verse sin leer nada.
+        revisando && 'ring-2 ring-primary ring-inset',
+        className,
+      )}
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-2.5">
         <h2 className="text-sm font-semibold text-ink">
@@ -256,6 +279,15 @@ export function Ticket({
           </Button>
         )}
       </header>
+
+      {/* Que hacen las teclas ahora. Solo mientras se revisa: el resto del
+          tiempo el ticket es una lista y no tiene por que explicarse. */}
+      {revisando && !vacio && (
+        <p className="shrink-0 border-b border-line bg-primary-quiet px-4 py-1.5 text-xs text-ink-muted">
+          Revisá el ticket · <Kbd>↑↓</Kbd> línea · <Kbd>←→</Kbd> cantidad · <Kbd>Supr</Kbd> quita ·{' '}
+          <Kbd>Enter</Kbd> cobra · <Kbd>Esc</Kbd> seguir agregando
+        </p>
+      )}
 
       {/* Lo que se anuncia al elegir una linea con el teclado, para quien no
           la ve resaltarse. */}
@@ -310,20 +342,32 @@ export function Ticket({
         el total dejaba de verse, que es justo lo que no puede pasar.
       */}
       <footer className="shrink-0 border-t border-line px-4 py-3">
+        {/* La venta anterior, discreta y solo con el ticket vacio: sirve para
+            confirmar cuanto se cobro recien, no para mirarla mientras se
+            arma la siguiente. */}
+        {vacio && ultimaVenta && (
+          <p className="mb-2 flex items-baseline justify-between gap-3 text-xs text-ink-faint">
+            <span data-numeric="">Última venta #{ultimaVenta.id}</span>
+            <Money amount={ultimaVenta.total} size="sm" tone="muted" />
+          </p>
+        )}
         <div className="mb-3 flex items-baseline justify-between gap-3">
           <span className="text-sm text-ink-muted">Total</span>
           <Money amount={total} size="xl" />
         </div>
+        {/* El importe VA en el boton: es lo ultimo que se mira antes de
+            cobrar. Sin ticket no es un boton verde apagado --que se lee como
+            "apretable"-- sino uno gris, que se lee como lo que es. */}
         <Button
-          variant="confirm"
+          variant={puedeCobrar ? 'confirm' : 'secondary'}
           size="xl"
           block
           disabled={!puedeCobrar}
           onClick={onCobrar}
           className="text-lg"
         >
-          Cobrar
-          <Kbd>Enter</Kbd>
+          {puedeCobrar ? `Cobrar ${formatMoney(total)}` : 'Cobrar'}
+          {puedeCobrar && <Kbd>Enter</Kbd>}
         </Button>
       </footer>
     </section>

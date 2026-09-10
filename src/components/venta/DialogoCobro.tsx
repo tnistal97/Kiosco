@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Button, Dialog, Kbd, Money, MoneyInput, formatMoney } from '@/components/ui'
+import { Alert, Button, Dialog, Kbd, Money, MoneyInput, cn, formatMoney } from '@/components/ui'
 import type { CartLine } from '@/store/cart'
 import {
   CERO,
@@ -27,7 +27,7 @@ import {
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { SelectorDeCliente } from './SelectorDeCliente'
 import { PaymentSelector, medioDeTecla } from './PaymentSelector'
-import { sugerenciasDeRecibido } from './cobro'
+import { pagoDeclarado, sugerenciasDeRecibido } from './cobro'
 import { esEditable } from './foco'
 import { apiRequest } from '@/lib/api-client'
 import {
@@ -57,6 +57,14 @@ import {
  * cuanto paga), J pone el importe justo, Enter cobra, Escape vuelve. Enter no
  * cobra en los primeros 300 ms: es lo que separa "Enter, Enter" a proposito
  * de un Enter que rebota.
+ *
+ * ENTER NO COBRA SI NADIE DIJO COMO SE PAGA (V3). El dialogo se abre con
+ * efectivo por el total, y eso es una SUPOSICION comoda, no un importe
+ * cargado: el "6.560,00" gris del campo era un placeholder y se leia como un
+ * valor. Ahora hace falta declarar --escribir el importe, tocar Justo o un
+ * billete, o elegir un medio-- y recien ahi Enter confirma; ver
+ * `pagoDeclarado` en `cobro.ts`. El boton "Cobrar $ X" se puede apretar
+ * igual: apretarlo YA es declarar que se cobra asi.
  */
 
 /** Un renglon de pago mientras se arma. Los importes son texto: se tipean. */
@@ -101,6 +109,23 @@ function frenadoPorLimiteAlEnviar(credito: EstadoDeCreditoDTO | null): boolean {
 /** Cuanto hay que esperar desde que se abre para que Enter cobre. */
 const MS_ANTES_DE_COBRAR = 300
 
+/** Lo que se esta por cobrar, linea por linea. */
+function ArticulosDeLaVenta({ lineas }: { lineas: CartLine[] }) {
+  return (
+    <ul className="mt-2 max-h-40 divide-y divide-line overflow-y-auto">
+      {lineas.map((l) => (
+        <li key={l.productId} className="flex items-center gap-3 py-1.5">
+          <span className="w-16 shrink-0 text-right text-ink-muted" data-numeric="">
+            {formatearCantidadConUnidad(l.quantity, l.saleUnit)}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-ink">{l.name}</span>
+          <Money amount={precioPorCantidad(l.price, l.quantity)} size="sm" />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export function DialogoCobro({
   abierto,
   onCerrar,
@@ -129,6 +154,10 @@ export function DialogoCobro({
   const [credito, setCredito] = useState<EstadoDeCreditoDTO | null>(null)
   const [autorizarExceso, setAutorizarExceso] = useState(false)
   const puedeAutorizar = usePermiso('accounts.overrideLimit')
+  /** Alguien eligio el medio, aunque haya vuelto al que estaba puesto. */
+  const [medioElegidoAMano, setMedioElegidoAMano] = useState(false)
+  /** Se intento cobrar con Enter sin decir como se paga: se explica una vez. */
+  const [faltaDeclarar, setFaltaDeclarar] = useState(false)
 
   const botonCobrar = useRef<HTMLButtonElement>(null)
   const campoPagaCon = useRef<HTMLInputElement>(null)
@@ -148,6 +177,8 @@ export function DialogoCobro({
     setCliente(null)
     setCredito(null)
     setAutorizarExceso(false)
+    setMedioElegidoAMano(false)
+    setFaltaDeclarar(false)
   }, [abierto])
 
   const principal = pagos[0] ?? nuevaLinea(0)
@@ -245,6 +276,12 @@ export function DialogoCobro({
   const puedeCobrar =
     cuadra && !faltaEnAlgunEfectivo && !faltaCliente && !frenadoPorLimite && !enviando
 
+  /**
+   * Si alguien dijo COMO se paga. No es una regla de negocio --el boton
+   * "Cobrar" no la usa-- sino la condicion para que la tecla Enter confirme.
+   */
+  const hayPagoDeclarado = pagoDeclarado(pagos, medioElegidoAMano)
+
   // Al cambiar de medio el campo "paga con" aparece o desaparece. Si
   // desaparece con el foco adentro, el foco cae al body y Enter deja de
   // cobrar; se lo lleva al boton. Si aparece, entra en el campo.
@@ -271,6 +308,8 @@ export function DialogoCobro({
   }
 
   function elegirMedio(clave: number, method: MedioCobrable) {
+    setMedioElegidoAMano(true)
+    setFaltaDeclarar(false)
     actualizar(clave, { method, recibido: '' })
   }
 
@@ -303,6 +342,7 @@ export function DialogoCobro({
   }
 
   function ponerRecibido(clave: number, monto: Monto) {
+    setFaltaDeclarar(false)
     actualizar(clave, { recibido: textoLocalDeMonto(monto) })
   }
 
@@ -358,8 +398,18 @@ export function DialogoCobro({
 
     if (e.key === 'Enter') {
       // Un boton con el foco hace lo suyo con Enter (Volver, Justo, un medio).
+      // Tambien "Cobrar $ X": tener el foco puesto ahi y apretar Enter es
+      // apretar el boton, y eso ya es declarar el pago.
       if (elemento?.tagName === 'BUTTON') return
       if (!puedeCobrar) return
+      // Nadie dijo todavia como se paga: Enter no vende. Se explica y se
+      // lleva el cursor a donde hay que decirlo.
+      if (!hayPagoDeclarado) {
+        e.preventDefault()
+        setFaltaDeclarar(true)
+        campoPagaCon.current?.focus()
+        return
+      }
       if (Date.now() - abiertoEn.current < MS_ANTES_DE_COBRAR) return
       e.preventDefault()
       void cobrar()
@@ -393,6 +443,7 @@ export function DialogoCobro({
         onClose={onNuevaVenta}
         title="Venta registrada"
         size="sm"
+        rapido
         footer={
           <Button variant="confirm" size="lg" block autoFocus onClick={onNuevaVenta}>
             Nueva venta
@@ -455,6 +506,7 @@ export function DialogoCobro({
       onClose={onCerrar}
       title="Cobrar"
       size="lg"
+      rapido
       dismissible={!enviando}
       initialFocus={esEfectivo(principal.method) ? campoPagaCon : botonCobrar}
       fullScreenMobile
@@ -509,22 +561,22 @@ export function DialogoCobro({
             <span className="text-sm font-medium text-ink-muted">Total</span>
             <Money amount={total} size="hero" />
           </div>
-          <details className="mt-1 text-sm">
+          {/* Los articulos, A LA VISTA en escritorio (V3): lo que se esta por
+              cobrar no puede estar detras de un triangulito. En el telefono
+              siguen plegados --ahi la pantalla es el dialogo entero y el
+              total es lo que importa-- pero a un toque. */}
+          <details className="mt-1 text-sm sm:hidden">
             <summary className="cursor-pointer select-none text-ink-muted hover:text-ink">
               {lineas.length} {lineas.length === 1 ? 'artículo' : 'artículos'}
             </summary>
-            <ul className="mt-2 max-h-32 divide-y divide-line overflow-y-auto">
-              {lineas.map((l) => (
-                <li key={l.productId} className="flex items-center gap-3 py-1.5">
-                  <span className="w-16 shrink-0 text-right text-ink-muted" data-numeric="">
-                    {formatearCantidadConUnidad(l.quantity, l.saleUnit)}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-ink">{l.name}</span>
-                  <Money amount={precioPorCantidad(l.price, l.quantity)} size="sm" />
-                </li>
-              ))}
-            </ul>
+            <ArticulosDeLaVenta lineas={lineas} />
           </details>
+          <div className="mt-1 hidden text-sm sm:block">
+            <p className="text-ink-muted">
+              {lineas.length} {lineas.length === 1 ? 'artículo' : 'artículos'}
+            </p>
+            <ArticulosDeLaVenta lineas={lineas} />
+          </div>
         </div>
 
         {!dividido && (
@@ -544,13 +596,35 @@ export function DialogoCobro({
                   label="Paga con"
                   labelVisible
                   size="lg"
-                  placeholder={textoLocalDeMonto(total)}
+                  /* El placeholder NO puede ser el total. En gris, alineado a
+                     la derecha y con el signo $ delante, "6.560,00" se leia
+                     como un importe ya cargado: es lo que hacia que Enter
+                     pareciera confirmar algo que nadie habia dicho. */
+                  placeholder="¿con cuánto?"
+                  className={cn(
+                    'placeholder:text-base',
+                    faltaDeclarar && principal.recibido === '' && 'border-warning',
+                  )}
                   value={principal.recibido}
                   disabled={enviando}
                   onChange={(texto) => {
+                    setFaltaDeclarar(false)
                     actualizar(principal.clave, { recibido: texto })
                   }}
                 />
+                {!hayPagoDeclarado && (
+                  <p
+                    role="status"
+                    className={cn(
+                      '-mt-1 text-xs',
+                      faltaDeclarar ? 'font-medium text-warning' : 'text-ink-faint',
+                    )}
+                  >
+                    {faltaDeclarar
+                      ? 'Falta decir cómo se paga: escribí con cuánto, tocá Justo o elegí un medio.'
+                      : 'Sin declarar. Enter cobra recién cuando digas con cuánto paga; J es justo.'}
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
