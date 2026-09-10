@@ -1,0 +1,458 @@
+{
+  "generado": "2026-09-10T02:05:31.960Z",
+  "base": "http://127.0.0.1:3099",
+  "usuario": "admin",
+  "muestrasPorRuta": 5,
+  "navegaciones": [
+    {
+      "ruta": "/",
+      "desde": "/venta",
+      "visual": 14.5,
+      "commit": 14.5,
+      "datos": 81.9,
+      "apis": 12,
+      "cls": 0,
+      "faltoArmazon": false,
+      "armazonRemontado": false,
+      "muestras": [
+        {
+          "visual": 17.2,
+          "commit": 17.2,
+          "datos": 397.1,
+          "apis": 12,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 14.5,
+          "commit": 14.5,
+          "datos": 81.3,
+          "apis": 12,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 16.8,
+          "commit": 16.8,
+          "datos": 83,
+          "apis": 12,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 13.9,
+          "commit": 13.9,
+          "datos": 81.9,
+          "apis": 12,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 12.7,
+          "commit": 12.7,
+          "datos": 80.8,
+          "apis": 12,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        }
+      ]
+    },
+    {
+      "ruta": "/venta",
+      "desde": "/",
+      "visual": 12.7,
+      "commit": 12.7,
+      "datos": 64.1,
+      "apis": 3,
+      "cls": 0,
+      "faltoArmazon": false,
+      "armazonRemontado": false,
+      "muestras": [
+        {
+          "visual": 11.1,
+          "commit": 11.1,
+          "datos": 61.2,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 22.4,
+          "commit": 22.4,
+          "datos": 57.3,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 12.7,
+          "commit": 12.7,
+          "datos": 65.5,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 10.5,
+          "commit": 10.5,
+          "datos": 64.1,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 21,
+          "commit": 21,
+          "datos": 72.4,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        }
+      ]
+    },
+    {
+      "ruta": "/caja",
+      "desde": "/",
+      "visual": 15.8,
+      "commit": 15.8,
+      "datos": 65.5,
+      "apis": 5,
+      "cls": 0,
+      "faltoArmazon": false,
+      "armazonRemontado": false,
+      "muestras": [
+        {
+          "visual": 15.8,
+          "commit": 15.8,
+          "datos": 366.3,
+          "apis": 5,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 15.8,
+          "commit": 15.8,
+          "datos": 65.5,
+          "apis": 5,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 14.8,
+          "commit": 14.8,
+          "datos": 63.6,
+          "apis": 5,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 16.8,
+          "commit": 16.8,
+          "datos": 65.9,
+          "apis": 5,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 10.5,
+          "commit": 10.5,
+          "datos": 59.2,
+          "apis": 5,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        }
+      ]
+    },
+    {
+      "ruta": "/ventas",
+      "desde": "/",
+      "visual": 12.7,
+      "commit": 12.7,
+      "datos": 62.2,
+      "apis": 1,
+      "cls": 0,
+      "faltoArmazon": false,
+      "armazonRemontado": false,
+      "muestras": [
+        {
+          "visual": 18.8,
+          "commit": 18.8,
+          "datos": 358.5,
+          "apis": 1,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 12.4,
+          "commit": 12.4,
+          "datos": 62.2,
+          "apis": 1,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 11.3,
+          "commit": 11.3,
+          "datos": 60.3,
+          "apis": 1,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 12.7,
+          "commit": 12.7,
+          "datos": 62.5,
+          "apis": 1,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 25.6,
+          "commit": 25.6,
+          "datos": 54.7,
+          "apis": 1,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        }
+      ]
+    },
+    {
+      "ruta": "/clientes",
+      "desde": "/",
+      "visual": 24.1,
+      "commit": 24.1,
+      "datos": 53.4,
+      "apis": 1,
+      "cls": 0,
+      "faltoArmazon": false,
+      "armazonRemontado": false,
+      "muestras": [
+        {
+          "visual": 17,
+          "commit": 17,
+          "datos": 349.5,
+          "apis": 1,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 24.1,
+          "commit": 24.1,
+          "datos": 53.7,
+          "apis": 1,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 11.4,
+          "commit": 11.4,
+          "datos": 44.6,
+          "apis": 1,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 25,
+          "commit": 25,
+          "datos": 53.4,
+          "apis": 1,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 25.6,
+          "commit": 25.6,
+          "datos": 53.3,
+          "apis": 1,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        }
+      ]
+    },
+    {
+      "ruta": "/productos",
+      "desde": "/",
+      "visual": 11.7,
+      "commit": 11.7,
+      "datos": 80.5,
+      "apis": 3,
+      "cls": 0,
+      "faltoArmazon": false,
+      "armazonRemontado": false,
+      "muestras": [
+        {
+          "visual": 11.7,
+          "commit": 11.7,
+          "datos": 408.8,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 12,
+          "commit": 12,
+          "datos": 86.2,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 10.2,
+          "commit": 10.2,
+          "datos": 72.3,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 10.2,
+          "commit": 10.2,
+          "datos": 80.5,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 14.4,
+          "commit": 14.4,
+          "datos": 75.7,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        }
+      ]
+    },
+    {
+      "ruta": "/stock",
+      "desde": "/",
+      "visual": 13.5,
+      "commit": 13.5,
+      "datos": 63.6,
+      "apis": 3,
+      "cls": 0,
+      "faltoArmazon": false,
+      "armazonRemontado": false,
+      "muestras": [
+        {
+          "visual": 10.5,
+          "commit": 10.5,
+          "datos": 358,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 14.8,
+          "commit": 14.8,
+          "datos": 63.6,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 13.5,
+          "commit": 13.5,
+          "datos": 46.8,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 13.3,
+          "commit": 13.3,
+          "datos": 48.7,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        },
+        {
+          "visual": 15.1,
+          "commit": 15.1,
+          "datos": 64,
+          "apis": 3,
+          "cls": 0,
+          "faltoArmazon": false,
+          "armazonRemontado": false
+        }
+      ]
+    }
+  ],
+  "cargasDirectas": [
+    {
+      "ruta": "/",
+      "ttfb": 9.6,
+      "domContentLoaded": 22.5,
+      "datos": 109
+    },
+    {
+      "ruta": "/venta",
+      "ttfb": 11.3,
+      "domContentLoaded": 23.1,
+      "datos": 87
+    },
+    {
+      "ruta": "/caja",
+      "ttfb": 10.2,
+      "domContentLoaded": 21.8,
+      "datos": 92
+    },
+    {
+      "ruta": "/ventas",
+      "ttfb": 10.7,
+      "domContentLoaded": 24.3,
+      "datos": 80
+    },
+    {
+      "ruta": "/clientes",
+      "ttfb": 16.2,
+      "domContentLoaded": 27.4,
+      "datos": 68
+    },
+    {
+      "ruta": "/productos",
+      "ttfb": 10.6,
+      "domContentLoaded": 27.4,
+      "datos": 105
+    },
+    {
+      "ruta": "/stock",
+      "ttfb": 10.8,
+      "domContentLoaded": 25.2,
+      "datos": 84
+    }
+  ]
+}

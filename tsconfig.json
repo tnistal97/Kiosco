@@ -59,6 +59,10 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
+    // Los scripts de medicion usan `await` en el nivel superior y por eso son
+    // `.mts`. Sin esta linea, ESLint no los ve --"was not found by the project
+    // service"-- y `npm run lint` falla.
+    "**/*.mts",
     ".next/types/**/*.ts",
     // El servidor de desarrollo construye en `.next-dev` (next.config.ts).
     // Sin esta linea, Next reescribe el archivo entero en cada arranque.
