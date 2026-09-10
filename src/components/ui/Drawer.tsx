@@ -25,6 +25,7 @@ export function Drawer({
   side = 'left',
   children,
   footer,
+  rapido = false,
   className,
 }: {
   open: boolean
@@ -33,6 +34,14 @@ export function Drawer({
   side?: 'left' | 'right' | 'bottom'
   children: ReactNode
   footer?: ReactNode
+  /**
+   * Sale sin transicion.
+   *
+   * Para el ticket de la caja: cerrarlo es volver a vender, y esos 200 ms
+   * son 200 ms sin poder tocar un producto. Sigue entrando desde abajo,
+   * que es lo que explica de donde salio.
+   */
+  rapido?: boolean
   className?: string
 }) {
   const registrar = useOverlays((s) => s.registrar)
@@ -47,8 +56,11 @@ export function Drawer({
   return (
     <HDialog open={open} onClose={onClose} className="relative z-50">
       <DialogBackdrop
-        transition
-        className="fixed inset-0 bg-overlay/80 transition-opacity duration-150 data-[closed]:opacity-0"
+        transition={!rapido}
+        className={cn(
+          'fixed inset-0 bg-overlay/80',
+          rapido ? 'animate-aparecer' : 'transition-opacity duration-150 data-[closed]:opacity-0',
+        )}
       />
 
       <div
@@ -60,10 +72,10 @@ export function Drawer({
         )}
       >
         <DialogPanel
-          transition
+          transition={!rapido}
           className={cn(
             'flex flex-col border-line bg-surface shadow-modal',
-            'transition duration-200 ease-out',
+            rapido ? 'animate-aparecer' : 'transition duration-200 ease-out',
             hoja
               ? 'max-h-[88dvh] w-full rounded-t-xl border-t data-[closed]:translate-y-full'
               : 'w-[86vw] max-w-sm',

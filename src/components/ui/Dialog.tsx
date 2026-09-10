@@ -71,6 +71,19 @@ export interface DialogProps {
   /** Clases extra para el cuerpo, p. ej. para quitarle el relleno. */
   bodyClassName?: string
   /**
+   * Entra en 75 ms y sale sin transicion.
+   *
+   * Para los dialogos de la caja --cobro, peso, alta rapida--, que se abren y
+   * se cierran cien veces por dia entre un cliente y el siguiente. La animacion
+   * de salida de 150 ms no era solo tiempo perdido: Headless UI devuelve el
+   * foco al terminarla, y hasta entonces el lector no puede escanear. Medido:
+   * 323 ms desde Escape hasta poder escanear (`venta-v3-antes.json`).
+   *
+   * Sigue habiendo entrada --sin ella el dialogo aparece de golpe y no se
+   * entiende de donde salio-- pero corta.
+   */
+  rapido?: boolean
+  /**
    * Teclas del dialogo entero --cabecera, cuerpo y pie--. Para las letras
    * que eligen medio en el cobro: tienen que valer con el foco en cualquier
    * lado del dialogo, no solo dentro del cuerpo.
@@ -90,6 +103,7 @@ export function Dialog({
   initialFocus,
   fullScreenMobile = false,
   bodyClassName,
+  rapido = false,
   onKeyDown,
 }: DialogProps) {
   const registrar = useOverlays((s) => s.registrar)
@@ -107,10 +121,10 @@ export function Dialog({
       className="relative z-50"
     >
       <DialogBackdrop
-        transition
+        transition={!rapido}
         className={cn(
           'fixed inset-0 bg-overlay/80 backdrop-blur-[2px]',
-          'transition-opacity duration-150 data-[closed]:opacity-0',
+          rapido ? 'animate-aparecer' : 'transition-opacity duration-150 data-[closed]:opacity-0',
         )}
       />
 
@@ -122,12 +136,18 @@ export function Dialog({
           fullScreenMobile ? 'items-stretch' : 'items-end',
         )}
       >
+        {/* `transition` SOLO cuando no es rapido: la maquinaria de Headless UI
+            mantiene el panel montado hasta que termina la animacion de salida
+            --y hasta entonces el foco no vuelve al campo--. Los dialogos de la
+            caja entran con una animacion de CSS y se van en el acto. */}
         <DialogPanel
-          transition
+          transition={!rapido}
           onKeyDown={onKeyDown}
           className={cn(
             'flex w-full flex-col border border-line bg-surface shadow-modal',
-            'transition duration-150 data-[closed]:translate-y-3 data-[closed]:opacity-0',
+            rapido
+              ? 'animate-aparecer'
+              : 'transition duration-150 data-[closed]:translate-y-3 data-[closed]:opacity-0',
             fullScreenMobile
               ? 'h-dvh max-h-dvh rounded-none sm:h-auto sm:max-h-[92dvh] sm:rounded-xl'
               : 'max-h-[92dvh] rounded-t-xl sm:rounded-xl',

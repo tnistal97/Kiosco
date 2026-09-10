@@ -59,6 +59,34 @@ export const aviso = {
       ...opciones,
     })
   },
+  /**
+   * Lo que se acaba de deshacer, con la vuelta atras al lado.
+   *
+   * Es la alternativa a preguntar "¿seguro?" antes de cada accion: en una
+   * caja, un dialogo de confirmacion en medio de una venta cuesta mas que el
+   * error que evita. La accion pasa, se avisa, y hay ocho segundos --el doble
+   * que un aviso comun-- para arrepentirse.
+   */
+  deshacer(mensaje: ReactNode, alDeshacer: () => void, opciones?: ToastOptions) {
+    return toast.custom(
+      (t) => (
+        <span className={cn(BASE, 'border-line-strong bg-raised gap-3')}>
+          <span className="min-w-0 text-ink">{mensaje}</span>
+          <button
+            type="button"
+            className="shrink-0 rounded-md border border-line-strong px-2.5 py-1 text-sm font-medium text-ink hover:bg-line"
+            onClick={() => {
+              toast.dismiss(t.id)
+              alDeshacer()
+            }}
+          >
+            Deshacer
+          </button>
+        </span>
+      ),
+      { ...COMUN, duration: 8000, ...opciones },
+    )
+  },
   descartar(id?: string) {
     toast.dismiss(id)
   },

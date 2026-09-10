@@ -99,13 +99,22 @@
   --spacing-control-xl: 64px;
   --spacing-sidebar: 236px;
   --spacing-sidebar-tight: 68px;
-  /* 440 y no 400: con la barra lateral contraida en la caja, once lineas de
-   * ticket entran en 1366 x 768 en vez de cuatro. */
-  --spacing-ticket: 440px;
+  /* El ticket de la caja. ELASTICO desde la V3: 440 px fijos se comian el
+   * ancho del catalogo en 1024-1279 --al nombre del producto le quedaban
+   * 150 px y terminaba en "Aceite de girasol 9…"-- y sobraban en 1920.
+   * 29vw da 360 en 1024, 396 en 1366 y el tope de 440 desde 1520. */
+  --spacing-ticket: clamp(360px, 29vw, 440px);
   /* Margen de pagina. Uno solo para todas las pantallas: la mitad de las
    * pantallas tenia 0 y los botones tocaban el borde en un telefono. */
   --spacing-gutter: 12px;
   --spacing-gutter-lg: 20px;
+
+  /* --- Animaciones ------------------------------------------------------ */
+  /* La entrada de los dialogos de la caja. Se dibuja con CSS y no con la
+   * maquinaria de transiciones de Headless UI: esa, para poder animar la
+   * SALIDA, mantiene el dialogo montado ~110 ms mas, y en el punto de venta
+   * ese tiempo es "todavia no puedo escanear" (medicion V3). */
+  --animate-aparecer: aparecer 90ms ease-out;
 
   /* --- Tipografia ------------------------------------------------------- */
   /* Sin Inter: se declaraba y no se cargaba, asi que cada equipo veia la
@@ -113,6 +122,13 @@
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', Consolas, monospace;
+}
+
+@keyframes aparecer {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
 /*

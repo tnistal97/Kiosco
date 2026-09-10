@@ -60,6 +60,14 @@ export interface ScannerInputProps {
   disabled?: boolean
   /** Ayuda debajo, p. ej. las teclas. */
   hint?: ReactNode
+  /**
+   * Dibuja el renglon de abajo --resultado y ayuda-- o no.
+   *
+   * El punto de venta lo apaga: esos 20 px son media fila de producto, y el
+   * mismo texto va en el renglon de las secciones, que ya existe y no se
+   * mueve. El anuncio para el lector de pantalla se mantiene igual.
+   */
+  pie?: boolean
   /** Se llama al enfocar y al desenfocar: la caja lo usa para callar al escaner global. */
   onEditingChange?: (editing: boolean) => void
   className?: string
@@ -77,6 +85,7 @@ export const ScannerInput = forwardRef<HTMLInputElement, ScannerInputProps>(func
     placeholder = 'Escaneá o buscá un producto',
     disabled = false,
     hint,
+    pie = true,
     onEditingChange,
     className,
   },
@@ -93,7 +102,7 @@ export const ScannerInput = forwardRef<HTMLInputElement, ScannerInputProps>(func
   }[status]
 
   return (
-    <div className={cn('flex w-full flex-col gap-1', className)}>
+    <div className={cn('flex w-full flex-col', pie && 'gap-1', className)}>
       <label htmlFor={id} className="sr-only">
         {label}
       </label>
@@ -136,7 +145,9 @@ export const ScannerInput = forwardRef<HTMLInputElement, ScannerInputProps>(func
           onFocus={() => onEditingChange?.(true)}
           onBlur={() => onEditingChange?.(false)}
           className={cn(
-            'h-control-lg w-full rounded-lg border bg-sunken pr-11 pl-11 text-lg text-ink transition-colors',
+            // 56 px con el dedo; 48 con el mouse, donde ese renglon de mas
+            // vale una fila de producto (V3).
+            'h-control-lg w-full rounded-lg border bg-sunken pr-11 pl-11 text-lg text-ink transition-colors lg:h-12',
             'placeholder:text-ink-faint hover:border-line-strong disabled:opacity-50',
             borde,
           )}
@@ -155,23 +166,36 @@ export const ScannerInput = forwardRef<HTMLInputElement, ScannerInputProps>(func
 
       {/* El resultado se anuncia: quien no mira la pantalla tiene que
           enterarse de que el codigo no existia. */}
-      <div className="flex min-h-4 items-baseline justify-between gap-3 px-1">
-        <p
-          role="status"
-          aria-live="polite"
-          className={cn(
-            'min-w-0 truncate text-xs',
-            status === 'error' ? 'font-medium text-danger' : 'text-ink-faint',
-          )}
-        >
-          {message ?? ''}
-        </p>
-        {hint && (
-          <p id={idAyuda} className="hidden shrink-0 text-xs text-ink-faint lg:block">
-            {hint}
+      {pie ? (
+        <div className="flex min-h-4 items-baseline justify-between gap-3 px-1">
+          <p
+            role="status"
+            aria-live="polite"
+            className={cn(
+              'min-w-0 truncate text-xs',
+              status === 'error' ? 'font-medium text-danger' : 'text-ink-faint',
+            )}
+          >
+            {message ?? ''}
           </p>
-        )}
-      </div>
+          {hint && (
+            <p id={idAyuda} className="hidden shrink-0 text-xs text-ink-faint lg:block">
+              {hint}
+            </p>
+          )}
+        </div>
+      ) : (
+        <>
+          <p role="status" aria-live="polite" className="sr-only">
+            {message ?? ''}
+          </p>
+          {hint && (
+            <p id={idAyuda} className="sr-only">
+              {hint}
+            </p>
+          )}
+        </>
+      )}
     </div>
   )
 })
