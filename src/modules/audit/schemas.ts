@@ -104,6 +104,8 @@ export const ACCIONES_AUDITADAS = [
   // CashShift" no lo distingue de nada.
   'open',
   'close',
+  'password_change',
+  'password_reset',
 ] as const
 
 export const consultarAuditoriaQuerySchema = paginationQuerySchema.extend({

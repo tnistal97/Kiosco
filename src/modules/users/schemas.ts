@@ -61,6 +61,46 @@ export const editarUsuarioSchema = z
   .strict()
   .refine((v) => Object.keys(v).length > 0, 'No hay ningun campo para modificar')
 
+/**
+ * Cambio de la contrasena propia.
+ *
+ * Pide la actual aunque la sesion este abierta: una pestania que quedo abierta
+ * en el mostrador no alcanza para quedarse con la cuenta de otro. La
+ * confirmacion se compara en el servidor y no solo en el formulario, porque es
+ * el servidor el que no puede dejar a alguien afuera por un error de tipeo.
+ *
+ * Los campos empiezan con `clave` a proposito: es lo que tacha
+ * `src/server/http/redaccion.ts` si un cuerpo serializado llega a un log.
+ */
+export const cambiarMiClaveSchema = z
+  .object({
+    claveActual: z.string().min(1, 'Falta la contraseña actual').max(PASSWORD_MAX),
+    claveNueva: passwordSchema,
+    claveConfirmacion: z.string().max(PASSWORD_MAX),
+  })
+  .strict()
+  .refine((v) => v.claveNueva === v.claveConfirmacion, {
+    message: 'La confirmación no coincide con la contraseña nueva',
+    path: ['claveConfirmacion'],
+  })
+  .refine((v) => v.claveNueva !== v.claveActual, {
+    message: 'La contraseña nueva tiene que ser distinta de la actual',
+    path: ['claveNueva'],
+  })
+
+/**
+ * Reseteo de la contrasena de otro usuario, por quien administra el personal.
+ *
+ * Sin `claveNueva`, el servidor genera una temporal y la devuelve UNA vez. Con
+ * `claveNueva`, se usa esa y no se devuelve nada: quien la escribio ya la
+ * conoce.
+ */
+export const resetearClaveSchema = z
+  .object({
+    claveNueva: passwordSchema.optional(),
+  })
+  .strict()
+
 export const listarUsuariosQuerySchema = paginationQuerySchema.extend({
   /** Por defecto se listan todos; `activos` filtra las bajas logicas. */
   estado: z.enum(['todos', 'activos', 'inactivos']).default('todos'),
@@ -69,3 +109,5 @@ export const listarUsuariosQuerySchema = paginationQuerySchema.extend({
 export type CrearUsuarioInput = z.infer<typeof crearUsuarioSchema>
 export type EditarUsuarioInput = z.infer<typeof editarUsuarioSchema>
 export type ListarUsuariosQuery = z.infer<typeof listarUsuariosQuerySchema>
+export type CambiarMiClaveInput = z.infer<typeof cambiarMiClaveSchema>
+export type ResetearClaveInput = z.infer<typeof resetearClaveSchema>

@@ -11,11 +11,19 @@
 import bcrypt from 'bcrypt'
 import { prisma } from '@/lib/prisma'
 import { audit } from '@/server/audit/audit'
-import { conflict, invalid, notFound } from '@/server/http/errors'
+import { conflict, forbidden, invalid, notFound, rateLimited } from '@/server/http/errors'
 import { knownRoles } from '@/server/authz/permissions'
 import type { Session } from '@/server/auth/session'
+import { estaBloqueado, registrarExito, registrarFallo } from '@/server/auth/loginAttempts'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
-import type { CrearUsuarioInput, EditarUsuarioInput, ListarUsuariosQuery } from './schemas'
+import { generarClaveTemporal, permisosQueFaltan } from './claves'
+import type {
+  CambiarMiClaveInput,
+  CrearUsuarioInput,
+  EditarUsuarioInput,
+  ListarUsuariosQuery,
+  ResetearClaveInput,
+} from './schemas'
 
 /** Coste de bcrypt. 12 rondas: ~250 ms por hash en el hardware actual. */
 const BCRYPT_ROUNDS = 12
@@ -216,4 +224,152 @@ export async function editarUsuario(
 
     return despues
   })
+}
+
+/**
+ * Cambio de la contrasena propia.
+ *
+ * Pide la actual aunque haya sesion: una pestania abierta en el mostrador no
+ * alcanza para quedarse con la cuenta. Los intentos fallidos cuentan en el
+ * MISMO limite que el login --usuario y origen--, porque adivinar la clave
+ * actual por aca es el mismo ataque que adivinarla en la pantalla de ingreso.
+ *
+ * Incrementa `sessionVersion`: todas las sesiones abiertas de la persona
+ * dejan de valer. Devuelve la version nueva para que la ruta vuelva a firmar
+ * la cookie de ESTA sesion; si no, cambiar la clave te echaria del equipo en
+ * el que la estas cambiando.
+ */
+export async function cambiarMiClave(
+  session: Session,
+  input: CambiarMiClaveInput,
+  origen: string,
+): Promise<{ sessionVersion: number }> {
+  if (estaBloqueado(session.username, origen)) {
+    throw rateLimited('Demasiados intentos fallidos. Espere 15 minutos.')
+  }
+
+  const usuario = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { password: true },
+  })
+  if (!usuario) throw notFound('Usuario no encontrado')
+
+  const actualOk = await bcrypt.compare(input.claveActual, usuario.password)
+  if (!actualOk) {
+    registrarFallo(session.username, origen)
+    await audit(prisma, {
+      userId: session.userId,
+      branchId: session.branchId,
+      table: 'User',
+      recordId: session.userId,
+      action: 'password_change',
+      result: 'failure',
+      reason: 'contraseña actual incorrecta',
+      origin: 'POST /api/auth/password',
+    })
+    // 400 y no 401: la sesion es valida, lo que no es valido es el dato. Un
+    // 401 le diria a la interfaz que la sesion vencio.
+    throw invalid('La contraseña actual no es correcta', { campo: 'claveActual' })
+  }
+
+  const hash = await bcrypt.hash(input.claveNueva, BCRYPT_ROUNDS)
+
+  const actualizado = await prisma.$transaction(async (tx) => {
+    const u = await tx.user.update({
+      where: { id: session.userId },
+      data: { password: hash, sessionVersion: { increment: 1 } },
+      select: { sessionVersion: true },
+    })
+
+    await audit(tx, {
+      userId: session.userId,
+      branchId: session.branchId,
+      table: 'User',
+      recordId: session.userId,
+      action: 'password_change',
+      // Ni la clave ni el hash: solo que paso y que efecto tuvo.
+      after: { otrasSesionesCerradas: true },
+      origin: 'POST /api/auth/password',
+    })
+
+    return u
+  })
+
+  registrarExito(session.username, origen)
+  return { sessionVersion: actualizado.sessionVersion }
+}
+
+/** Lo que devuelve el reseteo. La clave, solo si la genero el servidor. */
+export interface ClaveReseteada {
+  /**
+   * La clave temporal generada. Viaja UNA vez, en esta respuesta, y no queda
+   * guardada en ningun lado: ni en la base (solo el hash), ni en la bitacora,
+   * ni en el log.
+   */
+  claveTemporal?: string
+}
+
+/**
+ * Reseteo de la contrasena de otro usuario.
+ *
+ * Es lo que reemplaza entrar por SSH a correr `scripts/establecer-clave.ts`
+ * cuando un empleado se olvida la clave. Cuatro barreras:
+ *
+ *  1. `users.manage`, en la ruta.
+ *  2. La propia no: esa se cambia sabiendo la actual (`cambiarMiClave`).
+ *     Sin esto, una sesion robada con `users.manage` cambia la clave del
+ *     duenio sin conocerla.
+ *  3. Solo personal de la misma sucursal, igual que la edicion.
+ *  4. Nadie resetea a alguien que puede hacer cosas que el no puede: seria
+ *     entrar como esa persona y heredar sus permisos.
+ *
+ * Incrementa `sessionVersion`: quien tuviera la sesion abierta queda afuera
+ * en el acto, que es justamente lo que se quiere si la clave se filtro.
+ */
+export async function resetearClave(
+  session: Session,
+  id: number,
+  input: ResetearClaveInput,
+): Promise<ClaveReseteada> {
+  if (id === session.userId) {
+    throw conflict('Tu propia contraseña se cambia desde Configuración, con la actual.')
+  }
+
+  const destino = await prisma.user.findFirst({
+    where: { id, branchId: session.branchId },
+    select: { id: true, username: true, role: { select: { name: true } } },
+  })
+  if (!destino) throw notFound('Usuario no encontrado')
+
+  const faltan = permisosQueFaltan(session.permissions, destino.role.name)
+  if (faltan.length > 0) {
+    throw forbidden(
+      'No podés resetear la contraseña de alguien que tiene permisos que vos no tenés.',
+      { details: { permisos: faltan } },
+    )
+  }
+
+  const generada = input.claveNueva === undefined
+  const clave = input.claveNueva ?? generarClaveTemporal()
+  const hash = await bcrypt.hash(clave, BCRYPT_ROUNDS)
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id },
+      data: { password: hash, sessionVersion: { increment: 1 } },
+    })
+
+    await audit(tx, {
+      userId: session.userId,
+      branchId: session.branchId,
+      table: 'User',
+      recordId: id,
+      action: 'password_reset',
+      // Quien, a quien y si la genero el sistema. Nunca la clave.
+      after: { usuario: destino.username, generada, sesionesCerradas: true },
+      origin: 'POST /api/users/:id/password',
+    })
+  })
+
+  return generada ? { claveTemporal: clave } : {}
 }

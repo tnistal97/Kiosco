@@ -5,6 +5,11 @@
  * quemo al quedar escrita en algun lado-- y hay que poder volver a entrar sin
  * tocar la base a mano ni inventar un hash.
  *
+ * Para el caso de todos los dias --un empleado se olvido la clave-- ya no hace
+ * falta: el duenio la resetea desde Usuarios, y cada uno cambia la propia desde
+ * Configuracion. Esto queda para cuando el que se olvido es el unico que
+ * administra.
+ *
  * La contrasena se lee por ENTRADA ESTANDAR, nunca por argumento ni por
  * variable de entorno. Un argumento queda en `ps` para cualquiera con una
  * sesion en la maquina, y en el historial del shell para siempre.
@@ -71,9 +76,16 @@ async function main(): Promise<void> {
   }
 
   const hash = await bcrypt.hash(clave, RONDAS)
-  await prisma.user.update({ where: { id: existente.id }, data: { password: hash } })
+  // `sessionVersion` tambien: si la clave se cambia porque se quemo, quien la
+  // uso no puede seguir adentro con la sesion que ya tenia abierta. Es lo mismo
+  // que hace el reseteo desde la aplicacion (POST /api/users/:id/password).
+  await prisma.user.update({
+    where: { id: existente.id },
+    data: { password: hash, sessionVersion: { increment: 1 } },
+  })
 
   console.log(`Listo. La contrasena de "${usuario}" quedo cambiada.`)
+  console.log('Las sesiones abiertas de ese usuario se cerraron.')
   console.log('No se imprimio ni se guardo en ningun lado.')
 }
 

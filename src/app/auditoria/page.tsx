@@ -49,6 +49,8 @@ const NOMBRE_ACCION: Record<
   login_failed: { texto: 'Ingreso fallido', glifo: '⚠', tono: 'warning' },
   logout: { texto: 'Salida', glifo: '←', tono: 'neutral' },
   deny: { texto: 'Permiso denegado', glifo: '⊘', tono: 'warning' },
+  password_change: { texto: 'Cambio de contraseña', glifo: '*', tono: 'primary' },
+  password_reset: { texto: 'Contraseña reseteada', glifo: '↺', tono: 'warning' },
 }
 
 function accionDe(a: string) {

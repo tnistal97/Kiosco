@@ -11,7 +11,8 @@ export const dynamic = 'force-dynamic'
  *
  * La contrasena NO se cambia por aca. Cambiarla es una operacion distinta y
  * mezclarla con la edicion del perfil permitiria cambiarla sin conocer la
- * anterior. Queda pendiente para la fase siguiente.
+ * anterior: el reseteo es `POST /api/users/:id/password` y el cambio propio,
+ * con la clave actual, `POST /api/auth/password`.
  */
 export const PUT = handler(
   {

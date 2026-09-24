@@ -31,6 +31,7 @@ import {
   aviso,
 } from '@/components/ui'
 import { MatrizPermisos } from '@/components/usuarios/MatrizPermisos'
+import { ResetearClave } from '@/components/usuarios/ResetearClave'
 import { rolLegible } from '@/components/shell/UserMenu'
 import { usePermiso, useSession } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
@@ -64,6 +65,7 @@ export default function UsuariosPage() {
   const [altaAbierta, setAltaAbierta] = useState(false)
   const [editando, setEditando] = useState<UsuarioDTO | null>(null)
   const [cambiandoEstado, setCambiandoEstado] = useState<UsuarioDTO | null>(null)
+  const [reseteando, setReseteando] = useState<UsuarioDTO | null>(null)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -219,6 +221,13 @@ export default function UsuariosPage() {
                                   Editar
                                 </DropdownItem>
                                 <DropdownItem
+                                  onClick={() => {
+                                    setReseteando(u)
+                                  }}
+                                >
+                                  Resetear contraseña
+                                </DropdownItem>
+                                <DropdownItem
                                   tone={u.isActive ? 'danger' : 'default'}
                                   onClick={() => {
                                     setCambiandoEstado(u)
@@ -269,6 +278,16 @@ export default function UsuariosPage() {
                         </Button>
                         <Button
                           size="sm"
+                          variant="secondary"
+                          className="flex-1"
+                          onClick={() => {
+                            setReseteando(u)
+                          }}
+                        >
+                          Contraseña
+                        </Button>
+                        <Button
+                          size="sm"
                           variant={u.isActive ? 'danger' : 'secondary'}
                           className="flex-1"
                           onClick={() => {
@@ -311,6 +330,13 @@ export default function UsuariosPage() {
           setAltaAbierta(false)
           setEditando(null)
           void cargar()
+        }}
+      />
+
+      <ResetearClave
+        usuario={reseteando}
+        onCerrar={() => {
+          setReseteando(null)
         }}
       />
 

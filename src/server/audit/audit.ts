@@ -32,6 +32,11 @@ export type AuditAction =
   // buscarlo como "update de CashShift" no lo distingue de nada.
   | 'open'
   | 'close'
+  // Contrasenas: el cambio propio (con la actual) y el reseteo por quien
+  // administra el personal son dos hechos distintos, y el segundo es el que
+  // se busca cuando alguien dice "yo no cambie mi clave".
+  | 'password_change'
+  | 'password_reset'
 
 export type AuditResult = 'success' | 'failure'
 

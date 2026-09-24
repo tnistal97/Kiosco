@@ -4,6 +4,7 @@ import { PageContainer, Alert, Badge, Card, CardHeader } from '@/components/ui'
 import { rolLegible } from '@/components/shell/UserMenu'
 import { ThemeToggle } from '@/components/shell/ThemeToggle'
 import { useSession } from '@/components/shell/SessionProvider'
+import { CambiarMiClave } from '@/components/usuarios/CambiarMiClave'
 
 const COMERCIO = process.env.NEXT_PUBLIC_COMMERCE_NAME ?? 'Almacén'
 
@@ -68,6 +69,8 @@ export default function ConfiguracionPage() {
           </div>
         </div>
       </Card>
+
+      {session && <CambiarMiClave />}
 
       <Card>
         <CardHeader title="Comercio" />

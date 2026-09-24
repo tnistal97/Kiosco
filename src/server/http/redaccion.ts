@@ -46,9 +46,10 @@ const FORMAS: { patron: RegExp; con: string }[] = [
   { patron: /(\btoken=)[\w.\-+/=]+/gi, con: `$1${TACHADO}` },
   // Un JWT suelto: tres bloques base64url separados por puntos.
   { patron: /\beyJ[\w-]+\.[\w-]+\.[\w-]+/g, con: TACHADO },
-  // Campos de clave en un JSON serializado.
+  // Campos de clave en un JSON serializado. `clave*` cubre los del cambio y el
+  // reseteo de contrasena (`claveActual`, `claveNueva`, `claveTemporal`...).
   {
-    patron: /("(?:password|contrasena|secret|jwt_secret)"\s*:\s*)"[^"]*"/gi,
+    patron: /("(?:password|contrasena|secret|jwt_secret|clave\w*)"\s*:\s*)"[^"]*"/gi,
     con: `$1"${TACHADO}"`,
   },
 ]

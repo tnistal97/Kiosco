@@ -73,6 +73,16 @@ describe('Tambien tacha lo que este proceso no conoce, por su forma', () => {
     // El usuario si: saber quien intento entrar es el punto del log.
     expect(salida).toContain('lautaro')
   })
+
+  it('un cuerpo de cambio o reseteo de contrasena', () => {
+    const salida = redactar(
+      '{"claveActual":"vieja-1234","claveNueva":"nueva-5678","claveConfirmacion":"nueva-5678","claveTemporal":"abcd-efgh-jkmn"}',
+      sinEntorno,
+    )
+    for (const secreto of ['vieja-1234', 'nueva-5678', 'abcd-efgh-jkmn']) {
+      expect(salida).not.toContain(secreto)
+    }
+  })
 })
 
 describe('paraLog', () => {
