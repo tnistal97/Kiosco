@@ -152,7 +152,8 @@ Definidas en `.env.example`. Ninguna trae valores reales.
 | `npm run test:concurrency`   | Solo de concurrencia                                         |
 | `npm run test:migrations`    | Solo la cadena de migraciones                                |
 | `npm run test:performance`   | Solo consultas y tamaño de respuesta                         |
-| `npm run seed`               | Datos de prueba                                              |
+| `npm run alta:instancia`     | Alta de una instancia nueva. Ver `docs/ALTA_DE_INSTANCIA.md` |
+| `npm run seed`               | **Retirado:** explica qué usar y sale con error              |
 | `npm run seed:demo`          | Datos de demostración (solo bases `_dev`)                    |
 | `npm run integrity:check`    | **Comprueba que el sistema cierre.** Solo lectura            |
 | `npm run reconcile`          | El mismo comando, con el otro nombre                         |

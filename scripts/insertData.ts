@@ -1,4 +1,8 @@
 import { PrismaClient } from '@prisma/client'
+import { exigirBaseDeDesarrollo } from './solo-desarrollo'
+
+exigirBaseDeDesarrollo('scripts/insertData.ts')
+
 const prisma = new PrismaClient()
 
 async function main() {

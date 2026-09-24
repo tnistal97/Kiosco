@@ -153,7 +153,7 @@ pasa en CI.
 
 ## Datos de prueba
 
-`prisma/seed.ts` crea un único producto y el usuario `lautaro` / `Lkiosco123`. Sirve para arrancar, pero **no alcanza para evaluar la interfaz**: no hay stock crítico, ni ventas, ni movimientos de caja, ni bitácora, ni una segunda sucursal.
+`prisma/seed.ts` está **retirado**: borraba las tablas sin mirar contra qué base corría y creaba un administrador con una clave fija publicada en el repositorio. Para desarrollo se usa `npm run seed:demo` (abajo); para una base vacía con solo lo mínimo —roles, sucursal y dueño con clave generada—, `npm run alta:instancia` (ver [`ALTA_DE_INSTANCIA.md`](ALTA_DE_INSTANCIA.md)).
 
 Para el recorrido de la auditoría se usó un conjunto más completo: 2 sucursales, 3 usuarios con roles distintos, 47 productos de almacén argentino con stock variado (incluyendo casos borde: stock cero, bajo mínimo, sin código de barras, sin precio), 24 ventas repartidas entre hoy y ayer con los tres medios de pago, movimientos manuales, un arqueo con faltante y 37 entradas de bitácora.
 
@@ -178,9 +178,8 @@ Conviene incorporar un seed así al repositorio (`prisma/seed.dev.ts`) para que 
 
 ## Datos ficticios para trabajar
 
-`npm run seed` deja lo mínimo para arrancar. Para ver las pantallas con
-volumen suficiente como para que se noten los problemas de diseño —una tabla
-con un solo producto no revela nada— está el otro:
+Para ver las pantallas con volumen suficiente como para que se noten los
+problemas de diseño —una tabla con un solo producto no revela nada—:
 
 ```bash
 DATABASE_URL='postgresql://kiosco_dev:kiosco_dev@127.0.0.1:5433/kiosco_dev?schema=public'   npm run seed:demo

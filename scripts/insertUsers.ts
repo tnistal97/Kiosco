@@ -1,5 +1,9 @@
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
+import { exigirBaseDeDesarrollo } from './solo-desarrollo'
+
+// Crea un `admin` con una clave de ejemplo publicada: solo contra `_dev`.
+exigirBaseDeDesarrollo('scripts/insertUsers.ts')
 
 const prisma = new PrismaClient()
 
