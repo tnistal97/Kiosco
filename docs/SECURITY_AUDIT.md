@@ -199,7 +199,7 @@ Sin `select`, Prisma devuelve **todos** los campos del modelo `User`, incluido `
 
 **Explotación:** cualquier sesión válida —un cajero— navega a `/api/users` y obtiene el listado completo con los hashes bcrypt de todos los usuarios de todas las sucursales.
 
-**Impacto:** los hashes se pueden atacar sin límite fuera de línea. Las contraseñas observadas en los scripts del repositorio (`Lkiosco123`, y las de `insertUsers`) sugieren claves cortas y adivinables, que caen en minutos.
+**Impacto:** los hashes se pueden atacar sin límite fuera de línea. Las contraseñas observadas en los scripts del repositorio (la del seed y las de `insertUsers`; tachadas de este documento en P0-A) sugieren claves cortas y adivinables, que caen en minutos.
 
 **Corrección:** `select` explícito sin `password`; exigir rol administrador.
 **Prueba:** la respuesta no debe contener la clave `password`; un cajero debe recibir 403.
@@ -463,14 +463,14 @@ Verificar después de cada paso: `npx tsc --noEmit` y `npm run build`.
 
 # Secretos
 
-| Hallazgo                                                                                                    | Estado                                                                                                                    |
-| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `ecosystem.config.js` con la contraseña de PostgreSQL en texto plano y permisos `-rw-rw-rw-` en el servidor | **Documentado en la recuperación. Pendiente de rotación**                                                                 |
-| La misma contraseña estuvo versionada en `scrap.py` en un repositorio **público** desde mayo de 2025        | **Sigue en el historial de git y en la rama de respaldo.** La rotación es obligatoria                                     |
-| `JWT_SECRET` con valor `change-me` en producción                                                            | **Crítico si aún es así.** Cualquiera que conozca el valor por defecto puede firmar un token de administrador             |
-| Contraseñas de ejemplo en `prisma/seed.ts:44-45` y `scripts/insertUsers.ts`                                 | Solo datos de prueba, pero **`lautaro`/`Lkiosco123` es una cuenta administradora**. Verificar que no exista en producción |
-| `.env`                                                                                                      | Correctamente excluido del repositorio                                                                                    |
-| Ningún secreto en el código de `src/`                                                                       | Verificado                                                                                                                |
+| Hallazgo                                                                                                    | Estado                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `ecosystem.config.js` con la contraseña de PostgreSQL en texto plano y permisos `-rw-rw-rw-` en el servidor | **Documentado en la recuperación. Pendiente de rotación**                                                                    |
+| La misma contraseña estuvo versionada en `scrap.py` en un repositorio **público** desde mayo de 2025        | **Sigue en el historial de git y en la rama de respaldo.** La rotación es obligatoria                                        |
+| `JWT_SECRET` con valor `change-me` en producción                                                            | **Crítico si aún es así.** Cualquiera que conozca el valor por defecto puede firmar un token de administrador                |
+| Contraseñas de ejemplo en `prisma/seed.ts:44-45` y `scripts/insertUsers.ts`                                 | Solo datos de prueba, pero **`lautaro` era una cuenta administradora** con clave fija. Verificar que no exista en producción |
+| `.env`                                                                                                      | Correctamente excluido del repositorio                                                                                       |
+| Ningún secreto en el código de `src/`                                                                       | Verificado                                                                                                                   |
 
 > **`JWT_SECRET: "change-me"` es, potencialmente, el hallazgo más grave de todo este documento.** Con ese valor, firmar un token válido con `role: "admin"` no requiere ninguna vulnerabilidad: solo conocer el valor por defecto. No se pudo verificar si sigue vigente sin leer el `.env` del servidor, algo que quedó fuera del alcance autorizado. **Conviene confirmarlo antes que cualquier otra cosa de esta lista.**
 

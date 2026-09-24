@@ -61,14 +61,16 @@ sudo -u kiosco git -C /srv/kiosco/app pull --ff-only origin release/almacen-v1
 sudo -u kiosco bash -lc 'cd /srv/kiosco/app && npm ci --omit=dev --no-audit && npx prisma generate'
 sudo -u kiosco bash -lc 'cd /srv/kiosco/app && set -a && . ./.env && set +a && npx prisma migrate deploy'
 sudo -u kiosco bash -lc 'cd /srv/kiosco/app && set -a && . ./.env && set +a && npm run build'
-sudo -u kiosco bash -lc 'cd /srv/kiosco/app && node -e "const{execSync}=require(\"child_process\"),fs=require(\"fs\");const p=JSON.parse(fs.readFileSync(\"package.json\",\"utf8\"));fs.writeFileSync(\"build-info.json\",JSON.stringify({version:p.version,commit:execSync(\"git rev-parse HEAD\").toString().trim(),buildTime:new Date().toISOString()},null,2))"'
 sudo systemctl restart kiosco
 curl -s http://127.0.0.1:3099/api/health   # el commit tiene que ser el nuevo
 ```
 
-`build-info.json` no se versiona a propósito: se escribe al construir. Sin
-él, `/api/health` responde `commit: desconocido` y durante un incidente nadie
-sabe qué está corriendo.
+`build-info.json` no se versiona a propósito: lo escribe `npm run build`
+(`prebuild` → `scripts/escribir-build-info.mjs`) con la versión, el commit y
+la hora. Antes era un paso manual aparte, y el 24 de septiembre de 2026 el
+health de producción decía `commit: desconocido`: durante un incidente nadie
+habría sabido qué estaba corriendo. Si el commit del health no es el que se
+acaba de desplegar, el despliegue no terminó.
 
 ### Volver atrás
 
@@ -113,14 +115,27 @@ sudo ls -lh /var/backups/kiosco/db/
 
 ### Restaurar
 
+La base actual **no se borra antes de tener la restaurada comprobada**. El
+procedimiento anterior empezaba con `dropdb kiosco`: con un volcado que no
+restaurara, se quedaba sin la base de hoy y sin la de ayer.
+
 ```bash
-sudo systemctl stop kiosco
-sudo -u postgres dropdb kiosco
-sudo -u postgres createdb -O kiosco kiosco
-sudo -u postgres pg_restore -d kiosco --no-owner --role=kiosco \
+# 1. Restaurar en una base NUEVA, con el servicio andando, y comprobarla.
+sudo -u postgres createdb -O kiosco kiosco_restaurada
+sudo -u postgres pg_restore -d kiosco_restaurada --no-owner --role=kiosco \
      /var/backups/kiosco/db/kiosco-AAAAMMDD-HHMMSS.dump
+sudo -u postgres psql -d kiosco_restaurada -Atc 'SELECT count(*) FROM "Sale"'
+
+# 2. Recién entonces, cambiar. La actual se RENOMBRA, no se borra.
+sudo systemctl stop kiosco
+sudo -u postgres psql -c 'ALTER DATABASE kiosco RENAME TO kiosco_anterior_AAAAMMDD'
+sudo -u postgres psql -c 'ALTER DATABASE kiosco_restaurada RENAME TO kiosco'
 sudo systemctl start kiosco
+curl -s http://127.0.0.1:3099/api/health
 ```
+
+`kiosco_anterior_*` se borra a mano cuando la restaurada ya esté en uso y
+comprobada, no antes.
 
 ## Datos
 
@@ -141,11 +156,12 @@ atribuir. Sin eso, `BranchStock` habría quedado sin libro que lo explique y
 `integrity:check` lo habría marcado. Resultado: **23/23 comprobaciones sin
 inconsistencias**.
 
-Las contraseñas del seed (`Demo1234!`, la misma para diez usuarios, y está
+Las contraseñas del seed de demostración (la misma para diez usuarios, y está
 en el repositorio, que es público) se reemplazaron: al `admin` una generada
 en el servidor, a los otros nueve una aleatoria distinta que no se guardó en
-ningún lado. No quedan inutilizados —el administrador puede cambiarles la
-clave desde la aplicación— pero nadie entra con la del repositorio.
+ningún lado. No quedan inutilizados —el administrador puede resetearles la
+clave desde **Usuarios**, desde la versión con el cambio de contraseñas en
+la aplicación— pero nadie entra con la del repositorio.
 
 ## Seguridad del servidor
 
@@ -181,16 +197,13 @@ en los dos caminos, así que el resultado es el mismo por cualquiera de ellos.
 Se administra desde la consola de Oracle Cloud y ninguna configuración del
 servidor la sustituye.
 
-### Revertir los cambios de seguridad
-
-```bash
-sudo rm /etc/ssh/sshd_config.d/10-kiosco-hardening.conf && sudo systemctl reload ssh
-sudo rm /etc/fail2ban/jail.d/kiosco.local && sudo systemctl restart fail2ban
-sudo systemctl enable --now rpcbind.service rpcbind.socket
-sudo swapoff /swapfile   # y quitar la línea de /etc/fstab
-```
+### Si un cambio de seguridad molesta
 
 La configuración original está en `/var/backups/kiosco/config-20260903-125046/`.
+Se corrige la regla puntual que molesta —una jaula de Fail2ban, una opción de
+SSH—, mirando ese respaldo. No hay receta para deshacer todo el
+endurecimiento de una vez: tenerla a mano en un repositorio público no le
+sirve a nadie de este lado.
 
 ## Nginx
 
@@ -268,6 +281,12 @@ sudo certbot renew --dry-run       # probar la renovación sin gastarla
   cuando haya tiempo.
 - **El health dice el commit.** Ante cualquier duda sobre qué está corriendo:
   `curl -s https://luchandopormas.com/api/health`.
+- **Dos variables nuevas, las dos opcionales para esta instalación.**
+  `COMMERCE_NAME` es el nombre del comercio y se lee al atender (reiniciar, no
+  recompilar); si falta, sigue valiendo `NEXT_PUBLIC_COMMERCE_NAME`.
+  `KIOSCO_HOSTS` son los dominios aceptados; si falta, valen los tres de
+  siempre. Ver [`ALTA_DE_INSTANCIA.md`](ALTA_DE_INSTANCIA.md) para otro
+  comercio.
 
 ## El fallo de `https://localhost:3099/login`
 
@@ -324,7 +343,13 @@ siguiente visita.
 No hay ninguna contraseña escrita en este repositorio, ni en la documentación,
 ni en los registros. La de `admin` es una cadena aleatoria que **nadie conoce**.
 
-Para poner una:
+Desde la versión con el cambio de contraseñas en la aplicación, el caso de
+todos los días no pasa por acá: cada uno cambia la suya en **Configuración →
+Contraseña**, y el dueño o un administrador resetea la de un empleado desde
+**Usuarios**. Las dos cierran las sesiones abiertas y quedan en la bitácora.
+
+El guion de abajo queda para cuando el que no puede entrar es el único que
+administra. También cierra las sesiones abiertas de ese usuario:
 
 ```bash
 cd /srv/kiosco/app
