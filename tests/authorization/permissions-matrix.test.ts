@@ -24,8 +24,14 @@ interface Endpoint {
   archivo: string
 }
 
-/** Rutas privadas que a proposito no exigen ningun permiso. */
-const SIN_PERMISO_A_PROPOSITO = new Set(['POST /api/auth/validate'])
+/**
+ * Rutas privadas que a proposito no exigen ningun permiso.
+ *
+ * `POST /api/auth/password`: cada usuario cambia SU contraseña, y para eso
+ * alcanza con la sesion y la clave actual. Exigir un permiso dejaria a un
+ * cajero sin forma de cambiar la propia.
+ */
+const SIN_PERMISO_A_PROPOSITO = new Set(['POST /api/auth/validate', 'POST /api/auth/password'])
 
 function rutasDeApi(dir: string, acc: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
