@@ -92,10 +92,7 @@ export default function ConfiguracionPage() {
       <Card>
         <CardHeader title="Lo que todavía no está" />
         <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-ink-muted">
-          <li>Turnos de caja con apertura y cierre. El saldo de hoy es acumulado.</li>
-          <li>Cambio de contraseña desde la aplicación.</li>
           <li>Edición de permisos por rol: hoy viven en el código.</li>
-          <li>Compras, proveedores y clientes.</li>
           <li>Venta sin conexión.</li>
         </ul>
       </Card>

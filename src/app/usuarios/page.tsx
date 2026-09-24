@@ -535,8 +535,8 @@ function FormularioUsuario({
 
         {!esAlta && (
           <Alert tone="info">
-            Para cambiar la contraseña hay que darla de nuevo desde el servidor. No se puede hacer
-            desde acá todavía.
+            La contraseña no se cambia desde acá: se resetea desde las acciones del usuario, en la
+            lista.
           </Alert>
         )}
       </div>
