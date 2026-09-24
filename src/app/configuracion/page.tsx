@@ -6,8 +6,6 @@ import { ThemeToggle } from '@/components/shell/ThemeToggle'
 import { useSession } from '@/components/shell/SessionProvider'
 import { CambiarMiClave } from '@/components/usuarios/CambiarMiClave'
 
-const COMERCIO = process.env.NEXT_PUBLIC_COMMERCE_NAME ?? 'Almacén'
-
 /**
  * Configuración.
  *
@@ -17,7 +15,7 @@ const COMERCIO = process.env.NEXT_PUBLIC_COMMERCE_NAME ?? 'Almacén'
  * hace creer que la funcion existe.
  */
 export default function ConfiguracionPage() {
-  const { session, permisos } = useSession()
+  const { session, permisos, comercio } = useSession()
 
   return (
     <PageContainer width="narrow">
@@ -77,12 +75,17 @@ export default function ConfiguracionPage() {
         <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-ink-faint">Nombre</dt>
-            <dd className="text-ink">{COMERCIO}</dd>
+            <dd className="text-ink">{comercio}</dd>
+          </div>
+          <div>
+            <dt className="text-ink-faint">Zona horaria</dt>
+            <dd className="text-ink">{session?.timeZone ?? '—'}</dd>
           </div>
         </dl>
         <Alert tone="info" className="mt-4">
-          El nombre sale de <code>NEXT_PUBLIC_COMMERCE_NAME</code>. Se cambia en el archivo de
-          entorno del servidor y hace falta reiniciar la aplicación.
+          El nombre sale de <code>COMMERCE_NAME</code>, en el archivo de entorno del servidor: se
+          cambia ahí y alcanza con reiniciar la aplicación, sin recompilar. La sucursal y su zona
+          horaria salen de la base de datos.
         </Alert>
       </Card>
 

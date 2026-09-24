@@ -5,9 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Alert, Button, Field, Input, cn } from '@/components/ui'
 import { ApiError, apiRequest, mensajeDeError } from '@/lib/api-client'
 import { useCartStore } from '@/store/cart'
-
-/** Nombre del comercio. Configurable sin tocar el codigo. */
-const COMERCIO = process.env.NEXT_PUBLIC_COMMERCE_NAME ?? 'Almacén'
+import { useSession } from '@/components/shell/SessionProvider'
 
 /**
  * Destino despues de iniciar sesion.
@@ -62,6 +60,10 @@ export default function LoginPage() {
 }
 
 function Marco({ children }: { children: React.ReactNode }) {
+  // Lo manda el servidor en cada peticion: cambiar el nombre no pide
+  // recompilar. Ver `@/server/comercio`.
+  const { comercio } = useSession()
+
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center bg-bg px-4 py-10">
       <div className="w-full max-w-sm">
@@ -70,10 +72,10 @@ function Marco({ children }: { children: React.ReactNode }) {
             aria-hidden="true"
             className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-2xl font-bold text-ink-on-solid"
           >
-            {COMERCIO.trim().charAt(0).toUpperCase()}
+            {comercio.trim().charAt(0).toUpperCase()}
           </span>
           <div>
-            <h1 className="text-2xl font-semibold text-ink">{COMERCIO}</h1>
+            <h1 className="text-2xl font-semibold text-ink">{comercio}</h1>
             <p className="mt-1 text-sm text-ink-muted">Sistema de gestión</p>
           </div>
         </div>

@@ -220,8 +220,13 @@ que ninguna: parece que anda.
 ```
 NODE_ENV          production en el servidor, y TAMBIÉN en staging
 PORT              3099 en producción; otro en staging
-NEXT_PUBLIC_COMMERCE_NAME
+COMMERCE_NAME     nombre del comercio; se lee al atender (reiniciar, no recompilar)
+KIOSCO_HOSTS      dominios de ESTA instancia, separados por coma
 ```
+
+`COMMERCE_NAME` reemplaza a `NEXT_PUBLIC_COMMERCE_NAME`, que Next congelaba al
+construir; la vieja se sigue aceptando como respaldo. Sin `KIOSCO_HOSTS` valen
+los dominios de la instalación original.
 
 ### De herramientas, no de la aplicación
 

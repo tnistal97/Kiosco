@@ -73,12 +73,32 @@ function esPublica(pathname: string): boolean {
  * mañana alguien agrega un `proxy_pass` sin `server_name`, o se prueba la
  * aplicacion sin proxy delante, un `Host` inventado deja de ser un problema
  * silencioso. No hay confianza ciega en la cabecera.
+ *
+ * La lista sale de `KIOSCO_HOSTS` --nombres separados por coma--, leida al
+ * atender y no al construir: el middleware corre en el sandbox Edge de
+ * `next start`, que arma `process.env` con el entorno del proceso. Es lo que
+ * permite levantar la instancia de otro comercio, con su dominio, sin tocar el
+ * codigo ni recompilar. Cada instancia contesta SOLO por los suyos.
+ *
+ * Sin la variable valen los tres de siempre, para que la instalacion actual no
+ * dependa de agregarla antes del proximo despliegue.
  */
-const HOSTS_PUBLICOS = new Set([
-  'luchandopormas.com',
-  'www.luchandopormas.com',
-  'kiosco.nistal.net',
-])
+const HOSTS_POR_OMISION = ['luchandopormas.com', 'www.luchandopormas.com', 'kiosco.nistal.net']
+
+let hostsLeidos: { crudo: string | undefined; hosts: ReadonlySet<string> } | null = null
+
+function hostsPublicos(crudo: string | undefined = process.env.KIOSCO_HOSTS): ReadonlySet<string> {
+  if (hostsLeidos !== null && hostsLeidos.crudo === crudo) return hostsLeidos.hosts
+
+  const declarados = (crudo ?? '')
+    .split(/[\s,]+/)
+    .map((h) => h.trim().toLowerCase())
+    .filter((h) => h !== '')
+
+  const hosts = new Set(declarados.length > 0 ? declarados : HOSTS_POR_OMISION)
+  hostsLeidos = { crudo, hosts }
+  return hosts
+}
 
 /**
  * La propia maquina, en cualquier puerto.
@@ -113,7 +133,7 @@ function hostDeLaPeticion(req: NextRequest): string | null {
   const crudo = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? ''
   const host = (crudo.split(',')[0] ?? '').trim().toLowerCase()
 
-  if (HOSTS_PUBLICOS.has(host) || esHostLocal(host)) return host
+  if (hostsPublicos().has(host) || esHostLocal(host)) return host
 
   return null
 }

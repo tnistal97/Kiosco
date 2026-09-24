@@ -8,7 +8,7 @@
  * inventado se siga rechazando.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { middleware } from '@/middleware'
 
@@ -39,5 +39,45 @@ describe('Hosts locales', () => {
   it('un nombre publico con puerto raro tampoco pasa', async () => {
     const res = await pedir('luchandopormas.com.evil.net')
     expect(res.status).toBe(421)
+  })
+})
+
+/**
+ * Los dominios de la instancia, desde el entorno (P0-A).
+ *
+ * Antes la lista estaba escrita en el codigo: la instancia de otro comercio,
+ * con su dominio, recibia "Host no reconocido" en todas las pantallas hasta
+ * que alguien editara el middleware y recompilara.
+ */
+describe('KIOSCO_HOSTS', () => {
+  const antes = process.env.KIOSCO_HOSTS
+
+  afterEach(() => {
+    if (antes === undefined) delete process.env.KIOSCO_HOSTS
+    else process.env.KIOSCO_HOSTS = antes
+  })
+
+  it('sin la variable, siguen valiendo los dominios de siempre', async () => {
+    delete process.env.KIOSCO_HOSTS
+    expect((await pedir('luchandopormas.com')).status).toBe(200)
+    expect((await pedir('donpepe.example.com')).status).toBe(421)
+  })
+
+  it('con la variable, contesta por esos nombres y solo por esos', async () => {
+    process.env.KIOSCO_HOSTS = 'DonPepe.example.com, www.donpepe.example.com'
+    expect((await pedir('donpepe.example.com')).status).toBe(200)
+    expect((await pedir('www.donpepe.example.com')).status).toBe(200)
+    // La de otro comercio ya no: cada instancia contesta por los suyos.
+    expect((await pedir('luchandopormas.com')).status).toBe(421)
+  })
+
+  it('la propia maquina se acepta igual, para el chequeo de salud', async () => {
+    process.env.KIOSCO_HOSTS = 'donpepe.example.com'
+    expect((await pedir('127.0.0.1:3099')).status).toBe(200)
+  })
+
+  it('vacia o con solo separadores cuenta como ausente', async () => {
+    process.env.KIOSCO_HOSTS = ' , '
+    expect((await pedir('luchandopormas.com')).status).toBe(200)
   })
 })

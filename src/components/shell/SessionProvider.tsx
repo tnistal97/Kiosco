@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import type { Permission } from '@/server/authz/permissions'
+import { NOMBRE_POR_DEFECTO } from '@/server/comercio'
 import { ZONA_POR_DEFECTO, hoyEn, type FechaLocal } from '@/lib/tiempo'
 
 /**
@@ -50,6 +51,14 @@ interface Valor {
    * es el que interpreta el rango y el unico que decide.
    */
   hoy: () => FechaLocal
+  /**
+   * El nombre del comercio de esta instancia.
+   *
+   * Viaja aparte de `session` porque hace falta tambien sin sesion: es lo que
+   * encabeza la pantalla de ingreso. Lo lee el servidor en cada peticion (ver
+   * `@/server/comercio`), asi que cambiarlo no pide recompilar.
+   */
+  comercio: string
 }
 
 const Ctx = createContext<Valor>({
@@ -57,13 +66,16 @@ const Ctx = createContext<Valor>({
   permisos: new Set(),
   puede: () => false,
   hoy: () => hoyEn(ZONA_POR_DEFECTO),
+  comercio: NOMBRE_POR_DEFECTO,
 })
 
 export function SessionProvider({
   session,
+  comercio = NOMBRE_POR_DEFECTO,
   children,
 }: {
   session: SesionCliente | null
+  comercio?: string
   children: ReactNode
 }) {
   const valor = useMemo<Valor>(() => {
@@ -74,8 +86,9 @@ export function SessionProvider({
       permisos,
       puede: (p: Permission) => permisos.has(p),
       hoy: () => hoyEn(zona),
+      comercio,
     }
-  }, [session])
+  }, [session, comercio])
 
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>
 }

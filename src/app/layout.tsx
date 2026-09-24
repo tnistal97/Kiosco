@@ -3,17 +3,26 @@ import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/server/auth/session'
+import { nombreDelComercio } from '@/server/comercio'
 import { ZONA_POR_DEFECTO } from '@/lib/tiempo'
 import { AppShell } from '@/components/shell/AppShell'
 import { SessionProvider, type SesionCliente } from '@/components/shell/SessionProvider'
 import { SCRIPT_TEMA } from '@/components/shell/ThemeToggle'
 import { ToastViewport } from '@/components/ui'
 
-export const metadata: Metadata = {
-  title: 'Almacén',
-  description: 'Punto de venta, caja y stock',
-  manifest: '/manifest.json',
-  appleWebApp: { capable: true, title: 'Almacén', statusBarStyle: 'black-translucent' },
+/**
+ * El titulo es el nombre del comercio, leido al atender y no al construir.
+ * El layout ya es dinamico --lee la cookie de sesion en cada peticion--, asi
+ * que esto se evalua por peticion. Ver `@/server/comercio`.
+ */
+export function generateMetadata(): Metadata {
+  const nombre = nombreDelComercio()
+  return {
+    title: nombre,
+    description: 'Punto de venta, caja y stock',
+    manifest: '/manifest.json',
+    appleWebApp: { capable: true, title: nombre, statusBarStyle: 'black-translucent' },
+  }
 }
 
 export const viewport: Viewport = {
@@ -76,7 +85,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           Saltar al contenido
         </a>
 
-        <SessionProvider session={session}>
+        <SessionProvider session={session} comercio={nombreDelComercio()}>
           <AppShell>{children}</AppShell>
         </SessionProvider>
 
