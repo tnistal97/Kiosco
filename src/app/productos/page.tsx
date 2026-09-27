@@ -155,8 +155,8 @@ function ProductosContenido() {
   return (
     <PageContainer width="wide">
       <Card padded={false}>
-        <div className="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-end">
-          <div className="lg:max-w-md lg:flex-1">
+        <div className="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:flex-wrap lg:items-end">
+          <div className="lg:min-w-64 lg:max-w-md lg:flex-1">
             <SearchInput
               label="Buscar productos"
               placeholder="Nombre o código de barras…"
@@ -226,7 +226,9 @@ function ProductosContenido() {
             </Select>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row lg:ml-auto">
+          {/* En el telefono, las dos secundarias lado a lado y el alta debajo, a lo
+              ancho: tres botones apilados empujaban la lista media pantalla. */}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-row lg:ml-auto">
             {puedeCambiarPrecios && (
               <ButtonLink href="/productos/precios" variant="secondary">
                 Cambiar precios
@@ -240,6 +242,7 @@ function ProductosContenido() {
             {puedeCrear && (
               <Button
                 variant="primary"
+                className="col-span-2"
                 onClick={() => {
                   setEditando(null)
                   setDialogoAbierto(true)

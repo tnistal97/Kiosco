@@ -41,6 +41,21 @@ function cuantas(vista: VistaPrevia, filtro: Filtro): number {
   }
 }
 
+/**
+ * "En el archivo hay 4 filas: 2 productos nuevos, 1 ya en el catálogo y 1 con
+ * errores." Sin concordancias rotas: cada parte lleva su propio numero.
+ */
+function composicion(t: VistaPrevia['totales']): string {
+  const partes = [
+    `${numero(t.nuevos)} ${t.nuevos === 1 ? 'producto nuevo' : 'productos nuevos'}`,
+    `${numero(t.existentes)} ya en el catálogo`,
+    ...(t.conErrores > 0 ? [`${numero(t.conErrores)} con errores`] : []),
+  ]
+  const ultima = partes.pop() ?? ''
+  const filas = `${numero(t.filas)} ${t.filas === 1 ? 'fila' : 'filas'}`
+  return `En el archivo hay ${filas}: ${partes.join(', ')} y ${ultima}.`
+}
+
 /** La primera pestaña que tiene algo: primero lo que hay que mirar. */
 function filtroInicial(vista: VistaPrevia): Filtro {
   return FILTROS.find((f) => f.valor !== 'todas' && cuantas(vista, f.valor) > 0)?.valor ?? 'todas'
@@ -81,10 +96,7 @@ export function VistaPreviaImportacion({
         </p>
       )}
 
-      <p className="text-sm text-ink-muted">
-        En el archivo hay {numero(t.filas)} productos: {numero(t.nuevos)} no están en el catálogo y{' '}
-        {numero(t.existentes)} ya están.
-      </p>
+      <p className="text-sm text-ink-muted">{composicion(t)}</p>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <MetricCard label="Se agregan" value={numero(t.crear)} tone="success" />

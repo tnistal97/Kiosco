@@ -160,7 +160,7 @@ describe('Importar productos: vista previa y confirmacion', () => {
     expect(screen.getByText('Elegí qué hacer con el stock para seguir.')).toBeInTheDocument()
 
     peticion.mockResolvedValueOnce(vista({ totales: { ...vista().totales, conStock: 2 } }))
-    await u.click(screen.getByRole('radio', { name: /Dejar el stock como dice el archivo/ }))
+    await u.click(screen.getByRole('radio', { name: /Dejar el stock que dice el archivo/ }))
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Importar 2 productos' })).toBeEnabled()

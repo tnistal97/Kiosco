@@ -71,18 +71,18 @@ import { csvDeFilasConError } from './importacion-formato'
 const MODOS: ReadonlyArray<{ value: Modo; label: string; description: string }> = [
   {
     value: 'solo-nuevos',
-    label: 'Agregar solo los nuevos',
-    description: 'Los que ya están en el catálogo no se tocan, ni su stock.',
+    label: 'Solo agregar los nuevos',
+    description: 'Los que ya están no se tocan.',
   },
   {
     value: 'nuevos-y-existentes',
-    label: 'Agregar los nuevos y actualizar los que ya existen',
-    description: 'A los existentes se les cambia lo que el archivo trae distinto.',
+    label: 'Nuevos y actualizar los que existen',
+    description: 'Cambia lo que el archivo trae distinto.',
   },
   {
     value: 'solo-existentes',
-    label: 'Solo actualizar los que ya existen',
-    description: 'No agrega nada. Sirve para la lista de precios de un proveedor.',
+    label: 'Solo actualizar los que existen',
+    description: 'No agrega nada (lista de un proveedor).',
   },
 ]
 
@@ -91,17 +91,17 @@ const OPCIONES_DE_STOCK: ReadonlyArray<{ value: ModoDeStock; label: string; desc
     {
       value: 'no-tocar',
       label: 'No tocar el stock',
-      description: 'Los productos nuevos arrancan en cero.',
+      description: 'Los nuevos arrancan en cero.',
     },
     {
       value: 'ajustar',
-      label: 'Dejar el stock como dice el archivo',
-      description: 'Como un recuento: se registra la diferencia contra lo que hay.',
+      label: 'Dejar el stock que dice el archivo',
+      description: 'Como un recuento de lo que hay.',
     },
     {
       value: 'sumar',
-      label: 'Sumar lo del archivo al stock',
-      description: 'Como una entrada de mercadería: se suma a lo que hay.',
+      label: 'Sumar lo del archivo',
+      description: 'Como una entrada de mercadería.',
     },
   ]
 
