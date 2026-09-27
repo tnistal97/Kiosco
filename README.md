@@ -41,6 +41,10 @@ códigos de barras por cámara y por lector USB.
   frenar la venta: se da de alta con seis campos, entra al ticket y el foco
   vuelve al lector. El stock inicial pasa por el libro de inventario, no por un
   `UPDATE`. Ver [POS_QUICK_PRODUCT_CREATE.md](docs/POS_QUICK_PRODUCT_CREATE.md).
+- **Importación y precios masivos** — el catálogo se carga desde un Excel o un
+  CSV, con vista previa fila por fila, todo o nada y el stock por el libro; los
+  precios se cambian en masa, con redondeo, confirmación y deshacer. Ver
+  [IMPORTACION_Y_PRECIOS.md](docs/IMPORTACION_Y_PRECIOS.md).
 - **Stock vendible en la caja** — con partidas vencidas, la pantalla separa lo
   que hay de lo que se puede vender: `Stock 22 · Vendible 10 · Vencido 12`. El
   ticket se corta en lo vendible en vez de que el rechazo aparezca al cobrar. El
@@ -272,6 +276,7 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 | [PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md)                         | El encendido, paso a paso, con puntos de decisión          |
 | [OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)                         | GO/NO-GO, qué mirar después y cómo diagnosticar            |
 | [POS_QUICK_PRODUCT_CREATE.md](docs/POS_QUICK_PRODUCT_CREATE.md)             | Alta rápida desde la caja: permiso, flujo y concurrencia   |
+| [IMPORTACION_Y_PRECIOS.md](docs/IMPORTACION_Y_PRECIOS.md)                   | Importar productos y cambiar precios en masa               |
 | [BARCODE_BRANCH_ARCHITECTURE.md](docs/BARCODE_BRANCH_ARCHITECTURE.md)       | Código de barras y sucursales: modelo, opciones y decisión |
 | [PERFORMANCE_BASELINE.md](docs/PERFORMANCE_BASELINE.md)                     | Línea base de rendimiento, medida y con su método          |
 
