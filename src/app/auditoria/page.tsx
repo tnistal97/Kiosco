@@ -51,6 +51,7 @@ const NOMBRE_ACCION: Record<
   deny: { texto: 'Permiso denegado', glifo: '⊘', tono: 'warning' },
   password_change: { texto: 'Cambio de contraseña', glifo: '*', tono: 'primary' },
   password_reset: { texto: 'Contraseña reseteada', glifo: '↺', tono: 'warning' },
+  import: { texto: 'Importación de productos', glifo: '⇪', tono: 'primary' },
 }
 
 function accionDe(a: string) {

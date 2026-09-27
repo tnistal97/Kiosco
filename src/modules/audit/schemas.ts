@@ -106,6 +106,7 @@ export const ACCIONES_AUDITADAS = [
   'close',
   'password_change',
   'password_reset',
+  'import',
 ] as const
 
 export const consultarAuditoriaQuerySchema = paginationQuerySchema.extend({

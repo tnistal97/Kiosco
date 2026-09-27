@@ -338,11 +338,20 @@ async function sincronizarCodigos(
   productId: number,
   principal: string | null | undefined,
   alternativos: string[] | undefined,
-): Promise<void> {
-  const actuales = await tx.productBarcode.findMany({
-    where: { productId },
-    select: { id: true, code: true, isPrimary: true },
-  })
+  /**
+   * El producto se acaba de crear en esta misma transaccion: no puede tener
+   * codigos todavia, asi que no se leen ni se borran. Es la misma logica con
+   * dos consultas menos, que en una importacion de cinco mil productos son
+   * diez mil.
+   */
+  productoNuevo = false,
+): Promise<Array<{ code: string; isPrimary: boolean }>> {
+  const actuales = productoNuevo
+    ? []
+    : await tx.productBarcode.findMany({
+        where: { productId },
+        select: { id: true, code: true, isPrimary: true },
+      })
 
   const principalActual = actuales.find((c) => c.isPrimary)?.code ?? null
   const nuevoPrincipal = principal === undefined ? principalActual : principal
@@ -366,13 +375,14 @@ async function sincronizarCodigos(
   // unico parcial de "un solo principal" haria fallar cualquier orden de
   // actualizaciones en el que dos filas sean principales a la vez, aunque sea
   // por un instante dentro de la transaccion.
-  await tx.productBarcode.deleteMany({ where: { productId } })
+  if (!productoNuevo) await tx.productBarcode.deleteMany({ where: { productId } })
 
-  if (deseados.size > 0) {
-    await tx.productBarcode.createMany({
-      data: [...deseados.entries()].map(([code, isPrimary]) => ({ productId, code, isPrimary })),
-    })
+  const quedan = [...deseados.entries()].map(([code, isPrimary]) => ({ code, isPrimary }))
+  if (quedan.length > 0) {
+    await tx.productBarcode.createMany({ data: quedan.map((c) => ({ productId, ...c })) })
   }
+  // En el orden en que se insertaron, que es el orden de sus `id`.
+  return quedan
 }
 
 // ---------------------------------------------------------------------------
@@ -730,26 +740,115 @@ async function altaDeProducto(session: Session, input: CrearProductoInput, orige
   exigirCantidadValida(input.saleUnit, input.totalStock, 'Stock inicial')
   exigirCantidadValida(input.saleUnit, input.minimumStock, 'Stock minimo')
 
-  const resultado = await prisma.$transaction(async (tx) => {
-    const producto = await tx.product.create({
-      data: {
-        name: input.name,
-        description: input.description ?? null,
-        price: input.price,
-        cost: input.cost ?? null,
-        categoryId: input.categoryId,
-        saleUnit: input.saleUnit,
-        purchaseUnit: input.purchaseUnit,
-        unitsPerPurchaseUnit: input.unitsPerPurchaseUnit,
-        minimumStock: input.minimumStock,
-        // La sucursal la fija el servidor, siempre.
-        branchId: session.branchId,
-      },
-      select: { ...CAMPOS_PRODUCTO, branchId: true },
-    })
+  const resultado = await prisma.$transaction(async (tx) =>
+    crearProductoEn(tx, session, input, categoria, origen),
+  )
 
-    await sincronizarCodigos(tx, producto.id, input.barcode, input.alternateBarcodes)
-    await fijarProveedorPrincipal(tx, producto.id, input.supplierId ?? null)
+  // Un producto recien creado no puede tener lotes: no hay por donde cargarlos
+  // antes de que exista. Lo vencido es cero y no hay nada que preguntar.
+  return {
+    ...aProductoListado(resultado.producto, resultado.inicial, session),
+    barcode: resultado.codigos.find((c) => c.isPrimary)?.code ?? null,
+    alternateBarcodes: resultado.codigos.filter((c) => !c.isPrimary).map((c) => c.code),
+  }
+}
+
+/** Motivo del movimiento INITIAL de un alta. La importacion pone el suyo. */
+const MOTIVO_STOCK_INICIAL = 'Stock inicial al dar de alta el producto'
+
+/**
+ * El alta DENTRO de una transaccion que ya existe.
+ *
+ * Es el cuerpo de `altaDeProducto`, separado para que la importacion de
+ * planillas (P0-B) de de alta miles de productos en UNA transaccion --todo o
+ * nada-- por el mismo camino que el formulario y la caja: mismo movimiento
+ * INITIAL en el libro, mismos codigos, misma bitacora. Que la importacion
+ * tuviera su propia version del alta seria exactamente la clase de diferencia
+ * que el comentario de `altaDeProducto` describe.
+ *
+ * Lo que NO hace, y queda a cargo de quien llama: comprobar que la categoria
+ * exista, que la sesion pueda cargar el costo y que las cantidades valgan para
+ * la unidad. `altaDeProducto` lo hace antes de abrir la transaccion; la
+ * importacion lo hace fila por fila en su vista previa y lo repite al aplicar.
+ */
+export async function crearProductoEn(
+  tx: TxClient,
+  session: Session,
+  input: CrearProductoInput,
+  /** La categoria de `input.categoryId`, que quien llama ya comprobo que existe. */
+  categoria: { id: number; name: string },
+  origen: string,
+  motivoStockInicial: string = MOTIVO_STOCK_INICIAL,
+) {
+  if (categoria.id !== input.categoryId) throw new Error('La categoría no es la del producto')
+
+  // Solo las columnas propias: pedir tambien la categoria y el proveedor
+  // costaria tres lecturas mas despues del INSERT, y las dos cosas ya se saben.
+  // Un producto que se acaba de crear no tiene vinculo con ningun proveedor.
+  const fila = await tx.product.create({
+    data: {
+      name: input.name,
+      description: input.description ?? null,
+      price: input.price,
+      cost: input.cost ?? null,
+      categoryId: input.categoryId,
+      saleUnit: input.saleUnit,
+      purchaseUnit: input.purchaseUnit,
+      unitsPerPurchaseUnit: input.unitsPerPurchaseUnit,
+      minimumStock: input.minimumStock,
+      // La sucursal la fija el servidor, siempre.
+      branchId: session.branchId,
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      price: true,
+      cost: true,
+      isActive: true,
+      saleUnit: true,
+      purchaseUnit: true,
+      unitsPerPurchaseUnit: true,
+      minimumStock: true,
+      lotTracking: true,
+      branchId: true,
+    },
+  })
+
+  // En el orden de `CAMPOS_PRODUCTO`: la entrada de la bitacora queda igual
+  // que cuando esto salia de una lectura.
+  const producto: FilaProducto & { branchId: number } = {
+    id: fila.id,
+    name: fila.name,
+    description: fila.description,
+    price: fila.price,
+    cost: fila.cost,
+    isActive: fila.isActive,
+    saleUnit: fila.saleUnit,
+    purchaseUnit: fila.purchaseUnit,
+    unitsPerPurchaseUnit: fila.unitsPerPurchaseUnit,
+    minimumStock: fila.minimumStock,
+    lotTracking: fila.lotTracking,
+    category: { id: categoria.id, name: categoria.name },
+    suppliers: [],
+    branchId: fila.branchId,
+  }
+
+  // Los codigos que quedaron, ya con la promocion del primer alternativo
+  // cuando no vino principal: es lo que la respuesta tiene que decir.
+  const codigos = await sincronizarCodigos(
+    tx,
+    producto.id,
+    input.barcode,
+    input.alternateBarcodes,
+    true,
+  )
+
+  // Sin proveedor no hay nada que vincular: un producto que se acaba de crear
+  // no tiene vinculos, y el principal "ninguno" es el estado en que nace.
+  const supplierId = input.supplierId ?? null
+  if (supplierId !== null) {
+    await fijarProveedorPrincipal(tx, producto.id, supplierId)
 
     // El producto recien creado todavia no tenia vinculo con su proveedor
     // cuando se leyo, un par de lineas mas arriba. Sin esto la respuesta del
@@ -760,65 +859,48 @@ async function altaDeProducto(session: Session, input: CrearProductoInput, orige
       select: { supplier: { select: { id: true, name: true } } },
       take: 1,
     })
+  }
 
-    // El stock inicial entra por el libro, como todo lo demas: un producto que
-    // nace con 20 unidades tiene un movimiento INITIAL de +20, y la suma de su
-    // libro da 20 desde el primer dia.
-    //
-    // Con cero unidades no se emite nada. La invariante
-    // suma(movimientos) == cantidad se cumple sola con la suma vacia, un
-    // movimiento de cero no dice nada, y ademas asi un producto cargado por
-    // error y sin ninguna operacion se puede seguir borrando.
-    const inicial = aCantidad(input.totalStock)
-    if (!esCeroCantidad(inicial)) {
-      await applyStockMovement(tx, {
-        branchId: session.branchId,
-        productId: producto.id,
-        type: 'INITIAL',
-        quantity: inicial,
-        saleUnit: input.saleUnit,
-        userId: session.userId,
-        reason: 'Stock inicial al dar de alta el producto',
-        referenceType: 'Product',
-        referenceId: producto.id,
-      })
-    }
-
-    // El alta NO escribe historial de costos: un historial registra CAMBIOS, y
-    // el costo con el que nace un producto queda en esta misma bitacora.
-    await audit(tx, {
-      userId: session.userId,
+  // El stock inicial entra por el libro, como todo lo demas: un producto que
+  // nace con 20 unidades tiene un movimiento INITIAL de +20, y la suma de su
+  // libro da 20 desde el primer dia.
+  //
+  // Con cero unidades no se emite nada. La invariante
+  // suma(movimientos) == cantidad se cumple sola con la suma vacia, un
+  // movimiento de cero no dice nada, y ademas asi un producto cargado por
+  // error y sin ninguna operacion se puede seguir borrando.
+  const inicial = aCantidad(input.totalStock)
+  if (!esCeroCantidad(inicial)) {
+    await applyStockMovement(tx, {
       branchId: session.branchId,
-      table: 'Product',
-      recordId: producto.id,
-      action: 'create',
-      after: {
-        ...paraBitacora(producto, session),
-        barcode: input.barcode ?? null,
-        stockInicial: input.totalStock,
-      },
-      origin: origen,
+      productId: producto.id,
+      type: 'INITIAL',
+      quantity: inicial,
+      saleUnit: input.saleUnit,
+      userId: session.userId,
+      reason: motivoStockInicial,
+      referenceType: 'Product',
+      referenceId: producto.id,
     })
+  }
 
-    // Los codigos se releen de la base en vez de devolver los de la entrada:
-    // es donde se resolvio la promocion del primer alternativo cuando no vino
-    // principal, y la respuesta tiene que decir lo que quedo guardado.
-    const codigos = await tx.productBarcode.findMany({
-      where: { productId: producto.id },
-      select: { code: true, isPrimary: true },
-      orderBy: { id: 'asc' },
-    })
-
-    return { producto, inicial, codigos }
+  // El alta NO escribe historial de costos: un historial registra CAMBIOS, y
+  // el costo con el que nace un producto queda en esta misma bitacora.
+  await audit(tx, {
+    userId: session.userId,
+    branchId: session.branchId,
+    table: 'Product',
+    recordId: producto.id,
+    action: 'create',
+    after: {
+      ...paraBitacora(producto, session),
+      barcode: input.barcode ?? null,
+      stockInicial: input.totalStock,
+    },
+    origin: origen,
   })
 
-  // Un producto recien creado no puede tener lotes: no hay por donde cargarlos
-  // antes de que exista. Lo vencido es cero y no hay nada que preguntar.
-  return {
-    ...aProductoListado(resultado.producto, resultado.inicial, session),
-    barcode: resultado.codigos.find((c) => c.isPrimary)?.code ?? null,
-    alternateBarcodes: resultado.codigos.filter((c) => !c.isPrimary).map((c) => c.code),
-  }
+  return { producto, inicial, codigos }
 }
 
 /** Origen de la bitacora del alta rapida. Se consulta para la metrica. */
@@ -1129,6 +1211,161 @@ export async function editarProducto(session: Session, id: number, input: Editar
       alternateBarcodes: codigos.filter((c) => !c.isPrimary).map((c) => c.code),
     }
   })
+}
+
+/**
+ * Lo que una fila de planilla le cambia a un producto que ya existe.
+ *
+ * Cada campo es OPCIONAL y `undefined` es "no se toca": una celda vacia en la
+ * planilla no borra nada ni pone nada en cero. El costo no admite `null` por la
+ * misma razon: vaciar un costo es una decision de la ficha, no de una planilla
+ * con la celda en blanco.
+ */
+export interface CambiosImportados {
+  name?: string
+  categoryId?: number
+  price?: Monto
+  /** Cadena canonica con hasta cuatro decimales. */
+  cost?: string
+  minimumStock?: TextoCantidad
+  /**
+   * `ajustar`: el stock queda en `cantidad` --el delta se calcula contra el
+   * saldo del momento, igual que la ficha--. `sumar`: entran `cantidad` unidades.
+   */
+  stock?: { modo: 'ajustar' | 'sumar'; cantidad: TextoCantidad }
+}
+
+export interface ContextoDeImportacion {
+  /** Operacion para la bitacora: `POST /api/products/import`. */
+  origen: string
+  /** Motivo del costo y del ajuste. Nombra el archivo y la importacion. */
+  motivo: string
+}
+
+/**
+ * Aplica una fila de planilla a un producto existente. Fase P0-B.
+ *
+ * Por las MISMAS puertas que la ficha, dentro de la transaccion de la
+ * importacion:
+ *
+ *   costo   `registrarCambioDeCosto`, que toma el bloqueo del producto y deja
+ *           la fila del historial encadenada. Es el registrador unico: la
+ *           importacion no escribe `ProductCostHistory` por su cuenta.
+ *   stock   `applyStockMovement`, como ajuste manual con su motivo y su
+ *           entrada en la bitacora. Nunca se escribe el saldo.
+ *   resto   `update` del producto y una entrada `update` en la bitacora con
+ *           el antes y el despues, que es tambien lo que lee el historial de
+ *           precios de la ficha.
+ *
+ * Los permisos y la validacion de cada valor ya los hizo la importacion, fila
+ * por fila, antes de llegar aca; esto no los repite.
+ *
+ * Devuelve si hubo movimiento de stock, para el resumen.
+ */
+export async function actualizarProductoImportado(
+  tx: TxClient,
+  session: Session,
+  id: number,
+  cambios: CambiosImportados,
+  contexto: ContextoDeImportacion,
+): Promise<{ movioStock: boolean }> {
+  const incluirProveedor = {
+    suppliers: {
+      where: { isPreferred: true },
+      select: { supplier: { select: { id: true, name: true } } },
+      take: 1,
+    },
+  } as const
+
+  const antes = await tx.product.findFirst({
+    where: { id, branchId: session.branchId },
+    include: incluirProveedor,
+  })
+  if (!antes) throw notFound('Producto no encontrado')
+
+  let cambioElCosto = false
+  if (cambios.cost !== undefined && !mismoCosto(cambios.cost, antes.cost)) {
+    const resultado = await registrarCambioDeCosto(tx, {
+      productId: id,
+      nuevo: dinero(cambios.cost),
+      userId: session.userId,
+      reason: contexto.motivo,
+    })
+    cambioElCosto = resultado.cambio
+  }
+
+  const datos: Prisma.ProductUncheckedUpdateInput = {
+    ...(cambios.name !== undefined && cambios.name !== antes.name ? { name: cambios.name } : {}),
+    ...(cambios.categoryId !== undefined && cambios.categoryId !== antes.categoryId
+      ? { categoryId: cambios.categoryId }
+      : {}),
+    ...(cambios.price !== undefined && !iguales(dinero(cambios.price), antes.price)
+      ? { price: cambios.price }
+      : {}),
+    ...(cambios.minimumStock !== undefined &&
+    !iguales(aCantidad(cambios.minimumStock), antes.minimumStock)
+      ? { minimumStock: cambios.minimumStock }
+      : {}),
+  }
+  const cambiaronDatos = Object.keys(datos).length > 0
+  if (cambiaronDatos) await tx.product.update({ where: { id }, data: datos })
+
+  if (cambiaronDatos || cambioElCosto) {
+    // Lo que quedo, armado con lo que se acaba de escribir en vez de releerlo:
+    // se sabe exactamente que cambio, y releer costaria una consulta por fila
+    // en una planilla de miles. La importacion no toca proveedores: el
+    // principal de despues es el de antes.
+    const despues = {
+      ...antes,
+      name: cambios.name ?? antes.name,
+      categoryId: cambios.categoryId ?? antes.categoryId,
+      price: cambios.price === undefined ? antes.price : dinero(cambios.price),
+      cost: cambioElCosto && cambios.cost !== undefined ? dinero(cambios.cost) : antes.cost,
+      minimumStock:
+        cambios.minimumStock === undefined ? antes.minimumStock : aCantidad(cambios.minimumStock),
+    }
+    await audit(tx, {
+      userId: session.userId,
+      branchId: session.branchId,
+      table: 'Product',
+      recordId: id,
+      action: 'update',
+      reason: contexto.motivo,
+      before: paraBitacora(antes, session),
+      after: paraBitacora(despues, session),
+      origin: contexto.origen,
+    })
+  }
+
+  if (cambios.stock === undefined) return { movioStock: false }
+
+  // Para ajustar hace falta el saldo DE AHORA, no el de la vista previa: si se
+  // vendio algo en el medio, el recuento del archivo igual tiene que quedar.
+  // Para sumar no: entra lo que dice el archivo, haya lo que haya.
+  const cantidad = aCantidad(cambios.stock.cantidad)
+  let delta = cantidad
+  if (cambios.stock.modo === 'ajustar') {
+    const saldo = await tx.branchStock.findUnique({
+      where: { branchId_productId: { branchId: session.branchId, productId: id } },
+      select: { quantity: true },
+    })
+    delta = restarCantidades(cantidad, saldo?.quantity ?? aCantidad(0))
+  }
+  if (esCeroCantidad(delta)) return { movioStock: false }
+
+  await applyStockMovement(tx, {
+    branchId: session.branchId,
+    productId: id,
+    type: 'MANUAL_ADJUSTMENT',
+    quantity: delta,
+    saleUnit: unidadDeVentaODefecto(antes.saleUnit),
+    userId: session.userId,
+    reason: contexto.motivo,
+    referenceType: 'Product',
+    referenceId: id,
+    audit: { origin: contexto.origen },
+  })
+  return { movioStock: true }
 }
 
 /** Dos costos que pueden ser nulos. Null y cero NO son lo mismo. */

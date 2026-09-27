@@ -37,6 +37,9 @@ export type AuditAction =
   // se busca cuando alguien dice "yo no cambie mi clave".
   | 'password_change'
   | 'password_reset'
+  // Una importacion de productos: la entrada que resume el archivo. Cada
+  // producto deja ademas su propio 'create' o 'update'.
+  | 'import'
 
 export type AuditResult = 'success' | 'failure'
 

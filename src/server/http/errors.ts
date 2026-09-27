@@ -188,6 +188,16 @@ export type ErrorCode =
    * conto: aplicar ahora corregiria dos veces la misma diferencia.
    */
   | 'COUNT_SUPERSEDED'
+  /**
+   * Esa importacion ya se aplico. Es el doble clic, o el reintento despues de
+   * un corte de red: aplicarla otra vez sumaria el stock dos veces.
+   */
+  | 'IMPORT_ALREADY_APPLIED'
+  /**
+   * Lo que se iba a importar ya no es lo que mostro la vista previa: alguien
+   * cargo o cambio productos del archivo en el medio. Hay que volver a mirarla.
+   */
+  | 'IMPORT_PREVIEW_STALE'
 
 /** Forma exacta del cuerpo de error. Compartida con el cliente. */
 export interface ApiErrorBody {
