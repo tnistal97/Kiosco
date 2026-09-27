@@ -52,6 +52,8 @@ const NOMBRE_ACCION: Record<
   password_change: { texto: 'Cambio de contraseña', glifo: '*', tono: 'primary' },
   password_reset: { texto: 'Contraseña reseteada', glifo: '↺', tono: 'warning' },
   import: { texto: 'Importación de productos', glifo: '⇪', tono: 'primary' },
+  price_bulk_update: { texto: 'Cambio masivo de precios', glifo: '%', tono: 'primary' },
+  price_bulk_undo: { texto: 'Cambio masivo deshecho', glifo: '↶', tono: 'warning' },
 }
 
 function accionDe(a: string) {

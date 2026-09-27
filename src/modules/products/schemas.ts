@@ -15,6 +15,7 @@ import { paginationQuerySchema, sortSchema } from '@/server/http/pagination'
 import { CANTIDAD_MAX } from '@/lib/cantidad'
 import { UNIDADES_DE_COMPRA, UNIDADES_DE_VENTA } from './units'
 import { LARGO_MAXIMO_CODIGO, motivoDeCodigoInvalido } from './barcode'
+import { OPERACIONES, REDONDEOS, motivoDeCriterioInvalido } from './precios'
 
 /**
  * Tope de unidades por producto.
@@ -295,3 +296,63 @@ export type CrearProductoRapidoInput = z.infer<typeof crearProductoRapidoSchema>
 export type EditarProductoInput = z.infer<typeof editarProductoSchema>
 export type ListarProductosQuery = z.infer<typeof listarProductosQuerySchema>
 export type CambiarCostoInput = z.infer<typeof cambiarCostoSchema>
+
+// ---------------------------------------------------------------------------
+// Cambio masivo de precios. Fase P0-B.
+// ---------------------------------------------------------------------------
+
+/**
+ * Que productos entran en un cambio masivo. Todo junto se INTERSECA: una
+ * categoria y una busqueda son "los de esa categoria que coinciden".
+ *
+ * La seleccion a mano no esta aca: la pantalla muestra lo que entra y cada
+ * producto se puede destildar, que viaja en `excluidos`.
+ */
+export const seleccionDePreciosSchema = z
+  .object({
+    categoriaId: idSchema.optional(),
+    proveedorId: idSchema.optional(),
+    busqueda: z.string().trim().max(100).optional(),
+    incluirInactivos: z.boolean().default(false),
+  })
+  .strict()
+
+export const criterioDePrecioSchema = z
+  .object({
+    operacion: z.enum(OPERACIONES),
+    /** Porcentaje o importe, con hasta dos decimales: `"10.5"`, `"1500"`. */
+    valor: z
+      .string()
+      .trim()
+      .regex(/^\d{1,12}(\.\d{1,2})?$/, 'El valor va con dos decimales como máximo'),
+    redondeo: z.enum(REDONDEOS),
+  })
+  .strict()
+  .superRefine((c, ctx) => {
+    const motivo = motivoDeCriterioInvalido(c)
+    if (motivo !== null) ctx.addIssue({ code: 'custom', message: motivo, path: ['valor'] })
+  })
+
+export const vistaDePreciosSchema = z
+  .object({ seleccion: seleccionDePreciosSchema, criterio: criterioDePrecioSchema })
+  .strict()
+
+/**
+ * Aplicar: lo mismo que la vista previa, los destildados y la huella de lo
+ * que se mostro. Si al aplicar la cuenta da otra --alguien cambio un precio en
+ * el medio--, no se aplica nada.
+ */
+export const aplicarPreciosSchema = z
+  .object({
+    seleccion: seleccionDePreciosSchema,
+    criterio: criterioDePrecioSchema,
+    excluidos: z.array(idSchema).max(10_000).default([]),
+    huella: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict()
+
+export const deshacerPreciosSchema = z.object({ operacion: z.uuid() }).strict()
+
+export type SeleccionDePrecios = z.infer<typeof seleccionDePreciosSchema>
+export type PedidoDeVistaDePrecios = z.infer<typeof vistaDePreciosSchema>
+export type PedidoDeAplicarPrecios = z.infer<typeof aplicarPreciosSchema>

@@ -198,6 +198,12 @@ export type ErrorCode =
    * cargo o cambio productos del archivo en el medio. Hay que volver a mirarla.
    */
   | 'IMPORT_PREVIEW_STALE'
+  /**
+   * Algun precio o producto cambio desde la vista previa del cambio masivo, o
+   * el cambio que se quiere deshacer ya no es el ultimo. Aplicarlo igual pisaria
+   * un precio que nadie vio.
+   */
+  | 'PRICES_CHANGED'
 
 /** Forma exacta del cuerpo de error. Compartida con el cliente. */
 export interface ApiErrorBody {

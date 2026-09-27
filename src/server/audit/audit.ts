@@ -40,6 +40,10 @@ export type AuditAction =
   // Una importacion de productos: la entrada que resume el archivo. Cada
   // producto deja ademas su propio 'create' o 'update'.
   | 'import'
+  // Un cambio masivo de precios y su deshacer: la entrada que resume el
+  // criterio. Cada producto deja ademas su 'update' con el antes y el despues.
+  | 'price_bulk_update'
+  | 'price_bulk_undo'
 
 export type AuditResult = 'success' | 'failure'
 

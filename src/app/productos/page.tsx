@@ -64,6 +64,7 @@ function ProductosContenido() {
   const puedeCrear = usePermiso('products.create')
   const puedeEditar = usePermiso('products.update')
   const puedeBorrar = usePermiso('products.delete')
+  const puedeCambiarPrecios = usePermiso('products.price.update')
 
   const {
     products,
@@ -226,6 +227,11 @@ function ProductosContenido() {
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row lg:ml-auto">
+            {puedeCambiarPrecios && (
+              <ButtonLink href="/productos/precios" variant="secondary">
+                Cambiar precios
+              </ButtonLink>
+            )}
             {(puedeCrear || puedeEditar) && (
               <ButtonLink href="/productos/importar" variant="secondary">
                 Importar
