@@ -6,6 +6,7 @@ import {
   PageContainer,
   Badge,
   Button,
+  ButtonLink,
   Card,
   CardList,
   CardListItem,
@@ -224,18 +225,24 @@ function ProductosContenido() {
             </Select>
           </div>
 
-          {puedeCrear && (
-            <Button
-              variant="primary"
-              className="lg:ml-auto"
-              onClick={() => {
-                setEditando(null)
-                setDialogoAbierto(true)
-              }}
-            >
-              Nuevo producto
-            </Button>
-          )}
+          <div className="flex flex-col gap-2 sm:flex-row lg:ml-auto">
+            {(puedeCrear || puedeEditar) && (
+              <ButtonLink href="/productos/importar" variant="secondary">
+                Importar
+              </ButtonLink>
+            )}
+            {puedeCrear && (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setEditando(null)
+                  setDialogoAbierto(true)
+                }}
+              >
+                Nuevo producto
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="p-3">

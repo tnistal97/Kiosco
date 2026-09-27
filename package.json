@@ -24,6 +24,7 @@
     "test:concurrency": "vitest run tests/concurrency",
     "seed": "tsx prisma/seed.ts",
     "alta:instancia": "tsx scripts/alta-instancia.ts",
+    "plantilla:productos": "tsx scripts/generar-plantilla-productos.ts",
     "test:coverage": "vitest run --coverage",
     "test:migrations": "vitest run tests/migrations",
     "test:performance": "vitest run tests/performance",
