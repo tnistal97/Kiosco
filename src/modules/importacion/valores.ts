@@ -198,7 +198,12 @@ export function leerCategoria(v: ValorCrudo): Lectura<string> {
  * acentos y sin espacios de mas. "Lácteos" y "LACTEOS" son la misma categoria.
  */
 export function claveDeNombre(nombre: string): string {
-  return nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
+  return nombre
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +311,7 @@ export function leerUnidad(v: ValorCrudo): Lectura<UnidadDeVenta> {
 
   const clave = texto
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
