@@ -24,7 +24,11 @@ import {
   etiquetaDeMedio,
   type MedioCobrable,
 } from '@/modules/sales/payment-methods'
-import { usePermiso } from '@/components/shell/SessionProvider'
+import { usePermiso, useSession } from '@/components/shell/SessionProvider'
+import { AreaDeImpresion } from '@/components/impresion/AreaDeImpresion'
+import { TicketDeVenta, type DatosDeTicket } from '@/components/impresion/Ticket'
+import { ticketDeCobro, type PagoCobrado } from '@/components/impresion/datos'
+import { leerPreferencias } from '@/components/impresion/preferencias'
 import { SelectorDeCliente } from './SelectorDeCliente'
 import { PaymentSelector, medioDeTecla } from './PaymentSelector'
 import { pagoDeclarado, sugerenciasDeRecibido } from './cobro'
@@ -89,6 +93,11 @@ export interface VentaHecha {
   total: Monto
   pagos: Array<{ label: string; amount: Monto }>
   vuelto: Monto | null
+  /** Lo que hace falta para imprimir el ticket, congelado al cobrar. */
+  fecha: string
+  lineas: CartLine[]
+  pagosCobrados: PagoCobrado[]
+  cliente: string | null
 }
 
 function nuevaLinea(clave: number, method: MedioCobrable = 'CASH'): LineaDePago {
@@ -149,6 +158,9 @@ export function DialogoCobro({
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hecha, setHecha] = useState<VentaHecha | null>(null)
+  const { session, comercio } = useSession()
+  /** El ticket que se esta imprimiendo, o null. */
+  const [ticket, setTicket] = useState<DatosDeTicket | null>(null)
 
   const [cliente, setCliente] = useState<ClienteDTO | null>(null)
   const [credito, setCredito] = useState<EstadoDeCreditoDTO | null>(null)
@@ -376,6 +388,21 @@ export function DialogoCobro({
         total,
         pagos: aEnviar.map((p) => ({ label: etiquetaDeMedio(p.method), amount: p.amount })),
         vuelto: esCero(vueltoTotal) ? null : vueltoTotal,
+        fecha: new Date().toISOString(),
+        lineas,
+        pagosCobrados: resueltos
+          .filter((p) => esPositivo(p.monto))
+          .map((p, i) => {
+            const vuelto = vueltos[i] ?? null
+            const recibido = esEfectivo(p.method) ? montoDesdeTexto(p.recibido) : null
+            return {
+              method: p.method,
+              amount: p.monto,
+              cashReceived: recibido !== null && esPositivo(recibido) ? recibido : null,
+              changeGiven: vuelto !== null && esPositivo(vuelto) ? vuelto : null,
+            }
+          }),
+        cliente: cliente?.name ?? null,
       })
       // A proposito no se libera `enviando`: la venta ya existe y el boton no
       // debe volver a estar disponible.
@@ -437,6 +464,21 @@ export function DialogoCobro({
   const sugerencias = useMemo(() => sugerenciasDeRecibido(total), [total])
 
   if (hecha) {
+    const imprimirTicket = () => {
+      setTicket(
+        ticketDeCobro({
+          comercio,
+          numero: hecha.id,
+          fecha: hecha.fecha,
+          cajero: session?.name ?? '',
+          lineas: hecha.lineas,
+          total: hecha.total,
+          pagos: hecha.pagosCobrados,
+          cliente: hecha.cliente,
+          textoFinal: leerPreferencias().textoFinal,
+        }),
+      )
+    }
     return (
       <Dialog
         open={abierto}
@@ -445,13 +487,45 @@ export function DialogoCobro({
         size="sm"
         rapido
         footer={
-          <Button variant="confirm" size="lg" block autoFocus onClick={onNuevaVenta}>
-            Nueva venta
-            <Kbd>Enter</Kbd>
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:flex-row">
+            <Button
+              variant="secondary"
+              size="lg"
+              className="sm:flex-1"
+              onClick={imprimirTicket}
+              disabled={ticket !== null}
+            >
+              Imprimir ticket
+              <Kbd>I</Kbd>
+            </Button>
+            <Button
+              variant="confirm"
+              size="lg"
+              className="sm:flex-[2]"
+              autoFocus
+              onClick={onNuevaVenta}
+            >
+              Nueva venta
+              <Kbd>Enter</Kbd>
+            </Button>
+          </div>
         }
       >
-        <div className="flex flex-col gap-4">
+        <AreaDeImpresion
+          contenido={ticket === null ? null : <TicketDeVenta datos={ticket} />}
+          onTerminado={() => {
+            setTicket(null)
+          }}
+        />
+        <div
+          className="flex flex-col gap-4"
+          onKeyDown={(e) => {
+            if (e.key.toUpperCase() === 'I' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+              e.preventDefault()
+              imprimirTicket()
+            }
+          }}
+        >
           <div className="flex flex-col items-center gap-1 rounded-lg bg-success-quiet py-5">
             <p className="text-sm text-ink-muted">
               <span aria-hidden="true" className="mr-1.5 text-success">

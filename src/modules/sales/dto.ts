@@ -17,8 +17,17 @@ export type EstadoVenta = 'completed' | 'canceled'
 export interface ItemVentaDTO {
   id: number
   quantity: number
+  /** La unidad en la que se vendio. Llega del servidor; sin ella, `UNIT`. */
+  saleUnit: string
   price: Monto
   product: { id: number; name: string }
+}
+
+export interface PagoVentaDTO {
+  method: string
+  amount: Monto
+  cashReceived: Monto | null
+  changeGiven: Monto | null
 }
 
 export interface VentaDTO {
@@ -32,6 +41,9 @@ export interface VentaDTO {
   user: { id: number; name: string }
   canceledBy: { id: number; name: string } | null
   items: ItemVentaDTO[]
+  /** Los pagos, si el servidor los manda. Vacio en respuestas anteriores. */
+  payments: PagoVentaDTO[]
+  client: { id: number; name: string } | null
 }
 
 function parsePersona(raw: unknown): { id: number; name: string } {
@@ -50,8 +62,19 @@ export function parseItemVenta(raw: unknown): ItemVentaDTO {
   return {
     id: numero(raw.id),
     quantity: numero(raw.quantity),
+    saleUnit: texto(raw.saleUnit, 'UNIT'),
     price: montoODefecto(raw.price),
     product: parsePersona(raw.product),
+  }
+}
+
+function parsePagoVenta(raw: unknown): PagoVentaDTO {
+  if (!esObjeto(raw)) throw new Error('La respuesta no tiene la forma de un pago')
+  return {
+    method: texto(raw.method),
+    amount: montoODefecto(raw.amount),
+    cashReceived: montoOpcional(raw.cashReceived),
+    changeGiven: montoOpcional(raw.changeGiven),
   }
 }
 
@@ -82,6 +105,8 @@ export function parseVenta(raw: unknown): VentaDTO {
     user: parsePersona(raw.user),
     canceledBy: parsePersonaOpcional(raw.canceledBy),
     items,
+    payments: Array.isArray(raw.payments) ? lista(raw.payments, parsePagoVenta) : [],
+    client: parsePersonaOpcional(raw.client),
   }
 }
 

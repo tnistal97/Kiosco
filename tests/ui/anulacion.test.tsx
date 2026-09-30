@@ -32,9 +32,25 @@ const VENTA: VentaDTO = {
   user: { id: 3, name: 'Lucia Bravo' },
   canceledBy: null,
   items: [
-    { id: 1, quantity: 2, price: '4850.00', product: { id: 1, name: 'Yerba mate 1 kg' } },
-    { id: 2, quantity: 1, price: '1690.00', product: { id: 2, name: 'Leche entera 1 L' } },
+    {
+      id: 1,
+      quantity: 2,
+      saleUnit: 'UNIT',
+      price: '4850.00',
+      product: { id: 1, name: 'Yerba mate 1 kg' },
+    },
+    {
+      id: 2,
+      quantity: 1,
+      saleUnit: 'UNIT',
+      price: '1690.00',
+      product: { id: 2, name: 'Leche entera 1 L' },
+    },
   ],
+  payments: [
+    { method: 'CASH', amount: '11390.00', cashReceived: '12000.00', changeGiven: '610.00' },
+  ],
+  client: null,
 }
 
 /**

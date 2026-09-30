@@ -30,8 +30,12 @@ import {
   cn,
 } from '@/components/ui'
 import { DialogoAnular } from '@/components/ventas/DialogoAnular'
-import { usePermiso } from '@/components/shell/SessionProvider'
+import { usePermiso, useSession } from '@/components/shell/SessionProvider'
 import { notificarCambioDeCaja } from '@/components/shell/EstadoCaja'
+import { AreaDeImpresion } from '@/components/impresion/AreaDeImpresion'
+import { TicketDeVenta, type DatosDeTicket } from '@/components/impresion/Ticket'
+import { ticketDeVenta } from '@/components/impresion/datos'
+import { leerPreferencias } from '@/components/impresion/preferencias'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { CERO, multiplicarMonto, sumarMontos } from '@/lib/money'
 import { parsePaginaVentas, type TotalesVentas, type VentaDTO } from '@/modules/sales/dto'
@@ -108,6 +112,20 @@ function Ventas() {
   const [error, setError] = useState<string | null>(null)
   const [expandida, setExpandida] = useState<number | null>(ventaPedida)
   const [anulando, setAnulando] = useState<VentaDTO | null>(null)
+
+  // Reimpresion del ticket. V1 comercial: el mismo comprobante que sale al
+  // cobrar, desde el historial, sin una pantalla aparte.
+  const { comercio } = useSession()
+  const [imprimiendo, setImprimiendo] = useState<DatosDeTicket | null>(null)
+  const imprimir = useCallback(
+    (v: VentaDTO) => {
+      setImprimiendo(ticketDeVenta(v, { comercio, textoFinal: leerPreferencias().textoFinal }))
+    },
+    [comercio],
+  )
+  const terminarImpresion = useCallback(() => {
+    setImprimiendo(null)
+  }, [])
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -225,7 +243,7 @@ function Ventas() {
               abierta ? (
                 <tr key={`${v.id}-detalle`}>
                   <td colSpan={7} className="bg-sunken px-6 py-3">
-                    <DetalleVenta venta={v} />
+                    <DetalleVenta venta={v} onImprimir={imprimir} />
                   </td>
                 </tr>
               ) : null,
@@ -256,7 +274,7 @@ function Ventas() {
               <Money amount={v.total} tone={anulada ? 'muted' : 'neutral'} />
             </div>
             <div className="mt-2">
-              <DetalleVenta venta={v} />
+              <DetalleVenta venta={v} onImprimir={imprimir} />
             </div>
             {puedeAnular && !anulada && (
               <Button
@@ -386,6 +404,11 @@ function Ventas() {
         </div>
       </Card>
 
+      <AreaDeImpresion
+        contenido={imprimiendo === null ? null : <TicketDeVenta datos={imprimiendo} />}
+        onTerminado={terminarImpresion}
+      />
+
       <DialogoAnular
         venta={anulando}
         onCerrar={() => {
@@ -402,7 +425,13 @@ function Ventas() {
   )
 }
 
-function DetalleVenta({ venta }: { venta: VentaDTO }) {
+function DetalleVenta({
+  venta,
+  onImprimir,
+}: {
+  venta: VentaDTO
+  onImprimir: (venta: VentaDTO) => void
+}) {
   return (
     <div className="flex flex-col gap-3">
       <ul className="flex flex-col gap-1 text-sm">
@@ -430,6 +459,20 @@ function DetalleVenta({ venta }: { venta: VentaDTO }) {
           {venta.cancelReason && <p className="mt-0.5 text-ink-muted">{venta.cancelReason}</p>}
         </div>
       )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={(e) => {
+            e.stopPropagation()
+            onImprimir(venta)
+          }}
+        >
+          Imprimir ticket
+        </Button>
+        <span className="text-xs text-ink-faint">Comprobante interno, no es factura.</span>
+      </div>
     </div>
   )
 }

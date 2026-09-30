@@ -14,7 +14,14 @@ import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
 import { MAX_DIAS_REPORTE, type ReporteVentasQuery } from './schemas'
 import type { Monto } from '@/lib/money'
 import type { TextoCantidad } from '@/lib/cantidad'
-import { aMonto, multiplicar, redondearPesos, sumar, type Dinero } from '@/server/money'
+import {
+  aMonto,
+  aMontoOpcional,
+  multiplicar,
+  redondearPesos,
+  sumar,
+  type Dinero,
+} from '@/server/money'
 import { aTextoCantidad, type Cantidad } from '@/server/cantidad'
 import { unidadDeVentaODefecto, type UnidadDeVenta } from '@/modules/products/units'
 import { cantidadDeDias, comoTimestampUTC, esFechaLocal, rangoDeSucursal } from '@/server/tiempo'
@@ -37,6 +44,19 @@ export interface VentaDelReporte {
     price: Monto
     product: { id: number; name: string }
   }>
+  /**
+   * Como se cobro, linea por linea. V1 comercial: lo necesita la reimpresion
+   * del ticket, que muestra cada medio y el vuelto. `paymentMethod` de arriba
+   * sigue existiendo para el filtro y las pantallas que no lo desglosan.
+   */
+  payments: Array<{
+    method: string
+    amount: Monto
+    cashReceived: Monto | null
+    changeGiven: Monto | null
+  }>
+  /** A quien se le vendio, si no fue al mostrador. Para el ticket. */
+  client: { id: number; name: string } | null
 }
 
 export interface TotalesDelReporte {
@@ -142,6 +162,11 @@ export async function reporteDeVentas(
           select: { paymentMethod: true },
           take: 1,
         },
+        payments: {
+          select: { method: true, amount: true, cashReceived: true, changeGiven: true },
+          orderBy: { id: 'asc' },
+        },
+        client: { select: { id: true, name: true } },
       },
     }),
   ])
@@ -177,10 +202,16 @@ export async function reporteDeVentas(
       `
     : null
 
-  const data: VentaDelReporte[] = ventas.map(({ cashMovements, items, ...venta }) => ({
+  const data: VentaDelReporte[] = ventas.map(({ cashMovements, items, payments, ...venta }) => ({
     ...venta,
     date: venta.date.toISOString(),
     paymentMethod: cashMovements[0]?.paymentMethod ?? null,
+    payments: payments.map((p) => ({
+      method: p.method,
+      amount: aMonto(p.amount),
+      cashReceived: aMontoOpcional(p.cashReceived),
+      changeGiven: aMontoOpcional(p.changeGiven),
+    })),
     items: items.map(({ product, ...i }) => ({
       ...i,
       quantity: aTextoCantidad(i.quantity),

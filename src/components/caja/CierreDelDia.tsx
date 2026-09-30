@@ -20,6 +20,8 @@ import { useSession } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { esCero, esNegativo } from '@/lib/money'
 import { parseCierreDelDia, type CierreDelDiaDTO } from '@/modules/cash/dto.cierre'
+import { AreaDeImpresion } from '@/components/impresion/AreaDeImpresion'
+import { CierreImpreso, type DatosDeCierreImpreso } from '@/components/impresion/Ticket'
 import { fechaCorta } from './MovimientoRow'
 
 /**
@@ -47,6 +49,7 @@ export function CierreDelDia() {
   const [cierre, setCierre] = useState<CierreDelDiaDTO | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [impreso, setImpreso] = useState<DatosDeCierreImpreso | null>(null)
 
   const cargar = useCallback(async (dia: string) => {
     setCargando(true)
@@ -76,7 +79,7 @@ export function CierreDelDia() {
         description="Cuánto vendiste, cómo te pagaron y cuánto tiene que haber en el cajón."
         actions={
           <>
-            <Field label="Día" labelHidden className="print:hidden">
+            <Field label="Día" labelHidden>
               <Input
                 type="date"
                 value={fecha}
@@ -89,11 +92,10 @@ export function CierreDelDia() {
             </Field>
             <Button
               variant="secondary"
-              className="print:hidden"
               onClick={() => {
-                window.print()
+                if (cierre !== null) setImpreso(cierreParaImprimir(cierre, comercio))
               }}
-              disabled={cierre === null}
+              disabled={cierre === null || impreso !== null}
             >
               Imprimir cierre
             </Button>
@@ -111,21 +113,15 @@ export function CierreDelDia() {
         <SkeletonRows rows={5} />
       ) : cierre === null ? null : (
         <>
-          {/* Cabecera solo para el papel: el nombre del comercio y la fecha. */}
-          <div className="hidden print:block">
-            <p className="text-lg font-semibold">{comercio}</p>
-            <p className="text-sm">
-              Cierre del día · {fechaLarga(cierre.fecha)} · impreso{' '}
-              {fechaCorta(new Date().toISOString())}
-            </p>
-          </div>
+          <AreaDeImpresion
+            contenido={impreso === null ? null : <CierreImpreso datos={impreso} />}
+            onTerminado={() => {
+              setImpreso(null)
+            }}
+          />
 
           {cierre.avisos.map((a) => (
-            <Alert
-              key={a.codigo}
-              tone={a.codigo === 'caja_de_otro_dia' ? 'danger' : 'warning'}
-              className="print:hidden"
-            >
+            <Alert key={a.codigo} tone={a.codigo === 'caja_de_otro_dia' ? 'danger' : 'warning'}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span>{a.texto}</span>
                 {puedeCerrarCaja &&
@@ -364,6 +360,17 @@ function Suma({
       </dd>
     </div>
   )
+}
+
+function cierreParaImprimir(c: CierreDelDiaDTO, comercio: string): DatosDeCierreImpreso {
+  return {
+    comercio,
+    fecha: fechaLarga(c.fecha),
+    impresoEn: new Date().toISOString(),
+    ventas: c.ventas,
+    porMedio: c.porMedio.map((m) => ({ etiqueta: m.etiqueta, cobrado: m.cobrado })),
+    caja: { hay: c.caja.estado !== 'sin_caja', ...c.caja },
+  }
 }
 
 function fechaLarga(fecha: string): string {

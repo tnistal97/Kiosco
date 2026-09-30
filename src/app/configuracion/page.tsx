@@ -5,6 +5,7 @@ import { rolLegible } from '@/components/shell/UserMenu'
 import { ThemeToggle } from '@/components/shell/ThemeToggle'
 import { useSession } from '@/components/shell/SessionProvider'
 import { CambiarMiClave } from '@/components/usuarios/CambiarMiClave'
+import { PreferenciasDeImpresion } from '@/components/impresion/PreferenciasDeImpresion'
 
 /**
  * Configuración.
@@ -90,10 +91,19 @@ export default function ConfiguracionPage() {
       </Card>
 
       <Card>
+        <CardHeader
+          title="Impresión"
+          description="Para la impresora térmica conectada a esta máquina. Se guarda solo en este navegador."
+        />
+        <PreferenciasDeImpresion />
+      </Card>
+
+      <Card>
         <CardHeader title="Lo que todavía no está" />
         <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-ink-muted">
           <li>Edición de permisos por rol: hoy viven en el código.</li>
           <li>Venta sin conexión.</li>
+          <li>Factura electrónica: el ticket que se imprime es un comprobante interno.</li>
         </ul>
       </Card>
     </PageContainer>

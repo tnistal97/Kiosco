@@ -327,3 +327,143 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ==========================================================================
+ * Impresion. V1 comercial.
+ *
+ * Lo unico que sale por la impresora es el contenido de `#impresion`, que
+ * la aplicacion llena por un portal solo mientras imprime (ver
+ * components/impresion/AreaDeImpresion.tsx). Todo lo demas --armazon, menu,
+ * la pantalla que se estaba mirando-- se esconde. Y en pantalla ocurre lo
+ * inverso: `#impresion` no se ve nunca.
+ *
+ * El ancho lo pone `data-ancho`: 58 mm imprimibles son 48; 80 mm son 72.
+ * Sin margenes de pagina: la termica corta donde termina el papel.
+ * ========================================================================== */
+#impresion {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 0;
+  }
+
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  body > *:not(#impresion) {
+    display: none !important;
+  }
+
+  #impresion {
+    display: block;
+  }
+
+  .hoja-de-impresion {
+    width: 72mm;
+    padding: 3mm 2mm;
+    color: #000;
+    background: #fff;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .hoja-de-impresion[data-ancho='58'] {
+    width: 48mm;
+    font-size: 10px;
+  }
+
+  .ticket {
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+  }
+  .ticket-cabecera {
+    text-align: center;
+  }
+  .ticket-comercio {
+    font-size: 1.35em;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .ticket-anulada {
+    font-size: 1.3em;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    border: 2px solid #000;
+    display: inline-block;
+    padding: 1px 6px;
+    margin: 2px 0;
+  }
+  .ticket-linea {
+    border: 0;
+    border-top: 1px dashed #000;
+    margin: 4px 0;
+  }
+  .ticket-titulo {
+    font-weight: 700;
+    margin: 2px 0;
+  }
+  .ticket-lineas {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .ticket-lineas td {
+    vertical-align: top;
+    padding: 1px 0;
+  }
+  .ticket-cantidad {
+    white-space: nowrap;
+    padding-right: 4px !important;
+  }
+  .ticket-nombre {
+    width: 100%;
+    word-break: break-word;
+  }
+  .ticket-precio {
+    white-space: nowrap;
+    opacity: 0.85;
+  }
+  .ticket-importe {
+    text-align: right;
+    white-space: nowrap;
+    padding-left: 4px !important;
+  }
+  .ticket-total {
+    display: flex;
+    justify-content: space-between;
+    font-size: 1.25em;
+    font-weight: 700;
+    margin: 3px 0;
+  }
+  .ticket-pagos {
+    margin: 0;
+  }
+  .ticket-renglon {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .ticket-renglon dt,
+  .ticket-renglon dd {
+    margin: 0;
+  }
+  .ticket-secundario {
+    opacity: 0.85;
+    font-size: 0.92em;
+  }
+  .ticket-pie {
+    text-align: center;
+    margin-top: 6px;
+  }
+  .ticket-no-fiscal {
+    font-size: 0.9em;
+    font-weight: 700;
+    margin-top: 3px;
+  }
+}
