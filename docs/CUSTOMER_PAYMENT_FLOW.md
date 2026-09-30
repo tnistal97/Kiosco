@@ -30,6 +30,7 @@ Es la misma regla que gobierna la venta desde la Fase 3, aplicada al cobro:
 | ---------------------------- | ------------- | --------------- |
 | `CASH`                       | sí            | **sí**          |
 | `TRANSFER`                   | sí            | no              |
+| `MERCADO_PAGO`               | sí            | no              |
 | `DEBIT_CARD` / `CREDIT_CARD` | sí            | no              |
 | `OTHER`                      | sí            | no              |
 

@@ -1433,7 +1433,7 @@ model CustomerPayment {
   /// Lo comprueba la base con un CHECK.
   amount Decimal @db.Decimal(14, 2)
 
-  /// 'CASH' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'TRANSFER' | 'OTHER'.
+  /// 'CASH' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'TRANSFER' | 'MERCADO_PAGO' | 'OTHER'.
   ///
   /// NO admite 'ACCOUNT': pagar la cuenta con la cuenta no significa nada.
   method String
@@ -1994,8 +1994,8 @@ model SalePayment {
   id     Int @id @default(autoincrement())
   saleId Int
 
-  /// 'CASH' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'TRANSFER' | 'OTHER' | 'CARD' |
-  /// 'ACCOUNT'. Ver src/modules/sales/payment-methods.ts. `CARD` es historico.
+  /// 'CASH' | 'DEBIT_CARD' | 'CREDIT_CARD' | 'TRANSFER' | 'MERCADO_PAGO' | 'OTHER' |
+  /// 'CARD' | 'ACCOUNT'. Ver src/modules/sales/payment-methods.ts. `CARD` es historico.
   ///
   /// `ACCOUNT` desde la Fase 4A: es la parte de la venta que NO se cobro y
   /// quedo en la cuenta del cliente. Existe aca --y no como una entidad

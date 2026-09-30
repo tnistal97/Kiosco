@@ -252,11 +252,11 @@ describe('Compatibilidad con la forma anterior', () => {
     expect(await cashOf(fx.branchA.id)).toBe('30000.00')
   })
 
-  it('`mercado_pago` se guarda como transferencia y no toca la caja', async () => {
+  it('`mercado_pago` (forma vieja) se guarda como Mercado Pago y no toca la caja', async () => {
     const res = await vender({ items: tresUnidades(), paymentMethod: 'mercado_pago' })
 
     expect(res.status).toBeLessThan(300)
-    expect(res.body.payments[0]?.method).toBe('TRANSFER')
+    expect(res.body.payments[0]?.method).toBe('MERCADO_PAGO')
     expect(await cashOf(fx.branchA.id)).toBe('0.00')
   })
 

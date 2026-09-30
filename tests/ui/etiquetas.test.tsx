@@ -40,7 +40,8 @@ describe('Movimientos de caja', () => {
     expect(medioLegible('DEBIT_CARD')).toBe('Débito')
     expect(medioLegible('TRANSFER')).toBe('Transferencia')
     expect(medioLegible('efectivo')).toBe('Efectivo')
-    expect(medioLegible('mercado_pago')).toBe('Transferencia')
+    expect(medioLegible('MERCADO_PAGO')).toBe('Mercado Pago')
+    expect(medioLegible('mercado_pago')).toBe('Mercado Pago')
     expect(medioLegible('tarjeta')).toBe('Tarjeta')
   })
 })
@@ -77,6 +78,7 @@ describe('Medios de pago como botones', () => {
     expect(screen.getByRole('radiogroup', { name: 'Cómo paga' })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'Efectivo' })).toBeChecked()
     expect(screen.getByRole('radio', { name: 'Fiado' })).not.toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Mercado Pago' })).toBeInTheDocument()
     // Nunca el codigo.
     expect(screen.queryByText('CASH')).toBeNull()
   })
@@ -102,6 +104,7 @@ describe('Medios de pago como botones', () => {
   it('cada medio tiene una letra', () => {
     expect(medioDeTecla('e')).toBe('CASH')
     expect(medioDeTecla('T')).toBe('TRANSFER')
+    expect(medioDeTecla('m')).toBe('MERCADO_PAGO')
     expect(medioDeTecla('f')).toBe('ACCOUNT')
     expect(medioDeTecla('x')).toBeNull()
   })

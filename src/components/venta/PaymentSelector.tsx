@@ -24,6 +24,7 @@ export const TECLA_DE_MEDIO: Record<MedioCobrable, string> = {
   DEBIT_CARD: 'D',
   CREDIT_CARD: 'R',
   TRANSFER: 'T',
+  MERCADO_PAGO: 'M',
   ACCOUNT: 'F',
   OTHER: 'O',
 }
@@ -82,7 +83,7 @@ export function PaymentSelector({
       role="radiogroup"
       aria-label={label}
       onKeyDown={alPresionar}
-      className={cn('grid grid-cols-3 gap-2 sm:grid-cols-6', className)}
+      className={cn('grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7', className)}
     >
       {MEDIOS_COBRABLES.map((medio) => {
         const activo = medio === value

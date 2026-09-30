@@ -201,6 +201,9 @@ describe('La cadena oficial', () => {
       '20260813130000_phase4d_lot_sales',
       '20260813140000_phase4d_inventory_counts',
       '20260814100000_phase5a_indices_de_lectura',
+      // V1 comercial: Mercado Pago como medio propio. Amplia tres CHECK y no
+      // toca ninguna fila.
+      '20260930120000_commercial_v1_mercado_pago',
     ])
   })
 

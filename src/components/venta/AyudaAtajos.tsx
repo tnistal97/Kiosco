@@ -34,7 +34,7 @@ const ALIAS: Array<{ teclas: string[]; que: string }> = [
   { teclas: ['F12'], que: 'Cobrar' },
   { teclas: ['Alt', 'N'], que: 'Producto nuevo' },
   { teclas: ['Ctrl', 'K'], que: 'Ir al campo de escaneo' },
-  { teclas: ['E', 'D', 'R', 'T', 'F', 'O'], que: 'En el cobro, elegir el medio de pago' },
+  { teclas: ['E', 'D', 'R', 'T', 'M', 'F', 'O'], que: 'En el cobro, elegir el medio de pago' },
 ]
 
 function Fila({ teclas, que }: { teclas: string[]; que: string }) {

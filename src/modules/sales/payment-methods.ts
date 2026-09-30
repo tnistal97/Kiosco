@@ -22,6 +22,16 @@ export const MEDIOS_DE_PAGO = [
   'DEBIT_CARD',
   'CREDIT_CARD',
   'TRANSFER',
+  /**
+   * Mercado Pago. V1 comercial.
+   *
+   * Hasta aca convivia con la transferencia --`TRANSFER` con la referencia
+   * "Mercado Pago"-- y el dueño no podia separar en el cierre del dia lo que
+   * le entro por QR de lo que le entro por CBU, que se acreditan en cuentas y
+   * plazos distintos. Es un medio FIJO, no configurable: un codigo con su
+   * CHECK en la base, igual que los demas. No entra al cajon.
+   */
+  'MERCADO_PAGO',
   'OTHER',
   'CARD',
   /**
@@ -44,6 +54,7 @@ export const MEDIOS_COBRABLES = [
   'DEBIT_CARD',
   'CREDIT_CARD',
   'TRANSFER',
+  'MERCADO_PAGO',
   'OTHER',
   'ACCOUNT',
 ] as const
@@ -67,6 +78,7 @@ export const MEDIOS_DE_CAJA = [
   'DEBIT_CARD',
   'CREDIT_CARD',
   'TRANSFER',
+  'MERCADO_PAGO',
   'OTHER',
   'CARD',
 ] as const
@@ -79,6 +91,7 @@ export const MEDIOS_DE_COBRANZA = [
   'DEBIT_CARD',
   'CREDIT_CARD',
   'TRANSFER',
+  'MERCADO_PAGO',
   'OTHER',
 ] as const
 
@@ -113,6 +126,7 @@ const ETIQUETAS: Record<MedioDePago, string> = {
   DEBIT_CARD: 'Débito',
   CREDIT_CARD: 'Crédito',
   TRANSFER: 'Transferencia',
+  MERCADO_PAGO: 'Mercado Pago',
   OTHER: 'Otro',
   CARD: 'Tarjeta',
   ACCOUNT: 'A cuenta',
@@ -145,6 +159,18 @@ export function esEfectivo(medio: string): boolean {
   return medio === MEDIO_EFECTIVO
 }
 
+/** El codigo de Mercado Pago, para las pantallas que lo tratan aparte. */
+export const MEDIO_MERCADO_PAGO = 'MERCADO_PAGO' satisfies MedioDePago
+
+/**
+ * Si el pago se acredita en una cuenta y no en el cajon: transferencia,
+ * Mercado Pago o tarjeta. Es la negacion de `esEfectivo` restringida a lo que
+ * SI es plata que entro --`ACCOUNT` es una promesa y queda afuera--.
+ */
+export function esElectronico(medio: string): boolean {
+  return !esEfectivo(medio) && !esCuenta(medio)
+}
+
 /** El codigo del fiado. */
 export const MEDIO_CUENTA = 'ACCOUNT' satisfies MedioDePago
 
@@ -173,12 +199,18 @@ export function esMedioValido(medio: string): medio is MedioDePago {
  *
  *   efectivo      → CASH
  *   tarjeta       → CARD           sin distinguir; ver arriba
- *   mercado_pago  → TRANSFER       con la referencia "Mercado Pago"
+ *   mercado_pago  → MERCADO_PAGO   desde la V1 comercial
+ *
+ * `mercado_pago` iba a `TRANSFER` --con la referencia "Mercado Pago"-- hasta
+ * que existio el codigo propio. Un navegador viejo que todavia mande la forma
+ * anterior ahora guarda lo que quiso decir. Las filas que la migracion de la
+ * Fase 3 ya convirtio a `TRANSFER` NO se tocan: ver la migracion
+ * `commercial_v1_mercado_pago` para el motivo.
  */
 export const MEDIOS_LEGACY: Record<string, MedioDePago> = {
   efectivo: 'CASH',
   tarjeta: 'CARD',
-  mercado_pago: 'TRANSFER',
+  mercado_pago: 'MERCADO_PAGO',
 }
 
 /** Normaliza un medio que puede venir en el vocabulario viejo. */

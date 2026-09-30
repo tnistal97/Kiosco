@@ -675,6 +675,12 @@ export function DialogoCobro({
                 al efectivo de la caja.
               </p>
             )}
+            {principal.method === 'MERCADO_PAGO' && (
+              <p className="text-sm text-ink-muted">
+                Confirmá cuando veas el pago aprobado en Mercado Pago. No entra al cajón, así que no
+                suma al efectivo de la caja.
+              </p>
+            )}
             {(principal.method === 'DEBIT_CARD' || principal.method === 'CREDIT_CARD') && (
               <p className="text-sm text-ink-muted">
                 Pasá la tarjeta por el posnet y confirmá acá. No entra al cajón.
