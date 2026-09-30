@@ -5,6 +5,7 @@ import {
   ResponsiveData,
   PageContainer,
   Button,
+  ButtonLink,
   Card,
   CardHeader,
   CardList,
@@ -66,6 +67,7 @@ function parsePaginaMovimientos(raw: unknown): Pagina {
 export default function CajaPage() {
   const puedeMover = usePermiso('cash.movement.create')
   const puedeArquear = usePermiso('cash.count.create')
+  const puedeVerCierre = usePermiso('reports.cash.view')
 
   const [saldo, setSaldo] = useState<Monto | null>(null)
   const [efectivoHoy, setEfectivoHoy] = useState<Monto>(CERO)
@@ -198,7 +200,12 @@ export default function CajaPage() {
             <option value="deposito">Depósitos</option>
           </Select>
 
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex flex-wrap gap-2">
+            {puedeVerCierre && (
+              <ButtonLink href="/caja/cierre" variant="secondary">
+                Cierre del día
+              </ButtonLink>
+            )}
             {puedeMover && (
               <Button
                 variant="secondary"

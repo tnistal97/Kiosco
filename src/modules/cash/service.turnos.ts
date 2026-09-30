@@ -254,6 +254,34 @@ export async function turnoActual(session: Session): Promise<ResumenTurno | null
   return resumen ?? null
 }
 
+/**
+ * Los turnos que le importan a un dia: los que se ABRIERON ese dia, mas el que
+ * sigue abierto aunque se haya abierto antes. V1 comercial, "Cierre del dia".
+ *
+ * El abierto de otro dia entra a proposito: es la caja de ayer que nadie
+ * cerro, y la pantalla del cierre tiene que decirlo en vez de esconderlo.
+ * `legacy` queda afuera: no tiene apertura ni cierre que mostrar.
+ *
+ * Los bordes llegan como `Date` y se usan a traves de Prisma --que los manda
+ * como `timestamptz`--; no es SQL crudo, asi que la advertencia de
+ * `comoTimestampUTC` no aplica aca.
+ */
+export async function turnosDelDia(
+  session: Session,
+  rango: { desde: Date; hasta: Date },
+): Promise<ResumenTurno[]> {
+  const turnos = await prisma.cashShift.findMany({
+    where: {
+      branchId: session.branchId,
+      status: { not: 'legacy' },
+      OR: [{ openedAt: { gte: rango.desde, lte: rango.hasta } }, { status: 'open' }],
+    },
+    select: CAMPOS_TURNO,
+    orderBy: { openedAt: 'asc' },
+  })
+  return aResumen(prisma, turnos)
+}
+
 /** Politica de caja de la sucursal. La pantalla la necesita para saber que ofrecer. */
 export async function politicaDeCaja(
   session: Session,
