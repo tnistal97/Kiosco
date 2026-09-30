@@ -255,3 +255,17 @@ Script suelto en la raíz que hace `deleteMany()` de productos, stock e ítems d
 2. **¿Cuántas sucursales, realmente?** Si es una sola, la tarea 3.2 (la más riesgosa del plan) puede posponerse indefinidamente.
 3. **¿Se vende algo por peso?** Si hay fiambrería o verdulería, `SaleItem.quantity` debe dejar de ser entero, y eso cambia el esquema desde la Fase 2.
 4. **¿Hace falta facturación fiscal (AFIP)?** No está en este plan. Si se necesita, cambia el modelo de comprobantes y conviene contemplarlo antes de la tarea 4.9.
+
+---
+
+# Después del plan
+
+Este plan se escribió antes de empezar y llega hasta la Fase 5. Lo que vino
+después tiene sus propios documentos:
+
+| Qué                                                                                               | Dónde                                                                                                                             |
+| ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| La nueva experiencia de caja y venta (UX V2 y V3)                                                 | [UX_PRODUCT_AUDIT_MASTERPLAN.md](UX_PRODUCT_AUDIT_MASTERPLAN.md) · [UX_V3_VENTA_IMPLEMENTACION.md](UX_V3_VENTA_IMPLEMENTACION.md) |
+| El despliegue que está en línea                                                                   | [DEPLOY_LUCHANDOPORMAS.md](DEPLOY_LUCHANDOPORMAS.md)                                                                              |
+| La preventa P0: contraseñas desde la aplicación, alta de instancia, importación y precios masivos | [P0_PREVENTA.md](P0_PREVENTA.md)                                                                                                  |
+| UX V4, la simplificación para almacenes. **Propuesta, pendiente de aprobación**                   | [UX_V4_ALMACENES_PROPUESTA.md](UX_V4_ALMACENES_PROPUESTA.md)                                                                      |

@@ -4,23 +4,23 @@ Sistema de gestión para un almacén de barrio: punto de venta, control de caja,
 stock por sucursal y auditoría de operaciones. Funciona como PWA, con lector de
 códigos de barras por cámara y por lector USB.
 
-> **El sitio está fuera de línea, y se midió por qué.** El proceso de PM2 figura
-> `stopped`, nada escucha en el puerto y el dominio devuelve 502. Los logs se
-> cortan en febrero de 2026: la aplicación dejó de arrancar cuando el rol de
-> PostgreSQL perdió los privilegios sobre las tablas.
+> **Estado al 30 de septiembre de 2026**
 >
-> La release candidate **`1.0.0-rc.3`** está lista en `release/almacen-v1`, con
-> su artefacto y su checksum, pero el despliegue es **NO-GO** por tres
-> bloqueantes que no son de código y que requieren escribir en el servidor:
+> - **En línea:** la rama `release/almacen-v1`, puesta en marcha el 3 de
+>   septiembre de 2026. Qué corre, dónde y cómo se opera está en
+>   [docs/DEPLOY_LUCHANDOPORMAS.md](docs/DEPLOY_LUCHANDOPORMAS.md).
+> - **En `feat/ux-v2-phase2-1-lista-navegacion`, sin desplegar:** la nueva
+>   experiencia de caja y venta (UX V2 y V3) y la preventa **P0**: contraseñas
+>   desde la aplicación, alta de una instancia nueva, importación de productos
+>   desde Excel o CSV y cambio masivo de precios. El informe está en
+>   [docs/P0_PREVENTA.md](docs/P0_PREVENTA.md).
+> - **Propuesto, esperando aprobación:** UX V4, la simplificación para
+>   almacenes. Ver
+>   [docs/UX_V4_ALMACENES_PROPUESTA.md](docs/UX_V4_ALMACENES_PROPUESTA.md).
 >
-> 1. la contraseña de PostgreSQL estuvo en un repositorio público quince meses;
-> 2. `JWT_SECRET` tiene 9 caracteres —el mínimo es 32— y el login fallaría;
-> 3. el rol de la aplicación no puede crear objetos, así que `migrate deploy`
->    falla en la primera migración.
->
-> Todo está medido y escrito en
-> [docs/PRODUCTION_CURRENT_STATE.md](docs/PRODUCTION_CURRENT_STATE.md) y el
-> procedimiento en
+> El diagnóstico del servidor anterior, y los bloqueantes que impidieron
+> encenderlo, siguen escritos en
+> [docs/PRODUCTION_CURRENT_STATE.md](docs/PRODUCTION_CURRENT_STATE.md) y
 > [docs/PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md).
 
 ## Funcionalidades
@@ -71,6 +71,11 @@ códigos de barras por cámara y por lector USB.
   con el saldo anterior, el resultante y —desde la Fase 4D— de qué partida
   salió. No se edita ni se borra: los errores se corrigen con otro movimiento.
 - **Administración** — usuarios y roles, reporte de ventas.
+- **Contraseñas desde la aplicación** — cada usuario cambia la suya en
+  Configuración, y quien administra usuarios resetea la de otro con una
+  temporal que se muestra una sola vez. Las dos cosas cierran las sesiones
+  abiertas y quedan en la bitácora, sin la clave. Ya no hace falta entrar al
+  servidor. Ver [P0_PREVENTA.md](docs/P0_PREVENTA.md).
 - **Auditoría** — bitácora de cada operación, con usuario, sucursal, motivo,
   identificador de petición y resultado.
 
@@ -83,14 +88,14 @@ códigos de barras por cámara y por lector USB.
 | Datos     | Prisma 6 · PostgreSQL 16                          |
 | Sesiones  | `jose` (JWT en cookie HttpOnly) · bcrypt          |
 | Estado    | Zustand                                           |
-| PWA       | next-pwa · Workbox                                |
+| PWA       | Serwist (`@serwist/next`)                         |
 | Escaneo   | @zxing/browser                                    |
 | Calidad   | ESLint 9 · Prettier 3 · Vitest 4                  |
 
 ## Requisitos
 
-- **Node.js 20.19 o superior.** Producción corría sobre 18.20, que ya no
-  recibe soporte; hay que actualizarlo antes del próximo despliegue.
+- **Node.js 20.19 o superior** (hasta la 24). La integración continua valida
+  con 20.19 y el servidor en línea usa la 22.
 - PostgreSQL 16
 - npm (el proyecto usa `package-lock.json`)
 
@@ -128,6 +133,8 @@ Definidas en `.env.example`. Ninguna trae valores reales.
 | `JWT_SECRET`                                          | Secreto de firma de sesiones. **Mínimo 32 caracteres**   |
 | `NODE_ENV`                                            | `development` o `production`                             |
 | `PORT`                                                | Puerto de escucha (producción usa 3099)                  |
+| `COMMERCE_NAME`                                       | Nombre del comercio. Se lee al atender, sin recompilar   |
+| `KIOSCO_HOSTS`                                        | Dominios por los que se entra, separados por coma        |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Solo para `docker-compose` local                         |
 | `OPENFOOD_DB_*`                                       | Solo para `tools/scrap.py`, sobre una base independiente |
 
@@ -170,6 +177,9 @@ Definidas en `.env.example`. Ninguna trae valores reales.
 Las pruebas **abortan** si `DATABASE_URL` no apunta a una base cuyo nombre
 termine en `_test`. Nunca corren contra desarrollo ni contra producción.
 
+`npm run plantilla:productos` regenera `public/productos-ejemplo.xlsx`, la
+plantilla que se descarga desde Productos → Importar.
+
 ## Cómo está organizado
 
 ```
@@ -177,10 +187,21 @@ src/
 ├── app/
 │   ├── api/            route handlers. Delgados: autenticar, permiso,
 │   │                   validar, llamar al servicio, responder
-│   ├── caja/           punto de venta
-│   ├── productos/      catálogo
-│   ├── ventas/         movimientos de caja
-│   └── admin/          reportes y auditoría
+│   ├── (inicio)/       tablero de entrada
+│   ├── venta/          punto de venta
+│   ├── caja/           apertura, cierre y movimientos de caja
+│   ├── ventas/         ventas registradas y anulaciones
+│   ├── productos/      catálogo, importación y precios masivos
+│   ├── stock/          existencias, movimientos y lotes
+│   ├── inventarios/    inventario físico
+│   ├── compras/        órdenes de compra y recepciones
+│   ├── proveedores/    proveedores y cuentas por pagar
+│   ├── devoluciones/   devoluciones a proveedores
+│   ├── clientes/       clientes y cuenta corriente
+│   ├── comprobantes/   comprobantes de cobro y de pago
+│   ├── reportes/       reportes
+│   ├── auditoria/      bitácora
+│   └── usuarios/ · sucursales/ · configuracion/
 ├── modules/            un directorio por dominio
 │   └── <dominio>/
 │       ├── schemas.ts  validación de entrada (Zod)
@@ -266,7 +287,7 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 | Documento                                                                   | Qué contesta                                               |
 | --------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | [RELEASE_INVENTORY.md](docs/RELEASE_INVENTORY.md)                           | Qué compone la release, hasta el último índice             |
-| [PRODUCTION_CURRENT_STATE.md](docs/PRODUCTION_CURRENT_STATE.md)             | Qué hay **hoy** en el servidor, medido en solo lectura     |
+| [PRODUCTION_CURRENT_STATE.md](docs/PRODUCTION_CURRENT_STATE.md)             | Qué había en el servidor anterior, medido en solo lectura  |
 | [PRODUCTION_DATA_PRECHECK.md](docs/PRODUCTION_DATA_PRECHECK.md)             | Si los datos reales sobreviven a la migración              |
 | [MIGRATION_COMPATIBILITY_MATRIX.md](docs/MIGRATION_COMPATIBILITY_MATRIX.md) | Después de cada migración, ¿alcanza con volver el código?  |
 | [PRODUCTION_BACKUP_PLAN.md](docs/PRODUCTION_BACKUP_PLAN.md)                 | Cómo respaldar y, sobre todo, cómo **restaurar**           |
@@ -276,14 +297,51 @@ Cuatro, y las cuatro tienen una razón concreta detrás:
 | [PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md)                         | El encendido, paso a paso, con puntos de decisión          |
 | [OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)                         | GO/NO-GO, qué mirar después y cómo diagnosticar            |
 | [POS_QUICK_PRODUCT_CREATE.md](docs/POS_QUICK_PRODUCT_CREATE.md)             | Alta rápida desde la caja: permiso, flujo y concurrencia   |
-| [IMPORTACION_Y_PRECIOS.md](docs/IMPORTACION_Y_PRECIOS.md)                   | Importar productos y cambiar precios en masa               |
 | [BARCODE_BRANCH_ARCHITECTURE.md](docs/BARCODE_BRANCH_ARCHITECTURE.md)       | Código de barras y sucursales: modelo, opciones y decisión |
 | [PERFORMANCE_BASELINE.md](docs/PERFORMANCE_BASELINE.md)                     | Línea base de rendimiento, medida y con su método          |
 
+### Preventa (P0) y despliegue en línea
+
+| Documento                                                 | Qué contesta                                                        |
+| --------------------------------------------------------- | ------------------------------------------------------------------- |
+| [P0_PREVENTA.md](docs/P0_PREVENTA.md)                     | Qué se hizo para poder vender el sistema, cómo se probó y qué falta |
+| [ALTA_DE_INSTANCIA.md](docs/ALTA_DE_INSTANCIA.md)         | Dar de alta un comercio nuevo sin borrar nada                       |
+| [IMPORTACION_Y_PRECIOS.md](docs/IMPORTACION_Y_PRECIOS.md) | Importar productos y cambiar precios en masa, con su volumen medido |
+| [DEPLOY_LUCHANDOPORMAS.md](docs/DEPLOY_LUCHANDOPORMAS.md) | El despliegue que está en línea: qué corre, dónde y cómo se opera   |
+
+### Experiencia de uso
+
+De la más nueva a la más vieja. Las propuestas se escriben antes de tocar
+código y se aprueban; los informes de implementación dicen qué se hizo y qué se
+midió.
+
+| Documento                                                                                   | Qué contesta                                                     |
+| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [UX_V4_ALMACENES_PROPUESTA.md](docs/UX_V4_ALMACENES_PROPUESTA.md)                           | UX V4, simplificación para almacenes. **Propuesta, sin aprobar** |
+| [UX_V3_VENTA_IMPLEMENTACION.md](docs/UX_V3_VENTA_IMPLEMENTACION.md)                         | UX V3 de la venta: lo que se hizo y lo que se midió              |
+| [UX_V3_VENTA_PROPUESTA.md](docs/UX_V3_VENTA_PROPUESTA.md)                                   | UX V3 de la venta: la propuesta, con sus mediciones              |
+| [UX_V2_PHASE2_1_LIST_SESSION_NAVIGATION.md](docs/UX_V2_PHASE2_1_LIST_SESSION_NAVIGATION.md) | UX V2, fase 2.1: lista de productos, sesión y navegación         |
+| [UX_V2_PHASE2_CAJA_VENTA.md](docs/UX_V2_PHASE2_CAJA_VENTA.md)                               | UX V2, fase 2: caja, venta, apertura y cierre                    |
+| [UX_V2_PHASE1_IMPLEMENTATION.md](docs/UX_V2_PHASE1_IMPLEMENTATION.md)                       | UX V2, fase 1: fundaciones visuales, caja, cobro y teclado       |
+| [UX_V2_MANUAL_UAT.md](docs/UX_V2_MANUAL_UAT.md)                                             | La prueba manual con una persona que nunca vio el sistema        |
+| [UX_PRODUCT_AUDIT_MASTERPLAN.md](docs/UX_PRODUCT_AUDIT_MASTERPLAN.md)                       | La auditoría de producto y de uso que dio origen a UX V2         |
+| [PHASE2_VISUAL_REPORT.md](docs/PHASE2_VISUAL_REPORT.md)                                     | Fase 2: antes y después, con capturas                            |
+| [PHASE2_UI_BASELINE.md](docs/PHASE2_UI_BASELINE.md)                                         | El estado visual antes de la Fase 2                              |
+| [UI_REDESIGN_PROPOSAL.md](docs/UI_REDESIGN_PROPOSAL.md)                                     | La propuesta de interfaz de la Fase 2                            |
+| [UI_UX_AUDIT.md](docs/UI_UX_AUDIT.md)                                                       | La primera auditoría de interfaz, con mediciones del DOM         |
+| [CURRENT_SYSTEM_AUDIT.md](docs/CURRENT_SYSTEM_AUDIT.md)                                     | El mapa del código recuperado de producción (agosto de 2026)     |
+
 ## Despliegue
 
-Producción corre con PM2 detrás de Nginx, que hace proxy inverso al puerto
-interno 3099 con TLS de Let's Encrypt.
+**El despliegue que está en línea** es el de
+[docs/DEPLOY_LUCHANDOPORMAS.md](docs/DEPLOY_LUCHANDOPORMAS.md): systemd, Node 22
+y Nginx delante, con sus comandos para publicar una versión, volver atrás y
+restaurar un respaldo. Lo que sigue es el procedimiento por artefacto de la
+Fase 5A, escrito para el servidor anterior (PM2, Node 18), y se conserva como
+referencia.
+
+En aquel servidor la aplicación corría con PM2 detrás de Nginx, que hacía de
+proxy inverso al puerto interno 3099 con TLS de Let's Encrypt.
 
 **Desde la Fase 5A el despliegue es por artefacto**, no por `git pull`. Se
 construye una vez, se calcula su SHA-256 y se despliega **ese**: construir en el
