@@ -45,8 +45,8 @@ const RUTAS = [
   { href: '/', titulo: 'Inicio' },
   { href: '/venta', titulo: 'Venta' },
   { href: '/caja', titulo: 'Caja' },
-  { href: '/ventas', titulo: 'Ventas' },
-  { href: '/clientes', titulo: 'Clientes' },
+  { href: '/ventas', titulo: 'Historial de ventas' },
+  { href: '/clientes', titulo: 'Clientes y fiado' },
   { href: '/productos', titulo: 'Productos' },
   { href: '/stock', titulo: 'Stock' },
 ] as const

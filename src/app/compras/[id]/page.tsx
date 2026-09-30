@@ -330,7 +330,7 @@ export default function CompraPage() {
 
       <Card className="p-4">
         <CardHeader
-          title="Recepciones"
+          title="Llegó mercadería"
           description={
             orden.receipts.length === 0
               ? 'Todavía no llegó nada.'
@@ -353,7 +353,7 @@ export default function CompraPage() {
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h3 className="text-sm font-semibold text-ink">
-                    Recepción #{i + 1}{' '}
+                    Llegó mercadería #{i + 1}{' '}
                     <span className="font-normal text-ink-muted" data-numeric="">
                       · {cuando(r.receivedAt)}
                     </span>

@@ -147,7 +147,7 @@ describe('Costo en la ficha del producto', () => {
     expect(screen.getByLabelText(/^costo/i)).toBeInstanceOf(HTMLInputElement)
     expect(screen.getByText('Ganancia')).toBeInTheDocument()
     expect(screen.getByText('Margen')).toBeInTheDocument()
-    expect(screen.getByText('Markup')).toBeInTheDocument()
+    expect(screen.getByText('Recargo sobre el costo')).toBeInTheDocument()
   })
 })
 
@@ -159,14 +159,9 @@ describe('Navegacion filtrada por permiso', () => {
     // ser una lista de productos y pasó a incluir el libro de movimientos.
     // "Control" --reportes y auditoría-- se separó de "Administración" en la
     // 3D: mirar el negocio y administrar el sistema son dos cosas.
-    expect(titulos).toEqual([
-      undefined,
-      'Operación',
-      'Inventario',
-      'Compras',
-      'Control',
-      'Administración',
-    ])
+    // V1 comercial: cuatro grupos con el nombre de lo que el dueño hace, y un
+    // "Más" plegado con lo que se abre una vez por semana.
+    expect(titulos).toEqual([undefined, 'Vender', 'Negocio', 'Control', 'Sistema', 'Más'])
   })
 
   it('el cajero no ve el libro de movimientos', () => {
@@ -218,7 +213,7 @@ describe('Navegacion filtrada por permiso', () => {
     // Nombres exactos: "Venta" y "Ventas" son dos entradas distintas.
     expect(screen.getByRole('link', { name: 'Venta' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Caja' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Auditoría' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Historial de cambios' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Usuarios' })).toBeNull()
   })
 
@@ -239,10 +234,14 @@ describe('Titulo de la pantalla', () => {
     ['/', 'Inicio'],
     ['/venta', 'Venta'],
     ['/caja', 'Caja'],
-    ['/ventas', 'Ventas'],
+    ['/ventas', 'Historial de ventas'],
     ['/productos', 'Productos'],
     ['/productos/12', 'Productos'],
-    ['/auditoria', 'Auditoría'],
+    ['/auditoria', 'Historial de cambios'],
+    ['/consultar-precio', 'Consultar precio'],
+    ['/caja/cierre', 'Caja'],
+    ['/compras/nueva', 'Llegó mercadería'],
+    ['/stock/movimientos', 'Historial de stock'],
     ['/usuarios', 'Usuarios'],
   ])('%s se titula "%s"', (ruta, titulo) => {
     expect(tituloDe(ruta)).toBe(titulo)

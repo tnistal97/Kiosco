@@ -294,7 +294,7 @@ export default function ReportesPage() {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Dato titulo="Facturado" valor={<Money amount={rent.facturado} size="lg" />} />
             <Dato titulo="Costo vendido" valor={<Money amount={rent.costoVendido} size="lg" />} />
-            <Dato titulo="Ganancia bruta" valor={<Money amount={rent.gananciaBruta} size="lg" />} />
+            <Dato titulo="Ganancia estimada" valor={<Money amount={rent.gananciaBruta} size="lg" />} />
             <Dato
               titulo="Margen bruto"
               valor={rent.margenBruto === null ? 'sin ventas' : `${rent.margenBruto}%`}
@@ -635,7 +635,7 @@ export default function ReportesPage() {
       {!cargando && verInventario && inventarios && inventarios.sesiones.length > 0 && (
         <Card>
           <CardHeader
-            title="Inventarios físicos"
+            title="Recuentos"
             description="Los recuentos del período y lo que encontró cada uno."
           />
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">

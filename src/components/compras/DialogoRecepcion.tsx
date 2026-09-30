@@ -293,7 +293,7 @@ export function DialogoRecepcion({
       aviso.ok('Mercadería recibida')
       onRecibido()
     } catch (err) {
-      setError(mensajeDeError(err, 'No se pudo registrar la recepción.'))
+      setError(mensajeDeError(err, 'No se pudo registrar la mercadería recibida.'))
       setEnviando(false)
     }
   }
@@ -316,7 +316,7 @@ export function DialogoRecepcion({
             disabled={!valido}
             onClick={() => void confirmar()}
           >
-            Confirmar recepción
+            Confirmar: llegó la mercadería
           </Button>
         </>
       }

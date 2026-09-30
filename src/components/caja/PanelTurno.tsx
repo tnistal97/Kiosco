@@ -41,7 +41,7 @@ export function PanelTurno({
           <span>
             {estado.politica.requiereTurno
               ? 'No se puede cobrar hasta abrirla. Contá el efectivo del cajón y abrila.'
-              : 'Se puede vender igual, pero sin turno el arqueo no compara contra nada.'}
+              : 'Se puede vender igual, pero sin caja abierta el conteo no compara contra nada.'}
           </span>
           {puedeAbrir && (
             <ButtonLink href="/caja/abrir" variant="primary">

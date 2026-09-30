@@ -81,7 +81,7 @@ const AREAS: Array<{ titulo: string; permisos: Array<{ clave: string; que: strin
     permisos: [
       { clave: 'cash.view', que: 'Ver el saldo y los movimientos' },
       { clave: 'cash.movement.create', que: 'Registrar ingresos y retiros' },
-      { clave: 'cash.count.create', que: 'Hacer arqueos' },
+      { clave: 'cash.count.create', que: 'Contar la plata' },
     ],
   },
   {

@@ -196,7 +196,7 @@ test.describe('El costo', () => {
     const ficha = await abrirFicha(page, PRODUCTOS.leche.nombre)
     await expect(ficha.getByLabel(/^costo/i)).toHaveCount(1)
     await expect(ficha.getByText('Margen', { exact: true })).toHaveCount(1)
-    await expect(ficha.getByText('Markup', { exact: true })).toHaveCount(1)
+    await expect(ficha.getByText('Recargo sobre el costo', { exact: true })).toHaveCount(1)
 
     await ficha.getByLabel(/^costo/i).fill('1300')
     // El campo de motivo aparece solo cuando el costo cambia de verdad.
@@ -216,7 +216,7 @@ test.describe('El costo', () => {
     await page.goto('/productos')
     await buscar(page, PRODUCTOS.leche.nombre)
 
-    await expect(page.getByText('Markup')).toHaveCount(0)
+    await expect(page.getByText('Recargo sobre el costo')).toHaveCount(0)
     await expect(page.getByText('Margen', { exact: true })).toHaveCount(0)
   })
 

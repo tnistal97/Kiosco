@@ -267,7 +267,7 @@ export default function MovimientosPage() {
             <>
               <div className="hidden md:block">
                 <TableWrap className="border-0">
-                  <Table caption="Movimientos de stock de la sucursal">
+                  <Table caption="Historial de stock de la sucursal">
                     <THead>
                       <TR>
                         <TH>Fecha</TH>

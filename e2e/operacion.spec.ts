@@ -181,7 +181,7 @@ async function recibir(page: Page, cantidad?: string): Promise<void> {
   if (cantidad !== undefined) {
     await page.getByRole('textbox', { name: /Recibir ahora/i }).fill(cantidad)
   }
-  await page.getByRole('button', { name: 'Confirmar recepción' }).click()
+  await page.getByRole('button', { name: 'Confirmar: llegó la mercadería' }).click()
 }
 
 test.describe('Dia 2: comprar y recibir', () => {

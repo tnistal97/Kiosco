@@ -30,7 +30,7 @@ const NOMBRE_TABLA: Record<string, string> = {
   BranchStock: 'Stock',
   Sale: 'Ventas',
   CashRegisterMovement: 'Movimientos de caja',
-  CashCount: 'Arqueos',
+  CashCount: 'Conteos de caja',
   Branch: 'Sucursales',
   Category: 'Categorías',
   Supplier: 'Proveedores',

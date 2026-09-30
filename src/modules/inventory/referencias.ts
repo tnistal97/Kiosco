@@ -52,8 +52,8 @@ export function textoDeReferencia(tipo: string | null, id: number | null): strin
   if (tipo === null || id === null) return '—'
   if (tipo === 'Sale') return `Venta #${String(id)}`
   if (tipo === 'Product') return `Producto #${String(id)}`
-  if (tipo === 'PurchaseReceipt') return `Recepción #${String(id)}`
+  if (tipo === 'PurchaseReceipt') return `Llegó mercadería #${String(id)}`
   if (tipo === 'PurchaseReturn') return `Devolución #${String(id)}`
-  if (tipo === 'InventoryCountSession') return `Inventario físico #${String(id)}`
+  if (tipo === 'InventoryCountSession') return `Recuento #${String(id)}`
   return `Ajuste #${String(id)}`
 }

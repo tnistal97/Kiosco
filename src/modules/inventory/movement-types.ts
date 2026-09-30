@@ -118,9 +118,9 @@ const ETIQUETAS: Record<TipoMovimiento, string> = {
   LOSS: 'Pérdida',
   BREAKAGE: 'Rotura',
   INTERNAL_USE: 'Consumo interno',
-  PURCHASE_RECEIPT: 'Recepción de compra',
+  PURCHASE_RECEIPT: 'Llegó mercadería',
   PURCHASE_RETURN: 'Devolución a proveedor',
-  INVENTORY_COUNT: 'Inventario físico',
+  INVENTORY_COUNT: 'Recuento',
 }
 
 /**

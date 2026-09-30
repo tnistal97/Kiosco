@@ -195,7 +195,7 @@ test.describe('El libro no se toca', () => {
     await entrar(page, 'cajero')
 
     // No esta en el menu...
-    await expect(page.getByRole('link', { name: 'Movimientos' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'Historial de stock' })).toHaveCount(0)
 
     // ...y entrando a mano tampoco.
     await page.goto('/stock/movimientos')

@@ -126,7 +126,7 @@ export function DialogoNuevoInventario({
     <Dialog
       open={abierto}
       onClose={onCerrar}
-      title="Nuevo inventario físico"
+      title="Nuevo recuento"
       size="md"
       dismissible={!enviando}
       footer={

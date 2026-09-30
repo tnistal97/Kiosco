@@ -88,7 +88,7 @@ async function recibir(page: Page, cantidad?: string): Promise<void> {
   if (cantidad !== undefined) {
     await page.getByRole('textbox', { name: /Recibir ahora/i }).fill(cantidad)
   }
-  await page.getByRole('button', { name: 'Confirmar recepción' }).click()
+  await page.getByRole('button', { name: 'Confirmar: llegó la mercadería' }).click()
 }
 
 test.describe('Proveedores', () => {
@@ -146,7 +146,7 @@ test.describe('El circuito completo: 5 cajas de 8, en dos entregas', () => {
     // ---- Primera entrega: 3 cajas -> +24 unidades ----
     await recibir(page, '3')
     await expect(estadoDeLaOrden(page)).toHaveText('Parcial')
-    await expect(page.getByText('Recepción #1')).toBeVisible()
+    await expect(page.getByText('Llegó mercadería #1')).toBeVisible()
     await expect(page.getByRole('cell', { name: '+24 u.' })).toBeVisible()
 
     expect(await stockDe(page, PRODUCTOS.gaseosa.nombre), '3 cajas de 8 son 24').toBe(antes + 24)
@@ -155,14 +155,14 @@ test.describe('El circuito completo: 5 cajas de 8, en dos entregas', () => {
     await page.goto(url)
     await recibir(page)
     await expect(estadoDeLaOrden(page)).toHaveText('Recibida')
-    await expect(page.getByText('Recepción #2')).toBeVisible()
+    await expect(page.getByText('Llegó mercadería #2')).toBeVisible()
     await expect(page.getByRole('cell', { name: '+16 u.' })).toBeVisible()
 
     expect(await stockDe(page, PRODUCTOS.gaseosa.nombre), '5 cajas de 8 son 40').toBe(antes + 40)
 
     // ---- Dos entregas, no una con dos renglones ----
     await page.goto(url)
-    await expect(page.getByRole('heading', { name: /^Recepción #\d/ })).toHaveCount(2)
+    await expect(page.getByRole('heading', { name: /^Llegó mercadería #\d/ })).toHaveCount(2)
 
     // ---- El libro las registró como recepción de compra ----
     await page.goto('/stock/movimientos?tipo=PURCHASE_RECEIPT')
@@ -171,9 +171,9 @@ test.describe('El circuito completo: 5 cajas de 8, en dos entregas', () => {
     // Dentro de la TABLA: la pantalla dibuja además una lista de tarjetas para
     // móvil que en escritorio está oculta, y `.first()` caía sobre ella.
     const libro = page.getByRole('table')
-    await expect(libro.getByText('Recepción de compra').first()).toBeVisible()
+    await expect(libro.getByText('Llegó mercadería').first()).toBeVisible()
     // La referencia apunta a la RECEPCIÓN, no a la orden.
-    await expect(libro.getByRole('link', { name: /Recepción #\d+/ }).first()).toBeVisible()
+    await expect(libro.getByRole('link', { name: /Llegó mercadería #\d+/ }).first()).toBeVisible()
   })
 
   test('el costo del producto quedó en $1.100, no en $8.800', async ({ page }) => {
@@ -242,7 +242,7 @@ test.describe('Diferencia de costo', () => {
     await page.getByRole('textbox', { name: /Costo de factura/i }).fill('3400')
     await expect(page.getByText(/La orden decía/)).toBeVisible()
 
-    await page.getByRole('button', { name: 'Confirmar recepción' }).click()
+    await page.getByRole('button', { name: 'Confirmar: llegó la mercadería' }).click()
     await expect(estadoDeLaOrden(page)).toHaveText('Recibida')
 
     // La orden SIGUE diciendo lo que se pidió, y la diferencia está a la vista.
@@ -270,7 +270,9 @@ test.describe('Lo que no se puede hacer', () => {
     // El diálogo lo dice ANTES de mandar: quien recibe tiene el camión en la
     // puerta y necesita saber el número que sí entra.
     await expect(page.getByText(/No se puede recibir más de lo pendiente/)).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Confirmar recepción' })).toBeDisabled()
+    await expect(
+      page.getByRole('button', { name: 'Confirmar: llegó la mercadería' }),
+    ).toBeDisabled()
   })
 
   test('una orden parcial se puede cancelar y lo recibido queda', async ({ page }) => {
@@ -302,7 +304,7 @@ test.describe('Lo que no se puede hacer', () => {
     await entrar(page, 'cajero')
 
     // Ni en el menú.
-    await expect(page.getByRole('link', { name: 'Órdenes' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'Llegó mercadería' })).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Proveedores' })).toHaveCount(0)
 
     // Ni entrando a mano: la pantalla no muestra ni una orden.

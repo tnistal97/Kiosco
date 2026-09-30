@@ -34,6 +34,11 @@ export interface EntradaNav {
 export interface GrupoNav {
   /** Sin titulo, el grupo se dibuja suelto arriba de todo. */
   title?: string
+  /**
+   * Arranca plegado, con el titulo como boton. Se despliega solo si la ruta
+   * actual esta adentro. Para el "Más" de la V1 comercial.
+   */
+  plegable?: boolean
   items: EntradaNav[]
 }
 
@@ -41,64 +46,48 @@ export const NAVEGACION: GrupoNav[] = [
   {
     items: [{ href: '/', label: 'Inicio' }],
   },
+  /*
+    V1 comercial. Cuatro grupos con el nombre de lo que el dueño hace --vender,
+    el negocio, controlar, el sistema-- y un "Más" plegado con lo que se abre
+    una vez por semana. Dieciocho entradas a la vista eran un menu de sistema;
+    once son un menu de almacen. Ninguna pantalla desaparece: lo que sale de
+    la vista sigue en "Más", y ahi tambien esta lo que la cabecera necesita
+    para titular cada ruta.
+  */
   {
-    title: 'Operación',
+    title: 'Vender',
     items: [
       { href: '/venta', label: 'Venta', permission: 'sales.create' },
       { href: '/caja', label: 'Caja', permission: 'cash.view', matchPrefix: true },
-      { href: '/ventas', label: 'Ventas', permission: 'sales.view', matchPrefix: true },
-      // En Operacion y no en Control: el cajero busca a Juan para cobrarle, y
-      // eso pasa en el mostrador. `clients.view` y no `accounts.view` porque
-      // ese es el permiso que gobierna la pantalla a la que lleva el enlace: un
-      // enlace visible que responde 403 es peor que no tenerlo, y es
-      // exactamente el error que la Fase 3D encontro en "Ventas".
-      { href: '/clientes', label: 'Clientes', permission: 'clients.view', matchPrefix: true },
+      { href: '/consultar-precio', label: 'Consultar precio', permission: 'products.view' },
     ],
   },
   {
-    title: 'Inventario',
+    title: 'Negocio',
     items: [
       { href: '/productos', label: 'Productos', permission: 'products.view', matchPrefix: true },
-      { href: '/stock', label: 'Stock', permission: 'stock.view' },
+      // Abre por ahora el modulo de compras existente. El flujo rapido de
+      // recepcion es de la tanda siguiente; el nombre ya es el que el dueño
+      // busca.
       {
-        href: '/stock/movimientos',
-        label: 'Movimientos',
-        permission: 'inventory.movements.view',
-      },
-      /*
-        Fase 4D. Van en el menú y no sólo como botones dentro de /stock.
-
-        Sin esto la barra no las nombra, la cabecera no sabe cómo titularlas
-        --caía en "Almacén"-- y cada pantalla terminaba poniendo su propio
-        `h1`, que dejaba DOS en la misma página. Lo encontró axe.
-      */
-      { href: '/stock/lotes', label: 'Lotes', permission: 'lots.view', matchPrefix: true },
-      {
-        href: '/inventarios',
-        label: 'Inventarios',
-        permission: 'inventoryCounts.view',
+        href: '/compras',
+        label: 'Llegó mercadería',
+        permission: 'purchases.view',
         matchPrefix: true,
       },
-    ],
-  },
-  {
-    title: 'Compras',
-    items: [
-      { href: '/compras', label: 'Órdenes', permission: 'purchases.view', matchPrefix: true },
       {
         href: '/proveedores',
         label: 'Proveedores',
         permission: 'suppliers.view',
         matchPrefix: true,
       },
-      // Las devoluciones se ARMAN desde el detalle de una entrega --de ahi
-      // salen el costo y el tope-- pero se LISTAN por su cuenta: "que le
-      // devolvimos este mes" es una pregunta propia, y sin este enlace habria
-      // que ir orden por orden para contestarla.
+      // `clients.view` y no `accounts.view` porque ese es el permiso que
+      // gobierna la pantalla a la que lleva el enlace: un enlace visible que
+      // responde 403 es peor que no tenerlo.
       {
-        href: '/devoluciones',
-        label: 'Devoluciones',
-        permission: 'purchaseReturns.view',
+        href: '/clientes',
+        label: 'Clientes y fiado',
+        permission: 'clients.view',
         matchPrefix: true,
       },
     ],
@@ -106,6 +95,7 @@ export const NAVEGACION: GrupoNav[] = [
   {
     title: 'Control',
     items: [
+      { href: '/stock', label: 'Stock', permission: 'stock.view' },
       // Un solo enlace para las seis materias. Cada seccion de la pantalla se
       // dibuja o no segun su propio permiso, asi que quien tenga uno solo
       // --el encargado de compras, por ejemplo-- entra y ve lo suyo.
@@ -120,15 +110,49 @@ export const NAVEGACION: GrupoNav[] = [
           'reports.purchases.view',
         ],
       },
-      { href: '/auditoria', label: 'Auditoría', permission: 'audit.view' },
     ],
   },
   {
-    title: 'Administración',
+    title: 'Sistema',
     items: [
       { href: '/usuarios', label: 'Usuarios', permission: 'users.view' },
-      { href: '/sucursales', label: 'Sucursales', permission: 'branches.view' },
       { href: '/configuracion', label: 'Configuración' },
+    ],
+  },
+  {
+    title: 'Más',
+    plegable: true,
+    items: [
+      {
+        href: '/ventas',
+        label: 'Historial de ventas',
+        permission: 'sales.view',
+        matchPrefix: true,
+      },
+      {
+        href: '/stock/movimientos',
+        label: 'Historial de stock',
+        permission: 'inventory.movements.view',
+      },
+      {
+        href: '/inventarios',
+        label: 'Recuento',
+        permission: 'inventoryCounts.view',
+        matchPrefix: true,
+      },
+      // "Cuando corresponda": para quien pueda ver partidas. Un almacen sin
+      // vencimientos no tiene el permiso repartido y no ve la entrada.
+      { href: '/stock/lotes', label: 'Vencimientos', permission: 'lots.view', matchPrefix: true },
+      { href: '/auditoria', label: 'Historial de cambios', permission: 'audit.view' },
+      {
+        href: '/devoluciones',
+        label: 'Devoluciones a proveedores',
+        permission: 'purchaseReturns.view',
+        matchPrefix: true,
+      },
+      // "Cuando haya mas de una": hoy se decide por permiso. El navegador no
+      // sabe cuantas sucursales hay, y la pantalla lo dice al entrar.
+      { href: '/sucursales', label: 'Sucursales', permission: 'branches.view' },
     ],
   },
 ]

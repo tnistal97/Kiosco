@@ -100,7 +100,7 @@ export function HistorialTurnos({ recargar }: { recargar: number }) {
     <Card padded={false}>
       <div className="p-3">
         <CardHeader
-          title="Turnos de caja"
+          title="Historial de caja"
           description="Cada apertura con su cierre. Un turno cerrado no se modifica."
         />
       </div>

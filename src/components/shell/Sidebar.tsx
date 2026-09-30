@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/components/ui'
@@ -91,50 +93,87 @@ export function ListaGrupos({
   onNavigate?: () => void
 }) {
   const pathname = usePathname()
+  /**
+   * Los grupos plegables que el usuario abrio. El que contiene la ruta actual
+   * se muestra abierto siempre: un enlace activo que no se ve confunde.
+   */
+  const [abiertos, setAbiertos] = useState<ReadonlySet<string>>(() => new Set())
 
   return (
     <div className="flex flex-col gap-4">
-      {grupos.map((grupo, i) => (
-        <div key={grupo.title ?? `grupo-${i}`} className="flex flex-col gap-0.5">
-          {grupo.title && !collapsed && (
-            <p className="mb-1 px-3 text-xs font-semibold tracking-wide text-ink-faint uppercase">
-              {grupo.title}
-            </p>
-          )}
-          {grupo.title && collapsed && <div className="mx-2 mb-1 h-px bg-line" />}
-
-          {grupo.items.map((item) => {
-            const activa = esActiva(item, pathname)
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onNavigate}
-                aria-current={activa ? 'page' : undefined}
-                title={collapsed ? item.label : undefined}
-                className={cn(
-                  'relative flex min-h-touch items-center gap-3 rounded-md px-3 text-sm transition-colors',
-                  collapsed && 'justify-center px-0',
-                  activa
-                    ? 'bg-primary-quiet font-semibold text-ink'
-                    : 'text-ink-muted hover:bg-raised hover:text-ink',
-                )}
+      {grupos.map((grupo, i) => {
+        const contieneActiva = grupo.items.some((item) => esActiva(item, pathname))
+        const plegado =
+          grupo.plegable === true &&
+          !collapsed &&
+          !contieneActiva &&
+          !abiertos.has(grupo.title ?? '')
+        const idLista = `grupo-${String(i)}`
+        return (
+          <div key={grupo.title ?? `grupo-${i}`} className="flex flex-col gap-0.5">
+            {grupo.title && !collapsed && grupo.plegable !== true && (
+              <p className="mb-1 px-3 text-xs font-semibold tracking-wide text-ink-faint uppercase">
+                {grupo.title}
+              </p>
+            )}
+            {grupo.title && !collapsed && grupo.plegable === true && (
+              <button
+                type="button"
+                aria-expanded={!plegado}
+                aria-controls={idLista}
+                onClick={() => {
+                  setAbiertos((actual) => {
+                    const siguiente = new Set(actual)
+                    const clave = grupo.title ?? ''
+                    if (siguiente.has(clave)) siguiente.delete(clave)
+                    else siguiente.add(clave)
+                    return siguiente
+                  })
+                }}
+                className="mb-1 flex min-h-touch items-center justify-between rounded-md px-3 text-left text-xs font-semibold tracking-wide text-ink-faint uppercase hover:bg-raised hover:text-ink"
               >
-                {/* La marca de activo no depende solo del color. */}
-                {activa && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary"
-                  />
-                )}
-                <IconoDe href={item.href} />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-                {collapsed && <span className="sr-only">{item.label}</span>}
-              </Link>
-            )
-          })}
-        </div>
-      ))}
+                <span>{grupo.title}</span>
+                <span aria-hidden="true" className="text-ink-faint">
+                  {plegado ? '▸' : '▾'}
+                </span>
+              </button>
+            )}
+            {grupo.title && collapsed && <div className="mx-2 mb-1 h-px bg-line" />}
+
+            {!plegado &&
+              grupo.items.map((item) => {
+                const activa = esActiva(item, pathname)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={onNavigate}
+                    aria-current={activa ? 'page' : undefined}
+                    title={collapsed ? item.label : undefined}
+                    className={cn(
+                      'relative flex min-h-touch items-center gap-3 rounded-md px-3 text-sm transition-colors',
+                      collapsed && 'justify-center px-0',
+                      activa
+                        ? 'bg-primary-quiet font-semibold text-ink'
+                        : 'text-ink-muted hover:bg-raised hover:text-ink',
+                    )}
+                  >
+                    {/* La marca de activo no depende solo del color. */}
+                    {activa && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary"
+                      />
+                    )}
+                    <IconoDe href={item.href} />
+                    {!collapsed && <span className="truncate">{item.label}</span>}
+                    {collapsed && <span className="sr-only">{item.label}</span>}
+                  </Link>
+                )
+              })}
+          </div>
+        )
+      })}
     </div>
   )
 }

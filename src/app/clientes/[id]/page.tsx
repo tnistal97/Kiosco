@@ -222,7 +222,7 @@ export default function ClienteDetallePage() {
       {/* Resumen */}
       {puedeVerCuenta && (
         <Card className="flex flex-col gap-4 p-4">
-          <h3 className="text-sm font-semibold text-ink">Cuenta corriente</h3>
+          <h3 className="text-sm font-semibold text-ink">Fiado</h3>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Dato label="Saldo actual">

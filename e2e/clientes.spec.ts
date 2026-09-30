@@ -548,7 +548,7 @@ test.describe('fiado cortado y permisos', () => {
     await page.goto(`/clientes/${String(clienteId)}`)
 
     // Ve la ficha y el extracto.
-    await expect(page.getByRole('heading', { name: 'Cuenta corriente' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: 'Fiado' })).toBeVisible({
       timeout: 15_000,
     })
 

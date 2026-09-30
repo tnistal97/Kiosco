@@ -197,7 +197,7 @@ test.describe('Un entero pelado entra en todos lados', () => {
     // Lo pendiente llega escrito para leer: "10", no "10.000".
     await expect(recibir, 'lo pendiente no se muestra con tres decimales').toHaveValue('10')
     await recibir.fill('10')
-    await page.getByRole('button', { name: 'Confirmar recepción' }).click()
+    await page.getByRole('button', { name: 'Confirmar: llegó la mercadería' }).click()
 
     await expect(page.getByText(/Recibida/).first()).toBeVisible({ timeout: 15_000 })
 

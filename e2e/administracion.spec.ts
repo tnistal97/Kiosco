@@ -130,7 +130,9 @@ test.describe('Acceso por rol', () => {
 
     const menu = page.getByRole('navigation', { name: 'Principal' })
     await expect(menu.getByRole('link', { name: 'Venta', exact: true })).toBeVisible()
-    await expect(menu.getByRole('link', { name: 'Auditoría', exact: true })).toHaveCount(0)
+    await expect(menu.getByRole('link', { name: 'Historial de cambios', exact: true })).toHaveCount(
+      0,
+    )
     await expect(menu.getByRole('link', { name: 'Usuarios', exact: true })).toHaveCount(0)
   })
 
@@ -278,7 +280,7 @@ test.describe('Caja', () => {
     await entrar(page, 'encargado')
     await page.goto('/caja')
 
-    await expect(page.getByText('Turnos de caja')).toBeVisible()
+    await expect(page.getByText('Historial de caja')).toBeVisible()
     // El turno en curso aparece con su estado escrito, no solo con un color.
     await expect(page.getByText('Abierto').first()).toBeVisible()
   })
@@ -287,7 +289,7 @@ test.describe('Caja', () => {
     await entrar(page, 'encargado')
     await page.goto('/caja')
 
-    await page.getByRole('button', { name: 'Hacer arqueo' }).click()
+    await page.getByRole('button', { name: 'Contar la plata' }).click()
     const dialogo = page.getByRole('dialog')
 
     await expect(dialogo.getByText('El sistema espera')).toBeVisible()

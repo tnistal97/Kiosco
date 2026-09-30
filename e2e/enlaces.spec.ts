@@ -37,7 +37,7 @@ test('desde el libro de movimientos se llega a la recepcion, dentro de su orden'
   page,
 }) => {
   await page.goto('/stock/movimientos')
-  const enlace = page.getByRole('link', { name: /^Recepción #\d+$/ }).first()
+  const enlace = page.getByRole('link', { name: /^Llegó mercadería #\d+$/ }).first()
   await expect(enlace).toBeVisible({ timeout: 20_000 })
   const numero = (await enlace.innerText()).replace(/\D/g, '')
 
@@ -48,7 +48,7 @@ test('desde el libro de movimientos se llega a la recepcion, dentro de su orden'
 
   const recepcion = page.locator(`#recepcion-${numero}`)
   await expect(recepcion).toBeVisible({ timeout: 20_000 })
-  await expect(recepcion.getByRole('heading', { level: 3 })).toContainText('Recepción')
+  await expect(recepcion.getByRole('heading', { level: 3 })).toContainText('Llegó mercadería')
 })
 
 test('una recepcion que no existe no es una pantalla en blanco', async ({ page }) => {

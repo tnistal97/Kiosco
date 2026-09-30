@@ -66,7 +66,7 @@ export const SIGNO_DE_PROVEEDOR: Record<TipoDeProveedor, 'debe' | 'haber' | 'amb
 }
 
 const ETIQUETAS: Record<TipoDeProveedor, string> = {
-  PURCHASE_CHARGE: 'Recepción',
+  PURCHASE_CHARGE: 'Llegó mercadería',
   PAYMENT: 'Pago',
   PURCHASE_CREDIT: 'Nota de crédito',
   MANUAL_ADJUSTMENT: 'Ajuste',

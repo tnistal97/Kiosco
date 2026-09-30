@@ -573,7 +573,7 @@ test.describe('accesibilidad automatizada', () => {
     // marque como falta de contraste hasta el titulo y los botones. Se espera
     // a que el control de mas abajo este visible y se deja asentar la
     // animacion.
-    await expect(page.getByRole('button', { name: 'Confirmar recepción' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Confirmar: llegó la mercadería' })).toBeVisible()
     await page.waitForTimeout(500)
 
     const { violations } = await analizar(page)

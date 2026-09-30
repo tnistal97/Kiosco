@@ -65,7 +65,7 @@ export function DialogoArqueo({
       })
       onHecho()
     } catch (err) {
-      setError(mensajeDeError(err, 'No se pudo registrar el arqueo.'))
+      setError(mensajeDeError(err, 'No se pudo registrar el conteo.'))
       setEnviando(false)
     }
   }
@@ -74,7 +74,7 @@ export function DialogoArqueo({
     <Dialog
       open={abierto}
       onClose={onCerrar}
-      title="Arqueo de caja"
+      title="Contar la plata"
       description="Contá el efectivo del cajón y anotá cuánto hay."
       size="md"
       dismissible={!enviando}
@@ -89,7 +89,7 @@ export function DialogoArqueo({
             disabled={!valido}
             onClick={() => void guardar()}
           >
-            Registrar arqueo
+            Registrar conteo
           </Button>
         </>
       }

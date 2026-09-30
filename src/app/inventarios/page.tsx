@@ -104,7 +104,7 @@ export default function InventariosPage() {
     <PageContainer className="gap-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold text-ink">Inventarios físicos</h2>
+          <h2 className="text-2xl font-semibold text-ink">Recuentos</h2>
           <p className="text-sm text-ink-muted">
             Contar el depósito y corregir lo que no coincide, sin cerrar el local.
           </p>
@@ -115,7 +115,7 @@ export default function InventariosPage() {
               setCreando(true)
             }}
           >
-            Nuevo inventario
+            Nuevo recuento
           </Button>
         )}
       </header>
@@ -164,7 +164,7 @@ export default function InventariosPage() {
         {error === null && !cargando && datos !== null && datos.data.length === 0 && (
           <EmptyState
             title="Todavía no hay inventarios"
-            description="Un inventario físico cuenta el depósito y convierte las diferencias en movimientos de stock."
+            description="Un recuento cuenta el depósito y convierte las diferencias en movimientos de stock."
           />
         )}
 
