@@ -141,23 +141,27 @@ export function CierreDelDia() {
                 title={cierre.esHoy ? 'Hoy' : fechaLarga(cierre.fecha)}
                 description="Todo lo vendido, se haya cobrado como se haya cobrado."
               />
-              <dl className="grid grid-cols-2 gap-4">
+              <dl className="flex flex-col gap-4">
+                {/* El importe del dia, solo en su renglon: a tamano de titular
+                    no comparte fila con nada, o pisa a la columna de al lado. */}
                 <Renglon etiqueta="Ventas" grande>
                   <Money amount={cierre.ventas.total} size="hero" />
                 </Renglon>
-                <Renglon etiqueta="Operaciones" grande>
-                  <span className="text-3xl font-semibold text-ink sm:text-4xl" data-numeric="">
-                    {cierre.ventas.operaciones}
-                  </span>
-                </Renglon>
-                <Renglon etiqueta="Ticket promedio">
-                  <Money amount={cierre.ventas.ticketPromedio} size="md" tone="muted" />
-                </Renglon>
-                <Renglon etiqueta="Anuladas">
-                  <span className="text-base text-ink-muted" data-numeric="">
-                    {cierre.ventas.anuladas}
-                  </span>
-                </Renglon>
+                <div className="grid grid-cols-3 gap-4">
+                  <Renglon etiqueta="Operaciones">
+                    <span className="text-2xl font-semibold text-ink" data-numeric="">
+                      {cierre.ventas.operaciones}
+                    </span>
+                  </Renglon>
+                  <Renglon etiqueta="Ticket promedio">
+                    <Money amount={cierre.ventas.ticketPromedio} size="md" tone="muted" />
+                  </Renglon>
+                  <Renglon etiqueta="Anuladas">
+                    <span className="text-base text-ink-muted" data-numeric="">
+                      {cierre.ventas.anuladas}
+                    </span>
+                  </Renglon>
+                </div>
               </dl>
 
               <div>

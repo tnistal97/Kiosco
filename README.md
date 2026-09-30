@@ -14,9 +14,14 @@ códigos de barras por cámara y por lector USB.
 >   desde la aplicación, alta de una instancia nueva, importación de productos
 >   desde Excel o CSV y cambio masivo de precios. El informe está en
 >   [docs/P0_PREVENTA.md](docs/P0_PREVENTA.md).
-> - **Propuesto, esperando aprobación:** UX V4, la simplificación para
->   almacenes. Ver
->   [docs/UX_V4_ALMACENES_PROPUESTA.md](docs/UX_V4_ALMACENES_PROPUESTA.md).
+> - **En `feat/commercial-v1`, sin desplegar:** la primera tanda de la V1
+>   comercial: Mercado Pago como medio propio, Cierre del día, Inicio por
+>   acciones, ticket térmico, Consultar precio y el menú simplificado con el
+>   lenguaje de almacén. Ver [docs/COMMERCIAL_V1.md](docs/COMMERCIAL_V1.md).
+>   Nace de la propuesta UX V4
+>   ([docs/UX_V4_ALMACENES_PROPUESTA.md](docs/UX_V4_ALMACENES_PROPUESTA.md)) y
+>   del análisis comercial
+>   ([docs/FABLE_COMMERCIAL_READINESS.md](docs/FABLE_COMMERCIAL_READINESS.md)).
 >
 > El diagnóstico del servidor anterior, y los bloqueantes que impidieron
 > encenderlo, siguen escritos en
@@ -29,11 +34,21 @@ códigos de barras por cámara y por lector USB.
   precio tomado del catálogo.
 - **Anulación** — lógica, con motivo obligatorio, restitución de stock y
   contramovimiento de caja. Nunca se borra una venta.
-- **Caja** — turnos con apertura y cierre, movimientos, arqueos y diferencia
-  calculada por el servidor.
-- **Pagos** — uno o varios por venta, con vuelto. Solo el efectivo mueve el
-  cajón: $20.000 por transferencia más $10.000 en efectivo suben la caja
-  $10.000.
+- **Caja** — apertura y cierre, movimientos, conteo de la plata ("arqueo") y
+  diferencia calculada por el servidor. **Cierre del día**: cuánto vendí,
+  cuántas ventas, cómo me pagaron, cuánto efectivo tendría que haber, cuánto
+  conté y si hay diferencia, en una pantalla y con los números del servidor.
+- **Pagos** — uno o varios por venta, con vuelto. Efectivo, débito, crédito,
+  transferencia, **Mercado Pago** y fiado. Solo el efectivo mueve el cajón:
+  $20.000 por Mercado Pago más $10.000 en efectivo suben la caja $10.000.
+- **Ticket térmico** — comprobante interno de venta para impresoras de 58 y
+  80 mm con `window.print()`, al cobrar y desde el historial. No es factura, y
+  el papel lo dice.
+- **Consultar precio** — escaneá o escribí un producto y aparece el precio en
+  grande, con el stock. No toca el ticket y la usa el cajero.
+- **Inicio por acciones** — "¿Qué querés hacer?": Vender, Caja, Consultar
+  precio, Llegó mercadería, Fiados, Cambiar precios; los números de hoy y los
+  avisos que piden hacer algo. El cajero entra directo a Venta.
 - **Productos y stock** — catálogo con categorías y proveedores, venta por
   unidad, por peso y por volumen, varios códigos de barras por producto,
   mínimo de reposición y alertas de agotado y bajo mínimo.
@@ -62,7 +77,7 @@ códigos de barras por cámara y por lector USB.
   sale por **FEFO** —primero lo que vence antes—, lo vencido deja de ser
   vendible sin dejar de ocupar stock, y la anulación devuelve a la misma
   partida de la que salió.
-- **Inventario físico** — contar el depósito **sin cerrar el local**: lo que el
+- **Recuento** (inventario físico) — contar el depósito **sin cerrar el local**: lo que el
   sistema espera se lee en el momento de contar, no al empezar, así que una
   venta durante el recorrido no ensucia la diferencia. Conteo a ciegas,
   revisión antes de tocar nada, y aplicación **por diferencia**: si después de
@@ -76,8 +91,8 @@ códigos de barras por cámara y por lector USB.
   temporal que se muestra una sola vez. Las dos cosas cierran las sesiones
   abiertas y quedan en la bitácora, sin la clave. Ya no hace falta entrar al
   servidor. Ver [P0_PREVENTA.md](docs/P0_PREVENTA.md).
-- **Auditoría** — bitácora de cada operación, con usuario, sucursal, motivo,
-  identificador de petición y resultado.
+- **Historial de cambios** (auditoría) — bitácora de cada operación, con
+  usuario, sucursal, motivo, identificador de petición y resultado.
 
 ## Tecnologías
 

@@ -491,7 +491,9 @@ export function DialogoProducto({
                     )}
                   </Linea>
                   <Linea etiqueta="Margen">{formatearPorcentaje(rentabilidad.margen)}</Linea>
-                  <Linea etiqueta="Recargo sobre el costo">{formatearPorcentaje(rentabilidad.markup)}</Linea>
+                  <Linea etiqueta="Recargo sobre el costo">
+                    {formatearPorcentaje(rentabilidad.markup)}
+                  </Linea>
                   {rentabilidad.bajoCosto && (
                     <p className="text-xs text-danger">Se vende por debajo del costo.</p>
                   )}

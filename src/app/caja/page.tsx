@@ -324,7 +324,10 @@ export default function CajaPage() {
 
       {arqueos.length > 0 && (
         <Card>
-          <CardHeader title="Últimos conteos" description="Lo contado contra lo que tenía que haber." />
+          <CardHeader
+            title="Últimos conteos"
+            description="Lo contado contra lo que tenía que haber."
+          />
           <ul className="flex flex-col divide-y divide-line">
             {arqueos.map((a) => (
               <li key={a.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5">

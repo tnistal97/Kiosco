@@ -67,6 +67,42 @@ export const ICONOS: Record<string, () => ReactNode> = {
       <path d="M10 12h4" />
     </Svg>
   ),
+  // V1 comercial: las pantallas nuevas y las que no tenian dibujo.
+  '/consultar-precio': () => (
+    <Svg>
+      <path d="M4 7h2M4 12h2M4 17h2M9 7h11M9 12h11M9 17h11" />
+    </Svg>
+  ),
+  '/compras': () => (
+    <Svg>
+      <path d="M3 7h13l3 4h2v6h-2M3 7v10h2M8 17h8" />
+      <circle cx="6.5" cy="17.5" r="1.5" />
+      <circle cx="17.5" cy="17.5" r="1.5" />
+    </Svg>
+  ),
+  '/proveedores': () => (
+    <Svg>
+      <path d="M3 20V9l9-5 9 5v11" />
+      <path d="M3 20h18M9 20v-6h6v6" />
+    </Svg>
+  ),
+  '/clientes': () => (
+    <Svg>
+      <circle cx="12" cy="8.5" r="3.5" />
+      <path d="M5.5 20a6.5 6.5 0 0 1 13 0" />
+    </Svg>
+  ),
+  '/productos/precios': () => (
+    <Svg>
+      <path d="M4 12.5 11.5 5H19v7.5L11.5 20z" />
+      <circle cx="15.5" cy="8.5" r="1.2" />
+    </Svg>
+  ),
+  '/reportes': () => (
+    <Svg>
+      <path d="M4 20h16M6 16V9M11 16V5M16 16v-7" />
+    </Svg>
+  ),
   '/auditoria': () => (
     <Svg>
       <circle cx="11" cy="11" r="6.5" />

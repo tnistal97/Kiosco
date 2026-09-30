@@ -151,6 +151,15 @@ Un endpoint (`POST /api/products/quick`), un permiso (`products.quickCreate`) y
 un código de error (`PRODUCT_ALREADY_EXISTS`). Ver
 [POS_QUICK_PRODUCT_CREATE.md](POS_QUICK_PRODUCT_CREATE.md).
 
+### Novedades de la V1 comercial, primera tanda (`feat/commercial-v1`)
+
+Un endpoint (`GET /api/cash/cierre`, con `reports.cash.view`), dos páginas
+(`/caja/cierre`, `/consultar-precio`), una migración
+(`20260930120000_commercial_v1_mercado_pago`: amplía tres `CHECK`, no toca
+filas) y un medio de pago fijo (`MERCADO_PAGO`). Ningún permiso ni código de
+error nuevos. El listado de ventas devuelve además `payments` y `client`. Ver
+[COMMERCIAL_V1.md](COMMERCIAL_V1.md).
+
 ### Novedades de la 5A.2
 
 Ni un endpoint, ni un permiso, ni un código de error nuevos: **es una fase de

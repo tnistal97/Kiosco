@@ -294,7 +294,10 @@ export default function ReportesPage() {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Dato titulo="Facturado" valor={<Money amount={rent.facturado} size="lg" />} />
             <Dato titulo="Costo vendido" valor={<Money amount={rent.costoVendido} size="lg" />} />
-            <Dato titulo="Ganancia estimada" valor={<Money amount={rent.gananciaBruta} size="lg" />} />
+            <Dato
+              titulo="Ganancia estimada"
+              valor={<Money amount={rent.gananciaBruta} size="lg" />}
+            />
             <Dato
               titulo="Margen bruto"
               valor={rent.margenBruto === null ? 'sin ventas' : `${rent.margenBruto}%`}
