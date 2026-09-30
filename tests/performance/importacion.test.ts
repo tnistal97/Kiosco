@@ -12,6 +12,11 @@
  * portatil--: lo que se busca es el orden de magnitud equivocado, no el
  * milisegundo. Los numeros se imprimen al final para el informe.
  *
+ * Cada prueba declara su propio limite de tiempo, por encima de la suma de los
+ * topes que mide. Sin eso vale el de vitest.config.ts (20 s), y la importacion
+ * sola ya tarda ~19 s en una portatil: con la cobertura encendida, o en CI, la
+ * prueba se cortaba por tiempo aunque cada paso estuviera dentro de su tope.
+ *
  * Al terminar vacia la base de pruebas: los cinco mil productos no quedan.
  */
 
@@ -159,7 +164,7 @@ describe(`Importacion de ${PRODUCTOS} productos`, () => {
     expect(iniciales).toBe(PRODUCTOS)
     const descuadres = await medir('comprobar el libro', () => descuadresDelLibro(), 30_000)
     expect(descuadres).toEqual([])
-  })
+  }, 300_000)
 
   it('reimportar la misma lista con precios nuevos y stock recontado', async () => {
     const { vista, resultado } = await subir(planilla(1.1), 'nuevos-y-existentes', 'sumar')
@@ -167,7 +172,7 @@ describe(`Importacion de ${PRODUCTOS} productos`, () => {
     expect(vista.totales).toMatchObject({ existentes: PRODUCTOS, actualizar: PRODUCTOS })
     expect(resultado).toMatchObject({ actualizados: PRODUCTOS, creados: 0 })
     expect(await descuadresDelLibro()).toEqual([])
-  })
+  }, 300_000)
 
   it('cambio masivo de precios sobre el catalogo importado, y deshacerlo', async () => {
     const cookie = await sessionCookie(fx.admin)
@@ -217,7 +222,7 @@ describe(`Importacion de ${PRODUCTOS} productos`, () => {
     )
     expect(deshecho.status, deshecho.text.slice(0, 300)).toBe(200)
     expect(deshecho.body.restaurados).toBe(PRODUCTOS + 3)
-  })
+  }, 600_000)
 
   it('deja los numeros por escrito', () => {
     const ancho = Math.max(...MEDIDO.map((m) => m.que.length))
