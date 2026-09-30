@@ -249,10 +249,11 @@ test.describe('Alertas de reposicion', () => {
 
     // El seed deja productos agotados y productos bajo minimo.
     await page.goto('/')
-    const faltantes = page.getByText('Faltantes', { exact: true }).locator('../..')
+    // V1 comercial: el Inicio lo dice como aviso, no como tarjeta.
+    const faltantes = page.getByText(/^Poco stock:/)
     await expect(faltantes).toBeVisible()
-    await expect(faltantes.getByText(/agotados/i)).toBeVisible()
-    await expect(faltantes.getByText(/bajo mínimo/i)).toBeVisible()
+    await expect(faltantes).toContainText(/agotados/i)
+    await expect(faltantes).toContainText(/bajo mínimo/i)
 
     // El filtro del inventario muestra exactamente esos.
     await page.goto('/stock')
