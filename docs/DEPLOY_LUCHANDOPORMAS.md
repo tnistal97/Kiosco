@@ -388,41 +388,78 @@ ese dominio, sin tocar nada de Kiosco. `almacen.nistal.net` y
 `kiosco.nistal.net` no dependen de ese archivo. Queda por decidir a qué
 aplicación le corresponde el dominio.
 
-**Lo que hoy NO tiene ningún dominio de Kiosco**, comprobado leyendo los dos
-vhosts y las cabeceras de respuesta:
+### Límites y cabeceras
 
-- **Sin `limit_req` ni `limit_conn`.** Las zonas `kiosco_general`,
-  `kiosco_login` y `kiosco_conn` están definidas en `kiosco-global.conf`, pero
-  ningún vhost activo las usa. El límite de intentos de login de la
-  aplicación (`src/server/auth/loginAttempts.ts`) sigue valiendo. El de Nginx,
-  que cubría el mismo origen probando usuarios distintos, no.
-- **Sin `Strict-Transport-Security` ni `Content-Security-Policy`.** El vhost de
-  la Cooperativa no las pone porque supone que su aplicación las manda, y
-  Kiosco no las manda. Kiosco sí manda `X-Frame-Options`,
-  `X-Content-Type-Options`, `Referrer-Policy` y `Permissions-Policy`
-  (`next.config.ts`).
-- En `luchandopormas.com`, además:
-  - el cuerpo máximo es de 15 MB y no de 5;
-  - `/api/jobs/` responde 404, cosa que no afecta a Kiosco;
-  - si Kiosco está caído, el 502 muestra la página de error de la Cooperativa.
+**`kiosco.nistal.net` y `almacen.nistal.net` los tienen desde el 18 de octubre
+de 2026**, en los dos bloques 443. Son los del vhost original de Kiosco (la
+copia `luchandopormas.com.previo-20261005`), con dos diferencias: HSTS sin
+`includeSubDomains`, y el `X-Forwarded-For` reemplazado y no agregado, como ya
+estaba.
 
-Pendiente: volver a aplicar los límites y las cabeceras en los vhosts de
-Kiosco. No se hizo en el despliegue del 18 de octubre, que solo tocó el bloque
-de `almacen.nistal.net`.
+| Qué                         | Valor                                                        |
+| --------------------------- | ------------------------------------------------------------ |
+| Todo el sitio               | `limit_req zone=kiosco_general burst=60 nodelay` (30 req/s)  |
+| `/api/auth/login`           | `limit_req zone=kiosco_login burst=5 nodelay` (5 por minuto) |
+| Conexiones                  | `limit_conn kiosco_conn 40`                                  |
+| Cuerpo                      | `client_max_body_size 5m`                                    |
+| `Strict-Transport-Security` | `max-age=31536000`                                           |
+| `Content-Security-Policy`   | la original (abajo)                                          |
 
-### Cómo era el vhost original
+Comprobado ese día:
 
-Según la versión anterior de esta guía, el vhost original de Kiosco hacía
-esto. Su copia es `luchandopormas.com.previo-20261005`.
+- **Login:** seis intentos seguidos desde una misma IP pasan y el séptimo
+  recibe 429. La prueba se hizo desde el propio servidor, porque `127.0.0.1`
+  está en el `ignoreip` de fail2ban.
+- **Cuerpo:** 2 MB a `/api/products/import` llegan a la aplicación y 6 MB
+  reciben 413. Antes no había `client_max_body_size`, y el valor por omisión
+  de Nginx, **1 MB**, cortaba una importación de 10.000 productos (~1,2 MB de
+  JSON).
+- **CSP:** primero se puso como `Content-Security-Policy-Report-Only` y se
+  recorrieron con sesión Inicio, Vender, Caja, Productos (con el alta),
+  Importar, Precios, Stock, Movimientos, Inventario, Clientes, Reportes y
+  Configuración. La única violación fue la sonda de `zod` 4:
+  `try { Function("") } catch {}`. Con eso bloqueado, `zod` usa su camino sin
+  `eval`, como dice su propio código. Después se pasó a `Content-Security-Policy`
+  y las pantallas cargaron sin recursos fallidos ni de otros orígenes.
 
-- Límites: 30 req/s generales por IP, **5 por minuto en `/api/auth/login`**, 40
-  conexiones simultáneas y cuerpo de 5 MB.
-- Cabeceras: `Strict-Transport-Security` y `Content-Security-Policy` las ponía
-  Nginx. Las demás las pone Next y no se duplicaban.
+La CSP es:
 
-La CSP llevaba `'unsafe-inline'` en `script-src` porque Next inyecta el estado
-de hidratación como script en línea. Quitarlo pide nonces por petición, que es
-un cambio en la aplicación y no en el proxy. `'unsafe-eval'` **no** estaba.
+```text
+default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';
+img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self';
+media-src 'self' blob:; worker-src 'self' blob:; frame-ancestors 'none';
+base-uri 'self'; form-action 'self'; object-src 'none'
+```
+
+Lleva `'unsafe-inline'` en `script-src` porque Next inyecta el estado de
+hidratación como script en línea. Quitarlo pide nonces por petición, que es un
+cambio en la aplicación y no en el proxy. `'unsafe-eval'` **no** está. Si una
+pantalla nueva necesita algo de otro origen —una fuente, un mapa, un pago—, hay
+que agregarlo acá. Para probar sin romper, conviene volver a
+`Content-Security-Policy-Report-Only` y mirar la consola del navegador.
+
+El vhost de antes y el de después están en
+`/srv/kiosco/backups/pre-deploy-ux-v5-20261018-125545-config/`, como
+`nginx__sites-available__kiosco.nistal.net.ANTES-LIMITES` y `.CON-LIMITES`.
+Volver atrás es copiar el primero en su lugar, `nginx -t` y recargar.
+
+Los 429 de estos dos dominios quedan en `kiosco-nistal.error.log`, y la jaula
+`nginx-limit-req` de fail2ban mira solo `/var/log/nginx/error.log`. Nginx los
+limita igual, pero fail2ban no banea a quien insiste. No se cambió.
+
+**`luchandopormas.com` todavía no los tiene.** Su vhost es el de la Cooperativa
+(arriba) y no se tocó:
+
+- no aplica `limit_req` ni `limit_conn`;
+- no manda `Strict-Transport-Security` ni `Content-Security-Policy`, porque
+  supone que su aplicación las manda y Kiosco no lo hace (Kiosco sí manda
+  `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` y
+  `Permissions-Policy`, desde `next.config.ts`);
+- el cuerpo máximo es de 15 MB;
+- `/api/jobs/` responde 404, cosa que no afecta a Kiosco;
+- si Kiosco está caído, el 502 muestra la página de error de la Cooperativa.
+
+Igualarlo depende de decidir antes a quién le corresponde el dominio.
 
 Después de cualquier cambio en Nginx:
 
