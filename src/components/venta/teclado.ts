@@ -1,19 +1,36 @@
 import type { TeclaDelLector } from '@/components/ui/ScannerInput'
 
 /**
- * La gramatica de teclado del punto de venta. UX V3.
+ * La gramatica de teclado del punto de venta. UX V5 (sobre la V3).
  *
  * UNA maquina de estados con tres zonas, y cada tecla significa lo que la zona
- * dice que significa. No hay excepciones ni atajos escondidos:
+ * dice que significa. Tres reglas que valen en todas partes:
  *
- *   campo    se esta ESCRIBIENDO. ← → mueven el cursor, como en cualquier
- *            campo de texto del mundo; ↓ entra a la lista; Enter busca el
- *            codigo, agrega el primer resultado, o --con el campo vacio y
- *            ticket-- pasa a revisar.
- *   lista    hay una fila ELEGIDA. ↑ ↓ recorren, → suma una, ← quita una,
- *            Enter agrega y limpia, Escape suelta la fila y vuelve a escribir.
- *   ticket   se esta REVISANDO. ↑ ↓ eligen linea, ← → cambian la cantidad,
- *            Supr quita, Enter abre el cobro, Escape vuelve al campo.
+ *   - Las FLECHAS solo se mueven. Nunca cambian una cantidad.
+ *   - ENTER confirma lo elegido o pasa a la etapa siguiente
+ *     (producto -> ticket -> cobro). Nunca es "+1 unidad".
+ *   - La cantidad se cambia a proposito: + y - (o los botones − y + de cada
+ *     linea).
+ *
+ *   campo    se esta ESCRIBIENDO. ← → mueven el cursor; ↓ entra a la lista;
+ *            Enter con digitos busca el codigo (el lector manda CODIGO+Enter
+ *            y eso agrega); con texto elige el resultado marcado; vacio y
+ *            con ticket pasa a revisar. + y - con el campo vacio cambian la
+ *            cantidad de la linea elegida (la ultima agregada).
+ *   lista    hay una fila ELEGIDA. ↑ ↓ ← → recorren, Enter la elige y vuelve
+ *            al campo, + suma una unidad de ese producto y - resta una,
+ *            Escape suelta la fila y vuelve a escribir.
+ *   ticket   se esta REVISANDO. ↑ ↓ ← → eligen linea, + - cambian la
+ *            cantidad, Supr quita, Enter abre el cobro, Escape vuelve.
+ *
+ * ELEGIR NO ES SUMAR (V5)
+ * -----------------------
+ * En la V3, → sobre la fila resaltada sumaba una unidad, y Enter despues
+ * volvia a sumar: "→ y Enter" dejaba DOS unidades cuando se queria una. Y
+ * Enter sobre un producto que ya estaba en el ticket sumaba otra. Ahora
+ * elegir un producto que ya esta en el ticket solo selecciona su linea; para
+ * llevar otra se aprieta +. El lector no cambia: cada lectura es un producto
+ * fisico que paso por el mostrador, y dos lecturas son dos unidades.
  *
  * POR QUE TRES ZONAS Y NO UNA TABLA PLANA (V3)
  * --------------------------------------------
@@ -59,8 +76,11 @@ export type ZonaDelPos = 'campo' | 'lista' | 'ticket'
 export type AccionDelPos =
   /** Enter con digitos: buscar ese codigo. */
   | 'buscar-codigo'
-  /** Enter con texto o en la lista: agregar la fila resaltada y limpiar. */
-  | 'agregar-resaltado'
+  /**
+   * Enter con texto o en la lista: ELEGIR la fila resaltada. Si no esta en el
+   * ticket se agrega una unidad; si ya esta, solo se selecciona su linea.
+   */
+  | 'elegir-resaltado'
   /** Enter con el campo vacio y ticket: pasar a revisar. NO cobra. */
   | 'revisar-ticket'
   /** Enter revisando: abrir el cobro. Tampoco cobra: eso lo decide el cobro. */
@@ -69,9 +89,9 @@ export type AccionDelPos =
   | 'entrar-a-la-lista'
   | 'resultado-anterior'
   | 'resultado-siguiente'
-  /** → sobre la fila elegida: una unidad mas de ese producto. */
+  /** + sobre la fila elegida: una unidad mas de ese producto. */
   | 'sumar-resaltado'
-  /** ← sobre la fila elegida: una unidad menos; en cero, se quita. */
+  /** - sobre la fila elegida: una unidad menos; en cero, se quita. */
   | 'restar-resaltado'
   | 'linea-anterior'
   | 'linea-siguiente'
@@ -101,10 +121,10 @@ export interface ContextoDelPos {
 }
 
 /**
- * `+` y `-` siguen valiendo como → y ←, pero solo con el campo vacio: dentro
- * de "coca-cola" el guion es una letra, no un boton de cantidad.
+ * `+` y `-` cambian cantidades solo con el campo vacio: dentro de
+ * "coca-cola" el guion es una letra, no un boton de cantidad.
  */
-function esAliasDeCantidad(tecla: TeclaDelLector, modo: ModoDelCampo): boolean {
+function esTeclaDeCantidad(tecla: TeclaDelLector, modo: ModoDelCampo): boolean {
   return (tecla === '+' || tecla === '-') && modo === 'vacio'
 }
 
@@ -121,9 +141,9 @@ export function accionDeTecla(tecla: TeclaDelLector, ctx: ContextoDelPos): Accio
 
   if (tecla === 'Enter') {
     if (zona === 'ticket') return ctx.hayLineas ? 'cobrar' : 'nada'
-    if (zona === 'lista') return ctx.hayResultados ? 'agregar-resaltado' : 'nada'
+    if (zona === 'lista') return ctx.hayResultados ? 'elegir-resaltado' : 'nada'
     if (modo === 'codigo') return 'buscar-codigo'
-    if (modo === 'busqueda') return ctx.hayResultados ? 'agregar-resaltado' : 'nada'
+    if (modo === 'busqueda') return ctx.hayResultados ? 'elegir-resaltado' : 'nada'
     // Campo vacio con ticket: revisar. Nunca cobrar directamente.
     return ctx.hayLineas ? 'revisar-ticket' : 'nada'
   }
@@ -139,30 +159,33 @@ export function accionDeTecla(tecla: TeclaDelLector, ctx: ContextoDelPos): Accio
       // ESTADO A: se escribe. Las flechas horizontales son del cursor y no se
       // tocan. ↓ es lo unico que saca del texto, y solo si hay lista.
       if (tecla === 'ArrowDown') return ctx.hayResultados ? 'entrar-a-la-lista' : 'nada'
+      // Con el campo vacio, + y - corrigen la linea elegida --la ultima que
+      // entro--: "escaneo, me piden dos, aprieto +".
+      if (esTeclaDeCantidad(tecla, modo) && ctx.hayLineas && ctx.haySeleccion) {
+        return tecla === '+' ? 'cantidad-mas' : 'cantidad-menos'
+      }
       return 'nada'
 
     case 'lista':
-      // ESTADO B: hay una fila elegida.
+      // ESTADO B: hay una fila elegida. Las cuatro flechas recorren; ninguna
+      // cambia cantidades.
       if (!ctx.hayResultados) return 'nada'
-      if (tecla === 'ArrowDown') return 'resultado-siguiente'
+      if (tecla === 'ArrowDown' || tecla === 'ArrowRight') return 'resultado-siguiente'
       // Desde la primera, ↑ suelta la fila y devuelve el control al texto: se
       // entro con ↓ y se sale por donde se entro.
       if (tecla === 'ArrowUp') return ctx.resaltado <= 0 ? 'volver-al-campo' : 'resultado-anterior'
-      if (tecla === 'ArrowRight') return 'sumar-resaltado'
-      if (tecla === 'ArrowLeft') return 'restar-resaltado'
-      if (esAliasDeCantidad(tecla, modo)) {
+      if (tecla === 'ArrowLeft') return ctx.resaltado <= 0 ? 'nada' : 'resultado-anterior'
+      if (esTeclaDeCantidad(tecla, modo)) {
         return tecla === '+' ? 'sumar-resaltado' : 'restar-resaltado'
       }
       return 'nada'
 
     case 'ticket':
       if (!ctx.hayLineas) return 'nada'
-      if (tecla === 'ArrowDown') return 'linea-siguiente'
-      if (tecla === 'ArrowUp') return 'linea-anterior'
+      if (tecla === 'ArrowDown' || tecla === 'ArrowRight') return 'linea-siguiente'
+      if (tecla === 'ArrowUp' || tecla === 'ArrowLeft') return 'linea-anterior'
       if (!ctx.haySeleccion) return 'nada'
-      if (tecla === 'ArrowRight') return 'cantidad-mas'
-      if (tecla === 'ArrowLeft') return 'cantidad-menos'
-      if (esAliasDeCantidad(tecla, modo)) {
+      if (esTeclaDeCantidad(tecla, modo)) {
         return tecla === '+' ? 'cantidad-mas' : 'cantidad-menos'
       }
       return 'nada'

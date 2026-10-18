@@ -100,8 +100,8 @@ export function HistorialTurnos({ recargar }: { recargar: number }) {
     <Card padded={false}>
       <div className="p-3">
         <CardHeader
-          title="Turnos de caja"
-          description="Cada apertura con su cierre. Un turno cerrado no se modifica."
+          title="Cajas anteriores"
+          description="Cada apertura con su cierre. Una caja cerrada no se modifica."
         />
       </div>
 
@@ -112,8 +112,8 @@ export function HistorialTurnos({ recargar }: { recargar: number }) {
           <SkeletonRows rows={4} />
         ) : turnos.length === 0 ? (
           <EmptyState
-            title="Todavía no hay turnos"
-            description="Cuando alguien abra la caja, el turno aparece acá."
+            title="Todavía no se cerró ninguna caja"
+            description="Cuando alguien abra y cierre la caja, aparece acá."
           />
         ) : (
           <>

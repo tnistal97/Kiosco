@@ -58,7 +58,7 @@ export function Drawer({
       <DialogBackdrop
         transition={!rapido}
         className={cn(
-          'fixed inset-0 bg-overlay/80',
+          'fixed inset-0 bg-scrim',
           rapido ? 'animate-aparecer' : 'transition-opacity duration-150 data-[closed]:opacity-0',
         )}
       />

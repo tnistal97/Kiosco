@@ -114,11 +114,14 @@ async function abrirFichaDeProducto(page: Page, nombre: string) {
     .getByRole('row')
     .filter({ hasText: nombre })
     .first()
-    .locator('button[aria-expanded]')
-    .first()
+    .getByRole('button', { name: /^Editar / })
     .click()
-  await page.getByRole('menuitem', { name: 'Editar' }).click()
   await dialogo(page).getByRole('heading').first().waitFor()
+  // V5: los lotes del producto estan en "Más opciones" (y solo si la
+  // instalacion usa lotes, que en esta suite si).
+  await dialogo(page)
+    .getByRole('button', { name: /más opciones/i })
+    .click()
   return dialogo(page)
 }
 
@@ -297,7 +300,7 @@ async function venderYCobrar(page: Page, codigo: string, veces = 1): Promise<voi
   const d = dialogo(page)
   await expect(d).toBeAttached()
   await d.getByRole('radio', { name: 'Efectivo' }).click()
-  await d.getByRole('button', { name: /^cobrar/i }).click()
+  await d.getByRole('button', { name: /^confirmar venta/i }).click()
   await page.waitForTimeout(1500)
 }
 
@@ -414,9 +417,8 @@ test.describe('Venta por FEFO', () => {
   test('14. la alerta de vencimiento aparece en el tablero y en el listado', async ({ page }) => {
     await entrar(page, 'encargado')
 
-    await page.goto('/')
-    await expect(page.getByText('Vencidos').first()).toBeVisible()
-
+    // V5: el inicio ya no es un tablero de alertas; el listado de lotes si
+    // dice que hay vencidos.
     await page.goto('/stock/lotes')
     // El estado se dice con TEXTO, no sólo con color.
     await expect(page.getByText('Vencido').first()).toBeVisible()
@@ -448,7 +450,7 @@ test.describe('FEFO es política, no lectura física', () => {
 
     const d = dialogo(page)
     await d.getByRole('combobox', { name: /qué pasó/i }).selectOption('BREAKAGE')
-    await d.getByRole('combobox', { name: /de qué partida/i }).selectOption(String(lote?.id ?? 0))
+    await d.getByRole('combobox', { name: /de qué lote/i }).selectOption(String(lote?.id ?? 0))
     await d.getByRole('textbox', { name: /cuánto sale/i }).fill('2')
     await d.getByRole('textbox', { name: 'Motivo' }).fill('Se cayó el bidón')
     await d.getByRole('button', { name: /guardar ajuste/i }).click()
@@ -483,7 +485,7 @@ test.describe('FEFO es política, no lectura física', () => {
     await d.getByRole('textbox', { name: 'Motivo' }).fill('Prueba sin partida')
 
     // El selector de partida es obligatorio y el botón no se habilita.
-    await expect(d.getByText(/exige decir de qué partida/i)).toBeVisible()
+    await expect(d.getByText(/pide decir de qué lote/i)).toBeVisible()
     await expect(d.getByRole('button', { name: /guardar ajuste/i })).toBeDisabled()
   })
 })
@@ -584,12 +586,16 @@ test.describe('Inventario físico', () => {
     await page.getByRole('button', { name: /nuevo inventario/i }).click()
 
     const d = dialogo(page)
-    // La configuración que pedía el objetivo: alcance, conteo a ciegas y recuento.
-    await expect(d.getByRole('group', { name: /qué se cuenta/i })).toBeVisible()
-    await expect(d.getByRole('checkbox', { name: /conteo a ciegas/i })).toBeChecked()
-    await d.getByRole('checkbox', { name: /segundo conteo/i }).check()
+    // La configuración: alcance a la vista; contar sin ver el sistema y el
+    // segundo conteo, en "Más opciones" (V5: por omision se ve el sistema).
+    await expect(d.getByRole('group', { name: /qué vas a contar/i })).toBeVisible()
+    await d.getByRole('button', { name: /más opciones/i }).click()
+    const aCiegas = d.getByRole('checkbox', { name: /no mostrar el stock del sistema/i })
+    await expect(aCiegas).not.toBeChecked()
+    await aCiegas.check()
+    await d.getByRole('checkbox', { name: /dos veces/i }).check()
     await expect(d.getByRole('textbox', { name: /a partir de qué diferencia/i })).toBeVisible()
-    await d.getByRole('button', { name: /crear inventario/i }).click()
+    await d.getByRole('button', { name: /empezar a contar/i }).click()
     await page.waitForURL(/\/inventarios\/\d+/)
 
     const id = Number(/\/inventarios\/(\d+)/.exec(page.url())?.[1] ?? 0)
@@ -603,7 +609,8 @@ test.describe('Inventario físico', () => {
       lineas.every((l) => l.expectedAtCount === null),
       'no viaja lo esperado',
     ).toBe(true)
-    await expect(page.getByText(/no se muestra mientras se cuenta/i)).toBeVisible()
+    await expect(page.getByText(/sin mostrar el stock del sistema/i)).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Sistema' })).toHaveCount(0)
 
     // Y una línea POR PARTIDA: el yogur tiene dos.
     const delYogur = lineas.filter((l) => l.productName.startsWith('Yogur'))
@@ -643,10 +650,7 @@ test.describe('Inventario físico', () => {
     await page.goto('/inventarios')
     await page.getByRole('button', { name: /nuevo inventario/i }).click()
     await dialogo(page)
-      .getByRole('checkbox', { name: /conteo a ciegas/i })
-      .uncheck()
-    await dialogo(page)
-      .getByRole('button', { name: /crear inventario/i })
+      .getByRole('button', { name: /empezar a contar/i })
       .click()
     await page.waitForURL(/\/inventarios\/\d+/)
     const id = Number(/\/inventarios\/(\d+)/.exec(page.url())?.[1] ?? 0)
@@ -680,8 +684,9 @@ test.describe('Inventario físico', () => {
     await page.goto(`/inventarios/${String(id)}`)
     const fila = page.getByRole('row').filter({ hasText: partida }).first()
     await fila.getByRole('textbox').fill(String(snapshot - 2))
-    await page.getByRole('button', { name: /guardar conteos/i }).click()
-    await page.waitForTimeout(1500)
+    // V5: cada cantidad se guarda al confirmarla.
+    await fila.getByRole('textbox').press('Enter')
+    await expect(fila.getByLabel('Guardado')).toBeVisible({ timeout: 15_000 })
 
     // El resto del catálogo se cuenta por lo que el sistema ya tenía: la
     // sesión no cierra con líneas pendientes, y lo que se está probando es UNA
@@ -705,7 +710,10 @@ test.describe('Inventario físico', () => {
 
     // Cerrar el conteo: recién ahí se decide.
     await page.reload()
-    await page.getByRole('button', { name: /cerrar conteo/i }).click()
+    await page.getByRole('button', { name: /terminé de contar/i }).click()
+    await dialogo(page)
+      .getByRole('button', { name: /sí, terminé/i })
+      .click()
     await page.waitForTimeout(1500)
     const enRevision = await api<SesionDTO>(page, `/api/inventarios/${String(id)}`)
     expect(enRevision.status).toBe('REVIEW')
@@ -729,8 +737,13 @@ test.describe('Inventario físico', () => {
     // APLICAR. Se aplica el DELTA (-1), nunca el número contado: escribir el
     // contado borraría la segunda venta.
     await page.goto(`/inventarios/${String(id)}`)
-    await page.getByRole('button', { name: /aplicar diferencias/i }).click()
-    await page.waitForTimeout(2000)
+    // V5: antes de aplicar, el resumen y una confirmacion.
+    await expect(page.getByText(/encontramos diferencias en/i)).toBeVisible()
+    await page.getByRole('button', { name: 'APLICAR INVENTARIO' }).click()
+    await dialogo(page).getByRole('button', { name: 'Aplicar inventario' }).click()
+    await expect(page.getByRole('link', { name: 'Ver movimientos' })).toBeVisible({
+      timeout: 15_000,
+    })
 
     const despues = await desglose(page, producto)
     const final = Number(despues.total)
@@ -751,7 +764,7 @@ test.describe('Inventario físico', () => {
     await page.goto('/inventarios')
     await page.getByRole('button', { name: /nuevo inventario/i }).click()
     await dialogo(page)
-      .getByRole('button', { name: /crear inventario/i })
+      .getByRole('button', { name: /empezar a contar/i })
       .click()
     await page.waitForURL(/\/inventarios\/\d+/)
     const id = Number(/\/inventarios\/(\d+)/.exec(page.url())?.[1] ?? 0)
@@ -761,8 +774,8 @@ test.describe('Inventario físico', () => {
 
     const fila = page.getByRole('row').filter({ hasText: QUESO }).first()
     await fila.getByRole('textbox').fill('3.250')
-    await page.getByRole('button', { name: /guardar conteos/i }).click()
-    await page.waitForTimeout(1500)
+    await fila.getByRole('textbox').press('Enter')
+    await expect(fila.getByLabel('Guardado')).toBeVisible({ timeout: 15_000 })
 
     const contada = (await lineasDe(page, id)).find((l) => l.id === linea?.id)
     expect(contada?.countedQuantity, 'los gramos no se pierden').toBe('3.250')
@@ -774,7 +787,7 @@ test.describe('Inventario físico', () => {
     await page.goto('/inventarios')
     await page.getByRole('button', { name: /nuevo inventario/i }).click()
     await dialogo(page)
-      .getByRole('button', { name: /crear inventario/i })
+      .getByRole('button', { name: /empezar a contar/i })
       .click()
     await page.waitForURL(/\/inventarios\/\d+/)
     const id = Number(/\/inventarios\/(\d+)/.exec(page.url())?.[1] ?? 0)
@@ -832,7 +845,7 @@ test.describe('Inventario físico', () => {
     expect(sesion.lineas.sinResolver, 'quedó sin resolver').toBeGreaterThan(0)
 
     // La pantalla lo dice y ofrece el filtro.
-    await expect(page.getByText(/unidades sin partida identificada/i)).toBeVisible()
+    await expect(page.getByText(/falta indicar el lote/i)).toBeVisible()
 
     // Y aplicar se rechaza: el sistema no inventa códigos de lote.
     const respuesta = await page.evaluate(

@@ -52,6 +52,71 @@ describe('El campo unico', () => {
     expect(onKey).toHaveBeenLastCalledWith('Enter', '7790001000011')
   })
 
+  it('un lector encima de texto con numeros toma el codigo y devuelve lo escrito', async () => {
+    const persona = userEvent.setup({ delay: 80 })
+    const lector = userEvent.setup({ delay: null })
+    const onKey = vi.fn(() => true)
+    const onCambio = vi.fn()
+    render(<Campo onKey={onKey} onCambio={onCambio} />)
+    const campo = screen.getByRole('textbox')
+
+    await persona.type(campo, 'agua 500')
+    await lector.type(campo, '7790001000019{Enter}')
+
+    // El codigo es lo que paso el lector, sin el "500" que se habia escrito.
+    expect(onKey).toHaveBeenLastCalledWith('Enter', '7790001000019')
+    expect(onCambio).toHaveBeenLastCalledWith('agua 500')
+  })
+
+  it('numeros escritos a mano y despues una lectura: no se mezclan', async () => {
+    const persona = userEvent.setup({ delay: 120 })
+    const lector = userEvent.setup({ delay: null })
+    const onKey = vi.fn(() => true)
+    const onCambio = vi.fn()
+    render(<Campo onKey={onKey} onCambio={onCambio} />)
+    const campo = screen.getByRole('textbox')
+
+    // Un codigo interno, sin digito verificador: lo decide el ritmo.
+    await persona.type(campo, '123')
+    await new Promise((r) => setTimeout(r, 300))
+    await lector.type(campo, '7790001000011{Enter}')
+
+    expect(onKey).toHaveBeenLastCalledWith('Enter', '7790001000011')
+    expect(onCambio).toHaveBeenLastCalledWith('123')
+  })
+
+  it('numeros escritos, un clic afuera y despues la lectura: tampoco se mezclan', async () => {
+    const persona = userEvent.setup({ delay: 120 })
+    const lector = userEvent.setup({ delay: null })
+    const onKey = vi.fn(() => true)
+    const onCambio = vi.fn()
+    render(<Campo onKey={onKey} onCambio={onCambio} />)
+    const campo = screen.getByRole('textbox')
+
+    await persona.type(campo, '500')
+    // Tocar una categoria saca el foco un instante y lo devuelve.
+    campo.blur()
+    campo.focus()
+    await new Promise((r) => setTimeout(r, 300))
+    await lector.type(campo, '7790001000011{Enter}', { skipClick: true })
+
+    expect(onKey).toHaveBeenLastCalledWith('Enter', '7790001000011')
+    expect(onCambio).toHaveBeenLastCalledWith('500')
+  })
+
+  it('una lectura cortada por una traba sigue siendo un solo codigo', async () => {
+    const lector = userEvent.setup({ delay: null })
+    const onKey = vi.fn(() => true)
+    render(<Campo onKey={onKey} />)
+    const campo = screen.getByRole('textbox')
+
+    await lector.type(campo, '77900')
+    await new Promise((r) => setTimeout(r, 60))
+    await lector.type(campo, '01000019{Enter}')
+
+    expect(onKey).toHaveBeenLastCalledWith('Enter', '7790001000019')
+  })
+
   it('las letras se anuncian como texto, tecla por tecla', async () => {
     const usuario = userEvent.setup()
     const onCambio = vi.fn()

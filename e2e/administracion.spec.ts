@@ -1,5 +1,14 @@
 import { test, expect } from '@playwright/test'
-import { PRODUCTOS, campoClave, entrar, escanear, leerMetrica, leerMonto, salir } from './ayudantes'
+import {
+  PRODUCTOS,
+  campoClave,
+  entrar,
+  escanear,
+  leerMetrica,
+  leerMonto,
+  salir,
+  terminarVenta,
+} from './ayudantes'
 
 /**
  * Anulacion, ajuste de stock, acceso por rol y cierre de sesion.
@@ -18,15 +27,12 @@ test.describe('Anular una venta', () => {
     await page.keyboard.press('F12')
     await page
       .getByRole('dialog')
-      .getByRole('button', { name: /^cobrar/i })
+      .getByRole('button', { name: /^confirmar venta/i })
       .click()
-    await expect(page.getByText('Venta registrada')).toBeVisible()
-
-    const numero = (await page.getByText(/^#\d+$/).innerText()).replace('#', '')
-
-    // El dialogo de exito bloquea el resto de la pantalla, que es lo que
-    // tiene que hacer: hay que cerrarlo antes de seguir.
-    await page.getByRole('button', { name: 'Nueva venta' }).click()
+    // Sin vuelto que dar, la venta termina sola (V5): el numero queda en
+    // "Última venta" del ticket.
+    await terminarVenta(page)
+    const numero = (await page.getByText(/^Última venta #\d+$/).innerText()).replace(/\D/g, '')
     await salir(page)
 
     // 2) El supervisor anula.
@@ -83,7 +89,7 @@ test.describe('Ajustar stock', () => {
     await entrar(page, 'repositor')
     await page.goto('/stock')
 
-    await page.getByPlaceholder('Nombre o código de barras…').fill('Yerba')
+    await page.getByRole('searchbox', { name: /buscar productos/i }).fill('Yerba')
     await page.waitForTimeout(1200)
 
     await page.getByRole('button', { name: 'Ajustar' }).first().click()
@@ -129,7 +135,7 @@ test.describe('Acceso por rol', () => {
     await entrar(page, 'cajero')
 
     const menu = page.getByRole('navigation', { name: 'Principal' })
-    await expect(menu.getByRole('link', { name: 'Venta', exact: true })).toBeVisible()
+    await expect(menu.getByRole('link', { name: 'Vender', exact: true })).toBeVisible()
     await expect(menu.getByRole('link', { name: 'Auditoría', exact: true })).toHaveCount(0)
     await expect(menu.getByRole('link', { name: 'Usuarios', exact: true })).toHaveCount(0)
   })
@@ -140,7 +146,7 @@ test.describe('Acceso por rol', () => {
     const menu = page.getByRole('navigation', { name: 'Principal' })
     await expect(menu.getByRole('link', { name: 'Productos', exact: true })).toBeVisible()
     await expect(menu.getByRole('link', { name: 'Stock', exact: true })).toBeVisible()
-    await expect(menu.getByRole('link', { name: 'Venta', exact: true })).toHaveCount(0)
+    await expect(menu.getByRole('link', { name: 'Vender', exact: true })).toHaveCount(0)
     await expect(menu.getByRole('link', { name: 'Caja', exact: true })).toHaveCount(0)
   })
 
@@ -153,18 +159,18 @@ test.describe('Acceso por rol', () => {
     await page.goto('/productos')
     await page.waitForTimeout(1200)
 
+    // V5: "Editar" esta a la vista en cada fila, con palabra.
     await page
-      .getByRole('button', { name: /^acciones de/i })
+      .getByRole('button', { name: /^Editar / })
       .first()
       .click()
-    await page.getByRole('menuitem', { name: 'Editar' }).click()
 
     const dialogo = page.getByRole('dialog')
     await expect(dialogo).toBeAttached()
 
     // El precio se ve pero no es un campo.
     await expect(dialogo.getByLabel(/^precio/i)).toHaveCount(0)
-    await expect(dialogo.getByText('products.price.update')).toBeVisible()
+    await expect(dialogo.getByText(/no puede cambiar precios/)).toBeVisible()
 
     // Y lo que si puede editar, lo puede editar.
     await expect(dialogo.getByLabel('Nombre')).toBeEditable()
@@ -176,10 +182,9 @@ test.describe('Acceso por rol', () => {
     await page.waitForTimeout(1200)
 
     await page
-      .getByRole('button', { name: /^acciones de/i })
+      .getByRole('button', { name: /^Editar / })
       .first()
       .click()
-    await page.getByRole('menuitem', { name: 'Editar' }).click()
 
     await expect(page.getByRole('dialog').getByLabel(/^precio/i)).toBeEditable()
   })
@@ -260,37 +265,43 @@ test.describe('Sesion', () => {
 })
 
 test.describe('Caja', () => {
-  test('muestra el turno abierto, no un acumulado', async ({ page }) => {
+  test('dice CAJA ABIERTA y cuanto tiene que haber, con las acciones a la vista', async ({
+    page,
+  }) => {
     await entrar(page, 'encargado')
     await page.goto('/caja')
 
-    // Hasta la Fase 2 aca habia una advertencia diciendo que el numero grande
-    // NO era el de un turno. Ahora lo es, y la advertencia no existe.
     await expect(page.getByText(/acumulado, no el de un turno/i)).toHaveCount(0)
 
-    await expect(page.getByText(/caja abierta por/i)).toBeVisible()
-    await expect(page.getByText('Tiene que haber').first()).toBeVisible()
-    // Desde la Fase 2 cerrar es una pantalla propia: el panel lleva a ella.
-    await expect(page.getByRole('link', { name: 'Cerrar la caja' })).toBeVisible()
+    await expect(page.getByText('CAJA ABIERTA')).toBeVisible()
+    await expect(page.getByText('Tiene que haber en el cajón')).toBeVisible()
+    for (const nombre of ['Registrar ingreso', 'Registrar egreso', 'Contar caja']) {
+      await expect(page.getByRole('button', { name: nombre })).toBeVisible()
+    }
+    // Cerrar es una pantalla propia: el panel lleva a ella.
+    await expect(page.getByRole('link', { name: 'Cerrar caja' })).toBeVisible()
   })
 
-  test('el historial de turnos muestra el turno en curso', async ({ page }) => {
+  test('el detalle muestra las cajas anteriores, con la abierta', async ({ page }) => {
     await entrar(page, 'encargado')
     await page.goto('/caja')
 
-    await expect(page.getByText('Turnos de caja')).toBeVisible()
-    // El turno en curso aparece con su estado escrito, no solo con un color.
+    // Lo secundario esta detras de "Ver detalle".
+    await expect(page.getByText('Cajas anteriores')).toHaveCount(0)
+    await page.getByRole('button', { name: /ver detalle/i }).click()
+    await expect(page.getByText('Cajas anteriores')).toBeVisible()
+    // La caja en curso aparece con su estado escrito, no solo con un color.
     await expect(page.getByText('Abierto').first()).toBeVisible()
   })
 
-  test('el arqueo muestra lo esperado y calcula la diferencia', async ({ page }) => {
+  test('contar la caja muestra lo esperado y calcula la diferencia', async ({ page }) => {
     await entrar(page, 'encargado')
     await page.goto('/caja')
 
-    await page.getByRole('button', { name: 'Hacer arqueo' }).click()
+    await page.getByRole('button', { name: 'Contar caja' }).click()
     const dialogo = page.getByRole('dialog')
 
-    await expect(dialogo.getByText('El sistema espera')).toBeVisible()
+    await expect(dialogo.getByText('Tiene que haber')).toBeVisible()
     const esperado = leerMonto(await dialogo.getByText(/^\$/).first().innerText())
 
     await dialogo.getByLabel('Efectivo contado').fill(String(esperado - 1200))
@@ -299,14 +310,15 @@ test.describe('Caja', () => {
     await dialogo.getByLabel('Efectivo contado').fill(String(esperado))
     await expect(dialogo.getByText('Cuadra')).toBeVisible()
 
-    await dialogo.getByRole('button', { name: /registrar arqueo/i }).click()
-    await expect(page.getByText(/arqueo registrado/i)).toBeVisible()
+    await dialogo.getByRole('button', { name: /guardar conteo/i }).click()
+    await expect(page.getByText(/conteo guardado/i)).toBeVisible()
   })
 
   test('los ingresos y los egresos se distinguen sin depender del color', async ({ page }) => {
     await entrar(page, 'encargado')
     await page.goto('/caja')
-    await page.getByLabel('Rango de días').selectOption('7')
+    await page.getByRole('button', { name: /ver detalle/i }).click()
+    await page.getByLabel('Período').selectOption('7')
     await page.waitForTimeout(1200)
 
     // Se mira la primera columna de la tabla: el selector de tipo de arriba
@@ -317,7 +329,7 @@ test.describe('Caja', () => {
     // Cada tipo trae glifo Y palabra: quien no distingue verde de rojo lo lee
     // igual. Antes todos los importes salian en verde y el tipo no figuraba.
     expect(tipos.some((t) => t.includes('Venta'))).toBe(true)
-    expect(tipos.some((t) => t.includes('Retiro'))).toBe(true)
+    expect(tipos.some((t) => t.includes('Egreso'))).toBe(true)
     expect(tipos.some((t) => t.includes('↓'))).toBe(true)
     expect(tipos.some((t) => t.includes('↑'))).toBe(true)
 

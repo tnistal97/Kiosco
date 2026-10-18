@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useEffect, useId, useRef } from 'react'
-import { Button, EmptyState, Kbd, Money, QuantityInput, cn, formatMoney } from '@/components/ui'
+import { Button, EmptyState, Kbd, Money, QuantityInput, cn } from '@/components/ui'
 import type { CartLine } from '@/store/cart'
 import type { Monto } from '@/lib/money'
 import { aMilesimas, desdeMilesimas, precioPorCantidad, type TextoCantidad } from '@/lib/cantidad'
@@ -17,11 +17,12 @@ import { moverSeleccion } from './teclado'
 /**
  * El ticket en curso.
  *
- * Una linea por producto, densa: nombre y subtotal en el primer renglon,
- * "2 u. × $ 4.850" en el segundo. Los controles --cantidad y quitar-- solo se
- * dibujan en la linea SELECCIONADA: es lo que permite once lineas a la vista
- * en 1366 x 768 en vez de cuatro (auditoria, §22), y lo que hace que un toque
- * en una tablet sea "elegir" y el segundo "corregir".
+ * Una linea por producto: nombre y subtotal en el primer renglon; en el
+ * segundo, los botones − y + con la cantidad en el medio, el precio unitario
+ * y "Quitar". Desde la V5 los controles estan en TODAS las lineas: en la V3
+ * solo aparecian al tocar la linea, y quien entraba por primera vez no
+ * encontraba como llevar dos. Cuesta un renglon por linea; a cambio, cambiar
+ * la cantidad no hay que descubrirlo.
  *
  * La seleccion es una idea de teclado, no de foco: se mueve con ↑ ↓ desde el
  * campo de escaneo sin que el cursor salga de ahi, y se marca con una barra y
@@ -54,6 +55,7 @@ export const LineaTicket = memo(function LineaTicket({
   linea,
   seleccionada,
   onSeleccionar,
+  onVolverAlCampo,
   onCantidad,
   onQuitar,
   onEditando,
@@ -61,6 +63,8 @@ export const LineaTicket = memo(function LineaTicket({
   linea: CartLine
   seleccionada: boolean
   onSeleccionar: (productId: number) => void
+  /** Despues de tocar la linea o uno de sus botones, el foco vuelve al lector. */
+  onVolverAlCampo?: () => void
   onCantidad: (productId: number, cantidad: TextoCantidad) => void
   onQuitar: (productId: number) => void
   onEditando: (editando: boolean) => void
@@ -81,28 +85,24 @@ export const LineaTicket = memo(function LineaTicket({
       id={`linea-${String(linea.productId)}`}
       data-linea={linea.productId}
       aria-current={seleccionada || undefined}
-      onClick={() => {
+      onClick={(e) => {
         onSeleccionar(linea.productId)
+        // Escribiendo una cantidad a mano, el foco se queda en ese campo.
+        if (!esEditable(e.target)) onVolverAlCampo?.()
       }}
       className={cn(
-        'flex flex-col gap-1 border-b border-l-[3px] border-b-line px-3 py-2.5 transition-colors last:border-b-0',
-        seleccionada ? 'border-l-primary bg-selection' : 'border-l-transparent hover:bg-raised/60',
+        'flex flex-col gap-1.5 border-b border-l-4 border-b-line px-3 py-2.5 transition-colors last:border-b-0',
+        seleccionada ? 'border-l-primary bg-selection' : 'border-l-transparent hover:bg-raised',
       )}
     >
       <div className="flex items-baseline justify-between gap-3">
-        <p className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{linea.name}</p>
+        <p className="min-w-0 flex-1 truncate text-[0.9375rem] font-semibold text-ink">
+          {linea.name}
+        </p>
         <Money amount={subtotal} size="md" />
       </div>
-      <p className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-ink-muted" data-numeric="">
-        <span>{formatearCantidadConUnidad(linea.quantity, linea.saleUnit)}</span>
-        <span aria-hidden="true">×</span>
-        <Money amount={linea.price} size="sm" tone="muted" />
-        {denominadorDePrecio(linea.saleUnit) && <span>{denominadorDePrecio(linea.saleUnit)}</span>}
-        {enElTope && <span className="text-warning">· sin más stock</span>}
-      </p>
-
-      {seleccionada && (
-        <div className="flex items-center justify-between gap-2 pt-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <QuantityInput
             value={linea.quantity}
             unit={linea.saleUnit}
@@ -113,19 +113,34 @@ export const LineaTicket = memo(function LineaTicket({
             }}
             onEditingChange={onEditando}
           />
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-ink-muted hover:text-danger"
-            onClick={() => {
-              onQuitar(linea.productId)
-            }}
+          <p
+            className="flex min-w-0 flex-wrap items-baseline gap-x-1 text-sm text-ink-muted"
+            data-numeric=""
           >
-            Quitar
-            <Kbd>Supr</Kbd>
-          </Button>
+            <span aria-hidden="true">×</span>
+            <Money amount={linea.price} size="sm" tone="muted" />
+            {denominadorDePrecio(linea.saleUnit) && (
+              <span>{denominadorDePrecio(linea.saleUnit)}</span>
+            )}
+            {enElTope && <span className="font-medium text-warning">· no hay más stock</span>}
+          </p>
         </div>
-      )}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="shrink-0 px-2 hover:text-danger"
+          aria-label={`Quitar ${linea.name}`}
+          onClick={(e) => {
+            // No sube a la linea: si subiera, la volveria a seleccionar
+            // despues de quitarla.
+            e.stopPropagation()
+            onQuitar(linea.productId)
+            onVolverAlCampo?.()
+          }}
+        >
+          Quitar
+        </Button>
+      </div>
     </li>
   )
 })
@@ -137,6 +152,7 @@ export function Ticket({
   seleccionada,
   revisando = false,
   onSeleccionar,
+  onVolverAlCampo,
   onCantidad,
   onAjustar,
   onQuitar,
@@ -170,6 +186,8 @@ export function Ticket({
    */
   revisando?: boolean
   onSeleccionar: (productId: number | null) => void
+  /** Despues de tocar una linea, el foco vuelve al campo del lector. */
+  onVolverAlCampo?: () => void
   onCantidad: (productId: number, cantidad: TextoCantidad) => void
   /** Una unidad mas o menos. La pantalla decide que pasa al llegar a cero. */
   onAjustar: (linea: CartLine, delta: -1 | 1) => void
@@ -202,24 +220,34 @@ export function Ticket({
   function alPresionar(e: React.KeyboardEvent<HTMLDivElement>) {
     if (esEditable(e.target)) return
     const ids = lineas.map((l) => l.productId)
+    // Un Enter, un + o un Supr sostenidos no se repiten: treinta unidades de
+    // mas por dejar el dedo apoyado no es una forma de vender.
+    if (e.repeat && ['Enter', '+', '-', '−', 'Delete'].includes(e.key)) {
+      e.preventDefault()
+      return
+    }
+    // Enter sobre un boton de la linea (−, +, Quitar) es ese boton, no el
+    // ticket.
+    const enBoton = e.target instanceof HTMLElement && e.target.closest('button') !== null
 
     switch (e.key) {
+      // V5: las cuatro flechas recorren las lineas. Ninguna cambia cantidades.
       case 'ArrowDown':
+      case 'ArrowRight':
         e.preventDefault()
         onSeleccionar(moverSeleccion(ids, seleccionada, 1))
         return
       case 'ArrowUp':
+      case 'ArrowLeft':
         e.preventDefault()
         onSeleccionar(moverSeleccion(ids, seleccionada, -1))
         return
-      case 'ArrowRight':
       case '+':
         if (lineaSeleccionada) {
           e.preventDefault()
           onAjustar(lineaSeleccionada, 1)
         }
         return
-      case 'ArrowLeft':
       case '-':
       case '−':
         if (lineaSeleccionada) {
@@ -234,15 +262,15 @@ export function Ticket({
         }
         return
       case 'Enter':
-        if (lineaSeleccionada) {
-          e.preventDefault()
-          if (esFraccionable(lineaSeleccionada.saleUnit)) {
-            onEditarPeso(lineaSeleccionada.productId)
-          } else {
-            e.currentTarget
-              .querySelector<HTMLInputElement>('[aria-current] input[role="spinbutton"]')
-              ?.focus()
-          }
+        // Enter avanza: del ticket, al cobro. Un producto por peso es la
+        // excepcion: ahi Enter corrige el peso, que es lo unico que se puede
+        // cambiar de esa linea.
+        if (enBoton) return
+        e.preventDefault()
+        if (lineaSeleccionada && esFraccionable(lineaSeleccionada.saleUnit)) {
+          onEditarPeso(lineaSeleccionada.productId)
+        } else if (puedeCobrar) {
+          onCobrar()
         }
         return
       case 'Escape':
@@ -283,9 +311,10 @@ export function Ticket({
       {/* Que hacen las teclas ahora. Solo mientras se revisa: el resto del
           tiempo el ticket es una lista y no tiene por que explicarse. */}
       {revisando && !vacio && (
-        <p className="shrink-0 border-b border-line bg-primary-quiet px-4 py-1.5 text-xs text-ink-muted">
-          Revisá el ticket · <Kbd>↑↓</Kbd> línea · <Kbd>←→</Kbd> cantidad · <Kbd>Supr</Kbd> quita ·{' '}
-          <Kbd>Enter</Kbd> cobra · <Kbd>Esc</Kbd> seguir agregando
+        <p className="shrink-0 border-b border-line bg-primary-quiet px-4 py-2 text-sm text-ink">
+          <strong className="font-semibold">Revisá el ticket.</strong> <Kbd>Enter</Kbd> cobrar ·{' '}
+          <Kbd>+</Kbd> <Kbd>−</Kbd> cantidad · <Kbd>Supr</Kbd> quitar · <Kbd>Esc</Kbd> seguir
+          agregando
         </p>
       )}
 
@@ -297,8 +326,8 @@ export function Ticket({
           : ''}
       </p>
       <p id={idAyuda} className="sr-only">
-        Flechas arriba y abajo eligen una línea; izquierda y derecha cambian la cantidad; Suprimir
-        la quita; Enter la edita.
+        Las flechas eligen una línea; más y menos cambian la cantidad; Suprimir la quita; Enter pasa
+        a cobrar.
       </p>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -317,7 +346,7 @@ export function Ticket({
             aria-label="Líneas del ticket"
             aria-describedby={idAyuda}
             onKeyDown={alPresionar}
-            className="outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px]"
+            className="focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
           >
             <ul>
               {lineas.map((l) => (
@@ -326,6 +355,7 @@ export function Ticket({
                   linea={l}
                   seleccionada={l.productId === seleccionada}
                   onSeleccionar={onSeleccionar}
+                  onVolverAlCampo={onVolverAlCampo}
                   onCantidad={onCantidad}
                   onQuitar={onQuitar}
                   onEditando={onEditando}
@@ -351,22 +381,24 @@ export function Ticket({
             <Money amount={ultimaVenta.total} size="sm" tone="muted" />
           </p>
         )}
+        {/* El TOTAL es la cifra mas grande de la pantalla: es lo que se le
+            dice al cliente y lo que se mira desde el otro lado del
+            mostrador. */}
         <div className="mb-3 flex items-baseline justify-between gap-3">
-          <span className="text-sm text-ink-muted">Total</span>
-          <Money amount={total} size="xl" />
+          <span className="text-base font-bold tracking-wide text-ink">TOTAL</span>
+          <Money amount={total} size="hero" />
         </div>
-        {/* El importe VA en el boton: es lo ultimo que se mira antes de
-            cobrar. Sin ticket no es un boton verde apagado --que se lee como
+        {/* Sin ticket no es un boton azul apagado --que se lee como
             "apretable"-- sino uno gris, que se lee como lo que es. */}
         <Button
-          variant={puedeCobrar ? 'confirm' : 'secondary'}
+          variant="primary"
           size="xl"
           block
           disabled={!puedeCobrar}
           onClick={onCobrar}
-          className="text-lg"
+          className="text-xl"
         >
-          {puedeCobrar ? `Cobrar ${formatMoney(total)}` : 'Cobrar'}
+          Cobrar
           {puedeCobrar && <Kbd>Enter</Kbd>}
         </Button>
       </footer>

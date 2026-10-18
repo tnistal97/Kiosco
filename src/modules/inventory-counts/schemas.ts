@@ -105,5 +105,7 @@ export const lineasQuerySchema = paginationQuerySchema.extend({
   estado: z.enum(ESTADOS_DE_LINEA).optional(),
   /** Los filtros de la pantalla de revision. Ver el objetivo 33. */
   diferencia: z.enum(['todas', 'con', 'positivas', 'negativas']).optional(),
+  /** Las lineas de UN producto: lo que se escaneo para contarlo. */
+  productId: idSchema.optional(),
 })
 export type LineasQuery = z.infer<typeof lineasQuerySchema>

@@ -7,7 +7,6 @@ import {
   Dialog,
   Field,
   NumericInput,
-  RadioGroup,
   Select,
   Textarea,
   problemaDeImporte,
@@ -29,22 +28,39 @@ import { MEDIOS_DE_COBRANZA, etiquetaDeMedio } from '@/modules/sales/payment-met
  */
 type Tipo = 'ingreso' | 'retiro' | 'deposito'
 
-const TIPOS = [
-  { value: 'ingreso' as const, label: 'Ingreso', description: 'Entra plata' },
-  { value: 'retiro' as const, label: 'Retiro', description: 'Sale del cajón' },
-  { value: 'deposito' as const, label: 'Depósito', description: 'Va al banco' },
-]
+/**
+ * Lo que se ofrece en la caja (UX V5): un ingreso o un egreso, cada uno con
+ * su boton. "Depósito" sigue existiendo en el sistema pero no se ofrece: su
+ * efecto en los totales es confuso para quien atiende (ver el informe V5).
+ */
+export type TipoDeMovimiento = 'ingreso' | 'retiro'
+
+const TITULOS: Record<TipoDeMovimiento, { titulo: string; boton: string; ayuda: string }> = {
+  ingreso: {
+    titulo: 'Registrar ingreso',
+    boton: 'Registrar ingreso',
+    ayuda: 'Plata que entra al cajón y no es una venta. Por ejemplo: cambio que trajiste.',
+  },
+  retiro: {
+    titulo: 'Registrar egreso',
+    boton: 'Registrar egreso',
+    ayuda: 'Plata que sale del cajón. Por ejemplo: pago al proveedor del pan, o un retiro.',
+  },
+}
 
 export function DialogoMovimiento({
   abierto,
+  tipo: tipoFijo = 'ingreso',
   onCerrar,
   onHecho,
 }: {
   abierto: boolean
+  /** Ingreso o egreso. Se elige con el boton de la caja, no adentro. */
+  tipo?: TipoDeMovimiento
   onCerrar: () => void
   onHecho: () => void
 }) {
-  const [tipo, setTipo] = useState<Tipo>('ingreso')
+  const [tipo, setTipo] = useState<Tipo>(tipoFijo)
   const [monto, setMonto] = useState('')
   const [medio, setMedio] = useState<string>('CASH')
   const [detalle, setDetalle] = useState('')
@@ -53,13 +69,13 @@ export function DialogoMovimiento({
 
   useEffect(() => {
     if (!abierto) return
-    setTipo('ingreso')
+    setTipo(tipoFijo)
     setMonto('')
     setMedio('CASH')
     setDetalle('')
     setError(null)
     setEnviando(false)
-  }, [abierto])
+  }, [abierto, tipoFijo])
 
   // Cambiar a retiro o deposito fuerza efectivo: es la regla del servidor.
   useEffect(() => {
@@ -100,7 +116,8 @@ export function DialogoMovimiento({
     <Dialog
       open={abierto}
       onClose={onCerrar}
-      title="Nuevo movimiento de caja"
+      title={TITULOS[tipoFijo].titulo}
+      description={TITULOS[tipoFijo].ayuda}
       size="md"
       dismissible={!enviando}
       footer={
@@ -114,7 +131,7 @@ export function DialogoMovimiento({
             disabled={!valido}
             onClick={() => void guardar()}
           >
-            Registrar
+            {TITULOS[tipoFijo].boton}
           </Button>
         </>
       }
@@ -126,21 +143,7 @@ export function DialogoMovimiento({
           </Alert>
         )}
 
-        <RadioGroup
-          legend="Tipo"
-          name="tipo-movimiento"
-          value={tipo}
-          onChange={setTipo}
-          options={TIPOS}
-          columns={3}
-        />
-
-        <Field
-          label="Monto"
-          required
-          hint="Siempre en positivo. El signo lo pone el sistema."
-          error={problema}
-        >
+        <Field label="Importe" required error={problema}>
           <NumericInput
             modo="dinero"
             placeholder="0,00"
@@ -151,10 +154,8 @@ export function DialogoMovimiento({
         </Field>
 
         <Field
-          label="Medio"
-          hint={
-            tipo !== 'ingreso' ? 'Un retiro o un depósito mueve efectivo del cajón.' : undefined
-          }
+          label="Forma de pago"
+          hint={tipo !== 'ingreso' ? 'Un egreso siempre es efectivo del cajón.' : undefined}
         >
           <Select
             value={medio}
@@ -173,7 +174,7 @@ export function DialogoMovimiento({
           </Select>
         </Field>
 
-        <Field label="Detalle" hint="Para qué fue. Queda en la bitácora.">
+        <Field label="Motivo" hint="Para qué fue. Queda guardado con tu nombre.">
           <Textarea
             value={detalle}
             disabled={enviando}

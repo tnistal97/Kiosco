@@ -236,6 +236,36 @@ describe('conteo a ciegas', () => {
   })
 })
 
+describe('contar dos veces', () => {
+  it('el segundo conteo se pide una sola vez, aunque confirme la diferencia', async () => {
+    const sesion = (
+      await crearInventario({
+        scope: 'SELECTION',
+        productIds: [] as number[],
+        blindCount: false,
+        recountThreshold: '2',
+      })
+    ).body
+    const inicial = await lineaDelProducto(sesion.id)
+
+    // Esperado 10, contado 4: la diferencia supera el umbral y pide recontar.
+    await contar(sesion.id, { lineas: [{ lineId: inicial.id, countedQuantity: '4' }] })
+    expect((await lineaDelProducto(sesion.id)).status).toBe('RECOUNT')
+
+    // El segundo conteo confirma el 4: vale ese, no se pide un tercero.
+    await contar(sesion.id, { lineas: [{ lineId: inicial.id, countedQuantity: '4' }] })
+    const linea = await lineaDelProducto(sesion.id)
+    expect(linea.status).toBe('COUNTED')
+    expect(linea.countedQuantity).toBe('4.000')
+    const fila = await prisma.inventoryCountLine.findUniqueOrThrow({
+      where: { id: inicial.id },
+      select: { firstCountQuantity: true },
+    })
+    // El primer conteo queda como evidencia.
+    expect(Number(fila.firstCountQuantity)).toBe(4)
+  })
+})
+
 describe('los estados', () => {
   it('no se cierra el conteo con líneas sin contar', async () => {
     // Alcance ALL para que la sesion tenga mas de una linea: se cuenta una y las

@@ -223,7 +223,7 @@ export default function DevolucionPage() {
         </dl>
 
         {d.notes !== null && d.notes !== '' && (
-          <p className="mt-3 rounded-lg bg-surface-2 p-3 text-sm text-ink-muted">{d.notes}</p>
+          <p className="mt-3 rounded-lg bg-sunken p-3 text-sm text-ink-muted">{d.notes}</p>
         )}
       </Card>
 
@@ -276,7 +276,7 @@ export default function DevolucionPage() {
           </Table>
         </TableWrap>
 
-        <div className="mt-3 flex justify-between rounded-lg bg-surface-2 p-3">
+        <div className="mt-3 flex justify-between rounded-lg bg-sunken p-3">
           <span className="text-ink-muted">Crédito total</span>
           <span className="text-lg font-semibold text-ink" data-numeric="">
             <Money amount={d.total} />

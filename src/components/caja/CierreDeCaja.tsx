@@ -225,7 +225,7 @@ export function CierreDeCaja() {
         <PageHeader
           title="Caja cerrada"
           status={<StatusBadge tone="neutral">Cerrada</StatusBadge>}
-          description="El turno quedó registrado. No se puede reabrir."
+          description="Quedó registrada. Una caja cerrada no se puede volver a abrir."
         />
         <Card>
           <dl className="flex flex-col gap-2 text-sm">
@@ -302,11 +302,11 @@ export function CierreDeCaja() {
 
       {/* 1. Que paso en el turno */}
       <Card>
-        <h2 className="mb-3 text-xs font-semibold tracking-wide text-ink-faint uppercase">
-          1 · El turno
+        <h2 className="mb-3 text-base font-semibold text-ink">
+          1 · Lo que pasó desde que se abrió
         </h2>
         <dl className="flex flex-col gap-2 text-sm">
-          <Renglon etiqueta="Efectivo inicial">
+          <Renglon etiqueta="Empezó con">
             <Money amount={turno.openingAmount} size="sm" tone="muted" />
           </Renglon>
           <Renglon
@@ -314,10 +314,10 @@ export function CierreDeCaja() {
           >
             <Money amount={turno.ventasEnEfectivo} size="sm" tone="muted" />
           </Renglon>
-          <Renglon etiqueta="Ingresos al cajón">
+          <Renglon etiqueta="Ingresos">
             <Money amount={turno.ingresos} size="sm" tone="muted" />
           </Renglon>
-          <Renglon etiqueta="Retiros y depósitos">
+          <Renglon etiqueta="Egresos">
             <span className="text-ink-muted" data-numeric="">
               {esPositivo(turno.egresos) && <span aria-hidden="true">− </span>}
               <Money amount={turno.egresos} size="sm" tone="muted" />
@@ -332,8 +332,8 @@ export function CierreDeCaja() {
           <div className="mt-4 border-t border-line pt-3 text-sm">
             <p className="text-ink-muted">
               {ventas.completo
-                ? `${String(ventas.cuantas)} ${ventas.cuantas === 1 ? 'venta' : 'ventas'} en el turno`
-                : `Más de ${String(ventas.cuantas)} ventas en el turno`}
+                ? `${String(ventas.cuantas)} ${ventas.cuantas === 1 ? 'venta' : 'ventas'} desde que se abrió`
+                : `Más de ${String(ventas.cuantas)} ventas desde que se abrió`}
               {ventas.completo && ventas.porMedio.length > 0 && ':'}
             </p>
             {ventas.completo && (
@@ -358,9 +358,7 @@ export function CierreDeCaja() {
 
       {/* 2. Cuanto hay */}
       <Card>
-        <h2 className="mb-3 text-xs font-semibold tracking-wide text-ink-faint uppercase">
-          2 · Contá el efectivo
-        </h2>
+        <h2 className="mb-3 text-base font-semibold text-ink">2 · Contá el efectivo</h2>
         <MoneyInput
           ref={campo}
           label="Efectivo contado"

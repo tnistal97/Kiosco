@@ -169,8 +169,10 @@ describe('Configuracion', () => {
   it('muestra el nombre que manda el servidor, no uno congelado en el build', () => {
     render(<ConfiguracionPage />, { wrapper: conComercio })
     expect(screen.getByText('Almacén Don Pepe')).toBeInTheDocument()
-    expect(screen.getByText(/COMMERCE_NAME/)).toBeInTheDocument()
-    expect(screen.queryByText(/NEXT_PUBLIC_COMMERCE_NAME/)).not.toBeInTheDocument()
+    // V5: sin nombres de variables de entorno en pantalla: quien atiende no
+    // sabe que es eso. Se dice quien lo configura.
+    expect(screen.queryByText(/COMMERCE_NAME/)).not.toBeInTheDocument()
+    expect(screen.getByText(/los configura quien instaló el sistema/)).toBeInTheDocument()
   })
 
   it('tiene donde cambiar la contrasena propia', () => {
@@ -178,15 +180,15 @@ describe('Configuracion', () => {
     expect(screen.getByRole('button', { name: 'Cambiar contraseña' })).toBeInTheDocument()
   })
 
-  it('"Lo que todavia no esta" ya no nombra lo que existe', () => {
+  it('no nombra como faltante lo que ya existe, ni muestra codigos de permisos', () => {
     render(<ConfiguracionPage />, { wrapper: conComercio })
     for (const falso of [
       /Turnos de caja con apertura y cierre/,
       /Compras, proveedores y clientes/,
       /Cambio de contraseña desde la aplicación/,
+      /sales\.create/,
     ]) {
       expect(screen.queryByText(falso)).not.toBeInTheDocument()
     }
-    expect(screen.getByText(/Venta sin conexión/)).toBeInTheDocument()
   })
 })

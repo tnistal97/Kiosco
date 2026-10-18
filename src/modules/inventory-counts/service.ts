@@ -474,6 +474,7 @@ export async function lineasDeInventario(
     ...(query.diferencia === 'positivas' ? { variance: { gt: 0 } } : {}),
     ...(query.diferencia === 'negativas' ? { variance: { lt: 0 } } : {}),
     ...(query.q ? { product: { name: { contains: query.q, mode: 'insensitive' as const } } } : {}),
+    ...(query.productId === undefined ? {} : { productId: query.productId }),
   }
 
   const [total, lineas] = await Promise.all([
@@ -611,9 +612,14 @@ export async function cargarConteo(
       // segundo. Pedirlo indefinidamente convertiria una diferencia real en un
       // bucle del que no se sale.
       const yaHuboSegundo = linea.firstCountQuantity !== null
+      // Una linea en RECOUNT ya pidio el segundo: lo que llega ahora ES el
+      // segundo conteo. Sin esto, un segundo conteo que confirmaba la
+      // diferencia volvia a pedir otro, y hacian falta tres.
+      const esElSegundo = linea.status === 'RECOUNT'
       const pideSegundo =
         !sinPartida &&
         !yaHuboSegundo &&
+        !esElSegundo &&
         umbral !== null &&
         absolutoCantidad(diferencia).greaterThan(umbral)
 

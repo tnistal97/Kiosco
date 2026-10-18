@@ -24,12 +24,15 @@ export function CodigosDeBarras({
   deshabilitado,
   onPrincipal,
   onAlternativos,
+  soloAlternativos = false,
 }: {
   principal: string
   alternativos: string[]
   deshabilitado: boolean
   onPrincipal: (v: string) => void
   onAlternativos: (v: string[]) => void
+  /** El codigo principal ya esta en el formulario (UX V5): aca solo los otros. */
+  soloAlternativos?: boolean
 }) {
   const [nuevo, setNuevo] = useState('')
 
@@ -50,23 +53,25 @@ export function CodigosDeBarras({
 
   return (
     <div className="flex flex-col gap-4">
-      <Field
-        label="Código principal"
-        hint="El que se muestra en los listados. Vacío si el producto no tiene etiqueta."
-      >
-        <Input
-          value={principal}
-          disabled={deshabilitado}
-          className="font-mono"
-          onChange={(e) => {
-            onPrincipal(e.target.value)
-          }}
-        />
-      </Field>
+      {!soloAlternativos && (
+        <Field
+          label="Código de barras"
+          hint="El que se muestra en los listados. Vacío si el producto no tiene etiqueta."
+        >
+          <Input
+            value={principal}
+            disabled={deshabilitado}
+            className="font-mono"
+            onChange={(e) => {
+              onPrincipal(e.target.value)
+            }}
+          />
+        </Field>
+      )}
 
       <Field
-        label="Códigos alternativos"
-        hint="El lector encuentra el producto con cualquiera de ellos."
+        label="Otros códigos"
+        hint="Si el producto viene con más de un código. El lector lo encuentra con cualquiera."
         error={repetido ? 'Ese código ya está en la lista.' : null}
       >
         <div className="flex gap-2">

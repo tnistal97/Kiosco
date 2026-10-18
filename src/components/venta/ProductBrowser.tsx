@@ -209,6 +209,11 @@ export function ProductBrowser({
     // nativa del boton para que dependa de la tecla y no de como cada
     // navegador --o cada lector de pantalla-- sintetiza el clic.
     if (e.key === 'Enter') {
+      // Un Enter sostenido no elige treinta veces.
+      if (e.repeat) {
+        e.preventDefault()
+        return
+      }
       const boton = e.target instanceof HTMLElement ? e.target.closest('[data-fila]') : null
       const indice = Number(boton?.getAttribute('data-indice') ?? '-1')
       const producto = productos[indice]
@@ -319,7 +324,7 @@ function estadoDelProducto(producto: Product): {
   const cantidad = formatearCantidadConUnidad(producto.sellableStock, producto.saleUnit)
 
   if (agotado) {
-    return { texto: porVencimiento ? 'Vencido' : 'Agotado', tono: 'text-danger', agotado: true }
+    return { texto: porVencimiento ? 'Vencido' : 'Sin stock', tono: 'text-danger', agotado: true }
   }
   if (producto.estado === 'LOW') {
     return { texto: `Quedan ${cantidad}`, tono: 'text-warning', agotado: false }
@@ -388,7 +393,9 @@ const FilaDeProducto = memo(function FilaDeProducto({
           'xl:pr-11',
           'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
           COLUMNAS,
-          estado.agotado && 'cursor-not-allowed opacity-55',
+          // Sin stock: fondo apagado y el estado dicho en palabras ("Sin
+          // stock"), no una opacidad que deja todo ilegible.
+          estado.agotado && 'cursor-not-allowed bg-sunken',
           // Tres estados bien distintos: elegida --las flechas actuan aca--,
           // apenas marcada --Enter la agregaria-- y el resto.
           elegida
@@ -404,7 +411,10 @@ const FilaDeProducto = memo(function FilaDeProducto({
         <span className={CELDA_NOMBRE}>
           <span
             data-nombre=""
-            className="line-clamp-2 text-[0.9375rem] leading-tight font-medium text-ink"
+            className={cn(
+              'line-clamp-2 text-[0.9375rem] leading-tight font-medium',
+              estado.agotado ? 'text-ink-muted' : 'text-ink',
+            )}
           >
             {producto.name}
           </span>
@@ -443,7 +453,7 @@ const FilaDeProducto = memo(function FilaDeProducto({
         className={cn(
           'absolute inset-y-0 right-0 hidden w-10 items-center justify-center text-base leading-none transition-opacity xl:flex',
           'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100',
-          favorito ? 'text-warning opacity-100' : 'text-ink-faint hover:text-warning',
+          favorito ? 'text-ink opacity-100' : 'text-ink-faint hover:text-ink',
         )}
       >
         <span aria-hidden="true">{favorito ? '★' : '☆'}</span>

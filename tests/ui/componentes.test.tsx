@@ -70,7 +70,7 @@ describe('Estados: nunca solo color', () => {
 
   it('el stock dice cuantos quedan, no solo si es poco', () => {
     const { rerender } = render(<StockBadge quantity="0.000" />)
-    expect(screen.getByText('Agotado')).toBeInTheDocument()
+    expect(screen.getByText('Sin stock')).toBeInTheDocument()
 
     // El umbral es el MINIMO DEL PRODUCTO, no una constante global. Con
     // minimo 6 y cuatro unidades, esta bajo minimo y lo dice con los dos

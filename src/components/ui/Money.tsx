@@ -36,10 +36,13 @@ const TAMANIOS: Record<MoneySize, string> = {
   hero: 'text-4xl sm:text-5xl',
 }
 
+// UX V5: lo que entra y lo que sale se distinguen por el SIGNO (+/−), no por
+// el color. Verde y rojo quedan para "salio bien" y "error": un egreso de
+// caja no es un error, y una pantalla de caja llena de rojo asusta.
 const TONOS: Record<MoneyTone, string> = {
   neutral: 'text-money',
-  in: 'text-success',
-  out: 'text-danger',
+  in: 'text-money',
+  out: 'text-money',
   muted: 'text-ink-muted',
 }
 

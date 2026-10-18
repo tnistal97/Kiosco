@@ -51,14 +51,14 @@ type Modo = 'delta' | 'total'
 
 const MODOS = [
   { value: 'delta' as const, label: 'Entraron / salieron', description: 'Sumar o restar' },
-  { value: 'total' as const, label: 'Recuento', description: 'Cuántas hay ahora' },
+  { value: 'total' as const, label: 'Conté y hay…', description: 'Cuántas hay ahora' },
 ]
 
 const MOTIVOS_FRECUENTES = [
   'Entrada de mercadería',
   'Rotura',
   'Vencimiento',
-  'Recuento físico',
+  'Conté y no coincidía',
   'Error de carga',
 ]
 
@@ -273,7 +273,7 @@ export function DialogoAjusteStock({
             <Field
               label="Qué pasó"
               required
-              hint="Queda registrado en el libro de inventario. Es lo que después permite preguntar cuánto se rompió en el mes."
+              hint="Queda en Movimientos, para saber después por qué cambió el stock."
             >
               <Select
                 value={tipo}
@@ -306,13 +306,13 @@ export function DialogoAjusteStock({
           */}
           {pideLote && partidas && (
             <Field
-              label="De qué partida"
+              label="De qué lote"
               required={exigeLote}
-              error={falta ? 'Este producto exige decir de qué partida sale.' : null}
+              error={falta ? 'Este producto pide decir de qué lote sale.' : null}
               hint={
                 exigeLote
                   ? undefined
-                  : `Sin elegir, sale del stock sin asignar (${partidas.sinAsignar} ${politica.simbolo}).`
+                  : `Sin elegir, sale del stock sin lote (${partidas.sinAsignar} ${politica.simbolo}).`
               }
             >
               <Select
@@ -322,9 +322,7 @@ export function DialogoAjusteStock({
                   setLote(e.target.value)
                 }}
               >
-                <option value="">
-                  {exigeLote ? 'Elegí una partida…' : 'Sin partida (stock sin asignar)'}
-                </option>
+                <option value="">{exigeLote ? 'Elegí un lote…' : 'Sin lote'}</option>
                 {partidas.lotes.map((l) => (
                   <option key={l.id} value={String(l.id)}>
                     {l.code} — {l.quantity} {politica.simbolo}
@@ -404,7 +402,7 @@ export function DialogoAjusteStock({
           <Field
             label="Motivo"
             required
-            hint="Obligatorio. Queda en la bitácora con tu nombre y la fecha."
+            hint="Obligatorio. Queda guardado con tu nombre y la fecha."
           >
             <Input
               value={motivo}

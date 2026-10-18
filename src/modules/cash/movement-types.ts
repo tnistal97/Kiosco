@@ -39,9 +39,9 @@ export interface DescripcionDeMovimiento {
  */
 const DESCRIPCIONES: Record<TipoDeMovimientoDeCaja, DescripcionDeMovimiento> = {
   sale: { etiqueta: 'Venta', glifo: '↓', tono: 'success' },
-  sale_cancel: { etiqueta: 'Anulación de venta', glifo: '↺', tono: 'danger' },
+  sale_cancel: { etiqueta: 'Venta anulada', glifo: '↺', tono: 'danger' },
   ingreso: { etiqueta: 'Ingreso', glifo: '↓', tono: 'success' },
-  retiro: { etiqueta: 'Retiro', glifo: '↑', tono: 'warning' },
+  retiro: { etiqueta: 'Egreso', glifo: '↑', tono: 'warning' },
   deposito: { etiqueta: 'Depósito', glifo: '↓', tono: 'success' },
   manual: { etiqueta: 'Movimiento manual', glifo: '•', tono: 'neutral' },
   customer_payment: { etiqueta: 'Cobro a cliente', glifo: '↓', tono: 'success' },

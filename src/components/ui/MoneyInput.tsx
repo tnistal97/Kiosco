@@ -38,6 +38,8 @@ export interface MoneyInputProps extends Omit<
   label: string
   /** Por omision la etiqueta solo la oye el lector de pantalla. */
   labelVisible?: boolean
+  /** Clases extra para la etiqueta visible (p. ej. RECIBIDO en el cobro). */
+  labelClassName?: string
   size?: MoneyInputSize
   /** Fuerza el estado de error; sin esto, se marca cuando hay texto que no es un importe. */
   invalid?: boolean
@@ -49,6 +51,7 @@ export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(function
     onChange,
     label,
     labelVisible = false,
+    labelClassName,
     size = 'md',
     invalid,
     className,
@@ -68,7 +71,7 @@ export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(function
     <div className="flex w-full flex-col gap-1.5">
       <label
         htmlFor={idFinal}
-        className={cn('text-sm font-medium text-ink-muted', !labelVisible && 'sr-only')}
+        className={cn('text-sm font-semibold text-ink', labelClassName, !labelVisible && 'sr-only')}
       >
         {label}
       </label>
@@ -113,10 +116,10 @@ export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(function
             onBlur?.(e)
           }}
           className={cn(
-            'w-full rounded-md border bg-sunken pr-3 pl-8 text-right font-semibold text-ink transition-colors',
-            'placeholder:font-normal placeholder:text-ink-faint hover:border-line-strong focus:border-primary',
-            'disabled:cursor-not-allowed disabled:opacity-50',
-            malo ? 'border-danger' : 'border-line',
+            'w-full rounded-md border bg-field pr-3 pl-8 text-right font-semibold text-ink transition-colors',
+            'placeholder:font-normal placeholder:text-ink-faint hover:border-ink-faint focus:border-primary',
+            'disabled:cursor-not-allowed disabled:bg-disabled-bg disabled:text-disabled-ink',
+            malo ? 'border-danger' : 'border-line-strong',
             ALTURAS[size],
             className,
           )}

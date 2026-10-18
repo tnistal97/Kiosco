@@ -9,7 +9,7 @@
  * tal cual en vez de desaparecer.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describirMovimientoDeCaja } from '@/modules/cash/movement-types'
@@ -87,16 +87,41 @@ describe('Medios de pago como botones', () => {
     const { rerender } = render(
       <PaymentSelector
         value="CASH"
-        onChange={(m) => {
-          valor = m
+        onChange={(o) => {
+          valor = o.method
         }}
       />,
     )
     screen.getByRole('radio', { name: 'Efectivo' }).focus()
     await usuario.keyboard('{ArrowRight}')
-    expect(valor).toBe('DEBIT_CARD')
+    // V5: el orden del mostrador. Despues de Efectivo viene Transferencia.
+    expect(valor).toBe('TRANSFER')
     rerender(<PaymentSelector value="DEBIT_CARD" onChange={() => undefined} />)
     expect(screen.getByRole('radio', { name: 'Débito' })).toBeChecked()
+  })
+
+  it('Mercado Pago es una transferencia con referencia, no un medio nuevo', async () => {
+    const usuario = userEvent.setup()
+    let elegida: { method: string; referencia: string | null } | null = null
+    render(
+      <PaymentSelector
+        value="CASH"
+        onChange={(o) => {
+          elegida = o
+        }}
+      />,
+    )
+    await usuario.click(screen.getByRole('radio', { name: 'Mercado Pago' }))
+    expect(elegida).toMatchObject({ method: 'TRANSFER', referencia: 'Mercado Pago' })
+  })
+
+  it('Enter sobre una forma de pago la elige y pide pasar al paso siguiente', async () => {
+    const usuario = userEvent.setup()
+    const onConfirmar = vi.fn()
+    render(<PaymentSelector value="CASH" onChange={() => undefined} onConfirmar={onConfirmar} />)
+    screen.getByRole('radio', { name: 'Efectivo' }).focus()
+    await usuario.keyboard('{Enter}')
+    expect(onConfirmar).toHaveBeenCalledWith(expect.objectContaining({ method: 'CASH' }))
   })
 
   it('cada medio tiene una letra', () => {

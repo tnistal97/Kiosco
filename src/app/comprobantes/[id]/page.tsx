@@ -138,7 +138,7 @@ export default function ComprobantePage() {
             {c.reference !== null && <Linea label="Referencia">{c.reference}</Linea>}
           </div>
 
-          <div className="rounded-lg bg-surface-2 p-3 text-center">
+          <div className="rounded-lg bg-sunken p-3 text-center">
             <div className="text-xs text-ink-muted">Importe recibido</div>
             <div className="text-3xl font-semibold text-ink" data-numeric="">
               <Money amount={c.amount} />

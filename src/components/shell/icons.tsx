@@ -67,6 +67,33 @@ export const ICONOS: Record<string, () => ReactNode> = {
       <path d="M10 12h4" />
     </Svg>
   ),
+  '/inventarios': () => (
+    <Svg>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 4h6v3H9z" />
+      <path d="m9 13 2 2 4-4" />
+    </Svg>
+  ),
+  '/clientes': () => (
+    <Svg>
+      <circle cx="12" cy="8.5" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </Svg>
+  ),
+  '/reportes': () => (
+    <Svg>
+      <path d="M4 20h16" />
+      <path d="M7 16v-4M12 16V7M17 16v-6" />
+    </Svg>
+  ),
+  '/compras': () => (
+    <Svg>
+      <path d="M3 7h11v9H3z" />
+      <path d="M14 10h4l3 3v3h-7" />
+      <circle cx="7" cy="18" r="1.5" />
+      <circle cx="17" cy="18" r="1.5" />
+    </Svg>
+  ),
   '/auditoria': () => (
     <Svg>
       <circle cx="11" cy="11" r="6.5" />

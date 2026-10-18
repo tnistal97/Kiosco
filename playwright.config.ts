@@ -46,7 +46,7 @@ export default defineConfig({
 
   use: {
     baseURL: BASE,
-    colorScheme: 'dark',
+    colorScheme: 'light',
     locale: 'es-AR',
     timezoneId: 'America/Argentina/Buenos_Aires',
     trace: 'retain-on-failure',
@@ -97,6 +97,10 @@ export default defineConfig({
      */
     reuseExistingServer: process.env.E2E_REUSE === '1',
     timeout: 120_000,
-    env: { DATABASE_URL, NODE_ENV: 'production' },
+    // `KIOSCO_FUNCIONES=todas`: las suites de lotes, compras, proveedores y
+    // devoluciones siguen probando esas pantallas aunque una instalacion de
+    // almacen las oculte. El modo almacen (sin la variable) lo cubren
+    // tests/unit/funciones.test.ts y middleware-funciones.test.ts.
+    env: { DATABASE_URL, NODE_ENV: 'production', KIOSCO_FUNCIONES: 'todas' },
   },
 })

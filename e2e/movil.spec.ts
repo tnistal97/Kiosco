@@ -147,6 +147,13 @@ test('el total y el boton de cobrar se ven sin desplazarse', async ({ page }) =>
   // La barra inferior esta fija: el total y el cobro no dependen del scroll.
   const cobrar = page.getByRole('button', { name: /^cobrar$/i })
   await expect(cobrar).toBeInViewport()
+  // Y el total entra entero en su boton: no se corta contra Cobrar.
+  const boton = page.getByRole('button', { name: /^ticket/i })
+  const entra = await boton.evaluate((b) => {
+    const monto = b.querySelector('.money')
+    return monto !== null && monto.getBoundingClientRect().right <= b.getBoundingClientRect().right
+  })
+  expect(entra).toBe(true)
 
   await page.getByRole('button', { name: /^ticket/i }).click()
   const ticket = page.getByRole('dialog', { name: /ticket/i })

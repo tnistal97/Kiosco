@@ -55,10 +55,8 @@ async function abrirFicha(page: Page, nombre: string): Promise<void> {
     .getByRole('row')
     .filter({ hasText: nombre })
     .first()
-    .locator('button[aria-expanded]')
-    .first()
+    .getByRole('button', { name: /^Editar / })
     .click()
-  await page.getByRole('menuitem', { name: 'Editar' }).click()
   await dialogo(page).getByRole('heading').first().waitFor()
 }
 
@@ -124,14 +122,16 @@ test.describe('Un entero pelado entra en todos lados', () => {
     await page.getByRole('button', { name: 'Agregar' }).click()
 
     // Kilo y medio: 1,5 × $9.800 = $14.700.
-    await expect(ticket(page).getByText('1,500 kg', { exact: true })).toBeVisible()
+    await expect(
+      ticket(page).getByRole('spinbutton', { name: /cantidad de queso/i }),
+    ).toHaveAttribute('aria-valuetext', '1,500 kg')
 
     await ticket(page)
       .getByRole('button', { name: /^Cobrar/ })
       .click()
 
     const cobro = dialogo(page)
-    const pagaCon = cobro.getByLabel(/^paga con/i)
+    const pagaCon = cobro.getByLabel(/^recibido/i)
     await pagaCon.fill('20000')
     // Veinte mil, no veinte: el vuelto de $14.700 es $5.300.
     await expect(cobro.getByText('5.300', { exact: false }).first()).toBeVisible()
@@ -139,7 +139,7 @@ test.describe('Un entero pelado entra en todos lados', () => {
     await expect(pagaCon).toHaveValue('20.000,00')
 
     await page.waitForTimeout(400)
-    await cobro.getByRole('button', { name: /^Cobrar/ }).click()
+    await cobro.getByRole('button', { name: /^Confirmar venta/ }).click()
     await expect(page.getByText('Venta registrada')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText(/vuelto/i).first()).toBeVisible()
   })
@@ -147,19 +147,19 @@ test.describe('Un entero pelado entra en todos lados', () => {
   test('4. caja: un ingreso de 10000 entra y queda escrito como se lee', async ({ page }) => {
     await entrar(page, 'encargado')
     await page.goto('/caja')
-    await page
-      .getByRole('button', { name: /movimiento/i })
-      .first()
-      .click()
+    await page.getByRole('button', { name: 'Registrar ingreso' }).click()
 
-    const monto = dialogo(page).getByLabel('Monto')
+    const monto = dialogo(page).getByLabel('Importe')
     await monto.fill('10000')
     await monto.blur()
     await expect(monto, 'diez mil, no diez').toHaveValue('10.000,00')
 
-    await dialogo(page).getByLabel('Detalle').fill('Prueba de números')
-    await dialogo(page).getByRole('button', { name: 'Registrar' }).click()
+    await dialogo(page).getByLabel('Motivo').fill('Prueba de números')
+    await dialogo(page).getByRole('button', { name: 'Registrar ingreso' }).click()
+    await expect(page.getByText('Ingreso registrado.')).toBeVisible({ timeout: 15_000 })
 
+    // La lista de movimientos esta en "Ver detalle".
+    await page.getByRole('button', { name: /ver detalle/i }).click()
     await expect(page.getByText('Prueba de números').first()).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('$ 10.000,00').first()).toBeVisible()
   })
@@ -211,12 +211,9 @@ test.describe('Un entero pelado entra en todos lados', () => {
     await page.goto('/inventarios')
     await page.getByRole('button', { name: /nuevo inventario/i }).click()
 
-    // Sin conteo a ciegas: hay que ver lo esperado para saber qué se cuenta.
+    // V5: por omision se ve lo que dice el sistema mientras se cuenta.
     await dialogo(page)
-      .getByRole('checkbox', { name: /conteo a ciegas/i })
-      .uncheck()
-    await dialogo(page)
-      .getByRole('button', { name: /crear inventario/i })
+      .getByRole('button', { name: /empezar a contar/i })
       .click()
     await page.waitForURL(/\/inventarios\/\d+/)
     const id = Number(/\/inventarios\/(\d+)/.exec(page.url())?.[1] ?? 0)
@@ -225,11 +222,10 @@ test.describe('Un entero pelado entra en todos lados', () => {
     const campo = fila.getByRole('textbox').first()
     // CERO: "no hay ninguno" es un conteo legítimo, y es distinto de no contar.
     await campo.fill('0')
-    await campo.blur()
+    // V5: cada cantidad se guarda sola al confirmarla (Enter o al salir).
+    await campo.press('Enter')
     await expect(campo).toHaveValue('0')
-
-    await page.getByRole('button', { name: /guardar conteos/i }).click()
-    await expect(page.getByText(/se guardaron/i).first()).toBeVisible({ timeout: 15_000 })
+    await expect(fila.getByLabel('Guardado')).toBeVisible({ timeout: 15_000 })
 
     const contado = await page.evaluate(async (sesion: number) => {
       const r = await fetch(`/api/inventarios/${String(sesion)}/lineas?pageSize=100`)
@@ -268,6 +264,8 @@ test.describe('El "1.500" de cada campo', () => {
 
     // La balanza escribe "1.500" para kilo y medio. Un almacén que venda mil
     // quinientos kilos de queso en una línea no existe.
-    await expect(ticket(page).getByText('1,500 kg', { exact: true })).toBeVisible()
+    await expect(
+      ticket(page).getByRole('spinbutton', { name: /cantidad de queso/i }),
+    ).toHaveAttribute('aria-valuetext', '1,500 kg')
   })
 })

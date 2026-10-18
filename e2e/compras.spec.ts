@@ -46,8 +46,15 @@ async function stockDe(page: Page, nombre: string): Promise<number> {
   await page.goto('/stock')
   await page.getByRole('searchbox').first().fill(nombre)
   await page.waitForTimeout(700)
-  const fila = await page.getByRole('row').filter({ hasText: nombre }).first().innerText()
-  const crudo = /([\d.,]+)\s*(?:u\.|kg|g|L|ml)\s*en stock/.exec(fila)?.[1]
+  // V5: la columna "Stock actual" (la segunda) dice la cantidad sola: "31 u.".
+  const fila = await page
+    .getByRole('row')
+    .filter({ hasText: nombre })
+    .first()
+    .locator('td')
+    .nth(1)
+    .innerText()
+  const crudo = /([\d.,]+)\s*(?:u\.|kg|g|L|ml)/.exec(fila)?.[1]
   expect(crudo, `no se pudo leer el stock. La fila decia: ${fila}`).toBeDefined()
   return Number((crudo ?? '0').replace(/\./g, '').replace(',', '.'))
 }
@@ -171,7 +178,8 @@ test.describe('El circuito completo: 5 cajas de 8, en dos entregas', () => {
     // Dentro de la TABLA: la pantalla dibuja además una lista de tarjetas para
     // móvil que en escritorio está oculta, y `.first()` caía sobre ella.
     const libro = page.getByRole('table')
-    await expect(libro.getByText('Recepción de compra').first()).toBeVisible()
+    // V5: en Movimientos la recepcion se llama "Entrada".
+    await expect(libro.getByText('Entrada', { exact: true }).first()).toBeVisible()
     // La referencia apunta a la RECEPCIÓN, no a la orden.
     await expect(libro.getByRole('link', { name: /Recepción #\d+/ }).first()).toBeVisible()
   })
@@ -182,16 +190,15 @@ test.describe('El circuito completo: 5 cajas de 8, en dos entregas', () => {
     await page.getByRole('searchbox').first().fill(PRODUCTOS.gaseosa.nombre)
     await page.waitForTimeout(900)
 
-    // La ficha se abre desde el menú de la fila, no con un botón suelto.
+    // V5: "Editar" a la vista en la fila; el costo, en "Más opciones".
     await page
       .getByRole('row')
       .filter({ hasText: PRODUCTOS.gaseosa.nombre })
       .first()
-      .locator('button[aria-expanded]')
-      .first()
+      .getByRole('button', { name: /^Editar / })
       .click()
-    await page.getByRole('menuitem', { name: 'Editar' }).click()
     const ficha = page.getByRole('dialog')
+    await ficha.getByRole('button', { name: /más opciones/i }).click()
 
     // $8.800 la caja de 8 = $1.100 la botella.
     await expect(ficha.getByLabel(/^Costo/i).first()).toHaveValue(/1\.100/)
@@ -327,12 +334,17 @@ test.describe('Lo que no se puede hacer', () => {
 })
 
 test.describe('El panel de inicio', () => {
-  test('muestra cuántas compras esperan mercadería', async ({ page }) => {
+  // UX V5: el inicio dejo de ser un tablero. Lo pendiente de compras se ve en
+  // Compras, no en la pantalla de entrada de quien atiende.
+  test('el inicio no es un tablero: lo de compras se ve en Compras', async ({ page }) => {
     await entrar(page, 'compras')
-    await expect(page.getByText('Esperando mercadería')).toBeVisible()
+    await expect(page.getByText('¿Qué vas a hacer?')).toBeVisible()
+    await expect(page.getByText('Esperando mercadería')).toHaveCount(0)
+    await page.goto('/compras')
+    await expect(page.getByRole('link', { name: /OC-/ }).first()).toBeVisible()
   })
 
-  test('el cajero no ve la tarjeta de compras', async ({ page }) => {
+  test('el cajero tampoco ve compras en el inicio', async ({ page }) => {
     await entrar(page, 'cajero')
     await expect(page.getByText('Esperando mercadería')).toHaveCount(0)
   })

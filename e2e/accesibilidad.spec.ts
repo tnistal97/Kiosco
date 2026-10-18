@@ -140,7 +140,7 @@ test.describe('accesibilidad automatizada', () => {
     // `toBeAttached` y no `toBeVisible`: la raiz del dialogo de Headless UI es
     // un contenedor de tamanio cero --lo que se ve es el panel de adentro--.
     await expect(page.getByRole('dialog')).toBeAttached()
-    await expect(page.getByRole('button', { name: /^cobrar/i }).last()).toBeVisible()
+    await expect(page.getByRole('button', { name: /^confirmar venta/i })).toBeVisible()
     await esperarDialogoEstable(page)
 
     const { violations } = await analizar(page)
@@ -151,7 +151,8 @@ test.describe('accesibilidad automatizada', () => {
     await entrar(page, 'duenio')
     await page.goto('/productos')
     await page.getByRole('heading', { level: 1 }).waitFor()
-    await expect(page.getByText(PRODUCTOS.yerba.nombre).first()).toBeVisible()
+    // La lista ya cargada (de la A a la Z: la primera fila, sea cual sea).
+    await expect(page.getByRole('button', { name: /^(Editar|Ajustar)/ }).first()).toBeVisible()
 
     const { violations } = await analizar(page)
     expect(detalle(violations)).toBe('sin faltas')
@@ -206,7 +207,8 @@ test.describe('accesibilidad automatizada', () => {
     await entrar(page, 'duenio')
     await page.goto('/stock')
     await page.getByRole('heading', { level: 1 }).waitFor()
-    await expect(page.getByText(PRODUCTOS.yerba.nombre).first()).toBeVisible()
+    // La lista ya cargada (de la A a la Z: la primera fila, sea cual sea).
+    await expect(page.getByRole('button', { name: /^(Editar|Ajustar)/ }).first()).toBeVisible()
 
     const { violations } = await analizar(page)
     expect(detalle(violations)).toBe('sin faltas')
@@ -581,18 +583,19 @@ test.describe('accesibilidad automatizada', () => {
   })
 
   /**
-   * El tema claro tambien se audita.
+   * El tema oscuro tambien se audita.
    *
-   * Todo lo demas corre en oscuro, que es el predeterminado. Eso dejaba una
-   * mitad del sistema visual sin mirar: cuando se reviso, `--color-ink-faint`
-   * daba 3,5:1 sobre el fondo claro --peor que en oscuro-- y llevaba asi desde
-   * que existe el tema. Un tema que no se prueba no esta soportado.
+   * Desde la V5 todo lo demas corre en claro, que es el predeterminado. El
+   * oscuro sigue siendo una opcion (Configuracion), y un tema que no se prueba
+   * no esta soportado.
    */
-  test('el tema claro tampoco tiene faltas', async ({ page }) => {
+  test('el tema oscuro tampoco tiene faltas', async ({ page }) => {
     await entrar(page, 'duenio')
+    await page.goto('/configuracion')
+    await page.getByRole('button', { name: 'Cambiar al tema oscuro' }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
     await page.goto('/productos')
-    await page.getByRole('button', { name: 'Cambiar al tema claro' }).click()
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await page.getByRole('heading', { level: 1 }).waitFor()
 
     const { violations } = await analizar(page)
     expect(detalle(violations)).toBe('sin faltas')
@@ -692,6 +695,29 @@ test.describe('accesibilidad automatizada', () => {
     expect(detalle(violations)).toBe('sin faltas')
   })
 
+  test('/configuracion no tiene faltas', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/configuracion')
+    await page.getByRole('heading', { level: 1 }).waitFor()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
+  test('el alta de producto no tiene faltas, con "Más opciones" abierto', async ({ page }) => {
+    await entrar(page, 'duenio')
+    await page.goto('/productos')
+    await page.getByRole('button', { name: /nuevo producto/i }).click()
+    await esperarDialogoEstable(page)
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /más opciones/i })
+      .click()
+
+    const { violations } = await analizar(page)
+    expect(detalle(violations)).toBe('sin faltas')
+  })
+
   test('el diálogo de nuevo inventario no tiene faltas', async ({ page }) => {
     await entrar(page, 'duenio')
     await page.goto('/inventarios')
@@ -709,7 +735,7 @@ test.describe('accesibilidad automatizada', () => {
     await esperarDialogoEstable(page)
     await page
       .getByRole('dialog')
-      .getByRole('button', { name: /crear inventario/i })
+      .getByRole('button', { name: /empezar a contar/i })
       .click()
     await page.waitForURL(/\/inventarios\/\d+/)
     await page.getByRole('heading', { level: 1 }).waitFor()
@@ -727,11 +753,13 @@ test.describe('accesibilidad automatizada', () => {
       .getByRole('row')
       .filter({ hasText: 'Yogur' })
       .first()
-      .locator('button[aria-expanded]')
-      .first()
+      .getByRole('button', { name: /^Editar / })
       .click()
-    await page.getByRole('menuitem', { name: 'Editar' }).click()
     await esperarDialogoEstable(page)
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /más opciones/i })
+      .click()
     // La sección de trazabilidad se carga aparte: sin esperarla, axe mide una
     // ficha a la que le falta un tercio.
     await page.getByRole('group', { name: 'Lotes' }).waitFor()

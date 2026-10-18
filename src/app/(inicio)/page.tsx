@@ -1,673 +1,250 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import {
-  formatQuantity,
-  PageContainer,
-  Alert,
-  Button,
-  ButtonLink,
-  Card,
-  CardHeader,
-  EmptyState,
-  MetricCard,
-  Money,
-  SaleStatusBadge,
-  Skeleton,
-  StockBadge,
-  cn,
-  formatMoney,
-} from '@/components/ui'
+import { Metric, MetricRow, Money, PageContainer, Section, Skeleton, cn } from '@/components/ui'
 import { useSession } from '@/components/shell/SessionProvider'
+import { IconoDe } from '@/components/shell/icons'
 import { apiRequest } from '@/lib/api-client'
-import { CERO, esCero, esPositivo, type Monto } from '@/lib/money'
-import { parsePaginaProductos } from '@/modules/products/dto'
-import { parsePaginaVentas, type VentaDTO } from '@/modules/sales/dto'
-import { parseArqueos, parseSaldo, type ArqueoDTO } from '@/modules/cash/dto'
+import type { Monto } from '@/lib/money'
+import { parsePaginaVentas } from '@/modules/sales/dto'
+import { parseEstadoDeCaja, type EstadoDeCajaDTO } from '@/modules/cash/dto'
 import { parseReposicion, type ReposicionDTO } from '@/modules/inventory/dto'
-import { parseResumenCompras, type ResumenComprasDTO } from '@/modules/purchases/dto'
-import {
-  parseCarteraDeProveedores,
-  type CarteraDeProveedoresDTO,
-} from '@/modules/suppliers/dto.cuenta'
-import {
-  parseRentabilidadDelDia,
-  parseReporteClientes,
-  type ReporteClientesDTO,
-} from '@/modules/reports/dto'
-import type { Product } from '@/hooks/useProducts'
-
-interface Panel {
-  saldo: Monto | null
-  efectivoHoy: Monto
-  ventasHoy: number
-  anuladasHoy: number
-  /** `null` cuando quien mira no puede ver la facturacion del local. */
-  recaudadoHoy: Monto | null
-  gananciaHoy: Monto | null
-  margenHoy: string | null
-  lineasSinCostoHoy: number
-  ultimasVentas: VentaDTO[]
-  bajos: Product[]
-  reposicion: ReposicionDTO
-  compras: ResumenComprasDTO
-  ultimoArqueo: ArqueoDTO | null
-  /** La cartera de clientes. Null cuando no se puede ver. */
-  clientes: ReporteClientesDTO | null
-  /** Las cuentas por pagar. Null cuando no se pueden ver. */
-  proveedores: CarteraDeProveedoresDTO | null
-  /** Vencimientos de partidas. Null sin `lots.view`. Fase 4D. */
-  vencimientos: {
-    lotesVencidos: number
-    unidadesVencidas: string
-    lotesEnSieteDias: number
-    lotesEnTreintaDias: number
-    productosAfectados: number
-  } | null
-  /** Inventarios físicos sin terminar. Null sin `inventoryCounts.view`. */
-  inventarios: { enRevision: number; contando: number } | null
-}
-
-const VACIO: Panel = {
-  saldo: null,
-  efectivoHoy: CERO,
-  ventasHoy: 0,
-  anuladasHoy: 0,
-  recaudadoHoy: null,
-  gananciaHoy: null,
-  margenHoy: null,
-  lineasSinCostoHoy: 0,
-  ultimasVentas: [],
-  bajos: [],
-  reposicion: { agotados: 0, bajoMinimo: 0, sinMinimo: 0 },
-  compras: { pendientes: 0, parciales: 0, borradores: 0 },
-  ultimoArqueo: null,
-  clientes: null,
-  proveedores: null,
-  vencimientos: null,
-  inventarios: null,
-}
+import type { Permission } from '@/server/authz/permissions'
 
 /**
- * Panel de inicio.
+ * Inicio. UX V5.
  *
- * Solo lo que ese usuario puede abrir. Un cajero no ve la recaudacion del
- * dia ni el saldo de la caja; un repositor ve el stock y nada mas. No es
- * cosmetica: cada tarjeta que se dibuja consulta un endpoint, y pedirle a la
- * API algo que va a responder 403 llena la bitacora de rechazos que no
- * significan nada.
+ * No es un tablero: es la puerta de entrada. Pregunta "¿qué vas a hacer?"
+ * con cinco botones grandes --Vender, Caja, Productos, Stock, Hacer
+ * inventario-- y muestra solo tres datos de hoy: cuanto se vendio, como esta
+ * la caja y cuantos productos se estan quedando sin stock. Cada dato lleva a
+ * la pantalla que lo explica.
  *
- * Cada tarjeta abre la pantalla que corresponde. Un numero que no lleva a
- * ningun lado obliga a buscar en el menu que pantalla lo explica.
+ * Lo que habia antes --once tarjetas con numeros de compras, deudas,
+ * vencimientos, cobranzas-- sigue existiendo en Reportes, Caja y Clientes. Un
+ * empleado que entra a trabajar no necesita leerlo para empezar.
  */
+
+interface Acceso {
+  href: string
+  titulo: string
+  descripcion: string
+  permiso?: Permission
+  principal?: boolean
+}
+
+const ACCESOS: Acceso[] = [
+  {
+    href: '/venta',
+    titulo: 'Vender',
+    descripcion: 'Escaneá o buscá productos y cobrá',
+    permiso: 'sales.create',
+    principal: true,
+  },
+  {
+    href: '/caja',
+    titulo: 'Caja',
+    descripcion: 'Abrir, contar y cerrar la caja',
+    permiso: 'cash.view',
+  },
+  {
+    href: '/productos',
+    titulo: 'Productos',
+    descripcion: 'Agregar, buscar y cambiar precios',
+    permiso: 'products.view',
+  },
+  { href: '/stock', titulo: 'Stock', descripcion: 'Qué mercadería tenés', permiso: 'stock.view' },
+  {
+    href: '/inventarios',
+    titulo: 'Hacer inventario',
+    descripcion: 'Contar lo que hay y corregir el stock',
+    permiso: 'inventoryCounts.view',
+  },
+]
+
+interface Hoy {
+  ventas: { cantidad: number; total: Monto | null } | null
+  caja: EstadoDeCajaDTO | null
+  reposicion: ReposicionDTO | null
+}
+
 export default function InicioPage() {
   const { session, puede, hoy } = useSession()
-  const [datos, setDatos] = useState<Panel>(VACIO)
-  const [cargando, setCargando] = useState(true)
+  const [datos, setDatos] = useState<Hoy | null>(null)
 
-  const verCaja = puede('cash.view')
   const verVentas = puede('sales.view')
-  // La recaudacion y la ganancia son dos permisos distintos: se puede
-  // necesitar saber cuanto se vendio sin saber cuanto se gano.
-  const verRecaudado = puede('reports.sales.view')
-  const verGanancia = puede('reports.costs.view')
+  const verVentasEnPesos = puede('reports.sales.view')
+  const verCaja = puede('cash.view')
   const verStock = puede('stock.view')
-  const verCompras = puede('purchases.view')
-  // Las cuentas por pagar tienen su propio permiso: el cajero NO las ve.
-  const verDeudas = puede('supplierAccounts.view')
-  /**
-   * La CARTERA, no la cuenta de una persona.
-   *
-   * `reports.clients.view` y no `accounts.view`, que es lo que tiene el cajero:
-   * el cajero necesita saber cuanto debe Juan cuando lo tiene enfrente --y eso
-   * lo ve en el POS y en la ficha-- pero no la lista completa de deudores del
-   * negocio. Es lo que pide el objetivo 31.
-   */
-  const verCartera = puede('reports.clients.view')
-  const vender = puede('sales.create')
-  /**
-   * Los dos permisos de la Fase 4D, y son dos a propósito.
-   *
-   * EL CAJERO NO TIENE NINGUNO. No es que se le esconden las tarjetas: sin
-   * permiso, esas consultas ni se hacen. Pedirle a la API algo que va a
-   * responder 403 llena la bitácora de rechazos que no significan nada, y qué
-   * partidas vencen en el depósito no es una decisión del mostrador.
-   */
-  const verLotes = puede('lots.view')
-  const verInventarios = puede('inventoryCounts.view')
-
-  const cargar = useCallback(async () => {
-    setCargando(true)
-    const salida: Panel = { ...VACIO }
-
-    // Cada bloque falla por su cuenta: que la caja no responda no puede
-    // dejar el panel entero en blanco.
-    const tareas: Array<Promise<void>> = []
-
-    if (verCaja) {
-      tareas.push(
-        apiRequest('/api/cash/balance', { parse: parseSaldo })
-          .then((s) => {
-            salida.saldo = s.balance
-            salida.efectivoHoy = s.efectivoHoy
-          })
-          .catch(() => undefined),
-        apiRequest('/api/cash/count?limite=1', { parse: parseArqueos })
-          .then((a) => {
-            salida.ultimoArqueo = a[0] ?? null
-          })
-          .catch(() => undefined),
-      )
-    }
-
-    // El dia lo dice la sucursal, no el reloj del dispositivo.
-    const d = hoy()
-
-    if (verVentas) {
-      tareas.push(
-        apiRequest(`/api/admin/sales?start=${d}&end=${d}&page=1&pageSize=5`, {
-          parse: parsePaginaVentas,
-        })
-          .then((r) => {
-            salida.ventasHoy = r.totales.ventas
-            salida.anuladasHoy = r.totales.anuladas
-            // Llega nulo sin `reports.sales.view`: el cajero ve sus ventas,
-            // no cuanto factura el local.
-            salida.recaudadoHoy = r.totales.recaudado
-            salida.ultimasVentas = r.data
-          })
-          .catch(() => undefined),
-      )
-    }
-
-    if (verGanancia) {
-      tareas.push(
-        apiRequest(`/api/reports/rentabilidad?desde=${d}&hasta=${d}`, {
-          parse: parseRentabilidadDelDia,
-        })
-          .then((r) => {
-            salida.gananciaHoy = r.gananciaBruta
-            salida.margenHoy = r.margenBruto
-            salida.lineasSinCostoHoy = r.lineasSinCosto
-          })
-          .catch(() => undefined),
-      )
-    }
-
-    if (verStock) {
-      tareas.push(
-        // Los que hay que reponer, para la lista. Solo cinco: es un panel, no
-        // un informe.
-        apiRequest('/api/products?lowStock=true&estado=activos&pageSize=5&sortBy=name', {
-          parse: parsePaginaProductos,
-        })
-          .then((p) => {
-            salida.bajos = p.data
-          })
-          .catch(() => undefined),
-        // Los tres numeros, contados por el servidor en una sola peticion.
-        // Antes eran dos consultas al catalogo que traian productos enteros
-        // para contarlos.
-        apiRequest('/api/inventory/replenishment', { parse: parseReposicion })
-          .then((r) => {
-            salida.reposicion = r
-          })
-          .catch(() => undefined),
-      )
-    }
-
-    if (verCompras) {
-      // Los tres numeros de compras, contados por el servidor. El importe
-      // pendiente viene solo si ademas se pueden ver costos, y de eso decide
-      // el servicio: la pantalla no tiene que volver a preguntarlo.
-      tareas.push(
-        apiRequest('/api/purchases/summary', { parse: parseResumenCompras })
-          .then((r) => {
-            salida.compras = r
-          })
-          .catch(() => undefined),
-      )
-    }
-
-    if (verDeudas) {
-      // Cuanto le debemos al conjunto de proveedores, cuanto esta vencido y
-      // que vence esta semana. Es el tablero del objetivo 31, y por eso NO se
-      // pide sin el permiso: una peticion que va a responder 403 llena la
-      // bitacora de rechazos que no significan nada.
-      tareas.push(
-        apiRequest('/api/suppliers/cartera', { parse: parseCarteraDeProveedores })
-          .then((r) => {
-            salida.proveedores = r
-          })
-          .catch(() => undefined),
-      )
-    }
-
-    if (verCartera) {
-      // La cartera de clientes: cuanto se debe y cuanto se cobro HOY. El
-      // cajero NO la pide --no tiene `reports.clients.view`-- y por eso ni
-      // siquiera se dibuja la tarjeta: pedirle a la API algo que va a
-      // responder 403 llena la bitacora de rechazos que no significan nada.
-      tareas.push(
-        apiRequest(`/api/reports/clientes?desde=${d}&hasta=${d}`, {
-          parse: parseReporteClientes,
-        })
-          .then((r) => {
-            salida.clientes = r
-          })
-          .catch(() => undefined),
-      )
-    }
-
-    if (verLotes) {
-      // Qué se vence. Cuatro números operativos --lo que hay que sacar de la
-      // góndola hoy-- y por eso van con `lots.view` y no con el permiso de
-      // reportes: quien mira los lotes tiene que poder verlos.
-      tareas.push(
-        apiRequest('/api/reportes/vencimientos', {
-          parse: (raw) => raw as NonNullable<Panel['vencimientos']>,
-        })
-          .then((r) => {
-            salida.vencimientos = r
-          })
-          .catch(() => undefined),
-      )
-    }
-
-    if (verInventarios) {
-      // Los inventarios sin terminar, en DOS estados distintos: uno esperando
-      // que alguien cierre el conteo y otro esperando que alguien aplique las
-      // diferencias. Son dos momentos con dos responsables distintos, y un
-      // solo número los confundiría.
-      tareas.push(
-        Promise.all([
-          apiRequest('/api/inventarios?estado=REVIEW&pageSize=1', {
-            parse: (raw) => (raw as { pagination: { total: number } }).pagination.total,
-          }),
-          apiRequest('/api/inventarios?estado=COUNTING&pageSize=1', {
-            parse: (raw) => (raw as { pagination: { total: number } }).pagination.total,
-          }),
-        ])
-          .then(([enRevision, contando]) => {
-            salida.inventarios = { enRevision, contando }
-          })
-          .catch(() => undefined),
-      )
-    }
-
-    await Promise.all(tareas)
-    setDatos(salida)
-    setCargando(false)
-  }, [
-    verCaja,
-    verVentas,
-    verGanancia,
-    verStock,
-    verCompras,
-    verCartera,
-    verDeudas,
-    verLotes,
-    verInventarios,
-    hoy,
-  ])
 
   useEffect(() => {
-    void cargar()
-  }, [cargar])
+    let vivo = true
+    const d = hoy()
+    void Promise.all([
+      verVentas
+        ? apiRequest(`/api/admin/sales?start=${d}&end=${d}&page=1&pageSize=1`, {
+            parse: parsePaginaVentas,
+          })
+            .then((r) => ({
+              cantidad: r.totales.ventas,
+              // Sin permiso de reportes el importe no viaja: no se muestra un
+              // cero que no es cierto.
+              total: verVentasEnPesos ? r.totales.recaudado : null,
+            }))
+            .catch(() => null)
+        : Promise.resolve(null),
+      verCaja
+        ? apiRequest('/api/cash/shift', { parse: parseEstadoDeCaja }).catch(() => null)
+        : Promise.resolve(null),
+      verStock
+        ? apiRequest('/api/inventory/replenishment', { parse: parseReposicion }).catch(() => null)
+        : Promise.resolve(null),
+    ]).then(([ventas, caja, reposicion]) => {
+      if (vivo) setDatos({ ventas, caja, reposicion })
+    })
+    return () => {
+      vivo = false
+    }
+  }, [hoy, verVentas, verVentasEnPesos, verCaja, verStock])
 
-  const sinNada =
-    !cargando &&
-    datos.ventasHoy === 0 &&
-    datos.bajos.length === 0 &&
-    datos.reposicion.agotados === 0 &&
-    datos.ultimasVentas.length === 0
+  const accesos = ACCESOS.filter((a) => !a.permiso || puede(a.permiso))
+  const [principal, ...resto] = accesos
+  const nombre = session?.name.split(' ')[0] ?? ''
+  const turno = datos?.caja?.turno ?? null
+  const pocoStock = datos?.reposicion
+    ? datos.reposicion.agotados + datos.reposicion.bajoMinimo
+    : null
 
   return (
-    <PageContainer>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold text-ink">
-            Hola, {session?.name.split(' ')[0] ?? ''}
-          </h2>
-          <p className="text-sm text-ink-muted">{session?.branchName}</p>
-        </div>
-        {vender && (
-          <ButtonLink href="/venta" variant="confirm" size="lg">
-            Ir a vender
-          </ButtonLink>
-        )}
+    <PageContainer className="gap-8">
+      <div>
+        <h2 className="text-2xl font-semibold text-ink">Hola{nombre ? `, ${nombre}` : ''}</h2>
+        <p className="mt-1 text-lg text-ink-muted">¿Qué vas a hacer?</p>
       </div>
 
-      {cargando ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }, (_, i) => (
-            <Skeleton key={i} className="h-28" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {verCaja && (
-            <MetricCard
-              href="/caja"
-              label="Efectivo en caja"
-              value={<Money amount={datos.saldo ?? CERO} size="lg" />}
-              detail={
-                datos.ultimoArqueo
-                  ? esCero(datos.ultimoArqueo.difference)
-                    ? 'Último arqueo: cuadró'
-                    : `Último arqueo: ${esPositivo(datos.ultimoArqueo.difference) ? 'sobró' : 'faltó'}`
-                  : 'Sin arqueos todavía'
-              }
-              tone={
-                !datos.ultimoArqueo
-                  ? 'neutral'
-                  : esCero(datos.ultimoArqueo.difference)
-                    ? 'success'
-                    : 'warning'
-              }
-            />
-          )}
-
-          {verVentas && (
-            <MetricCard
-              href="/ventas"
-              label="Ventas de hoy"
-              value={datos.ventasHoy}
-              detail={datos.anuladasHoy > 0 ? `${datos.anuladasHoy} anuladas` : 'Sin anulaciones'}
-              tone={datos.anuladasHoy > 0 ? 'warning' : 'neutral'}
-            />
-          )}
-
-          {verRecaudado && datos.recaudadoHoy !== null && (
-            <MetricCard
-              href="/reportes"
-              label="Recaudado hoy"
-              value={<Money amount={datos.recaudadoHoy} size="lg" />}
-              detail="No incluye las anuladas"
-            />
-          )}
-
-          {verGanancia && datos.gananciaHoy !== null && (
-            <MetricCard
-              href="/reportes"
-              label="Ganancia bruta hoy"
-              value={<Money amount={datos.gananciaHoy} size="lg" />}
-              detail={
-                datos.lineasSinCostoHoy > 0
-                  ? `${datos.margenHoy ?? '—'}% · ${datos.lineasSinCostoHoy} línea(s) sin costo`
-                  : `${datos.margenHoy ?? '—'}% de margen`
-              }
-              tone={datos.lineasSinCostoHoy > 0 ? 'warning' : 'neutral'}
-            />
-          )}
-
-          {verStock && (
-            <MetricCard
-              href="/stock"
-              label="Faltantes"
-              value={datos.reposicion.agotados + datos.reposicion.bajoMinimo}
-              detail={`${datos.reposicion.agotados} agotados · ${datos.reposicion.bajoMinimo} bajo mínimo`}
-              tone={
-                datos.reposicion.agotados > 0
-                  ? 'danger'
-                  : datos.reposicion.bajoMinimo > 0
-                    ? 'warning'
-                    : 'success'
-              }
-            />
-          )}
-
-          {verCartera && datos.clientes && (
-            <MetricCard
-              href="/clientes"
-              label="Por cobrar"
-              value={<Money amount={datos.clientes.cartera.saldoPendiente} size="lg" />}
-              detail={
-                datos.clientes.cartera.sobreLimite > 0
-                  ? `${String(datos.clientes.cartera.deudores)} deben · ${String(datos.clientes.cartera.sobreLimite)} sobre el límite`
-                  : `${String(datos.clientes.cartera.deudores)} cliente(s) deben`
-              }
-              tone={datos.clientes.cartera.sobreLimite > 0 ? 'warning' : 'neutral'}
-            />
-          )}
-
-          {verCartera && datos.clientes && (
-            <MetricCard
-              href="/clientes"
-              label="Cobrado hoy"
-              value={<Money amount={datos.clientes.periodo.cobrado} size="lg" />}
-              detail={`${String(datos.clientes.periodo.cuantosCobros)} cobro(s) · fiado hoy ${formatMoney(datos.clientes.periodo.ventasACuenta)}`}
-            />
-          )}
-
-          {verCompras && (
-            <MetricCard
-              href="/compras"
-              label="Esperando mercadería"
-              value={datos.compras.pendientes + datos.compras.parciales}
-              detail={
-                /*
-                  El detalle nombra las PARCIALES aparte porque son el numero
-                  accionable: una orden pedida y todavia sin entregar es lo
-                  normal; una a medio entregar hace una semana, no.
-                */
-                datos.compras.parciales > 0
-                  ? `${String(datos.compras.parciales)} a medio recibir`
-                  : datos.compras.borradores > 0
-                    ? `${String(datos.compras.borradores)} borrador(es) sin confirmar`
-                    : 'Nada a medio recibir'
-              }
-              tone={datos.compras.parciales > 0 ? 'warning' : 'neutral'}
-            />
-          )}
-
-          {verDeudas && datos.proveedores && (
-            <MetricCard
-              href="/proveedores"
-              label="Cuentas por pagar"
-              value={<Money amount={datos.proveedores.total} size="lg" />}
-              detail={
-                /*
-                  Lo VENCIDO primero, porque es el numero accionable: deber
-                  plata a treinta dias es lo normal; deberla desde hace un mes
-                  es una llamada que va a entrar. Lo que vence en la semana va
-                  segundo, que es lo que hay que preparar.
-                */
-                esPositivo(datos.proveedores.vencido)
-                  ? `${formatMoney(datos.proveedores.vencido)} vencido en ${String(datos.proveedores.deudasVencidas)} entrega(s)`
-                  : esPositivo(datos.proveedores.proximos7Dias)
-                    ? `${formatMoney(datos.proveedores.proximos7Dias)} vence esta semana`
-                    : `${String(datos.proveedores.proveedoresConDeuda)} proveedor(es) con saldo`
-              }
-              tone={esPositivo(datos.proveedores.vencido) ? 'danger' : 'neutral'}
-            />
-          )}
-
-          {/*
-            Vencimientos. Fase 4D.
-
-            UNA tarjeta y no tres: lo vencido es el número accionable --hay que
-            sacarlo de la góndola hoy-- y los dos plazos son el detalle. Tres
-            tarjetas del mismo tema empujarían fuera de la pantalla a las que
-            hablan de plata.
-          */}
-          {verLotes && datos.vencimientos && (
-            <MetricCard
-              href="/stock/lotes?estado=VENCIDO"
-              label="Vencidos"
-              value={datos.vencimientos.lotesVencidos}
-              detail={
-                datos.vencimientos.lotesVencidos > 0
-                  ? `${formatQuantity(datos.vencimientos.unidadesVencidas, null)} unidades · ${String(datos.vencimientos.lotesEnSieteDias)} vence(n) en 7 días`
-                  : datos.vencimientos.lotesEnSieteDias > 0
-                    ? `${String(datos.vencimientos.lotesEnSieteDias)} vence(n) en 7 días · ${String(datos.vencimientos.lotesEnTreintaDias)} en 30`
-                    : `${String(datos.vencimientos.lotesEnTreintaDias)} vence(n) en 30 días`
-              }
-              tone={
-                datos.vencimientos.lotesVencidos > 0
-                  ? 'danger'
-                  : datos.vencimientos.lotesEnSieteDias > 0
-                    ? 'warning'
-                    : 'success'
-              }
-            />
-          )}
-
-          {/*
-            Inventarios sin terminar. Los dos estados son dos responsables
-            distintos --quien cierra el conteo y quien aplica las diferencias--
-            y por eso el detalle los nombra por separado.
-          */}
-          {verInventarios &&
-            datos.inventarios &&
-            datos.inventarios.enRevision + datos.inventarios.contando > 0 && (
-              <MetricCard
-                href="/inventarios"
-                label="Inventarios abiertos"
-                value={datos.inventarios.enRevision + datos.inventarios.contando}
-                detail={
-                  datos.inventarios.enRevision > 0
-                    ? `${String(datos.inventarios.enRevision)} esperando que se apliquen`
-                    : `${String(datos.inventarios.contando)} contando`
-                }
-                tone={datos.inventarios.enRevision > 0 ? 'warning' : 'neutral'}
-              />
-            )}
-        </div>
-      )}
-
-      {sinNada && (
-        <Alert tone="info" title="Todavía no hay actividad">
-          Cuando registres la primera venta o cargues productos, este panel se llena solo.
-          {puede('products.create') && (
-            <>
-              {' '}
-              <Link href="/productos" className="font-medium text-primary underline">
-                Cargar productos
-              </Link>
-            </>
-          )}
-        </Alert>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {verVentas && (
-          <Card padded={false}>
-            <div className="p-4 sm:p-5">
-              <CardHeader
-                title="Últimas ventas"
-                actions={
-                  <ButtonLink href="/ventas" variant="ghost" size="sm">
-                    Ver todas
-                  </ButtonLink>
-                }
-                className="mb-3"
-              />
-              {cargando ? (
-                <Skeleton className="h-32" />
-              ) : datos.ultimasVentas.length === 0 ? (
-                <EmptyState
-                  title="Sin ventas hoy"
-                  description={vender ? 'La caja está lista cuando quieras.' : undefined}
-                  action={
-                    vender ? (
-                      <ButtonLink href="/venta" variant="confirm" size="sm">
-                        Abrir la caja
-                      </ButtonLink>
-                    ) : undefined
-                  }
-                />
-              ) : (
-                <ul className="flex flex-col divide-y divide-line">
-                  {datos.ultimasVentas.map((v) => (
-                    <li key={v.id} className="flex items-center gap-3 py-2.5">
-                      <span className="w-14 shrink-0 text-sm text-ink-muted" data-numeric="">
-                        #{v.id}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                        {v.user.name}
-                      </span>
-                      {v.status === 'canceled' && <SaleStatusBadge status={v.status} />}
-                      <Money
-                        amount={v.total}
-                        size="sm"
-                        tone={v.status === 'canceled' ? 'muted' : 'neutral'}
-                        className={cn(v.status === 'canceled' && 'line-through')}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </Card>
-        )}
-
-        {verStock && (
-          <Card padded={false}>
-            <div className="p-4 sm:p-5">
-              <CardHeader
-                title="Hay que reponer"
-                actions={
-                  <ButtonLink href="/stock" variant="ghost" size="sm">
-                    Ver el stock
-                  </ButtonLink>
-                }
-                className="mb-3"
-              />
-              {cargando ? (
-                <Skeleton className="h-32" />
-              ) : datos.bajos.length === 0 ? (
-                <EmptyState
-                  title="Nada por debajo del mínimo"
-                  description={
-                    datos.reposicion.sinMinimo > 0
-                      ? `Todavía no hay mínimos configurados: ${datos.reposicion.sinMinimo} producto(s) activos no tienen uno, así que este aviso no puede sonar para ellos.`
-                      : 'Ningún producto activo llegó a su mínimo.'
-                  }
-                />
-              ) : (
-                <ul className="flex flex-col divide-y divide-line">
-                  {datos.bajos.map((p) => (
-                    <li key={p.id} className="flex items-center gap-3 py-2.5">
-                      <span className="min-w-0 flex-1 truncate text-sm text-ink">{p.name}</span>
-                      <StockBadge
-                        quantity={p.totalStock}
-                        minimum={p.minimumStock}
-                        unit={p.saleUnit}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </Card>
-        )}
-      </div>
-
-      {!cargando && !verCaja && !verVentas && !verStock && (
-        <Card>
-          <EmptyState
-            title="Tu panel está vacío a propósito"
-            description="Tu rol no incluye caja, ventas ni stock. Usá el menú para ir a lo que sí podés hacer."
-            action={
-              vender ? (
-                <ButtonLink href="/venta" variant="confirm">
-                  Ir a vender
-                </ButtonLink>
-              ) : undefined
+      <nav aria-label="Accesos" className="flex flex-col gap-3">
+        {principal && (
+          <AccesoGrande
+            acceso={principal}
+            detalle={
+              principal.href === '/venta' && datos?.caja && turno === null
+                ? 'Primero hay que abrir la caja'
+                : undefined
             }
           />
-        </Card>
-      )}
-
-      {!cargando && (
-        <div className="flex justify-end">
-          <Button size="sm" variant="ghost" onClick={() => void cargar()}>
-            Actualizar
-          </Button>
+        )}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {resto.map((a) => (
+            <AccesoGrande
+              key={a.href}
+              acceso={a}
+              detalle={
+                a.href === '/caja' && datos?.caja
+                  ? turno === null
+                    ? 'Cerrada · tocá para abrirla'
+                    : 'Abierta'
+                  : undefined
+              }
+            />
+          ))}
         </div>
+      </nav>
+
+      {(verVentas || verCaja || verStock) && (
+        <Section title="Hoy">
+          {datos === null ? (
+            <Skeleton className="h-20 w-full" />
+          ) : (
+            <MetricRow className="rounded-lg border border-line bg-surface p-5">
+              {datos.ventas !== null && (
+                <Metric
+                  label="Ventas de hoy"
+                  value={
+                    datos.ventas.total !== null ? (
+                      <Money amount={datos.ventas.total} size="lg" />
+                    ) : (
+                      String(datos.ventas.cantidad)
+                    )
+                  }
+                  hint={
+                    datos.ventas.total !== null
+                      ? `${String(datos.ventas.cantidad)} ${datos.ventas.cantidad === 1 ? 'venta' : 'ventas'}`
+                      : datos.ventas.cantidad === 1
+                        ? 'venta'
+                        : 'ventas'
+                  }
+                  href="/ventas"
+                />
+              )}
+              {datos.caja !== null && (
+                <Metric
+                  label="Caja"
+                  value={
+                    turno === null ? 'Cerrada' : <Money amount={turno.expectedAmount} size="lg" />
+                  }
+                  hint={
+                    turno === null ? 'Hay que abrirla para vender' : 'Tiene que haber en el cajón'
+                  }
+                  tone={turno === null ? 'warning' : 'neutral'}
+                  href="/caja"
+                />
+              )}
+              {pocoStock !== null && (
+                <Metric
+                  label="Productos con poco stock"
+                  value={String(pocoStock)}
+                  hint={
+                    pocoStock === 0
+                      ? 'Todo en orden'
+                      : `${String(datos.reposicion?.agotados ?? 0)} sin stock · ${String(datos.reposicion?.bajoMinimo ?? 0)} con stock bajo`
+                  }
+                  tone={pocoStock === 0 ? 'neutral' : 'warning'}
+                  href={
+                    (datos.reposicion?.agotados ?? 0) > 0
+                      ? '/stock?estado=sin'
+                      : '/stock?estado=bajo'
+                  }
+                />
+              )}
+            </MetricRow>
+          )}
+        </Section>
       )}
     </PageContainer>
+  )
+}
+
+function AccesoGrande({ acceso, detalle }: { acceso: Acceso; detalle?: ReactNode }) {
+  return (
+    <Link
+      href={acceso.href}
+      className={cn(
+        'group flex items-center gap-4 rounded-lg border px-5 transition-colors',
+        acceso.principal
+          ? 'min-h-24 border-transparent bg-primary text-ink-on-solid hover:bg-primary-hover'
+          : 'min-h-20 border-line-strong bg-surface text-ink hover:bg-raised',
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          'flex h-11 w-11 shrink-0 items-center justify-center rounded-md [&_svg]:h-6 [&_svg]:w-6',
+          acceso.principal ? 'bg-white/15' : 'bg-primary-quiet text-primary',
+        )}
+      >
+        <IconoDe href={acceso.href} />
+      </span>
+      <span className="flex min-w-0 flex-col">
+        <span className={cn('font-semibold', acceso.principal ? 'text-2xl' : 'text-lg')}>
+          {acceso.titulo}
+        </span>
+        <span
+          className={cn('text-sm', acceso.principal ? 'text-ink-on-solid/90' : 'text-ink-muted')}
+        >
+          {detalle ?? acceso.descripcion}
+        </span>
+      </span>
+    </Link>
   )
 }

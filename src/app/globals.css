@@ -1,53 +1,191 @@
 @import 'tailwindcss';
 
 /*
- * Sistema visual del almacen.
+ * Sistema visual del almacen. UX V5.
  *
  * Un solo lugar donde viven los colores, los radios, las sombras y los
  * tamanios. Ninguna pantalla define su propia paleta: si un componente
  * necesita un color que no esta aca, falta un token, no falta un hex.
  *
- * El tema oscuro es el predeterminado, no una variante. Es el que se usa ocho
- * horas por dia detras de un mostrador, muchas veces con poca luz.
+ * El tema CLARO es el predeterminado desde la V5: fondos neutros, texto casi
+ * negro y bordes que se ven. Es el que entiende de entrada alguien que nunca
+ * uso el sistema, y el que se lee bien en un local con luz de dia. El oscuro
+ * sigue disponible como opcion (Configuracion o el menu de usuario).
  *
- * Cuatro tonos y nada mas: azul para lo interactivo y lo informativo, verde
- * para confirmar y para lo que entra, ambar para advertir, rojo para lo que
- * destruye y para lo que sale. Un quinto color tendria que ganarse el lugar.
+ * Un solo color de accion --azul-- y tres de estado que no se usan para nada
+ * mas: verde = salio bien, ambar = cuidado, rojo = error o peligro. Las
+ * secciones no se distinguen por color: se distinguen por espacio, titulo y
+ * lineas divisorias.
+ *
+ * Contraste (WCAG 2.2 AA), calculado sobre el fondo mas dificil de cada uno:
+ * ink 15.2:1, ink-muted 7.2, ink-faint 5.2, primary 5.7, success 5.0,
+ * warning 5.4, danger 5.0; cada tono de estado sobre su fondo suave >= 5.0;
+ * blanco sobre primary 6.6, success 5.8, danger 5.9; borde de control
+ * (line-strong) >= 3.25 sobre cualquier fondo; deshabilitado 4.5.
  */
 
 @theme {
   /* --- Superficies ------------------------------------------------------ */
   /* bg      el fondo de la aplicacion
-   * surface paneles y tarjetas
-   * raised  lo que se apoya sobre un panel (filas, celdas de encabezado)
-   * sunken  campos de formulario y zonas hundidas */
-  --color-bg: #0c1117;
-  --color-surface: #131a22;
-  --color-raised: #1a232d;
-  --color-sunken: #0f151c;
-  --color-overlay: #060a0e;
+   * surface paneles, tablas, dialogos: donde estan los datos
+   * raised  lo que se apoya sobre un panel (hover de filas, encabezados)
+   * sunken  zonas hundidas de solo lectura
+   * field   el fondo de un campo de formulario: blanco, distinto de sunken,
+   *         para que un dato de solo lectura no parezca editable */
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-raised: #eef0f3;
+  --color-sunken: #eceef1;
+  --color-field: #ffffff;
+  --color-overlay: #15191e;
+  /* Velo detras de un dialogo: oscurece sin tapar. */
+  --color-scrim: rgb(21 25 30 / 0.45);
 
   /* --- Bordes ----------------------------------------------------------- */
-  --color-line: #26313d;
-  --color-line-strong: #384857;
+  /* line         divisores: decorativo, suave a proposito
+   * line-strong  el borde de un control (campo, boton secundario, casilla).
+   *              Llega a 3:1 contra cualquier fondo: un campo se ve como
+   *              campo sin tener que adivinarlo. */
+  --color-line: #dfe3e8;
+  --color-line-strong: #7a8494;
 
   /* --- Texto ------------------------------------------------------------ */
-  --color-ink: #eef4f9;
-  --color-ink-muted: #9aabbb;
-  /* El tono mas apagado que llega a 4.5:1 sobre `raised`, que es el fondo mas
-   * claro de la aplicacion y por lo tanto el peor caso. El valor anterior
-   * --#6d7f8f-- daba 4.24 y axe lo marcaba en las siete pantallas: los titulos
-   * de grupo de la barra lateral y la linea secundaria de cada fila. */
-  --color-ink-faint: #7e909f;
+  --color-ink: #15191e;
+  --color-ink-muted: #454f5c;
+  --color-ink-faint: #5a6471;
   /* Sobre fondos de color solido (botones primarios, badges llenos). */
-  --color-ink-on-solid: #06111c;
+  --color-ink-on-solid: #ffffff;
 
   /* --- Dinero ----------------------------------------------------------- */
   /* El maximo contraste disponible: es la cifra que hay que leer de un
    * vistazo desde el otro lado del mostrador. */
-  --color-money: #ffffff;
+  --color-money: #0d1014;
 
   /* --- Semanticos ------------------------------------------------------- */
+  --color-primary: #1f56c4;
+  --color-primary-hover: #1a47a3;
+  --color-primary-quiet: #e8eefb;
+
+  --color-success: #0e7542;
+  --color-success-hover: #0b5f36;
+  --color-success-quiet: #e4f3ea;
+
+  --color-warning: #8a5300;
+  --color-warning-hover: #6f4300;
+  --color-warning-quiet: #fbf0db;
+
+  --color-danger: #bf2a2a;
+  --color-danger-hover: #9e2222;
+  --color-danger-quiet: #fbeaea;
+
+  /* Informativo comparte tono con lo interactivo a proposito: son la misma
+   * idea --"mira esto"-- y dos azules distintos serian ruido. */
+  --color-info: var(--color-primary);
+  --color-info-quiet: var(--color-primary-quiet);
+
+  --color-focus: #1f56c4;
+
+  /* Lo seleccionado con el teclado: la linea del ticket, la fila activa. Es
+   * el azul apagado de lo interactivo, no un quinto color. */
+  --color-selection: var(--color-primary-quiet);
+
+  /* Deshabilitado: un gris con su propio texto, no una opacidad. Con
+   * `opacity-45` un boton apagado quedaba en 2:1 y no se sabia si estaba
+   * apagado o mal impreso. */
+  --color-disabled-bg: #e3e6ea;
+  --color-disabled-ink: #5f6874;
+
+  /* --- Radios ----------------------------------------------------------- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  /* --- Sombras ---------------------------------------------------------- */
+  /* Solo dos, y solo para lo que de verdad flota: menus y dialogos. Un panel
+   * quieto se separa con un borde, no con sombra. */
+  --shadow-pop: 0 4px 16px -4px rgb(21 25 30 / 0.14);
+  --shadow-modal: 0 16px 48px -12px rgb(21 25 30 / 0.22);
+
+  /* --- Tipografia: tamanios --------------------------------------------- */
+  /* `text-xs` sube de 12 a 13 px: estaba en 182 lugares, casi siempre
+   * informacion que alguien tiene que leer. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  /* Celdas de tabla y texto de lectura comoda. */
+  --text-md: 0.9375rem;
+  --text-md--line-height: 1.375rem;
+  /* El numero de una metrica: ventas de hoy, saldo esperado. */
+  --text-metric: 1.75rem;
+  --text-metric--line-height: 2.125rem;
+
+  /* --- Tamanios --------------------------------------------------------- */
+  /* 44 px es el minimo tactil. Los campos y los botones normales miden 48:
+   * grandes, comodos para el mouse y para el dedo. */
+  --spacing-touch: 44px;
+  --spacing-control: 48px;
+  --spacing-control-lg: 56px;
+  /* El boton de cobrar del punto de venta. Se aprieta cien veces por dia, con
+   * el cliente enfrente, y tiene que encontrarse sin mirar. */
+  --spacing-control-xl: 64px;
+  --spacing-sidebar: 220px;
+  --spacing-sidebar-tight: 68px;
+  /* El ticket de la caja. Elastico: 360 en 1024, 396 en 1366 y el tope de
+   * 440 desde 1520. */
+  --spacing-ticket: clamp(360px, 29vw, 440px);
+  /* Margen de pagina. Uno solo para todas las pantallas. */
+  --spacing-gutter: 16px;
+  --spacing-gutter-lg: 24px;
+
+  /* --- Animaciones ------------------------------------------------------ */
+  /* La entrada de los dialogos de la caja. Se dibuja con CSS y no con la
+   * maquinaria de transiciones de Headless UI: esa, para poder animar la
+   * SALIDA, mantiene el dialogo montado ~110 ms mas, y en el punto de venta
+   * ese tiempo es "todavia no puedo escanear" (medicion V3). */
+  --animate-aparecer: aparecer 90ms ease-out;
+
+  /* --- Tipografia ------------------------------------------------------- */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', Consolas, monospace;
+}
+
+@keyframes aparecer {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/*
+ * Tema oscuro: opcional y explicito.
+ *
+ * No sigue a `prefers-color-scheme`. Que la aplicacion cambie de aspecto
+ * porque el sistema operativo cambio de humor no ayuda a nadie en un
+ * mostrador; se elige, y queda elegido.
+ */
+:root[data-theme='dark'] {
+  --color-bg: #0c1117;
+  --color-surface: #131a22;
+  --color-raised: #1a232d;
+  --color-sunken: #0f151c;
+  --color-field: #0f151c;
+  --color-overlay: #060a0e;
+  --color-scrim: rgb(6 10 14 / 0.8);
+
+  --color-line: #26313d;
+  --color-line-strong: #6b7c8d;
+
+  --color-ink: #eef4f9;
+  --color-ink-muted: #9aabbb;
+  /* El tono mas apagado que llega a 4.5:1 sobre `raised`, el fondo mas claro
+   * del tema oscuro y por lo tanto el peor caso. */
+  --color-ink-faint: #7e909f;
+  --color-ink-on-solid: #06111c;
+
+  --color-money: #ffffff;
+
   --color-primary: #4a90ff;
   --color-primary-hover: #2f7cf6;
   --color-primary-quiet: #16283f;
@@ -64,129 +202,21 @@
   --color-danger-hover: #ef4444;
   --color-danger-quiet: #2e1618;
 
-  /* Informativo comparte tono con lo interactivo a proposito: son la misma
-   * idea --"mira esto"-- y dos azules distintos serian ruido. */
-  --color-info: var(--color-primary);
-  --color-info-quiet: var(--color-primary-quiet);
-
   --color-focus: #8fbcff;
 
-  /* Lo seleccionado con el teclado: la linea del ticket, la fila activa. Es
-   * el azul apagado de lo interactivo, no un quinto color. */
-  --color-selection: var(--color-primary-quiet);
+  --color-disabled-bg: #1a232d;
+  --color-disabled-ink: #8d9cab;
 
-  /* --- Radios ----------------------------------------------------------- */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
-
-  /* --- Sombras ---------------------------------------------------------- */
-  /* Solo dos, y solo para lo que de verdad flota: menus y dialogos. Un panel
-   * quieto se separa con color, no con sombra. */
   --shadow-pop: 0 8px 24px -8px rgb(0 0 0 / 0.65);
   --shadow-modal: 0 24px 64px -16px rgb(0 0 0 / 0.75);
-
-  /* --- Tamanios --------------------------------------------------------- */
-  /* 44 px es el minimo tactil. Los controles de la caja son mas grandes
-   * porque se usan a toda velocidad. */
-  --spacing-touch: 44px;
-  --spacing-control: 44px;
-  --spacing-control-lg: 56px;
-  /* El boton de cobrar del punto de venta. Se aprieta cien veces por dia, con
-   * el cliente enfrente, y tiene que encontrarse sin mirar. */
-  --spacing-control-xl: 64px;
-  --spacing-sidebar: 236px;
-  --spacing-sidebar-tight: 68px;
-  /* El ticket de la caja. ELASTICO desde la V3: 440 px fijos se comian el
-   * ancho del catalogo en 1024-1279 --al nombre del producto le quedaban
-   * 150 px y terminaba en "Aceite de girasol 9…"-- y sobraban en 1920.
-   * 29vw da 360 en 1024, 396 en 1366 y el tope de 440 desde 1520. */
-  --spacing-ticket: clamp(360px, 29vw, 440px);
-  /* Margen de pagina. Uno solo para todas las pantallas: la mitad de las
-   * pantallas tenia 0 y los botones tocaban el borde en un telefono. */
-  --spacing-gutter: 12px;
-  --spacing-gutter-lg: 20px;
-
-  /* --- Animaciones ------------------------------------------------------ */
-  /* La entrada de los dialogos de la caja. Se dibuja con CSS y no con la
-   * maquinaria de transiciones de Headless UI: esa, para poder animar la
-   * SALIDA, mantiene el dialogo montado ~110 ms mas, y en el punto de venta
-   * ese tiempo es "todavia no puedo escanear" (medicion V3). */
-  --animate-aparecer: aparecer 90ms ease-out;
-
-  /* --- Tipografia ------------------------------------------------------- */
-  /* Sin Inter: se declaraba y no se cargaba, asi que cada equipo veia la
-   * fuente del sistema igual. Ahora lo dice. */
-  --font-sans:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', Consolas, monospace;
-}
-
-@keyframes aparecer {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-
-/*
- * Tema claro: opcional y explicito.
- *
- * No sigue a `prefers-color-scheme`. Que la aplicacion cambie de aspecto
- * porque el sistema operativo cambio de humor no ayuda a nadie en un
- * mostrador; se elige, y queda elegido.
- */
-:root[data-theme='light'] {
-  --color-bg: #eef1f5;
-  --color-surface: #ffffff;
-  --color-raised: #f5f8fb;
-  --color-sunken: #e9edf2;
-  --color-overlay: #1d2733;
-
-  --color-line: #d5dde6;
-  --color-line-strong: #b3c0cd;
-
-  --color-ink: #0e1822;
-  --color-ink-muted: #55677a;
-  /* Mismo criterio que en oscuro, con el peor caso invertido: aca el fondo
-   * problematico es el mas OSCURO, `sunken`. El valor anterior --#7a8b9c--
-   * daba 3.5:1 y no lo habia detectado nadie, porque las pruebas corrian solo
-   * en tema oscuro. Ahora corren en los dos. */
-  --color-ink-faint: #5b6b7d;
-  --color-ink-on-solid: #ffffff;
-
-  --color-money: #08131d;
-
-  --color-primary: #1c62d6;
-  --color-primary-hover: #144ead;
-  --color-primary-quiet: #e2ecfd;
-
-  --color-success: #10804a;
-  --color-success-hover: #0b6a3c;
-  --color-success-quiet: #dff5e9;
-
-  --color-warning: #96620a;
-  --color-warning-hover: #7c5008;
-  --color-warning-quiet: #fdf0d8;
-
-  --color-danger: #c62828;
-  --color-danger-hover: #a71f1f;
-  --color-danger-quiet: #fce3e3;
-
-  --color-focus: #1c62d6;
-
-  --shadow-pop: 0 8px 24px -10px rgb(15 30 45 / 0.22);
-  --shadow-modal: 0 24px 64px -20px rgb(15 30 45 / 0.3);
 }
 
 @layer base {
   :root {
-    color-scheme: dark;
-  }
-  :root[data-theme='light'] {
     color-scheme: light;
+  }
+  :root[data-theme='dark'] {
+    color-scheme: dark;
   }
 
   html {
@@ -243,15 +273,19 @@
   }
 }
 
-@layer utilities {
-  /* Cifra de dinero: mismo tratamiento en toda la aplicacion. */
+@layer components {
+  /* Cifra de dinero: mismo tratamiento en toda la aplicacion. En
+   * `components` y no en `utilities`: una clase de color como `text-danger`
+   * tiene que poder ganarle (antes perdia y el tono no se veia nunca). */
   .money {
     color: var(--color-money);
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
     font-weight: 600;
   }
+}
 
+@layer utilities {
   /* Margen inferior que respeta la zona segura de un telefono con notch o
    * barra de gestos. Es lo que impide que una barra fija tape el ultimo
    * boton de la pagina. */

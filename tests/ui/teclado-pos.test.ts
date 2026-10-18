@@ -102,13 +102,20 @@ describe('Eligiendo un producto de la lista', () => {
     expect(accionDeTecla('ArrowUp', { ...ELIGIENDO, resaltado: 0 })).toBe('volver-al-campo')
   })
 
-  it('→ suma una unidad y ← quita una, sobre el producto elegido', () => {
-    expect(accionDeTecla('ArrowRight', ELIGIENDO)).toBe('sumar-resaltado')
-    expect(accionDeTecla('ArrowLeft', ELIGIENDO)).toBe('restar-resaltado')
+  // V5: las flechas SOLO se mueven. En la V3, → sumaba una unidad y el Enter
+  // de despues volvia a sumar: "→ y Enter" dejaba dos unidades.
+  it('→ y ← tambien recorren: NUNCA cambian una cantidad', () => {
+    expect(accionDeTecla('ArrowRight', ELIGIENDO)).toBe('resultado-siguiente')
+    expect(accionDeTecla('ArrowLeft', ELIGIENDO)).toBe('resultado-anterior')
+    expect(accionDeTecla('ArrowLeft', { ...ELIGIENDO, resaltado: 0 })).toBe('nada')
+    for (const flecha of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'] as const) {
+      expect(accionDeTecla(flecha, ELIGIENDO)).not.toBe('sumar-resaltado')
+      expect(accionDeTecla(flecha, ELIGIENDO)).not.toBe('restar-resaltado')
+    }
   })
 
-  it('Enter agrega el elegido', () => {
-    expect(accionDeTecla('Enter', ELIGIENDO)).toBe('agregar-resaltado')
+  it('Enter ELIGE el producto marcado (no es "+1")', () => {
+    expect(accionDeTecla('Enter', ELIGIENDO)).toBe('elegir-resaltado')
   })
 
   it('Escape suelta la fila; el texto escrito no se pierde', () => {
@@ -125,8 +132,8 @@ describe('Enter no cobra: primero revisar', () => {
     expect(accionDeTecla('Enter', { ...CAMPO, texto: '7790001000011' })).toBe('buscar-codigo')
   })
 
-  it('con letras agrega el primer resultado, si hay', () => {
-    expect(accionDeTecla('Enter', ESCRIBIENDO)).toBe('agregar-resaltado')
+  it('con letras elige el primer resultado, si hay', () => {
+    expect(accionDeTecla('Enter', ESCRIBIENDO)).toBe('elegir-resaltado')
     expect(accionDeTecla('Enter', { ...CAMPO, texto: 'zzz' })).toBe('nada')
   })
 
@@ -151,15 +158,16 @@ describe('Revisando el ticket', () => {
     expect(accionDeTecla('ArrowUp', REVISANDO)).toBe('linea-anterior')
   })
 
-  it('← y → cambian la cantidad de la linea elegida', () => {
-    expect(accionDeTecla('ArrowRight', REVISANDO)).toBe('cantidad-mas')
-    expect(accionDeTecla('ArrowLeft', REVISANDO)).toBe('cantidad-menos')
+  it('← y → tambien eligen linea; la cantidad se cambia con + y -', () => {
+    expect(accionDeTecla('ArrowRight', REVISANDO)).toBe('linea-siguiente')
+    expect(accionDeTecla('ArrowLeft', REVISANDO)).toBe('linea-anterior')
     expect(accionDeTecla('+', REVISANDO)).toBe('cantidad-mas')
     expect(accionDeTecla('-', REVISANDO)).toBe('cantidad-menos')
   })
 
-  it('sin linea elegida, ← y → no hacen nada', () => {
-    expect(accionDeTecla('ArrowRight', { ...REVISANDO, haySeleccion: false })).toBe('nada')
+  it('sin linea elegida, + y - no hacen nada', () => {
+    expect(accionDeTecla('+', { ...REVISANDO, haySeleccion: false })).toBe('nada')
+    expect(accionDeTecla('-', { ...REVISANDO, haySeleccion: false })).toBe('nada')
   })
 
   it('Supr quita la linea elegida, y solo esa', () => {
@@ -177,10 +185,17 @@ describe('Revisando el ticket', () => {
   })
 })
 
-describe('Los alias + y −', () => {
-  it('valen con el campo vacio', () => {
+describe('Las teclas + y −: la unica forma de cambiar una cantidad con el teclado', () => {
+  it('sobre una fila elegida de la lista, suman o restan ese producto', () => {
     expect(accionDeTecla('+', { ...ELIGIENDO, texto: '' })).toBe('sumar-resaltado')
     expect(accionDeTecla('-', { ...ELIGIENDO, texto: '' })).toBe('restar-resaltado')
+  })
+
+  it('con el campo vacio, corrigen la linea elegida del ticket (la ultima agregada)', () => {
+    const conLinea: ContextoDelPos = { ...CAMPO, hayLineas: true, haySeleccion: true }
+    expect(accionDeTecla('+', conLinea)).toBe('cantidad-mas')
+    expect(accionDeTecla('-', conLinea)).toBe('cantidad-menos')
+    expect(accionDeTecla('+', { ...conLinea, haySeleccion: false })).toBe('nada')
   })
 
   it('pero NO mientras se escribe: en "coca-cola" el guion es una letra', () => {

@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/components/ui'
-import { esActiva, navegacionPara, type GrupoNav } from './navigation'
+import { esActiva, type GrupoNav } from './navigation'
 import { IconoDe } from './icons'
 
 /**
@@ -16,18 +16,17 @@ import { IconoDe } from './icons'
  * Solo dibuja lo que el usuario puede abrir.
  */
 export function Sidebar({
-  permisos,
+  grupos,
   collapsed,
   onToggle,
   comercio,
 }: {
-  permisos: ReadonlySet<string>
+  /** Ya filtrados por permisos y funciones (ver `navegacionPara`). */
+  grupos: GrupoNav[]
   collapsed: boolean
   onToggle: () => void
   comercio: string
 }) {
-  const grupos = navegacionPara(permisos)
-
   return (
     <aside
       className={cn(
@@ -93,15 +92,17 @@ export function ListaGrupos({
   const pathname = usePathname()
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       {grupos.map((grupo, i) => (
-        <div key={grupo.title ?? `grupo-${i}`} className="flex flex-col gap-0.5">
-          {grupo.title && !collapsed && (
-            <p className="mb-1 px-3 text-xs font-semibold tracking-wide text-ink-faint uppercase">
-              {grupo.title}
-            </p>
+        <div key={grupo.title ?? `grupo-${i}`} className="flex flex-col gap-1">
+          {/* Un grupo sin titulo despues del primero se separa con una linea:
+              arriba las tareas de todos los dias, abajo lo de vez en cuando. */}
+          {i > 0 && (!grupo.title || collapsed) && (
+            <div aria-hidden="true" className="mx-2 mb-2 h-px bg-line" />
           )}
-          {grupo.title && collapsed && <div className="mx-2 mb-1 h-px bg-line" />}
+          {grupo.title && !collapsed && (
+            <p className="mb-1 px-3 text-xs font-semibold text-ink-faint">{grupo.title}</p>
+          )}
 
           {grupo.items.map((item) => {
             const activa = esActiva(item, pathname)
@@ -113,11 +114,11 @@ export function ListaGrupos({
                 aria-current={activa ? 'page' : undefined}
                 title={collapsed ? item.label : undefined}
                 className={cn(
-                  'relative flex min-h-touch items-center gap-3 rounded-md px-3 text-sm transition-colors',
+                  'relative flex min-h-touch items-center gap-3 rounded-md px-3 text-[0.9375rem] transition-colors',
                   collapsed && 'justify-center px-0',
                   activa
-                    ? 'bg-primary-quiet font-semibold text-ink'
-                    : 'text-ink-muted hover:bg-raised hover:text-ink',
+                    ? 'bg-primary-quiet font-semibold text-primary'
+                    : 'font-medium text-ink-muted hover:bg-raised hover:text-ink',
                 )}
               >
                 {/* La marca de activo no depende solo del color. */}
@@ -156,7 +157,7 @@ export function Marca({ compacta = false, nombre }: { compacta?: boolean; nombre
     >
       <span
         aria-hidden="true"
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-bold text-ink-on-solid"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-ink text-sm font-bold text-surface"
       >
         {nombre.trim().charAt(0).toUpperCase() || 'A'}
       </span>

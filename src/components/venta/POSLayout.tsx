@@ -73,8 +73,10 @@ export function POSLayout({
           El ticket es elastico --clamp(360, 29vw, 440)-- pero aun asi, en
           1024 los dos paneles dejaban al nombre del producto 199 px: "Aceite
           de girasol 9…". Con el ticket como hoja, esa misma pantalla le da
-          600. Cobrar sigue siempre a la vista, en la barra de abajo. */}
-      <div className="hidden w-ticket shrink-0 border-l border-line xl:flex">{ticket}</div>
+          600. Cobrar sigue siempre a la vista, en la barra de abajo.
+          En columna: el ticket ocupa todo el ancho del panel tenga lo que
+          tenga (en fila se achicaba a su contenido y dejaba una franja). */}
+      <div className="hidden w-ticket shrink-0 flex-col border-l border-line xl:flex">{ticket}</div>
 
       <BarraDeTicket
         articulos={articulos}
@@ -161,12 +163,14 @@ export function BarraDeTicket({
           Ticket
           {articulos > 0 && ` · ${String(articulos)} ${articulos === 1 ? 'artículo' : 'artículos'}`}
         </span>
-        <Money amount={total} size="lg" />
+        {/* En el telefono un punto mas chico: con el tamano grande, "$ 11.390,00"
+            no entraba al lado de Cobrar y se cortaba. */}
+        <Money amount={total} size="lg" className="sm:text-3xl" />
       </button>
       {/* Sin ticket es gris, no verde apagado: un boton principal
           semitransparente se sigue leyendo como apretable. */}
       <Button
-        variant={puedeCobrar ? 'confirm' : 'secondary'}
+        variant="primary"
         size="lg"
         className="flex-[1.1]"
         disabled={!puedeCobrar}

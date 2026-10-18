@@ -186,7 +186,7 @@ export function DialogoPeso({
                   onCerrar()
                 }
               }}
-              className="h-14 w-full rounded-md border border-line bg-sunken px-3 text-2xl font-semibold text-ink outline-none focus:border-primary"
+              className="h-14 w-full rounded-md border border-line-strong bg-field px-3 text-2xl font-semibold text-ink focus:border-primary"
               data-numeric=""
             />
             <span className="text-lg text-ink-muted">{politica.simbolo}</span>

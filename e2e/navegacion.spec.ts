@@ -58,7 +58,7 @@ test.describe('Ir y volver entre pantallas', () => {
     // Mismo nodo: la barra lateral no se volvio a montar en el camino.
     await expect(menu).toHaveAttribute('data-marca-de-prueba', '1')
 
-    await menu.getByRole('link', { name: 'Venta', exact: true }).click()
+    await menu.getByRole('link', { name: 'Vender', exact: true }).click()
     await expect(page.locator('[data-barcode-input]')).toBeVisible()
     await expect(menu).toHaveAttribute('data-marca-de-prueba', '1')
   })
@@ -214,4 +214,17 @@ test.describe('Cuando la sesión ya no vale', () => {
 
     await expect(page.getByRole('dialog', { name: 'Tu sesión venció' })).not.toBeAttached()
   })
+})
+
+test('la ventana no se desplaza: solo el contenido, sin franja vacia debajo', async ({ page }) => {
+  await entrar(page, 'duenio')
+  for (const ruta of ['/productos', '/stock', '/stock/movimientos', '/reportes', '/inventarios']) {
+    await page.goto(ruta)
+    await page.getByRole('heading', { level: 1 }).waitFor()
+    await page.waitForTimeout(800)
+    const sobra = await page.evaluate(
+      () => document.documentElement.scrollHeight - window.innerHeight,
+    )
+    expect(sobra, ruta).toBeLessThanOrEqual(1)
+  }
 })

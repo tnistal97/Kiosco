@@ -1,13 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { IconButton } from '@/components/ui'
+import { Button } from '@/components/ui'
 
 /**
  * Cambio de tema.
  *
- * El oscuro es el predeterminado y no sigue al sistema operativo: se elige y
- * queda elegido. El claro existe para quien trabaja frente a una ventana.
+ * Desde la V5 el CLARO es el predeterminado: es el que se entiende de entrada
+ * y el que se lee bien con luz de dia. El oscuro queda para quien atiende de
+ * noche o con poca luz. No sigue al sistema operativo: se elige y queda
+ * elegido.
+ *
+ * Vive en Configuracion, no en la cabecera: es una preferencia que se toca
+ * una vez, y en la cabecera era un icono mas compitiendo con la caja.
  *
  * La eleccion se guarda en `localStorage`. No es un dato privado --es una
  * preferencia visual-- y no se manda al servidor.
@@ -19,27 +24,27 @@ export type Tema = 'dark' | 'light'
 /**
  * Script que corre antes de pintar.
  *
- * Sin esto, quien eligio el tema claro ve un fogonazo oscuro en cada carga.
+ * Sin esto, quien eligio el tema oscuro ve un fogonazo claro en cada carga.
  * Va en el `<head>` como `dangerouslySetInnerHTML` porque tiene que ejecutarse
  * antes que React.
  */
 export const SCRIPT_TEMA = `
 try {
   var t = localStorage.getItem('${CLAVE}');
-  if (t === 'light') document.documentElement.dataset.theme = 'light';
+  if (t === 'dark') document.documentElement.dataset.theme = 'dark';
 } catch (e) {}
 `.trim()
 
 function leerTema(): Tema {
-  if (typeof document === 'undefined') return 'dark'
-  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
+  if (typeof document === 'undefined') return 'light'
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
 }
 
 export function ThemeToggle() {
-  const [tema, setTema] = useState<Tema>('dark')
+  const [tema, setTema] = useState<Tema>('light')
 
   // El valor real lo pone el script del `<head>`; el estado se sincroniza al
-  // montar para que el boton muestre el icono correcto.
+  // montar para que el boton diga lo correcto.
   useEffect(() => {
     setTema(leerTema())
   }, [])
@@ -47,8 +52,8 @@ export function ThemeToggle() {
   function alternar() {
     const nuevo: Tema = tema === 'dark' ? 'light' : 'dark'
     setTema(nuevo)
-    if (nuevo === 'light') {
-      document.documentElement.dataset.theme = 'light'
+    if (nuevo === 'dark') {
+      document.documentElement.dataset.theme = 'dark'
     } else {
       delete document.documentElement.dataset.theme
     }
@@ -60,37 +65,8 @@ export function ThemeToggle() {
   }
 
   return (
-    <IconButton
-      label={tema === 'dark' ? 'Cambiar al tema claro' : 'Cambiar al tema oscuro'}
-      size="sm"
-      onClick={alternar}
-    >
-      {tema === 'dark' ? (
-        <svg
-          className="h-5 w-5"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 3v2M12 19v2M21 12h-2M5 12H3M18.4 5.6 17 7M7 17l-1.4 1.4M18.4 18.4 17 17M7 7 5.6 5.6" />
-        </svg>
-      ) : (
-        <svg
-          className="h-5 w-5"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
-        </svg>
-      )}
-    </IconButton>
+    <Button variant="secondary" onClick={alternar} aria-pressed={tema === 'dark'}>
+      {tema === 'dark' ? 'Cambiar al tema claro' : 'Cambiar al tema oscuro'}
+    </Button>
   )
 }

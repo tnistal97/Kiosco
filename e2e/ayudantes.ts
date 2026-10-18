@@ -112,3 +112,22 @@ export function leerMonto(texto: string): number {
     .replace(',', '.')
   return Number(limpio)
 }
+
+/**
+ * Cierra el resultado de una venta (UX V5).
+ *
+ * Con vuelto que dar, el cobro muestra el VUELTO y un boton "Nueva venta".
+ * Sin vuelto, la venta termina sola y el dialogo se cierra. Esto deja la caja
+ * lista en los dos casos.
+ */
+export async function terminarVenta(page: Page): Promise<void> {
+  const nueva = page.getByRole('button', { name: 'Nueva venta' })
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Nueva venta' })
+    .or(page.getByText(/Venta registrada/).first())
+    .first()
+    .waitFor({ timeout: 15_000 })
+  if (await nueva.isVisible().catch(() => false)) await nueva.click()
+  await page.getByRole('dialog').waitFor({ state: 'detached', timeout: 15_000 })
+}

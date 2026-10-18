@@ -96,7 +96,7 @@ export function EstadoCaja() {
       // quedaba por debajo del minimo tactil en la cabecera de todas las
       // pantallas.
       className="hidden min-h-touch items-center gap-2 rounded-md border border-line px-2.5 transition-colors hover:border-line-strong hover:bg-raised sm:flex"
-      title="Efectivo que tiene que haber en el cajón, según el turno en curso"
+      title="Efectivo que tiene que haber en el cajón"
     >
       <span className="text-xs text-ink-muted">Caja</span>
       <Money amount={saldo} size="sm" />

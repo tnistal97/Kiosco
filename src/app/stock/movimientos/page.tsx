@@ -1,20 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import {
   PageContainer,
-  Alert,
-  Button,
-  Card,
   CardList,
   CardListItem,
   EmptyState,
   ErrorState,
-  Field,
-  Input,
   Pagination,
   SearchInput,
-  Select,
   SkeletonRows,
   TBody,
   TD,
@@ -25,32 +20,57 @@ import {
   TableWrap,
   cn,
 } from '@/components/ui'
-import { usePermiso } from '@/components/shell/SessionProvider'
+import { useFuncion, usePermiso, useSession } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { parsePaginaMovimientos, type MovimientoDTO } from '@/modules/inventory/dto'
-import { TIPOS_MOVIMIENTO, etiquetaDeTipo } from '@/modules/inventory/movement-types'
 import { aMilesimas, desdeMilesimas, type TextoCantidad } from '@/lib/cantidad'
-import {
-  formatearCantidad,
-  formatearCantidadConUnidad,
-  type UnidadDeVenta,
-} from '@/modules/products/units'
+import { formatearCantidadConUnidad, type UnidadDeVenta } from '@/modules/products/units'
 import { enlaceDeReferencia, textoDeReferencia } from '@/modules/inventory/referencias'
-import Link from 'next/link'
+import { sumarDias } from '@/lib/tiempo'
 
 const POR_PAGINA = 25
 const ESPERA_MS = 250
 
-interface Filtros {
-  q: string
-  tipo: string
-  desde: string
-  hasta: string
+/**
+ * Movimientos de stock. UX V5.
+ *
+ * Contesta "¿por qué cambió mi stock?": cuándo, qué producto, qué pasó,
+ * cuánto y por qué. Cinco columnas. Lo de antes --stock anterior y
+ * posterior, referencia, usuario, codigo de lote-- queda en una linea chica
+ * debajo del motivo o se fue: para la pregunta de todos los dias sobraba.
+ *
+ * Los nombres de cada movimiento son los del mostrador ("Entrada",
+ * "Corrección", "Ajuste de inventario") y se ponen aca, en la pantalla: el
+ * nombre que devuelve la API no cambia.
+ */
+
+const NOMBRE_DEL_MOVIMIENTO: Record<string, string> = {
+  INITIAL: 'Stock inicial',
+  SALE: 'Venta',
+  SALE_CANCEL: 'Venta anulada',
+  MANUAL_ADJUSTMENT: 'Corrección',
+  LOSS: 'Pérdida',
+  BREAKAGE: 'Rotura',
+  INTERNAL_USE: 'Consumo del local',
+  PURCHASE_RECEIPT: 'Entrada',
+  PURCHASE_RETURN: 'Devolución al proveedor',
+  INVENTORY_COUNT: 'Ajuste de inventario',
 }
 
-const SIN_FILTROS: Filtros = { q: '', tipo: '', desde: '', hasta: '' }
+function nombreDe(m: MovimientoDTO): string {
+  return NOMBRE_DEL_MOVIMIENTO[m.type] ?? m.typeLabel
+}
 
-/** Hora y fecha corta. La hora primero: es lo que se busca en un historial. */
+type Periodo = 'hoy' | '7' | '30' | 'todos'
+
+const PERIODOS: Array<{ valor: Periodo; etiqueta: string }> = [
+  { valor: 'hoy', etiqueta: 'Hoy' },
+  { valor: '7', etiqueta: '7 días' },
+  { valor: '30', etiqueta: '30 días' },
+  { valor: 'todos', etiqueta: 'Todos' },
+]
+
+/** Fecha y hora cortas. */
 function cuando(iso: string): { hora: string; fecha: string } {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return { hora: '—', fecha: '' }
@@ -60,48 +80,26 @@ function cuando(iso: string): { hora: string; fecha: string } {
   }
 }
 
-/** El delta, con su signo y su color. Es la columna que se mira primero. */
-function Variacion({ cantidad, unidad }: { cantidad: TextoCantidad; unidad: UnidadDeVenta }) {
+/** La cantidad con su signo: "+10 u.", "−2 u.". El signo dice todo, sin color. */
+function Cantidad({ cantidad, unidad }: { cantidad: TextoCantidad; unidad: UnidadDeVenta }) {
   const entra = aMilesimas(cantidad) > 0
   const absoluta = desdeMilesimas(Math.abs(aMilesimas(cantidad)))
   return (
-    <span
-      data-numeric=""
-      className={cn('font-semibold tabular-nums', entra ? 'text-success' : 'text-danger')}
-    >
+    <span data-numeric="" className="text-lg font-semibold whitespace-nowrap text-ink">
       {entra ? '+' : '−'}
       {formatearCantidadConUnidad(absoluta, unidad)}
     </span>
   )
 }
 
-function Referencia({ movimiento }: { movimiento: MovimientoDTO }) {
-  const texto = textoDeReferencia(movimiento.referenceType, movimiento.referenceId)
-  const href = enlaceDeReferencia(movimiento.referenceType, movimiento.referenceId)
-
-  if (href === null) return <span className="text-ink-muted">{texto}</span>
-  return (
-    <Link href={href} className="text-primary underline underline-offset-2">
-      {texto}
-    </Link>
-  )
-}
-
-/**
- * Libro de movimientos de stock.
- *
- * Solo lectura, y no por falta de tiempo: un movimiento no se edita y no se
- * borra. Los errores se corrigen con otro movimiento, igual que en un libro
- * contable, y hay un disparador en la base que lo impide de verdad.
- *
- * Cada fila cuenta la historia entera: cuándo, qué producto, qué pasó, cuánto
- * varió, de cuánto a cuánto, por qué documento y quién. Ver
- * docs/INVENTORY_LEDGER.md.
- */
 export default function MovimientosPage() {
   const puedeVer = usePermiso('inventory.movements.view')
+  const usaCompras = useFuncion('compras')
+  const usaLotes = useFuncion('lotes')
+  const { hoy } = useSession()
 
-  const [filtros, setFiltros] = useState<Filtros>(SIN_FILTROS)
+  const [q, setQ] = useState('')
+  const [periodo, setPeriodo] = useState<Periodo>('7')
   const [movimientos, setMovimientos] = useState<MovimientoDTO[]>([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -109,8 +107,8 @@ export default function MovimientosPage() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Identifica la petición en curso: si el usuario sigue escribiendo, la
-  // respuesta vieja que llegue después no puede pisar a la nueva.
+  // Identifica la peticion en curso: si el usuario sigue escribiendo, la
+  // respuesta vieja que llegue despues no puede pisar a la nueva.
   const peticion = useRef(0)
 
   const cargar = useCallback(async () => {
@@ -120,13 +118,13 @@ export default function MovimientosPage() {
     setError(null)
 
     const params = new URLSearchParams({ page: String(page), pageSize: String(POR_PAGINA) })
-    if (filtros.q.trim()) params.set('q', filtros.q.trim())
-    if (filtros.tipo) params.set('tipo', filtros.tipo)
-    // Solo el DIA, en los dos extremos. Que "hasta el 5" incluya el 5 entero
-    // lo resuelve el servidor con la zona de la sucursal, que es el unico que
-    // sabe donde termina el dia del comercio.
-    if (filtros.desde) params.set('desde', filtros.desde)
-    if (filtros.hasta) params.set('hasta', filtros.hasta)
+    if (q.trim()) params.set('q', q.trim())
+    // Solo el DIA: donde empieza y termina el dia del comercio lo resuelve el
+    // servidor con la zona de la sucursal.
+    if (periodo !== 'todos') {
+      const dias = periodo === 'hoy' ? 0 : Number(periodo) - 1
+      params.set('desde', sumarDias(hoy(), -dias))
+    }
 
     try {
       const pagina = await apiRequest(`/api/inventory/movements?${params.toString()}`, {
@@ -138,11 +136,11 @@ export default function MovimientosPage() {
       setTotalPages(pagina.pagination.totalPages)
     } catch (err) {
       if (mia !== peticion.current) return
-      setError(mensajeDeError(err, 'No se pudo cargar el historial.'))
+      setError(mensajeDeError(err, 'No se pudo cargar el historial. Revisá la conexión.'))
     } finally {
       if (mia === peticion.current) setCargando(false)
     }
-  }, [puedeVer, page, filtros])
+  }, [puedeVer, page, q, periodo, hoy])
 
   useEffect(() => {
     const t = setTimeout(() => void cargar(), ESPERA_MS)
@@ -151,241 +149,197 @@ export default function MovimientosPage() {
     }
   }, [cargar])
 
-  function aplicar(cambio: Partial<Filtros>) {
-    setFiltros((f) => ({ ...f, ...cambio }))
-    setPage(1)
-  }
-
   if (!puedeVer) {
     return (
       <PageContainer width="narrow">
-        <Card>
-          <EmptyState
-            title="No tenés acceso al historial"
-            description="Ver quién movió cada unidad es información de control. Pedíselo a quien administra el sistema."
-          />
-        </Card>
+        <EmptyState
+          title="Tu usuario no puede ver los movimientos"
+          description="Pedíselo a quien administra el sistema."
+        />
       </PageContainer>
     )
   }
 
-  const hayFiltros = filtros.q !== '' || filtros.tipo !== '' || filtros.desde !== '' || filtros.hasta !== '' // prettier-ignore
+  /** El motivo, o lo que lo explica cuando no se escribio uno. */
+  function motivoDe(m: MovimientoDTO) {
+    const href = enlaceDeReferencia(m.referenceType, m.referenceId)
+    // Con Compras apagada no hay pantalla de recepciones ni de devoluciones a
+    // la que llevar: queda el texto.
+    const deCompras = m.referenceType === 'PurchaseReceipt' || m.referenceType === 'PurchaseReturn'
+    const enlace = href !== null && (!deCompras || usaCompras) ? href : null
+    const referencia =
+      m.referenceType === 'InventoryCountSession'
+        ? 'Ver inventario'
+        : textoDeReferencia(m.referenceType, m.referenceId)
+    const vinculo =
+      enlace === null ? null : (
+        <Link href={enlace} className="font-medium text-primary underline underline-offset-2">
+          {referencia}
+        </Link>
+      )
+    if (m.reason !== null) {
+      return vinculo === null ? (
+        m.reason
+      ) : (
+        <>
+          {m.reason} · {vinculo}
+        </>
+      )
+    }
+    // Sin motivo ni pantalla a la que llevar, no se muestra un "Producto #12"
+    // o "Ajuste #40": son numeros internos que no le dicen nada a nadie.
+    return vinculo
+  }
+
+  function detalleDe(m: MovimientoDTO): string {
+    const partes = [
+      `quedó en ${formatearCantidadConUnidad(m.resultingQuantity, m.product.saleUnit)}`,
+      m.user.name,
+    ]
+    if (usaLotes && m.lotCode !== null) partes.push(`lote ${m.lotCode}`)
+    return partes.join(' · ')
+  }
 
   return (
     <PageContainer>
-      <Alert tone="info" title="Este libro no se edita">
-        Un movimiento queda como está para siempre. Si algo se cargó mal, se corrige con otro
-        movimiento y los dos quedan a la vista.
-      </Alert>
-
-      <Card padded={false}>
-        <div className="flex flex-col gap-3 border-b border-line p-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-            <div className="lg:max-w-md lg:flex-1">
-              <SearchInput
-                label="Buscar producto"
-                placeholder="Nombre o código de barras…"
-                value={filtros.q}
-                loading={cargando}
-                onClear={() => {
-                  aplicar({ q: '' })
-                }}
-                onChange={(e) => {
-                  aplicar({ q: e.target.value })
-                }}
-              />
-            </div>
-
-            <div className="flex flex-wrap items-end gap-2">
-              <Field label="Tipo">
-                <Select
-                  value={filtros.tipo}
-                  onChange={(e) => {
-                    aplicar({ tipo: e.target.value })
-                  }}
-                  className="w-auto"
-                >
-                  <option value="">Todos los tipos</option>
-                  {TIPOS_MOVIMIENTO.map((t) => (
-                    <option key={t} value={t}>
-                      {etiquetaDeTipo(t)}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-
-              <Field label="Desde">
-                <Input
-                  type="date"
-                  value={filtros.desde}
-                  onChange={(e) => {
-                    aplicar({ desde: e.target.value })
-                  }}
-                />
-              </Field>
-
-              <Field label="Hasta">
-                <Input
-                  type="date"
-                  value={filtros.hasta}
-                  onChange={(e) => {
-                    aplicar({ hasta: e.target.value })
-                  }}
-                />
-              </Field>
-
-              {hayFiltros && (
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setFiltros(SIN_FILTROS)
-                    setPage(1)
-                  }}
-                >
-                  Limpiar
-                </Button>
-              )}
-            </div>
-          </div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+        <div className="min-w-0 flex-1">
+          <SearchInput
+            label="Buscar producto"
+            labelVisible
+            size="lg"
+            placeholder="Nombre o código de barras"
+            value={q}
+            loading={cargando}
+            onClear={() => {
+              setQ('')
+              setPage(1)
+            }}
+            onChange={(e) => {
+              setQ(e.target.value)
+              setPage(1)
+            }}
+          />
         </div>
+        <div role="group" aria-label="Período" className="flex flex-wrap gap-2">
+          {PERIODOS.map((p) => {
+            const activo = periodo === p.valor
+            return (
+              <button
+                key={p.valor}
+                type="button"
+                aria-pressed={activo}
+                onClick={() => {
+                  setPeriodo(p.valor)
+                  setPage(1)
+                }}
+                className={cn(
+                  'min-h-control-lg rounded-md px-4 text-base font-semibold transition-colors',
+                  activo
+                    ? 'border-2 border-primary bg-primary-quiet text-ink'
+                    : 'border border-line-strong bg-surface text-ink hover:bg-raised',
+                )}
+              >
+                {p.etiqueta}
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
-        <div className="p-3">
-          {error ? (
-            <ErrorState description={error} onRetry={() => void cargar()} />
-          ) : cargando ? (
-            <SkeletonRows rows={8} />
-          ) : movimientos.length === 0 ? (
-            <EmptyState
-              title={hayFiltros ? 'Nada con esos filtros' : 'Todavía no hay movimientos'}
-              description={
-                hayFiltros
-                  ? 'Probá con otro texto, otro tipo u otras fechas.'
-                  : 'Cada venta, anulación y ajuste va a aparecer acá.'
-              }
-            />
-          ) : (
-            <>
-              <div className="hidden md:block">
-                <TableWrap className="border-0">
-                  <Table caption="Movimientos de stock de la sucursal">
-                    <THead>
-                      <TR>
-                        <TH>Fecha</TH>
-                        <TH>Producto</TH>
-                        <TH>Tipo</TH>
-                        <TH align="right">Variación</TH>
-                        <TH align="right">Anterior</TH>
-                        <TH align="right">Posterior</TH>
-                        <TH>Referencia</TH>
-                        <TH>Usuario</TH>
-                        <TH>Motivo</TH>
+      {error ? (
+        <ErrorState description={error} onRetry={() => void cargar()} />
+      ) : cargando ? (
+        <SkeletonRows rows={8} />
+      ) : movimientos.length === 0 ? (
+        <EmptyState
+          title="No hay movimientos"
+          description={
+            q.trim() !== '' || periodo !== 'todos'
+              ? 'Probá con otra palabra o con «Todos».'
+              : 'Cada venta, entrada y corrección va a aparecer acá.'
+          }
+        />
+      ) : (
+        <>
+          <div className="hidden md:block">
+            <TableWrap>
+              <Table caption="Movimientos de stock">
+                <THead>
+                  <TR>
+                    <TH>Fecha</TH>
+                    <TH>Producto</TH>
+                    <TH>Movimiento</TH>
+                    <TH align="right">Cantidad</TH>
+                    <TH>Motivo</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {movimientos.map((m) => {
+                    const t = cuando(m.createdAt)
+                    const motivo = motivoDe(m)
+                    return (
+                      <TR key={m.id}>
+                        <TD className="whitespace-nowrap">
+                          <p className="font-medium text-ink" data-numeric="">
+                            {t.fecha}
+                          </p>
+                          <p className="text-sm text-ink-muted" data-numeric="">
+                            {t.hora}
+                          </p>
+                        </TD>
+                        <TD>
+                          <p className="font-semibold text-ink">{m.product.name}</p>
+                        </TD>
+                        <TD className="text-ink">{nombreDe(m)}</TD>
+                        <TD align="right">
+                          <Cantidad cantidad={m.quantity} unidad={m.product.saleUnit} />
+                        </TD>
+                        <TD className="max-w-80">
+                          <p className="truncate text-ink">{motivo ?? '—'}</p>
+                          <p className="truncate text-sm text-ink-muted">{detalleDe(m)}</p>
+                        </TD>
                       </TR>
-                    </THead>
-                    <TBody>
-                      {movimientos.map((m) => {
-                        const t = cuando(m.createdAt)
-                        return (
-                          <TR key={m.id}>
-                            <TD>
-                              <p className="font-medium text-ink" data-numeric="">
-                                {t.hora}
-                              </p>
-                              <p className="text-xs text-ink-faint" data-numeric="">
-                                {t.fecha}
-                              </p>
-                            </TD>
-                            <TD>
-                              <p className="font-medium text-ink">{m.product.name}</p>
-                              {/*
-                                La PARTIDA, cuando la hay. Fase 4D.
+                    )
+                  })}
+                </TBody>
+              </Table>
+            </TableWrap>
+          </div>
 
-                                Va bajo el nombre y no en una columna propia
-                                porque la tabla ya tiene siete y en 375 px no
-                                entra una octava. Sin partida no se muestra
-                                nada: un "—" repetido en cada fila de un
-                                catálogo que casi no usa lotes es ruido.
-                              */}
-                              {m.lotCode !== null && (
-                                <p className="font-mono text-xs text-ink-muted">
-                                  {m.lotCode}
-                                  {m.lotExpirationDate !== null && (
-                                    <span className="ml-1 font-sans text-ink-faint">
-                                      vence {m.lotExpirationDate}
-                                    </span>
-                                  )}
-                                </p>
-                              )}
-                              {m.product.barcode && (
-                                <p className="font-mono text-xs text-ink-faint">
-                                  {m.product.barcode}
-                                </p>
-                              )}
-                            </TD>
-                            <TD className="text-ink-muted">{m.typeLabel}</TD>
-                            <TD align="right">
-                              <Variacion cantidad={m.quantity} unidad={m.product.saleUnit} />
-                            </TD>
-                            <TD align="right" className="text-ink-muted tabular-nums">
-                              {formatearCantidad(m.previousQuantity, m.product.saleUnit)}
-                            </TD>
-                            <TD align="right" className="font-medium text-ink tabular-nums">
-                              {formatearCantidad(m.resultingQuantity, m.product.saleUnit)}
-                            </TD>
-                            <TD>
-                              <Referencia movimiento={m} />
-                            </TD>
-                            <TD className="text-ink-muted">{m.user.name}</TD>
-                            <TD className="max-w-48 truncate text-ink-muted" title={m.reason ?? ''}>
-                              {m.reason ?? '—'}
-                            </TD>
-                          </TR>
-                        )
-                      })}
-                    </TBody>
-                  </Table>
-                </TableWrap>
-              </div>
+          <CardList className="md:hidden">
+            {movimientos.map((m) => {
+              const t = cuando(m.createdAt)
+              const motivo = motivoDe(m)
+              return (
+                <CardListItem key={m.id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-base font-semibold text-ink">{m.product.name}</p>
+                      <p className="mt-0.5 text-sm text-ink">
+                        {nombreDe(m)} · {t.fecha} {t.hora}
+                      </p>
+                      {motivo !== null && (
+                        <p className="mt-1 truncate text-sm text-ink-muted">{motivo}</p>
+                      )}
+                    </div>
+                    <Cantidad cantidad={m.quantity} unidad={m.product.saleUnit} />
+                  </div>
+                </CardListItem>
+              )
+            })}
+          </CardList>
 
-              <CardList className="md:hidden">
-                {movimientos.map((m) => {
-                  const t = cuando(m.createdAt)
-                  return (
-                    <CardListItem key={m.id}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-ink">{m.product.name}</p>
-                          <p className="mt-0.5 text-xs text-ink-faint">
-                            {t.hora} · {t.fecha} · {m.typeLabel}
-                          </p>
-                          <p className="mt-1 text-xs text-ink-muted">
-                            {formatearCantidad(m.previousQuantity, m.product.saleUnit)} →{' '}
-                            {formatearCantidad(m.resultingQuantity, m.product.saleUnit)} ·{' '}
-                            {m.user.name}
-                          </p>
-                          {m.reason && (
-                            <p className="mt-1 truncate text-xs text-ink-faint">{m.reason}</p>
-                          )}
-                        </div>
-                        <Variacion cantidad={m.quantity} unidad={m.product.saleUnit} />
-                      </div>
-                    </CardListItem>
-                  )
-                })}
-              </CardList>
-
-              <Pagination
-                className="mt-4"
-                page={page}
-                pageSize={POR_PAGINA}
-                total={total}
-                totalPages={totalPages}
-                onPageChange={setPage}
-                disabled={cargando}
-              />
-            </>
-          )}
-        </div>
-      </Card>
+          <Pagination
+            page={page}
+            pageSize={POR_PAGINA}
+            total={total}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            disabled={cargando}
+          />
+        </>
+      )}
     </PageContainer>
   )
 }

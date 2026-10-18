@@ -135,7 +135,7 @@ export function DialogoCobro({
           </Alert>
         )}
 
-        <div className="rounded-lg bg-surface-2 p-3 text-sm">
+        <div className="rounded-lg bg-sunken p-3 text-sm">
           <div className="flex justify-between">
             <span className="text-ink-muted">Debe</span>
             <span className="font-medium text-ink" data-numeric="">

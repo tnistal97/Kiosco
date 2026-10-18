@@ -1,4 +1,5 @@
 import type { Permission } from '@/server/authz/permissions'
+import type { FuncionOpcional } from '@/lib/funciones'
 
 /**
  * Mapa de navegacion.
@@ -29,53 +30,44 @@ export interface EntradaNav {
   anyOf?: Permission[]
   /** Coincide tambien con las subrutas, p. ej. /productos/12. */
   matchPrefix?: boolean
+  /**
+   * Funcion opcional de la instalacion. Sin ella habilitada, la entrada no se
+   * muestra (ver `@/lib/funciones`).
+   */
+  funcion?: FuncionOpcional
 }
 
 export interface GrupoNav {
-  /** Sin titulo, el grupo se dibuja suelto arriba de todo. */
+  /** Sin titulo, el grupo se dibuja suelto, separado por una linea. */
   title?: string
   items: EntradaNav[]
 }
 
+/*
+ * UX V5 — almacen.
+ *
+ * Cinco tareas a la vista, con el nombre que les da quien atiende: Vender,
+ * Caja, Productos, Stock, Inventario. Debajo, separado, lo que se usa de vez
+ * en cuando: Clientes, Reportes, Configuracion. Nada mas.
+ *
+ * Lo que salio del menu NO se borro:
+ *  - Movimientos se abre desde Stock ("Ver movimientos").
+ *  - Ventas se abre desde Caja y desde Inicio.
+ *  - Usuarios, Sucursales y el historial de cambios, desde Configuracion.
+ *  - Lotes y Compras (ordenes, proveedores, devoluciones) son funciones
+ *    opcionales: aparecen solo si la instalacion las habilita.
+ */
 export const NAVEGACION: GrupoNav[] = [
   {
-    items: [{ href: '/', label: 'Inicio' }],
-  },
-  {
-    title: 'Operación',
     items: [
-      { href: '/venta', label: 'Venta', permission: 'sales.create' },
+      { href: '/', label: 'Inicio' },
+      { href: '/venta', label: 'Vender', permission: 'sales.create' },
       { href: '/caja', label: 'Caja', permission: 'cash.view', matchPrefix: true },
-      { href: '/ventas', label: 'Ventas', permission: 'sales.view', matchPrefix: true },
-      // En Operacion y no en Control: el cajero busca a Juan para cobrarle, y
-      // eso pasa en el mostrador. `clients.view` y no `accounts.view` porque
-      // ese es el permiso que gobierna la pantalla a la que lleva el enlace: un
-      // enlace visible que responde 403 es peor que no tenerlo, y es
-      // exactamente el error que la Fase 3D encontro en "Ventas".
-      { href: '/clientes', label: 'Clientes', permission: 'clients.view', matchPrefix: true },
-    ],
-  },
-  {
-    title: 'Inventario',
-    items: [
       { href: '/productos', label: 'Productos', permission: 'products.view', matchPrefix: true },
-      { href: '/stock', label: 'Stock', permission: 'stock.view' },
-      {
-        href: '/stock/movimientos',
-        label: 'Movimientos',
-        permission: 'inventory.movements.view',
-      },
-      /*
-        Fase 4D. Van en el menú y no sólo como botones dentro de /stock.
-
-        Sin esto la barra no las nombra, la cabecera no sabe cómo titularlas
-        --caía en "Almacén"-- y cada pantalla terminaba poniendo su propio
-        `h1`, que dejaba DOS en la misma página. Lo encontró axe.
-      */
-      { href: '/stock/lotes', label: 'Lotes', permission: 'lots.view', matchPrefix: true },
+      { href: '/stock', label: 'Stock', permission: 'stock.view', matchPrefix: true },
       {
         href: '/inventarios',
-        label: 'Inventarios',
+        label: 'Inventario',
         permission: 'inventoryCounts.view',
         matchPrefix: true,
       },
@@ -84,31 +76,39 @@ export const NAVEGACION: GrupoNav[] = [
   {
     title: 'Compras',
     items: [
-      { href: '/compras', label: 'Órdenes', permission: 'purchases.view', matchPrefix: true },
+      {
+        href: '/compras',
+        label: 'Órdenes',
+        permission: 'purchases.view',
+        matchPrefix: true,
+        funcion: 'compras',
+      },
       {
         href: '/proveedores',
         label: 'Proveedores',
         permission: 'suppliers.view',
         matchPrefix: true,
+        funcion: 'compras',
       },
       // Las devoluciones se ARMAN desde el detalle de una entrega --de ahi
-      // salen el costo y el tope-- pero se LISTAN por su cuenta: "que le
-      // devolvimos este mes" es una pregunta propia, y sin este enlace habria
-      // que ir orden por orden para contestarla.
+      // salen el costo y el tope-- pero se LISTAN por su cuenta.
       {
         href: '/devoluciones',
         label: 'Devoluciones',
         permission: 'purchaseReturns.view',
         matchPrefix: true,
+        funcion: 'compras',
       },
     ],
   },
   {
-    title: 'Control',
     items: [
-      // Un solo enlace para las seis materias. Cada seccion de la pantalla se
-      // dibuja o no segun su propio permiso, asi que quien tenga uno solo
-      // --el encargado de compras, por ejemplo-- entra y ve lo suyo.
+      // `clients.view` y no `accounts.view`: es el permiso que gobierna la
+      // pantalla a la que lleva el enlace. Un enlace visible que responde 403
+      // es peor que no tenerlo.
+      { href: '/clientes', label: 'Clientes', permission: 'clients.view', matchPrefix: true },
+      // Un solo enlace para todas las materias. Cada seccion de la pantalla se
+      // dibuja o no segun su propio permiso.
       {
         href: '/reportes',
         label: 'Reportes',
@@ -120,27 +120,41 @@ export const NAVEGACION: GrupoNav[] = [
           'reports.purchases.view',
         ],
       },
-      { href: '/auditoria', label: 'Auditoría', permission: 'audit.view' },
-    ],
-  },
-  {
-    title: 'Administración',
-    items: [
-      { href: '/usuarios', label: 'Usuarios', permission: 'users.view' },
-      { href: '/sucursales', label: 'Sucursales', permission: 'branches.view' },
-      { href: '/configuracion', label: 'Configuración' },
+      { href: '/configuracion', label: 'Configuración', matchPrefix: true },
     ],
   },
 ]
 
-/** Grupos con al menos una entrada visible para estos permisos. */
-export function navegacionPara(permisos: ReadonlySet<string>): GrupoNav[] {
+/**
+ * Pantallas que no estan en el menu pero tienen nombre propio en la cabecera.
+ * Se consultan ANTES que el menu: /stock/movimientos coincide tambien con la
+ * entrada Stock, y la cabecera tiene que decir donde se esta.
+ */
+const TITULOS_SUELTOS: { href: string; titulo: string }[] = [
+  { href: '/stock/movimientos', titulo: 'Movimientos de stock' },
+  { href: '/stock/lotes', titulo: 'Lotes' },
+  { href: '/ventas', titulo: 'Ventas' },
+  { href: '/usuarios', titulo: 'Usuarios' },
+  { href: '/sucursales', titulo: 'Sucursales' },
+  { href: '/auditoria', titulo: 'Historial de cambios' },
+  { href: '/comprobantes', titulo: 'Comprobante' },
+]
+
+/**
+ * Grupos con al menos una entrada visible para estos permisos y estas
+ * funciones opcionales.
+ */
+export function navegacionPara(
+  permisos: ReadonlySet<string>,
+  funciones: ReadonlySet<FuncionOpcional> = new Set(),
+): GrupoNav[] {
   return NAVEGACION.map((g) => ({
     ...g,
     items: g.items.filter(
       (i) =>
         (!i.permission || permisos.has(i.permission)) &&
-        (!i.anyOf || i.anyOf.some((p) => permisos.has(p))),
+        (!i.anyOf || i.anyOf.some((p) => permisos.has(p))) &&
+        (!i.funcion || funciones.has(i.funcion)),
     ),
   })).filter((g) => g.items.length > 0)
 }
@@ -156,6 +170,9 @@ export function esActiva(entrada: EntradaNav, pathname: string): boolean {
 
 /** Titulo de la pantalla, para la cabecera. */
 export function tituloDe(pathname: string): string {
+  for (const suelto of TITULOS_SUELTOS) {
+    if (pathname === suelto.href || pathname.startsWith(`${suelto.href}/`)) return suelto.titulo
+  }
   for (const grupo of NAVEGACION) {
     for (const item of grupo.items) {
       if (esActiva(item, pathname)) return item.label

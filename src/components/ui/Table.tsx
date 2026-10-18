@@ -41,7 +41,7 @@ export function Table({
   className?: string
 }) {
   return (
-    <table className={cn('w-full border-collapse text-sm', className)}>
+    <table className={cn('w-full border-collapse text-md', className)}>
       {caption && <caption className="sr-only">{caption}</caption>}
       {children}
     </table>
@@ -49,8 +49,14 @@ export function Table({
 }
 
 export function THead({ children }: { children: ReactNode }) {
-  return <thead className="border-b border-line bg-raised">{children}</thead>
+  return <thead className="border-b border-line-strong/40 bg-surface">{children}</thead>
 }
+
+/**
+ * Columna secundaria: se ve desde pantallas anchas (lg) y se esconde en las
+ * angostas, donde el ancho es para lo que se lee siempre.
+ */
+const SECUNDARIA = 'hidden lg:table-cell'
 
 export function TBody({ children }: { children: ReactNode }) {
   return <tbody className="divide-y divide-line">{children}</tbody>
@@ -87,14 +93,22 @@ export function TR({
 export function TH({
   children,
   align = 'left',
+  secondary = false,
   className,
   ...rest
-}: { align?: 'left' | 'right' | 'center' } & ThHTMLAttributes<HTMLTableCellElement>) {
+}: {
+  align?: 'left' | 'right' | 'center'
+  /** Columna secundaria: oculta en pantallas angostas. */
+  secondary?: boolean
+} & ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
       scope="col"
       className={cn(
-        'px-3 py-2.5 text-xs font-semibold tracking-wide text-ink-muted uppercase',
+        // En minuscula y sin espaciado: las mayusculas chicas con tracking se
+        // leian como un panel tecnico.
+        'px-4 py-3 text-sm font-semibold text-ink-muted',
+        secondary && SECUNDARIA,
         align === 'right' && 'text-right',
         align === 'center' && 'text-center',
         align === 'left' && 'text-left',
@@ -110,13 +124,19 @@ export function TH({
 export function TD({
   children,
   align = 'left',
+  secondary = false,
   className,
   ...rest
-}: { align?: 'left' | 'right' | 'center' } & TdHTMLAttributes<HTMLTableCellElement>) {
+}: {
+  align?: 'left' | 'right' | 'center'
+  /** Columna secundaria: oculta en pantallas angostas. */
+  secondary?: boolean
+} & TdHTMLAttributes<HTMLTableCellElement>) {
   return (
     <td
       className={cn(
-        'px-3 py-2.5 text-ink',
+        'px-4 py-3 text-md text-ink',
+        secondary && SECUNDARIA,
         align === 'right' && 'text-right',
         align === 'center' && 'text-center',
         className,

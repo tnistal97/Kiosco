@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { PRODUCTOS, entrar, escanear, leerMonto } from './ayudantes'
+import { PRODUCTOS, entrar, escanear, leerMetrica, leerMonto, terminarVenta } from './ayudantes'
 
 /**
  * Caja y venta, de punta a punta. UX V2, Fase 2.
@@ -26,9 +26,9 @@ async function cobrarEnEfectivo(page: Page, recibido: string): Promise<void> {
     .getByRole('button', { name: /^Cobrar/ })
     .click()
   const cobro = page.getByRole('dialog')
-  await cobro.getByLabel(/^paga con/i).fill(recibido)
+  await cobro.getByLabel(/^recibido/i).fill(recibido)
   await page.waitForTimeout(400)
-  await cobro.getByRole('button', { name: /^Cobrar/ }).click()
+  await cobro.getByRole('button', { name: /^Confirmar venta/ }).click()
   await expect(page.getByText('Venta registrada')).toBeVisible({ timeout: 15_000 })
 }
 
@@ -41,8 +41,8 @@ test.describe('La caja, guiada', () => {
 
     // 1 · El turno: los cuatro renglones y lo que tiene que haber.
     await expect(page.getByRole('heading', { name: 'Cerrar la caja' })).toBeVisible()
-    await expect(page.getByText('Efectivo inicial')).toBeVisible()
-    await expect(page.getByText('Retiros y depósitos')).toBeVisible()
+    await expect(page.getByText('Empezó con')).toBeVisible()
+    await expect(page.getByText('Egresos', { exact: true })).toBeVisible()
     const fila = page.getByText('Tiene que haber', { exact: true }).locator('..')
     const esperado = leerMonto(await fila.getByText(/^\$/).innerText())
 
@@ -102,6 +102,101 @@ test.describe('La caja, guiada', () => {
     await page.goto('/caja/abrir')
     await expect(page.getByRole('heading', { name: 'La caja ya está abierta' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Ir a vender' })).toBeVisible()
+  })
+
+  test('registrar un ingreso y un egreso mueve lo que tiene que haber, exacto', async ({
+    page,
+  }) => {
+    // UX V5: dos botones con verbo, sin elegir "tipo" adentro.
+    await entrar(page, 'encargado')
+    await page.goto('/caja')
+    await expect(page.getByText('CAJA ABIERTA')).toBeVisible()
+
+    const tieneQueHaber = async (): Promise<number> =>
+      leerMonto(
+        await page
+          .getByText('Tiene que haber en el cajón')
+          .locator('..')
+          .getByText(/^\$/)
+          .first()
+          .innerText(),
+      )
+    const antes = await tieneQueHaber()
+
+    await page.getByRole('button', { name: 'Registrar ingreso' }).click()
+    let dialogo = page.getByRole('dialog')
+    await dialogo.getByLabel('Importe').fill('1500')
+    await dialogo.getByLabel('Motivo').fill('Cambio que trajo el dueño')
+    await dialogo.getByRole('button', { name: 'Registrar ingreso' }).click()
+    await expect(page.getByText('Ingreso registrado.')).toBeVisible({ timeout: 15_000 })
+    await expect.poll(tieneQueHaber).toBe(antes + 1500)
+
+    await page.getByRole('button', { name: 'Registrar egreso' }).click()
+    dialogo = page.getByRole('dialog')
+    await dialogo.getByLabel('Importe').fill('500')
+    await dialogo.getByLabel('Motivo').fill('Pago al panadero')
+    await dialogo.getByRole('button', { name: 'Registrar egreso' }).click()
+    await expect(page.getByText('Egreso registrado.')).toBeVisible({ timeout: 15_000 })
+    await expect.poll(tieneQueHaber).toBe(antes + 1000)
+
+    // Y en el detalle, el egreso dice lo que es, con palabra y signo.
+    await page.getByRole('button', { name: /ver detalle/i }).click()
+    const fila = page.getByRole('row').filter({ hasText: 'Pago al panadero' }).first()
+    await expect(fila).toContainText('Egreso')
+    await expect(fila).toContainText('−$')
+  })
+
+  test('una venta en efectivo sube lo que tiene que haber y las ventas de hoy; contar cuadra', async ({
+    page,
+  }) => {
+    await entrar(page, 'encargado')
+    await page.goto('/caja')
+    await expect(page.getByText('CAJA ABIERTA')).toBeVisible()
+    // Las cuatro acciones, a la vista.
+    for (const accion of ['Registrar ingreso', 'Registrar egreso', 'Contar caja']) {
+      await expect(page.getByRole('button', { name: accion })).toBeVisible()
+    }
+    await expect(page.getByRole('link', { name: 'Cerrar caja' })).toBeVisible()
+
+    const tieneQueHaber = async (): Promise<number> =>
+      leerMonto(
+        await page
+          .getByText('Tiene que haber en el cajón')
+          .locator('..')
+          .getByText(/^\$/)
+          .first()
+          .innerText(),
+      )
+    const antes = await tieneQueHaber()
+    const ventasAntes = await leerMetrica(page, 'Ventas de hoy')
+
+    // Una venta con lo justo, solo con el teclado.
+    await page.goto('/venta')
+    await expect(campo(page)).toBeFocused()
+    await escanear(page, PRODUCTOS.yerba.codigo)
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog').getByRole('radio', { name: 'Efectivo' })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(400)
+    await page.keyboard.press('Enter')
+    await expect(page.getByText(/Venta registrada/).first()).toBeVisible({ timeout: 15_000 })
+
+    await page.goto('/caja')
+    await expect.poll(tieneQueHaber).toBe(antes + PRODUCTOS.yerba.precio)
+    await expect
+      .poll(() => leerMetrica(page, 'Ventas de hoy'))
+      .toBe(ventasAntes + PRODUCTOS.yerba.precio)
+
+    // Contar la caja con lo que tiene que haber: cuadra.
+    const esperado = await tieneQueHaber()
+    await page.getByRole('button', { name: 'Contar caja' }).click()
+    const dialogo = page.getByRole('dialog')
+    await dialogo.getByLabel('Efectivo contado').fill(String(esperado))
+    await dialogo.getByRole('button', { name: 'Guardar conteo' }).click()
+    await expect(dialogo).toBeHidden({ timeout: 15_000 })
+    await page.getByRole('button', { name: /ver detalle/i }).click()
+    await expect(page.getByText('✓ Cuadró').first()).toBeVisible()
   })
 })
 
@@ -203,18 +298,18 @@ test.describe('Vender', () => {
       .click()
     const cobro = page.getByRole('dialog')
     await expect(cobro.getByRole('radio', { name: 'Efectivo' })).toBeChecked()
-    await cobro.getByLabel(/^paga con/i).fill('20000')
+    await cobro.getByLabel(/^recibido/i).fill('20000')
     const total = PRODUCTOS.yerba.precio + PRODUCTOS.leche.precio
     const vuelto = String(20000 - total).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
     await expect(cobro.getByText(new RegExp(vuelto))).toBeVisible()
 
     await page.waitForTimeout(400)
-    await cobro.getByRole('button', { name: /^Cobrar/ }).click()
+    await cobro.getByRole('button', { name: /^Confirmar venta/ }).click()
     await expect(page.getByText('Venta registrada')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText(/vuelto/i).first()).toBeVisible()
 
     // Nueva venta: el lector recupera el foco y el ticket queda vacio.
-    await page.getByRole('button', { name: 'Nueva venta' }).click()
+    await terminarVenta(page)
     await expect(campo(page)).toBeFocused()
     await expect(page.getByText('El ticket está vacío')).toBeVisible()
   })
@@ -228,10 +323,10 @@ test.describe('Vender', () => {
 
     await cobro.getByRole('radio', { name: 'Transferencia' }).click()
     await expect(cobro.getByText(/no entra al cajón/i)).toBeVisible()
-    await expect(cobro.getByLabel(/^paga con/i)).toHaveCount(0)
+    await expect(cobro.getByLabel(/^recibido/i)).toHaveCount(0)
 
     await page.waitForTimeout(400)
-    await cobro.getByRole('button', { name: /^Cobrar/ }).click()
+    await cobro.getByRole('button', { name: /^Confirmar venta/ }).click()
     await expect(page.getByText('Venta registrada')).toBeVisible({ timeout: 15_000 })
   })
 
@@ -243,6 +338,8 @@ test.describe('Vender', () => {
       .click()
     const cobro = page.getByRole('dialog')
 
+    // V5: dividir el pago esta en "Más opciones".
+    await cobro.getByRole('button', { name: /más opciones/i }).click()
     await cobro.getByRole('button', { name: 'Dividir el pago' }).click()
     // Dos renglones: el primero toma el resto, asi que ya cubre el total.
     await expect(cobro.getByText('Pago 1', { exact: true })).toBeVisible()
@@ -258,7 +355,7 @@ test.describe('Vender', () => {
     await expect(cobro.getByText(/Cubre el total/)).toBeVisible()
 
     await page.waitForTimeout(400)
-    await cobro.getByRole('button', { name: /^Cobrar/ }).click()
+    await cobro.getByRole('button', { name: /^Confirmar venta/ }).click()
     await expect(page.getByText('Venta registrada')).toBeVisible({ timeout: 15_000 })
   })
 
@@ -266,7 +363,9 @@ test.describe('Vender', () => {
     await escanear(page, PRODUCTOS.queso.codigo)
     await page.getByLabel(/^Peso$/).fill('0,5')
     await page.getByRole('button', { name: 'Agregar' }).click()
-    await expect(ticket(page).getByText('0,500 kg', { exact: true })).toBeVisible()
+    await expect(
+      ticket(page).getByRole('spinbutton', { name: /cantidad de queso/i }),
+    ).toHaveAttribute('aria-valuetext', '0,500 kg')
     await cobrarEnEfectivo(page, '10000')
   })
 
@@ -274,15 +373,17 @@ test.describe('Vender', () => {
     await escanear(page, PRODUCTOS.yerba.codigo)
     await escanear(page, PRODUCTOS.leche.codigo)
 
-    // Tocar la linea la elige y muestra sus controles; "Quitar" la saca.
-    await ticket(page).getByText(PRODUCTOS.yerba.nombre, { exact: true }).click()
-    await ticket(page).getByRole('button', { name: 'Quitar', exact: true }).click()
+    // V5: cada linea tiene su "Quitar" a la vista, sin elegirla antes.
+    await ticket(page)
+      .getByRole('button', { name: `Quitar ${PRODUCTOS.yerba.nombre}` })
+      .click()
     await expect(ticket(page).getByText(PRODUCTOS.yerba.nombre, { exact: true })).toHaveCount(0)
     await expect(ticket(page).getByText(PRODUCTOS.leche.nombre, { exact: true })).toBeVisible()
 
     // Sin la ultima, el ticket vuelve a estar vacio y "Cobrar" se apaga.
-    await ticket(page).getByText(PRODUCTOS.leche.nombre, { exact: true }).click()
-    await ticket(page).getByRole('button', { name: 'Quitar', exact: true }).click()
+    await ticket(page)
+      .getByRole('button', { name: `Quitar ${PRODUCTOS.leche.nombre}` })
+      .click()
     await expect(page.getByText('El ticket está vacío')).toBeVisible()
     await expect(ticket(page).getByRole('button', { name: /^Cobrar/ })).toBeDisabled()
   })
@@ -296,7 +397,7 @@ test.describe('Vender', () => {
     await campo(page).fill('helado')
     const agotada = page
       .getByRole('group', { name: 'Resultados de la búsqueda' })
-      .getByRole('button', { name: /^Helado 1 L, agotado$/ })
+      .getByRole('button', { name: /^Helado 1 L, sin stock$/ })
     await expect(agotada).toBeDisabled()
   })
 
@@ -306,7 +407,7 @@ test.describe('Vender', () => {
     const cantidad = ticket(page).getByRole('spinbutton')
     await cantidad.fill('999')
     await cantidad.press('Tab')
-    await expect(ticket(page).getByText(/sin más stock/)).toBeVisible()
+    await expect(ticket(page).getByText(/no hay más stock/)).toBeVisible()
     const tope = Number(await cantidad.getAttribute('aria-valuemax'))
     expect(tope).toBeGreaterThan(0)
     expect(Number(await cantidad.getAttribute('aria-valuenow'))).toBe(tope)

@@ -137,9 +137,9 @@ describe('El catalogo se ve antes de escribir nada', () => {
 
   it('un producto agotado se ve, pero no se puede tocar', () => {
     armar()
-    const helado = fila(/^Helado 1 L, agotado$/)
+    const helado = fila(/^Helado 1 L, sin stock$/)
     expect(helado).toBeDisabled()
-    expect(screen.getByText('Agotado')).toBeInTheDocument()
+    expect(screen.getByText('Sin stock')).toBeInTheDocument()
   })
 })
 

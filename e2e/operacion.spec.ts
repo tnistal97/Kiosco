@@ -71,7 +71,7 @@ async function venderYCobrar(
 
   // Desde UX V2 el medio de pago es una fila de botones, no un `select`.
   await dialogo.getByRole('radio', { name: medio }).click()
-  await dialogo.getByRole('button', { name: /^cobrar/i }).click()
+  await dialogo.getByRole('button', { name: /^confirmar venta/i }).click()
 
   await expect(page.getByText('Venta registrada')).toBeVisible({ timeout: 15_000 })
 }
@@ -282,14 +282,13 @@ test.describe('Dia 3: el costo historico no se mueve', () => {
       .getByRole('row')
       .filter({ hasText: PRODUCTOS.leche.nombre })
       .first()
-      .locator('button[aria-expanded]')
-      .first()
+      .getByRole('button', { name: /^Editar / })
       .click()
-    await page.getByRole('menuitem', { name: 'Editar' }).click()
     const ficha = page.getByRole('dialog')
+    await ficha.getByRole('button', { name: /más opciones/i }).click()
     await ficha.getByLabel(/^costo/i).waitFor()
     await ficha.getByLabel(/^costo/i).fill('9999')
-    await ficha.getByLabel(/motivo del cambio de costo/i).fill('Aumento del proveedor')
+    await ficha.getByLabel(/por qué cambia el costo/i).fill('Aumento del proveedor')
     await ficha.getByRole('button', { name: 'Guardar cambios' }).click()
     await page.waitForTimeout(2000)
 

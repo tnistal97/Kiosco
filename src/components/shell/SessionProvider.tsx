@@ -4,6 +4,7 @@ import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import type { Permission } from '@/server/authz/permissions'
 import { NOMBRE_POR_DEFECTO } from '@/server/comercio'
 import { ZONA_POR_DEFECTO, hoyEn, type FechaLocal } from '@/lib/tiempo'
+import { FUNCIONES_POR_DEFECTO, type FuncionOpcional } from '@/lib/funciones'
 
 /**
  * La sesion, del lado del navegador.
@@ -59,6 +60,12 @@ interface Valor {
    * `@/server/comercio`), asi que cambiarlo no pide recompilar.
    */
   comercio: string
+  /**
+   * Funciones opcionales habilitadas en esta instalacion (lotes, compras).
+   * Las resuelve el servidor desde `KIOSCO_FUNCIONES`; ver `@/lib/funciones`.
+   */
+  funciones: ReadonlySet<FuncionOpcional>
+  tiene: (funcion: FuncionOpcional) => boolean
 }
 
 const Ctx = createContext<Valor>({
@@ -67,28 +74,35 @@ const Ctx = createContext<Valor>({
   puede: () => false,
   hoy: () => hoyEn(ZONA_POR_DEFECTO),
   comercio: NOMBRE_POR_DEFECTO,
+  funciones: new Set(FUNCIONES_POR_DEFECTO),
+  tiene: (f) => FUNCIONES_POR_DEFECTO.includes(f),
 })
 
 export function SessionProvider({
   session,
   comercio = NOMBRE_POR_DEFECTO,
+  funciones = FUNCIONES_POR_DEFECTO,
   children,
 }: {
   session: SesionCliente | null
   comercio?: string
+  funciones?: readonly FuncionOpcional[]
   children: ReactNode
 }) {
   const valor = useMemo<Valor>(() => {
     const permisos = new Set(session?.permissions ?? [])
     const zona = session?.timeZone ?? ZONA_POR_DEFECTO
+    const habilitadas = new Set(funciones)
     return {
       session,
       permisos,
       puede: (p: Permission) => permisos.has(p),
       hoy: () => hoyEn(zona),
       comercio,
+      funciones: habilitadas,
+      tiene: (f: FuncionOpcional) => habilitadas.has(f),
     }
-  }, [session, comercio])
+  }, [session, comercio, funciones])
 
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>
 }
@@ -104,4 +118,9 @@ export function useSession(): Valor {
  */
 export function usePermiso(permission: Permission): boolean {
   return useContext(Ctx).permisos.has(permission)
+}
+
+/** `true` si la funcion opcional esta habilitada en esta instalacion. */
+export function useFuncion(funcion: FuncionOpcional): boolean {
+  return useContext(Ctx).funciones.has(funcion)
 }

@@ -59,7 +59,7 @@ export const BarcodeInput = forwardRef<HTMLInputElement, BarcodeInputProps>(func
   }
 
   const borde = {
-    idle: 'border-line',
+    idle: 'border-line-strong',
     reading: 'border-primary',
     ok: 'border-success',
     error: 'border-danger',
@@ -105,9 +105,9 @@ export const BarcodeInput = forwardRef<HTMLInputElement, BarcodeInputProps>(func
           onFocus={() => onEditingChange?.(true)}
           onBlur={() => onEditingChange?.(false)}
           className={cn(
-            'h-control w-full rounded-md border bg-sunken pl-11 pr-11 font-mono text-base tracking-wide text-ink',
+            'h-control w-full rounded-md border bg-field pl-11 pr-11 font-mono text-base tracking-wide text-ink',
             'transition-colors placeholder:font-sans placeholder:tracking-normal placeholder:text-ink-faint',
-            'disabled:opacity-50',
+            'disabled:bg-disabled-bg disabled:text-disabled-ink',
             borde,
           )}
         />

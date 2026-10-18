@@ -6,8 +6,6 @@ import {
   PageContainer,
   Badge,
   Button,
-  ButtonLink,
-  Card,
   CardList,
   CardListItem,
   ConfirmationDialog,
@@ -22,7 +20,9 @@ import {
   Select,
   SkeletonRows,
   SortableTH,
-  StockBadge,
+  EstadoStockBadge,
+  Field,
+  formatQuantity,
   TBody,
   TD,
   TH,
@@ -65,6 +65,9 @@ function ProductosContenido() {
   const puedeEditar = usePermiso('products.update')
   const puedeBorrar = usePermiso('products.delete')
   const puedeCambiarPrecios = usePermiso('products.price.update')
+  // Con Compras apagada (`KIOSCO_FUNCIONES`) este permiso no llega al
+  // navegador: no hay proveedores que elegir y no se piden.
+  const verProveedores = usePermiso('suppliers.view')
 
   const {
     products,
@@ -78,9 +81,16 @@ function ProductosContenido() {
     total,
     totalPages,
     fetchProducts,
+    fetchCategories,
     isLoading,
     error,
-  } = useProducts({ enServidor: true, pageSize: POR_PAGINA })
+  } = useProducts({
+    enServidor: true,
+    pageSize: POR_PAGINA,
+    // De la A a la Z. Sin pedirlo, la API ordena al reves y la lista
+    // empezaba por la Z aunque el encabezado dijera "▲".
+    filtrosIniciales: { sortBy: 'name', sortDir: 'asc' },
+  })
 
   const [proveedores, setProveedores] = useState<ProveedorDTO[]>([])
   const [editando, setEditando] = useState<Product | null>(null)
@@ -111,6 +121,7 @@ function ProductosContenido() {
   }, [productoPedido])
 
   useEffect(() => {
+    if (!verProveedores) return
     // Solo los ACTIVOS y hasta cien: es la lista del selector de la ficha, y
     // un proveedor dado de baja no se puede elegir. El endpoint esta paginado
     // desde la Fase 3C, asi que sin `pageSize` llegarian veinticinco.
@@ -120,7 +131,7 @@ function ProductosContenido() {
       .catch(() => {
         setProveedores([])
       })
-  }, [])
+  }, [verProveedores])
 
   const ordenar = useCallback(
     (campo: CampoOrden) => {
@@ -154,26 +165,29 @@ function ProductosContenido() {
 
   return (
     <PageContainer width="wide">
-      <Card padded={false}>
-        <div className="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:flex-wrap lg:items-end">
-          <div className="lg:min-w-64 lg:max-w-md lg:flex-1">
-            <SearchInput
-              label="Buscar productos"
-              placeholder="Nombre o código de barras…"
-              value={searchTerm}
-              loading={isLoading}
-              onClear={() => {
-                setSearchTerm('')
-              }}
-              onChange={(e) => {
-                setSearchTerm(e.target.value)
-              }}
-            />
-          </div>
-
-          <div className="flex flex-wrap gap-2">
+      {/* Arriba, lo unico que se hace siempre: buscar. Al lado, la accion
+          principal. Lo demas (cambiar precios, importar) en "Más acciones". */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+        <div className="min-w-0 flex-1">
+          <SearchInput
+            label="Buscar productos"
+            labelVisible
+            size="lg"
+            placeholder="Nombre o código de barras"
+            value={searchTerm}
+            loading={isLoading}
+            onClear={() => {
+              setSearchTerm('')
+            }}
+            onChange={(e) => {
+              setSearchTerm(e.target.value)
+            }}
+          />
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <Field label="Categoría" className="sm:w-56">
             <Select
-              aria-label="Categoría"
+              className="h-control-lg"
               value={filtros.categoryId === undefined ? '' : String(filtros.categoryId)}
               onChange={(e) => {
                 aplicarFiltros({
@@ -181,206 +195,163 @@ function ProductosContenido() {
                   categoryId: e.target.value === '' ? undefined : Number(e.target.value),
                 })
               }}
-              className="w-auto"
             >
-              <option value="">Todas las categorías</option>
+              <option value="">Todas</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
             </Select>
-
-            <Select
-              aria-label="Estado"
-              value={filtros.estado ?? 'todos'}
-              onChange={(e) => {
-                aplicarFiltros({
-                  ...filtros,
-                  estado: e.target.value as 'activos' | 'inactivos' | 'todos',
-                })
-              }}
-              className="w-auto"
+          </Field>
+          {/* En el telefono, los dos botones lado a lado: apilados empujaban
+              la lista media pantalla. */}
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <DropdownMenu
+              trigger={
+                <Button variant="secondary" size="lg" className="w-full sm:w-auto">
+                  Más acciones ▾
+                </Button>
+              }
             >
-              <option value="todos">Todos</option>
-              <option value="activos">En venta</option>
-              <option value="inactivos">Dados de baja</option>
-            </Select>
-
-            <Select
-              aria-label="Stock"
-              value={filtros.sinStock ? 'agotados' : filtros.lowStock ? 'bajos' : ''}
-              onChange={(e) => {
-                const v = e.target.value
-                aplicarFiltros({
-                  ...filtros,
-                  lowStock: v === 'bajos',
-                  sinStock: v === 'agotados',
-                })
-              }}
-              className="w-auto"
-            >
-              <option value="">Cualquier stock</option>
-              <option value="bajos">Stock bajo</option>
-              <option value="agotados">Agotados</option>
-            </Select>
-          </div>
-
-          {/* En el telefono, las dos secundarias lado a lado y el alta debajo, a lo
-              ancho: tres botones apilados empujaban la lista media pantalla. */}
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-row lg:ml-auto">
-            {puedeCambiarPrecios && (
-              <ButtonLink href="/productos/precios" variant="secondary">
-                Cambiar precios
-              </ButtonLink>
-            )}
-            {(puedeCrear || puedeEditar) && (
-              <ButtonLink href="/productos/importar" variant="secondary">
-                Importar
-              </ButtonLink>
-            )}
+              {puedeCambiarPrecios && (
+                <DropdownItem href="/productos/precios">Cambiar precios</DropdownItem>
+              )}
+              {(puedeCrear || puedeEditar) && (
+                <DropdownItem href="/productos/importar">Importar desde Excel</DropdownItem>
+              )}
+              <DropdownItem
+                onClick={() => {
+                  aplicarFiltros({
+                    ...filtros,
+                    estado: filtros.estado === 'inactivos' ? 'todos' : 'inactivos',
+                  })
+                }}
+              >
+                {filtros.estado === 'inactivos' ? 'Ver todos los productos' : 'Ver dados de baja'}
+              </DropdownItem>
+            </DropdownMenu>
             {puedeCrear && (
               <Button
                 variant="primary"
-                className="col-span-2"
+                size="lg"
                 onClick={() => {
                   setEditando(null)
                   setDialogoAbierto(true)
                 }}
               >
-                Nuevo producto
+                + Nuevo producto
               </Button>
             )}
           </div>
         </div>
+      </div>
 
-        <div className="p-3">
-          {error ? (
-            <ErrorState description={error} onRetry={() => void fetchProducts()} />
-          ) : isLoading ? (
-            <SkeletonRows rows={8} />
-          ) : products.length === 0 ? (
-            <EmptyState
-              title={searchTerm ? 'Ningún producto coincide' : 'Todavía no hay productos'}
-              description={
-                searchTerm
-                  ? 'Probá con otro texto o quitá los filtros.'
-                  : 'Cargá el primero para empezar a vender.'
-              }
-              action={
-                puedeCrear && !searchTerm ? (
-                  <Button
-                    variant="primary"
-                    onClick={() => {
-                      setEditando(null)
-                      setDialogoAbierto(true)
-                    }}
-                  >
-                    Nuevo producto
-                  </Button>
-                ) : undefined
-              }
-            />
-          ) : (
-            <>
-              <div className="hidden md:block">
-                <TableWrap className="border-0">
-                  <Table caption="Catálogo de la sucursal">
-                    <THead>
-                      <TR>
-                        <SortableTH
-                          active={orden === 'name'}
-                          direction={dir}
-                          onSort={() => {
-                            ordenar('name')
-                          }}
-                        >
-                          Producto
-                        </SortableTH>
-                        <TH>Categoría</TH>
-                        <TH>Estado</TH>
-                        <TH>Stock</TH>
-                        <SortableTH
-                          align="right"
-                          active={orden === 'price'}
-                          direction={dir}
-                          onSort={() => {
-                            ordenar('price')
-                          }}
-                        >
-                          Precio
-                        </SortableTH>
-                        <TH align="right">
-                          <span className="sr-only">Acciones</span>
-                        </TH>
-                      </TR>
-                    </THead>
-                    <TBody>
-                      {products.map((p) => (
-                        <TR key={p.id}>
-                          <TD>
-                            <p className="font-medium text-ink">{p.name}</p>
-                            {p.barcode && (
-                              <p className="font-mono text-xs text-ink-faint">{p.barcode}</p>
-                            )}
-                          </TD>
-                          <TD className="text-ink-muted">{p.category.name}</TD>
-                          <TD>
-                            {p.isActive ? (
-                              <Badge tone="neutral">
-                                <span aria-hidden="true">✓</span> En venta
-                              </Badge>
-                            ) : (
-                              <Badge tone="warning">
-                                <span aria-hidden="true">⊘</span> De baja
-                              </Badge>
-                            )}
-                          </TD>
-                          <TD>
-                            <StockBadge quantity={p.totalStock} unit={p.saleUnit} />
-                          </TD>
-                          <TD align="right">
-                            <Money amount={p.price} />
-                          </TD>
-                          <TD align="right">
-                            <AccionesProducto
-                              producto={p}
-                              puedeEditar={puedeEditar}
-                              puedeBorrar={puedeBorrar}
-                              onEditar={() => {
-                                setEditando(p)
-                                setDialogoAbierto(true)
-                              }}
-                              onBorrar={() => {
-                                setBorrando(p)
-                              }}
-                            />
-                          </TD>
-                        </TR>
-                      ))}
-                    </TBody>
-                  </Table>
-                </TableWrap>
-              </div>
+      {filtros.estado === 'inactivos' && (
+        <p className="text-base text-ink-muted">
+          Mostrando solo los productos dados de baja.{' '}
+          <button
+            type="button"
+            className="min-h-touch font-semibold text-primary underline underline-offset-2"
+            onClick={() => {
+              aplicarFiltros({ ...filtros, estado: 'todos' })
+            }}
+          >
+            Ver todos
+          </button>
+        </p>
+      )}
 
-              <CardList className="md:hidden">
-                {products.map((p) => (
-                  <CardListItem key={p.id}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-ink">{p.name}</p>
-                        <p className="mt-0.5 text-xs text-ink-faint">{p.category.name}</p>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          <StockBadge quantity={p.totalStock} unit={p.saleUnit} />
-                          {!p.isActive && (
-                            <Badge tone="warning">
-                              <span aria-hidden="true">⊘</span> De baja
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-2">
+      {error ? (
+        <ErrorState description={error} onRetry={() => void fetchProducts()} />
+      ) : isLoading ? (
+        <SkeletonRows rows={8} />
+      ) : products.length === 0 ? (
+        <EmptyState
+          title={searchTerm ? 'Ningún producto coincide' : 'Todavía no hay productos'}
+          description={
+            searchTerm
+              ? 'Probá con otra palabra o elegí «Todas» en categoría.'
+              : 'Cargá el primero para empezar a vender.'
+          }
+          action={
+            puedeCrear && !searchTerm ? (
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={() => {
+                  setEditando(null)
+                  setDialogoAbierto(true)
+                }}
+              >
+                + Nuevo producto
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <>
+          <div className="hidden md:block">
+            <TableWrap>
+              <Table caption="Productos">
+                <THead>
+                  <TR>
+                    <SortableTH
+                      active={orden === 'name'}
+                      direction={dir}
+                      onSort={() => {
+                        ordenar('name')
+                      }}
+                    >
+                      Producto
+                    </SortableTH>
+                    <TH secondary>Categoría</TH>
+                    <SortableTH
+                      align="right"
+                      active={orden === 'price'}
+                      direction={dir}
+                      onSort={() => {
+                        ordenar('price')
+                      }}
+                    >
+                      Precio
+                    </SortableTH>
+                    <TH align="right">Stock</TH>
+                    <TH secondary>Código de barras</TH>
+                    <TH align="right">
+                      <span className="sr-only">Acciones</span>
+                    </TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {products.map((p) => (
+                    <TR key={p.id}>
+                      <TD>
+                        <p className="font-semibold text-ink">{p.name}</p>
+                        {!p.isActive && (
+                          <Badge tone="warning" className="mt-1">
+                            <span aria-hidden="true">⊘</span> Dado de baja
+                          </Badge>
+                        )}
+                      </TD>
+                      <TD secondary className="text-ink-muted">
+                        {p.category.name}
+                      </TD>
+                      <TD align="right">
                         <Money amount={p.price} />
+                      </TD>
+                      <TD align="right">
+                        <span className="flex flex-col items-end gap-1">
+                          <span className="font-semibold" data-numeric="">
+                            {formatQuantity(p.totalStock, p.saleUnit)}
+                          </span>
+                          <EstadoStockBadge estado={p.estado} />
+                        </span>
+                      </TD>
+                      <TD secondary className="font-mono text-sm text-ink-muted">
+                        {p.barcode ?? '—'}
+                      </TD>
+                      <TD align="right">
                         <AccionesProducto
                           producto={p}
                           puedeEditar={puedeEditar}
@@ -393,37 +364,76 @@ function ProductosContenido() {
                             setBorrando(p)
                           }}
                         />
-                      </div>
-                    </div>
-                  </CardListItem>
-                ))}
-              </CardList>
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </TableWrap>
+          </div>
 
-              <Pagination
-                className="mt-4"
-                page={page}
-                pageSize={POR_PAGINA}
-                total={total}
-                totalPages={totalPages}
-                onPageChange={setPage}
-                disabled={isLoading}
-              />
-            </>
-          )}
-        </div>
-      </Card>
+          <CardList className="md:hidden">
+            {products.map((p) => (
+              <CardListItem key={p.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-base font-semibold text-ink">{p.name}</p>
+                    <p className="mt-0.5 text-sm text-ink-muted">{p.category.name}</p>
+                    <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-ink">
+                      <span data-numeric="">Stock: {formatQuantity(p.totalStock, p.saleUnit)}</span>
+                      <EstadoStockBadge estado={p.estado} />
+                      {!p.isActive && (
+                        <Badge tone="warning">
+                          <span aria-hidden="true">⊘</span> Dado de baja
+                        </Badge>
+                      )}
+                    </p>
+                  </div>
+                  <Money amount={p.price} size="lg" />
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <AccionesProducto
+                    producto={p}
+                    puedeEditar={puedeEditar}
+                    puedeBorrar={puedeBorrar}
+                    onEditar={() => {
+                      setEditando(p)
+                      setDialogoAbierto(true)
+                    }}
+                    onBorrar={() => {
+                      setBorrando(p)
+                    }}
+                  />
+                </div>
+              </CardListItem>
+            ))}
+          </CardList>
+
+          <Pagination
+            page={page}
+            pageSize={POR_PAGINA}
+            total={total}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            disabled={isLoading}
+          />
+        </>
+      )}
 
       <DialogoProducto
         producto={editando}
         abierto={dialogoAbierto}
         categorias={categories}
         proveedores={proveedores}
+        onCategoriaCreada={() => {
+          void fetchCategories()
+        }}
         onCerrar={() => {
           setDialogoAbierto(false)
         }}
         onGuardado={() => {
           setDialogoAbierto(false)
-          aviso.ok(editando ? 'Producto actualizado.' : 'Producto creado.')
+          aviso.ok(editando ? 'Producto guardado.' : 'Producto creado.')
           void fetchProducts()
         }}
       />
@@ -435,12 +445,12 @@ function ProductosContenido() {
         }}
         onConfirm={borrar}
         title="Eliminar el producto"
-        confirmLabel="Eliminar"
+        confirmLabel="Eliminar producto"
         message={
           <>
-            Se va a eliminar <strong className="text-ink">{borrando?.name}</strong> del catálogo. Si
-            figura en alguna venta el sistema no lo va a permitir: en ese caso, dalo de baja desde
-            la ficha.
+            Se va a eliminar <strong className="text-ink">{borrando?.name}</strong>. Si ya se vendió
+            alguna vez, el sistema no lo va a permitir: en ese caso, abrilo con «Editar» y dalo de
+            baja.
           </>
         }
       />
@@ -448,13 +458,6 @@ function ProductosContenido() {
   )
 }
 
-/**
- * Acciones de la fila, dentro de un menu.
- *
- * "Eliminar" ya no es un boton rojo pegado a "Editar". Era la accion
- * destructiva mas facil de tocar por accidente de todo el sistema: mismo
- * tamanio, mismo lugar, en cada una de las cuarenta filas.
- */
 function AccionesProducto({
   producto,
   puedeEditar,
@@ -470,24 +473,37 @@ function AccionesProducto({
 }) {
   if (!puedeEditar && !puedeBorrar) return null
 
+  // "Editar" a la vista, con palabra: es lo que se busca. Eliminar, que casi
+  // nunca corresponde, queda en el menu.
   return (
-    <DropdownMenu
-      trigger={
-        <IconButton label={`Acciones de ${producto.name}`} size="sm">
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <circle cx="12" cy="5" r="1.6" />
-            <circle cx="12" cy="12" r="1.6" />
-            <circle cx="12" cy="19" r="1.6" />
-          </svg>
-        </IconButton>
-      }
-    >
-      {puedeEditar && <DropdownItem onClick={onEditar}>Editar</DropdownItem>}
-      {puedeBorrar && (
-        <DropdownItem tone="danger" onClick={onBorrar}>
-          Eliminar
-        </DropdownItem>
+    <span className="inline-flex items-center gap-1">
+      {puedeEditar && (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onEditar}
+          aria-label={`Editar ${producto.name}`}
+        >
+          Editar
+        </Button>
       )}
-    </DropdownMenu>
+      {puedeBorrar && (
+        <DropdownMenu
+          trigger={
+            <IconButton label={`Más opciones de ${producto.name}`} size="sm">
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="12" cy="5" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="12" cy="19" r="1.6" />
+              </svg>
+            </IconButton>
+          }
+        >
+          <DropdownItem tone="danger" onClick={onBorrar}>
+            Eliminar
+          </DropdownItem>
+        </DropdownMenu>
+      )}
+    </span>
   )
 }

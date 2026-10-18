@@ -15,26 +15,21 @@ import { Dialog, IconButton } from '@/components/ui'
  * dice la linea debajo del campo, que cambia sola. Ver `teclado.ts`.
  */
 const GRAMATICA: Array<{ teclas: string[]; que: string }> = [
-  { teclas: ['↓'], que: 'Elegir un producto de la lista. Después ↑ ↓ la recorren' },
-  { teclas: ['←', '→'], que: 'Una unidad menos o más del producto elegido. Escribiendo, mueven el cursor' }, // prettier-ignore
-  {
-    teclas: ['Enter'],
-    que: 'Busca el código, agrega el producto elegido, o —con el campo vacío— pasa a revisar el ticket',
-  },
-  { teclas: ['Enter'], que: 'Revisando, abre el cobro. Cobrar pide además decir cómo se paga' },
+  { teclas: ['Lector'], que: 'Pasá el producto: se agrega solo. Dos lecturas, dos unidades' },
+  { teclas: ['↑', '↓'], que: 'Recorren la lista de productos o las líneas del ticket' },
+  { teclas: ['Enter'], que: 'Elige el producto marcado. Si ya está en el ticket, no suma otro' },
+  { teclas: ['+', '−'], que: 'Una unidad más o menos (la última línea, o la elegida)' },
+  { teclas: ['Enter'], que: 'Con el campo vacío: pasa al ticket. Otra vez: abre el cobro' },
+  { teclas: ['Enter'], que: 'En el cobro: elige la forma de pago y después confirma la venta' },
+  { teclas: ['Supr'], que: 'Quita la línea elegida del ticket. Se puede deshacer' },
   { teclas: ['Esc'], que: 'Vuelve un paso: suelta lo elegido, vacía el campo, cierra' },
-  { teclas: ['Supr'], que: 'Revisando, quita la línea elegida. Se puede deshacer' },
-  {
-    teclas: ['Tab'],
-    que: 'Entra a los productos con el foco: las flechas los recorren, Enter agrega, Esc vuelve',
-  },
 ]
 
 const ALIAS: Array<{ teclas: string[]; que: string }> = [
   { teclas: ['F12'], que: 'Cobrar' },
   { teclas: ['Alt', 'N'], que: 'Producto nuevo' },
-  { teclas: ['Ctrl', 'K'], que: 'Ir al campo de escaneo' },
-  { teclas: ['E', 'D', 'R', 'T', 'F', 'O'], que: 'En el cobro, elegir el medio de pago' },
+  { teclas: ['Ctrl', 'K'], que: 'Ir al campo de búsqueda' },
+  { teclas: ['E', 'T', 'M', 'D', 'C', 'F'], que: 'En el cobro, elegir la forma de pago' },
 ]
 
 function Fila({ teclas, que }: { teclas: string[]; que: string }) {
@@ -50,7 +45,7 @@ function Fila({ teclas, que }: { teclas: string[]; que: string }) {
           </kbd>
         ))}
       </dt>
-      <dd className="min-w-0 text-right text-sm text-ink-muted">{que}</dd>
+      <dd className="min-w-0 text-right text-sm text-ink">{que}</dd>
     </div>
   )
 }
@@ -79,7 +74,7 @@ export function AyudaAtajos({ className }: { className?: string }) {
           setAbierto(false)
         }}
         title="Atajos de teclado"
-        description="La caja se usa entera sin mouse."
+        description="Se puede vender sin tocar el mouse."
         size="sm"
       >
         <dl className="flex flex-col gap-2.5">
@@ -87,9 +82,7 @@ export function AyudaAtajos({ className }: { className?: string }) {
             <Fila key={a.que} {...a} />
           ))}
         </dl>
-        <p className="mt-5 mb-2 text-xs font-semibold tracking-wide text-ink-faint uppercase">
-          También funcionan
-        </p>
+        <p className="mt-5 mb-2 text-sm font-semibold text-ink">También funcionan</p>
         <dl className="flex flex-col gap-2.5">
           {ALIAS.map((a) => (
             <Fila key={a.que} {...a} />

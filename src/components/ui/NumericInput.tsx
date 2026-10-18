@@ -88,8 +88,13 @@ export interface NumericInputProps extends Omit<
   unidad?: UnidadDeVenta
   /** El texto escrito, tal cual. */
   value: string
-  /** El texto y, si ya es un numero, el valor canonico. */
-  onChange: (texto: string, valor: string | null) => void
+  /**
+   * El texto y, si ya es un numero, el valor canonico. `origen` dice si lo
+   * escribio la persona o si es el formato que se aplica al salir del campo:
+   * una pantalla que guarda al salir no tiene que tomar ese formato como algo
+   * nuevo para guardar.
+   */
+  onChange: (texto: string, valor: string | null, origen: 'tecleo' | 'salida') => void
   /** El signo menos. Lo decide el campo: un precio no lo admite, un ajuste si. */
   negativos?: boolean
   /** Fuerza el estado de error; sin esto se marca solo cuando no es un numero. */
@@ -118,7 +123,7 @@ export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(func
       onChange={(e) => {
         const texto = filtrarTecleoNumerico(e.target.value, { negativos })
         const leido = leerNumeroLocal(texto, reglas)
-        onChange(texto, leido.estado === 'ok' ? leido.valor : null)
+        onChange(texto, leido.estado === 'ok' ? leido.valor : null, 'tecleo')
       }}
       onFocus={(e) => {
         e.currentTarget.select()
@@ -128,7 +133,8 @@ export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(func
         // Se normaliza SOLO al salir. Mientras se escribe, el texto es de quien
         // escribe.
         if (lectura.estado === 'ok') {
-          onChange(textoLocalDeNumero(lectura.valor, formatoDeSalida(modo, unidad)), lectura.valor)
+          const formateado = textoLocalDeNumero(lectura.valor, formatoDeSalida(modo, unidad))
+          if (formateado !== value) onChange(formateado, lectura.valor, 'salida')
         }
         onBlur?.(e)
       }}

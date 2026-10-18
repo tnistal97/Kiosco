@@ -14,6 +14,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 /**
  * `usePathname` devuelve null sin un router de Next alrededor.
@@ -101,7 +102,9 @@ describe('Precio en la ficha del producto', () => {
 
     // El precio se sigue viendo: es informacion que necesita para trabajar.
     expect(screen.getByText(/4\.850/)).toBeInTheDocument()
-    expect(screen.getByText(/products\.price\.update/)).toBeInTheDocument()
+    // V5: en palabras, sin el codigo interno del permiso.
+    expect(screen.getByText(/no puede cambiar precios/)).toBeInTheDocument()
+    expect(screen.queryByText(/products\.price\.update/)).toBeNull()
   })
 
   it('sin permiso tampoco aparece el interruptor de alta y baja', async () => {
@@ -121,7 +124,7 @@ describe('Precio en la ficha del producto', () => {
 
       expect(screen.queryByLabelText(/^stock actual/i)).toBeNull()
       expect(screen.getByText('24 u.')).toBeInTheDocument()
-      expect(screen.getByText(/se mueve con el botón/i)).toBeInTheDocument()
+      expect(screen.getByText(/usá «Ajustar»/i)).toBeInTheDocument()
 
       unmount()
     }
@@ -132,41 +135,55 @@ describe('Costo en la ficha del producto', () => {
   it('SIN products.cost.view no hay costo ni margen en pantalla', async () => {
     // El cajero no tiene el permiso. Y el servidor tampoco le manda el dato:
     // esta prueba cubre la mitad visual, `tests/authorization` la otra.
+    const usuario = userEvent.setup()
     abrirFicha(SESION_CAJERO)
     await screen.findByRole('dialog')
+    // V5: el costo vive en "Más opciones".
+    await usuario.click(screen.getByRole('button', { name: /más opciones/i }))
 
     expect(screen.queryByLabelText(/^costo/i)).toBeNull()
     expect(screen.queryByText(/^margen$/i)).toBeNull()
-    expect(screen.getByText(/products\.cost\.view/)).toBeInTheDocument()
+    expect(screen.getByText(/no puede ver costos/)).toBeInTheDocument()
   })
 
-  it('con el permiso aparecen costo, ganancia, margen y markup', async () => {
+  it('con el permiso aparecen costo, ganancia, margen y recargo', async () => {
+    const usuario = userEvent.setup()
     abrirFicha(SESION_ADMIN)
     await screen.findByRole('dialog')
+    // A primera vista, solo lo justo: el costo no se ve hasta pedirlo.
+    expect(screen.queryByLabelText(/^costo/i)).toBeNull()
+    await usuario.click(screen.getByRole('button', { name: /más opciones/i }))
 
     expect(screen.getByLabelText(/^costo/i)).toBeInstanceOf(HTMLInputElement)
     expect(screen.getByText('Ganancia')).toBeInTheDocument()
     expect(screen.getByText('Margen')).toBeInTheDocument()
-    expect(screen.getByText('Markup')).toBeInTheDocument()
+    expect(screen.getByText('Recargo sobre el costo')).toBeInTheDocument()
   })
 })
 
 describe('Navegacion filtrada por permiso', () => {
-  it('el administrador ve todas las secciones', () => {
+  it('el administrador ve las tareas del dia y, separado, lo de vez en cuando', () => {
+    // V5: cinco tareas arriba --Vender, Caja, Productos, Stock, Inventario--
+    // y abajo Clientes, Reportes y Configuracion. Sin grupos con titulo.
     const grupos = navegacionPara(new Set(SESION_ADMIN.permissions))
-    const titulos = grupos.map((g) => g.title)
-    // "Catálogo" pasó a llamarse "Inventario" en la Fase 3A: el grupo dejó de
-    // ser una lista de productos y pasó a incluir el libro de movimientos.
-    // "Control" --reportes y auditoría-- se separó de "Administración" en la
-    // 3D: mirar el negocio y administrar el sistema son dos cosas.
-    expect(titulos).toEqual([
-      undefined,
-      'Operación',
-      'Inventario',
-      'Compras',
-      'Control',
-      'Administración',
+    expect(grupos.map((g) => g.title)).toEqual([undefined, undefined])
+    expect(grupos.map((g) => g.items.map((i) => i.label))).toEqual([
+      ['Inicio', 'Vender', 'Caja', 'Productos', 'Stock', 'Inventario'],
+      ['Clientes', 'Reportes', 'Configuración'],
     ])
+  })
+
+  it('Lotes y Compras son funciones opcionales: sin habilitarlas no aparecen', () => {
+    const permisos = new Set(SESION_ADMIN.permissions)
+    const rutas = (f: ReadonlySet<'lotes' | 'compras'>) =>
+      navegacionPara(permisos, f).flatMap((g) => g.items.map((i) => i.href))
+
+    for (const oculta of ['/stock/lotes', '/compras', '/proveedores', '/devoluciones']) {
+      expect(rutas(new Set())).not.toContain(oculta)
+    }
+    const conCompras = navegacionPara(permisos, new Set(['compras'] as const))
+    expect(conCompras.map((g) => g.title)).toEqual([undefined, 'Compras', undefined])
+    expect(rutas(new Set(['compras'] as const))).toContain('/proveedores')
   })
 
   it('el cajero no ve el libro de movimientos', () => {
@@ -215,8 +232,7 @@ describe('Navegacion filtrada por permiso', () => {
       SESION_CAJERO,
     )
 
-    // Nombres exactos: "Venta" y "Ventas" son dos entradas distintas.
-    expect(screen.getByRole('link', { name: 'Venta' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Vender' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Caja' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Auditoría' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Usuarios' })).toBeNull()
@@ -229,7 +245,7 @@ describe('Navegacion filtrada por permiso', () => {
     )
 
     // El router simulado esta en /venta.
-    expect(screen.getByRole('link', { name: 'Venta' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Vender' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: 'Caja' })).not.toHaveAttribute('aria-current')
   })
 })
@@ -237,12 +253,15 @@ describe('Navegacion filtrada por permiso', () => {
 describe('Titulo de la pantalla', () => {
   it.each([
     ['/', 'Inicio'],
-    ['/venta', 'Venta'],
+    ['/venta', 'Vender'],
     ['/caja', 'Caja'],
     ['/ventas', 'Ventas'],
     ['/productos', 'Productos'],
     ['/productos/12', 'Productos'],
-    ['/auditoria', 'Auditoría'],
+    ['/stock', 'Stock'],
+    ['/stock/movimientos', 'Movimientos de stock'],
+    ['/inventarios/3', 'Inventario'],
+    ['/auditoria', 'Historial de cambios'],
     ['/usuarios', 'Usuarios'],
   ])('%s se titula "%s"', (ruta, titulo) => {
     expect(tituloDe(ruta)).toBe(titulo)

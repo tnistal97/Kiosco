@@ -127,16 +127,17 @@ Ver [prisma/migrations/README.md](prisma/migrations/README.md).
 
 Definidas en `.env.example`. Ninguna trae valores reales.
 
-| Variable                                              | Descripción                                              |
-| ----------------------------------------------------- | -------------------------------------------------------- |
-| `DATABASE_URL`                                        | Cadena de conexión PostgreSQL                            |
-| `JWT_SECRET`                                          | Secreto de firma de sesiones. **Mínimo 32 caracteres**   |
-| `NODE_ENV`                                            | `development` o `production`                             |
-| `PORT`                                                | Puerto de escucha (producción usa 3099)                  |
-| `COMMERCE_NAME`                                       | Nombre del comercio. Se lee al atender, sin recompilar   |
-| `KIOSCO_HOSTS`                                        | Dominios por los que se entra, separados por coma        |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Solo para `docker-compose` local                         |
-| `OPENFOOD_DB_*`                                       | Solo para `tools/scrap.py`, sobre una base independiente |
+| Variable                                              | Descripción                                                                          |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `DATABASE_URL`                                        | Cadena de conexión PostgreSQL                                                        |
+| `JWT_SECRET`                                          | Secreto de firma de sesiones. **Mínimo 32 caracteres**                               |
+| `NODE_ENV`                                            | `development` o `production`                                                         |
+| `PORT`                                                | Puerto de escucha (producción usa 3099)                                              |
+| `COMMERCE_NAME`                                       | Nombre del comercio. Se lee al atender, sin recompilar                               |
+| `KIOSCO_HOSTS`                                        | Dominios por los que se entra, separados por coma                                    |
+| `KIOSCO_FUNCIONES`                                    | Funciones opcionales a mostrar: `lotes`, `compras`, `todas`. Sin valor: modo almacén |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Solo para `docker-compose` local                                                     |
+| `OPENFOOD_DB_*`                                       | Solo para `tools/scrap.py`, sobre una base independiente                             |
 
 > La aplicación **se niega a arrancar** si `JWT_SECRET` tiene menos de 32
 > caracteres. Es deliberado: un secreto corto produce tokens falsificables, y
@@ -315,21 +316,23 @@ De la más nueva a la más vieja. Las propuestas se escriben antes de tocar
 código y se aprueban; los informes de implementación dicen qué se hizo y qué se
 midió.
 
-| Documento                                                                                   | Qué contesta                                                     |
-| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| [UX_V4_ALMACENES_PROPUESTA.md](docs/UX_V4_ALMACENES_PROPUESTA.md)                           | UX V4, simplificación para almacenes. **Propuesta, sin aprobar** |
-| [UX_V3_VENTA_IMPLEMENTACION.md](docs/UX_V3_VENTA_IMPLEMENTACION.md)                         | UX V3 de la venta: lo que se hizo y lo que se midió              |
-| [UX_V3_VENTA_PROPUESTA.md](docs/UX_V3_VENTA_PROPUESTA.md)                                   | UX V3 de la venta: la propuesta, con sus mediciones              |
-| [UX_V2_PHASE2_1_LIST_SESSION_NAVIGATION.md](docs/UX_V2_PHASE2_1_LIST_SESSION_NAVIGATION.md) | UX V2, fase 2.1: lista de productos, sesión y navegación         |
-| [UX_V2_PHASE2_CAJA_VENTA.md](docs/UX_V2_PHASE2_CAJA_VENTA.md)                               | UX V2, fase 2: caja, venta, apertura y cierre                    |
-| [UX_V2_PHASE1_IMPLEMENTATION.md](docs/UX_V2_PHASE1_IMPLEMENTATION.md)                       | UX V2, fase 1: fundaciones visuales, caja, cobro y teclado       |
-| [UX_V2_MANUAL_UAT.md](docs/UX_V2_MANUAL_UAT.md)                                             | La prueba manual con una persona que nunca vio el sistema        |
-| [UX_PRODUCT_AUDIT_MASTERPLAN.md](docs/UX_PRODUCT_AUDIT_MASTERPLAN.md)                       | La auditoría de producto y de uso que dio origen a UX V2         |
-| [PHASE2_VISUAL_REPORT.md](docs/PHASE2_VISUAL_REPORT.md)                                     | Fase 2: antes y después, con capturas                            |
-| [PHASE2_UI_BASELINE.md](docs/PHASE2_UI_BASELINE.md)                                         | El estado visual antes de la Fase 2                              |
-| [UI_REDESIGN_PROPOSAL.md](docs/UI_REDESIGN_PROPOSAL.md)                                     | La propuesta de interfaz de la Fase 2                            |
-| [UI_UX_AUDIT.md](docs/UI_UX_AUDIT.md)                                                       | La primera auditoría de interfaz, con mediciones del DOM         |
-| [CURRENT_SYSTEM_AUDIT.md](docs/CURRENT_SYSTEM_AUDIT.md)                                     | El mapa del código recuperado de producción (agosto de 2026)     |
+| Documento                                                                                   | Qué contesta                                                                     |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [UX_V5_ALMACEN.md](docs/UX_V5_ALMACEN.md)                                                   | UX V5: el sistema listo para un almacén. **Implementado**                        |
+| [ENTREGA_ALMACEN_UI.md](docs/ENTREGA_ALMACEN_UI.md)                                         | Entrega al primer almacén: interfaz, teclado, lector, pruebas y capturas finales |
+| [UX_V4_ALMACENES_PROPUESTA.md](docs/UX_V4_ALMACENES_PROPUESTA.md)                           | UX V4, simplificación para almacenes. **Propuesta, sin aprobar**                 |
+| [UX_V3_VENTA_IMPLEMENTACION.md](docs/UX_V3_VENTA_IMPLEMENTACION.md)                         | UX V3 de la venta: lo que se hizo y lo que se midió                              |
+| [UX_V3_VENTA_PROPUESTA.md](docs/UX_V3_VENTA_PROPUESTA.md)                                   | UX V3 de la venta: la propuesta, con sus mediciones                              |
+| [UX_V2_PHASE2_1_LIST_SESSION_NAVIGATION.md](docs/UX_V2_PHASE2_1_LIST_SESSION_NAVIGATION.md) | UX V2, fase 2.1: lista de productos, sesión y navegación                         |
+| [UX_V2_PHASE2_CAJA_VENTA.md](docs/UX_V2_PHASE2_CAJA_VENTA.md)                               | UX V2, fase 2: caja, venta, apertura y cierre                                    |
+| [UX_V2_PHASE1_IMPLEMENTATION.md](docs/UX_V2_PHASE1_IMPLEMENTATION.md)                       | UX V2, fase 1: fundaciones visuales, caja, cobro y teclado                       |
+| [UX_V2_MANUAL_UAT.md](docs/UX_V2_MANUAL_UAT.md)                                             | La prueba manual con una persona que nunca vio el sistema                        |
+| [UX_PRODUCT_AUDIT_MASTERPLAN.md](docs/UX_PRODUCT_AUDIT_MASTERPLAN.md)                       | La auditoría de producto y de uso que dio origen a UX V2                         |
+| [PHASE2_VISUAL_REPORT.md](docs/PHASE2_VISUAL_REPORT.md)                                     | Fase 2: antes y después, con capturas                                            |
+| [PHASE2_UI_BASELINE.md](docs/PHASE2_UI_BASELINE.md)                                         | El estado visual antes de la Fase 2                                              |
+| [UI_REDESIGN_PROPOSAL.md](docs/UI_REDESIGN_PROPOSAL.md)                                     | La propuesta de interfaz de la Fase 2                                            |
+| [UI_UX_AUDIT.md](docs/UI_UX_AUDIT.md)                                                       | La primera auditoría de interfaz, con mediciones del DOM                         |
+| [CURRENT_SYSTEM_AUDIT.md](docs/CURRENT_SYSTEM_AUDIT.md)                                     | El mapa del código recuperado de producción (agosto de 2026)                     |
 
 ## Despliegue
 

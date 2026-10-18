@@ -137,7 +137,7 @@ export function DialogoAjusteProveedor({
             : 'Un ajuste escribe un movimiento que no responde a una entrega ni a un pago. Queda auditado con tu usuario y su motivo.'}
         </Alert>
 
-        <div className="rounded-lg bg-surface-2 p-3 text-sm">
+        <div className="rounded-lg bg-sunken p-3 text-sm">
           <div className="flex justify-between">
             <span className="text-ink-muted">Saldo actual</span>
             <span className="font-medium text-ink" data-numeric="">

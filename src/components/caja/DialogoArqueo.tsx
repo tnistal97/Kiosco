@@ -65,7 +65,9 @@ export function DialogoArqueo({
       })
       onHecho()
     } catch (err) {
-      setError(mensajeDeError(err, 'No se pudo registrar el arqueo.'))
+      setError(
+        mensajeDeError(err, 'No se pudo guardar el conteo. Revisá la conexión y probá de nuevo.'),
+      )
       setEnviando(false)
     }
   }
@@ -74,7 +76,7 @@ export function DialogoArqueo({
     <Dialog
       open={abierto}
       onClose={onCerrar}
-      title="Arqueo de caja"
+      title="Contar caja"
       description="Contá el efectivo del cajón y anotá cuánto hay."
       size="md"
       dismissible={!enviando}
@@ -89,7 +91,7 @@ export function DialogoArqueo({
             disabled={!valido}
             onClick={() => void guardar()}
           >
-            Registrar arqueo
+            Guardar conteo
           </Button>
         </>
       }
@@ -102,7 +104,7 @@ export function DialogoArqueo({
         )}
 
         <div className="flex items-baseline justify-between rounded-lg border border-line bg-sunken px-4 py-3">
-          <span className="text-sm text-ink-muted">El sistema espera</span>
+          <span className="text-base font-semibold text-ink">Tiene que haber</span>
           <Money amount={esperado} size="lg" />
         </div>
 
@@ -130,7 +132,7 @@ export function DialogoArqueo({
           </Alert>
         )}
 
-        <Field label="Observaciones" hint="Qué explica la diferencia, si la hay.">
+        <Field label="Nota" hint="Si hay diferencia, anotá por qué (opcional).">
           <Textarea
             value={notas}
             disabled={enviando}

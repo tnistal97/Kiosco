@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { PRODUCTOS, entrar, escanear, leerMonto, salir } from './ayudantes'
+import { PRODUCTOS, entrar, escanear, leerMonto, salir, terminarVenta } from './ayudantes'
 
 /**
  * El libro de inventario, de punta a punta.
@@ -19,7 +19,8 @@ function filaDe(page: Page, producto: string, tipo: string) {
 
 async function irAMovimientos(page: Page, filtroProducto?: string) {
   await page.goto('/stock/movimientos')
-  await expect(page.getByText(/este libro no se edita/i)).toBeVisible()
+  // V5: arranca en "7 días"; para estas pruebas se mira todo.
+  await page.getByRole('button', { name: 'Todos', exact: true }).click()
   if (filtroProducto) {
     await page.getByRole('searchbox', { name: /buscar producto/i }).fill(filtroProducto)
     // El campo espera antes de consultar; sin esta pausa se lee la tabla vieja.
@@ -33,9 +34,9 @@ async function stockEnPantalla(page: Page, nombre: string): Promise<number> {
   await page.getByRole('searchbox', { name: /buscar productos/i }).fill(nombre)
   await page.waitForTimeout(900)
 
+  // V5: la columna "Stock actual" dice la cantidad sola ("16 u.").
   const fila = page.getByRole('row').filter({ hasText: nombre }).first()
-  const texto = await fila.getByText(/en stock|quedan|agotado/i).innerText()
-  if (/agotado/i.test(texto)) return 0
+  const texto = await fila.locator('td').nth(1).innerText()
   return Number(/(\d+)/.exec(texto)?.[1] ?? '-1')
 }
 
@@ -45,7 +46,7 @@ test.describe('Una venta deja su rastro y la anulacion lo revierte', () => {
     //    comprueba aca es que la venta pueda ocurrir: sin turno, no se vende.
     await entrar(page, 'cajero')
     await page.goto('/caja')
-    await expect(page.getByText(/caja abierta por/i).first()).toBeVisible()
+    await expect(page.getByText('CAJA ABIERTA')).toBeVisible()
 
     // 2) Vender dos unidades de yerba.
     await page.goto('/venta')
@@ -55,12 +56,11 @@ test.describe('Una venta deja su rastro y la anulacion lo revierte', () => {
     await page.keyboard.press('F12')
     await page
       .getByRole('dialog')
-      .getByRole('button', { name: /^cobrar/i })
+      .getByRole('button', { name: /^confirmar venta/i })
       .click()
-    await expect(page.getByText('Venta registrada')).toBeVisible()
-
-    const numero = (await page.getByText(/^#\d+$/).innerText()).replace('#', '')
-    await page.getByRole('button', { name: 'Nueva venta' }).click()
+    // Sin vuelto la venta termina sola; el numero queda en "Última venta".
+    await terminarVenta(page)
+    const numero = (await page.getByText(/^Última venta #\d+$/).innerText()).replace(/\D/g, '')
     await salir(page)
 
     // 3) El movimiento de venta esta en el libro, con los dos saldos.
@@ -91,7 +91,7 @@ test.describe('Una venta deja su rastro y la anulacion lo revierte', () => {
     // 5) El inverso aparece, y el original SIGUE ahi.
     await irAMovimientos(page, PRODUCTOS.yerba.nombre)
 
-    const anulacion = filaDe(page, PRODUCTOS.yerba.nombre, 'Anulación de venta')
+    const anulacion = filaDe(page, PRODUCTOS.yerba.nombre, 'Venta anulada')
     await expect(anulacion).toBeVisible()
     await expect(anulacion.getByText('+2')).toBeVisible()
     await expect(anulacion.getByText(/se llevó el producto equivocado/i)).toBeVisible()
@@ -119,20 +119,19 @@ test.describe('Ajustes y perdidas', () => {
     await dialogo.getByLabel('Motivo').fill('Entrada de mercadería del jueves')
     await dialogo.getByRole('button', { name: /guardar ajuste/i }).click()
 
-    await expect(page.getByText(/libro de inventario/i)).toBeVisible()
+    await expect(page.getByText(/stock ajustado/i)).toBeVisible()
 
     // El stock subió exactamente lo ajustado.
     expect(await stockEnPantalla(page, PRODUCTOS.leche.nombre)).toBe(antes + 12)
 
     // Y el movimiento lo cuenta entero.
     await irAMovimientos(page, PRODUCTOS.leche.nombre)
-    const ajuste = filaDe(page, PRODUCTOS.leche.nombre, 'Ajuste')
+    // V5: MANUAL_ADJUSTMENT se llama "Corrección" en pantalla.
+    const ajuste = filaDe(page, PRODUCTOS.leche.nombre, 'Corrección')
     await expect(ajuste).toBeVisible()
     await expect(ajuste.getByText('+12')).toBeVisible()
-    // Los dos saldos, con su unidad. Desde la Fase 3B la fila los muestra
-    // formateados --"30 u."-- y no como numero pelado.
-    await expect(ajuste).toContainText(String(antes))
-    await expect(ajuste).toContainText(String(antes + 12))
+    // En que cantidad quedo, con su unidad.
+    await expect(ajuste).toContainText(`quedó en ${String(antes + 12)} u.`)
     await expect(ajuste.getByText(/entrada de mercadería del jueves/i)).toBeVisible()
   })
 
@@ -188,7 +187,6 @@ test.describe('El libro no se toca', () => {
     await expect(page.getByRole('button', { name: /^editar/i })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /^eliminar/i })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /^borrar/i })).toHaveCount(0)
-    await expect(page.getByText(/este libro no se edita/i)).toBeVisible()
   })
 
   test('el cajero no llega al historial', async ({ page }) => {
@@ -199,35 +197,44 @@ test.describe('El libro no se toca', () => {
 
     // ...y entrando a mano tampoco.
     await page.goto('/stock/movimientos')
-    await expect(page.getByText(/no tenés acceso al historial/i)).toBeVisible()
+    await expect(page.getByText(/tu usuario no puede ver los movimientos/i)).toBeVisible()
   })
 })
 
 test.describe('Filtros y paginacion del historial', () => {
-  test('filtra por tipo y por producto', async ({ page }) => {
+  test('filtra por periodo y por producto, con palabras simples', async ({ page }) => {
     await entrar(page, 'encargado')
     await page.goto('/stock/movimientos')
 
-    // El seed deja ventas y saldos iniciales: los dos tipos tienen filas.
-    await page.getByLabel('Tipo').selectOption('SALE')
+    // Los periodos simples, y "7 días" por omision.
+    for (const nombre of ['Hoy', '7 días', '30 días', 'Todos']) {
+      await expect(page.getByRole('button', { name: nombre, exact: true })).toBeVisible()
+    }
+    await expect(page.getByRole('button', { name: '7 días' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    // Con "Todos", el seed deja ventas y stock inicial, con su nombre simple.
+    await page.getByRole('button', { name: 'Todos', exact: true }).click()
     await page.waitForTimeout(900)
     await expect(page.getByRole('row').filter({ hasText: 'Venta' }).first()).toBeVisible()
-    await expect(page.getByRole('row').filter({ hasText: 'Saldo inicial' })).toHaveCount(0)
-
-    await page.getByLabel('Tipo').selectOption('INITIAL')
-    await page.waitForTimeout(900)
-    await expect(page.getByRole('row').filter({ hasText: 'Saldo inicial' }).first()).toBeVisible()
+    // Las cinco columnas, sin codigos internos.
+    for (const columna of ['Fecha', 'Producto', 'Movimiento', 'Cantidad', 'Motivo']) {
+      await expect(page.getByRole('columnheader', { name: columna })).toBeVisible()
+    }
+    await expect(page.getByRole('columnheader', { name: 'Referencia' })).toHaveCount(0)
 
     // Un producto que no existe deja la tabla vacia, con explicacion.
-    await page.getByLabel('Tipo').selectOption('')
     await page.getByRole('searchbox', { name: /buscar producto/i }).fill('NoExisteEsteProducto')
     await page.waitForTimeout(900)
-    await expect(page.getByText(/nada con esos filtros/i)).toBeVisible()
+    await expect(page.getByText(/no hay movimientos/i)).toBeVisible()
   })
 
   test('el historial se pagina', async ({ page }) => {
     await entrar(page, 'encargado')
     await page.goto('/stock/movimientos')
+    await page.getByRole('button', { name: 'Todos', exact: true }).click()
     await page.waitForTimeout(900)
 
     // El seed deja mas de 25 movimientos: 41 saldos iniciales y 30 de ventas.
@@ -249,22 +256,22 @@ test.describe('Alertas de reposicion', () => {
 
     // El seed deja productos agotados y productos bajo minimo.
     await page.goto('/')
-    const faltantes = page.getByText('Faltantes', { exact: true }).locator('../..')
-    await expect(faltantes).toBeVisible()
-    await expect(faltantes.getByText(/agotados/i)).toBeVisible()
-    await expect(faltantes.getByText(/bajo mínimo/i)).toBeVisible()
+    const pocoStock = page.getByText('Productos con poco stock', { exact: true }).locator('..')
+    await expect(pocoStock).toBeVisible()
+    await expect(pocoStock.getByText(/sin stock/i)).toBeVisible()
+    await expect(pocoStock.getByText(/con stock bajo/i)).toBeVisible()
 
-    // El filtro del inventario muestra exactamente esos.
+    // Los filtros de Stock muestran exactamente esos.
     await page.goto('/stock')
-    await page.getByLabel('Filtro de stock').selectOption('bajos')
+    await page.getByRole('button', { name: /^▲?\s*Stock bajo/ }).click()
     await page.waitForTimeout(900)
 
-    const filas = page.getByRole('row').filter({ hasText: /mín\./ })
-    expect(await filas.count(), 'el filtro de bajo minimo no devolvio nada').toBeGreaterThan(0)
+    const filas = page.getByRole('row').filter({ hasText: 'Stock bajo' })
+    expect(await filas.count(), 'el filtro de stock bajo no devolvio nada').toBeGreaterThan(0)
 
-    await page.getByLabel('Filtro de stock').selectOption('agotados')
+    await page.getByRole('button', { name: /^✕?\s*Sin stock/ }).click()
     await page.waitForTimeout(900)
-    await expect(page.getByText('Agotado').first()).toBeVisible()
+    await expect(page.getByRole('row').filter({ hasText: 'Sin stock' }).first()).toBeVisible()
   })
 
   test('vender hasta el minimo enciende la alerta', async ({ page }) => {
@@ -276,8 +283,7 @@ test.describe('Alertas de reposicion', () => {
     await page.waitForTimeout(900)
 
     const fila = page.getByRole('row').filter({ hasText: PRODUCTOS.leche.nombre }).first()
-    await fila.locator('button[aria-expanded]').first().click()
-    await page.getByRole('menuitem', { name: 'Editar' }).click()
+    await fila.getByRole('button', { name: /^Editar / }).click()
 
     // El stock ya no es un campo de la ficha: se lee de la seccion Inventario,
     // que desde la Fase 3B es de solo lectura. Mover inventario se hace con el
@@ -291,14 +297,16 @@ test.describe('Alertas de reposicion', () => {
           .innerText()
       ).replace(' u.', ''),
     )
-    await ficha.getByLabel(/mínimo de reposición/i).fill(String(stockActual))
-    await expect(ficha.getByText(/ya está bajo mínimo/i)).toBeVisible()
+    // El aviso de stock bajo se configura en "Más opciones".
+    await ficha.getByRole('button', { name: /más opciones/i }).click()
+    await ficha.getByLabel(/avisar cuando queden/i).fill(String(stockActual))
+    await expect(ficha.getByText(/ya figura como «Stock bajo»/i)).toBeVisible()
     await ficha.getByRole('button', { name: 'Guardar cambios' }).click()
     await page.waitForTimeout(1200)
 
     // Ahora el inventario lo marca.
     await page.goto('/stock')
-    await page.getByLabel('Filtro de stock').selectOption('bajos')
+    await page.getByRole('button', { name: /^▲?\s*Stock bajo/ }).click()
     await page.waitForTimeout(900)
     await expect(
       page.getByRole('row').filter({ hasText: PRODUCTOS.leche.nombre }).first(),

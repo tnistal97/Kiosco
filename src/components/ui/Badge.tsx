@@ -20,12 +20,14 @@ import {
 
 export type BadgeTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger'
 
+// `primary` se ve como `neutral`: el azul es el color de las acciones, y un
+// estado pintado de azul parecia un boton.
 const TONOS: Record<BadgeTone, string> = {
   neutral: 'bg-raised text-ink-muted border-line',
-  primary: 'bg-primary-quiet text-primary border-primary/40',
-  success: 'bg-success-quiet text-success border-success/40',
-  warning: 'bg-warning-quiet text-warning border-warning/40',
-  danger: 'bg-danger-quiet text-danger border-danger/40',
+  primary: 'bg-raised text-ink-muted border-line',
+  success: 'bg-success-quiet text-success border-success/30',
+  warning: 'bg-warning-quiet text-warning border-warning/30',
+  danger: 'bg-danger-quiet text-danger border-danger/30',
 }
 
 export function Badge({
@@ -40,7 +42,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap',
+        'inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5 text-sm font-semibold whitespace-nowrap',
         TONOS[tone],
         className,
       )}
@@ -121,7 +123,7 @@ export function StockBadge({
   if (estado === 'OUT') {
     return (
       <StatusBadge tone="danger" glyph="✕">
-        Agotado
+        Sin stock
       </StatusBadge>
     )
   }
@@ -136,6 +138,40 @@ export function StockBadge({
   return (
     <StatusBadge tone="neutral" glyph="●">
       {formatearCantidadConUnidad(quantity, unit)} en stock
+    </StatusBadge>
+  )
+}
+
+/**
+ * El estado del stock en palabras (UX V5): "Sin stock", "Stock bajo" o,
+ * solo si se pide, "Stock normal". Va al lado de la cantidad, no en lugar de
+ * ella. El estado lo calcula el servidor contra el minimo de cada producto.
+ */
+export function EstadoStockBadge({
+  estado,
+  mostrarNormal = false,
+}: {
+  estado: 'OUT' | 'LOW' | 'OK'
+  mostrarNormal?: boolean
+}) {
+  if (estado === 'OUT') {
+    return (
+      <StatusBadge tone="danger" glyph="✕">
+        Sin stock
+      </StatusBadge>
+    )
+  }
+  if (estado === 'LOW') {
+    return (
+      <StatusBadge tone="warning" glyph="▲">
+        Stock bajo
+      </StatusBadge>
+    )
+  }
+  if (!mostrarNormal) return null
+  return (
+    <StatusBadge tone="neutral" glyph="●">
+      Stock normal
     </StatusBadge>
   )
 }

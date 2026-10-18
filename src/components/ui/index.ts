@@ -44,13 +44,16 @@ export type { MoneyProps, MoneySize, MoneyTone } from './Money'
 export { MoneyInput } from './MoneyInput'
 export type { MoneyInputProps, MoneyInputSize } from './MoneyInput'
 
-export { Badge, StatusBadge, SaleStatusBadge, StockBadge } from './Badge'
+export { Badge, StatusBadge, SaleStatusBadge, StockBadge, EstadoStockBadge } from './Badge'
 export type { BadgeTone } from './Badge'
 
 export { EstadoBadge, describirEstado } from './EstadoBadge'
 export type { DominioDeEstado } from './EstadoBadge'
 
 export { Card, CardHeader, MetricCard } from './Card'
+
+export { Section, Metric, MetricRow } from './Section'
+export type { MetricTone } from './Section'
 
 export {
   Table,

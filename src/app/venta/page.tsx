@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import {
   Alert,
   Button,
@@ -25,8 +26,6 @@ import { DialogoAltaRapida } from '@/components/venta/DialogoAltaRapida'
 import { CodigoSinResolver, type EstadoDelCodigo } from '@/components/venta/CodigoSinResolver'
 import { ProductBrowser } from '@/components/venta/ProductBrowser'
 import { Secciones, type SeccionDelCatalogo } from '@/components/venta/Secciones'
-import { SelectorDeModo } from '@/components/venta/SelectorDeModo'
-import { useModoDeVenta } from '@/components/venta/useModoDeVenta'
 import { POSLayout } from '@/components/venta/POSLayout'
 import { useFavoritos } from '@/components/venta/useFavoritos'
 import { useFrecuentes } from '@/components/venta/useFrecuentes'
@@ -229,7 +228,6 @@ export default function VentaPage() {
   const articulos = articulosDelTicket(items)
 
   const branchId = session?.branchId ?? null
-  const { modo, elegir: elegirModo } = useModoDeVenta()
   const favoritos = useFavoritos(branchId)
   const frecuentes = useFrecuentes(branchId)
 
@@ -270,6 +268,9 @@ export default function VentaPage() {
       setSeccion(s)
       setResaltado(0)
       setZona('campo')
+      // Elegir una categoria con el mouse dejaba el foco en el boton, y el
+      // proximo codigo leido no caia en el campo (V5).
+      enfocarCampo(() => campo.current)
     },
     [setResaltado, setZona],
   )
@@ -440,17 +441,46 @@ export default function VentaPage() {
     setSearchTerm('')
   }, [setSearchTerm, setResaltado, setZona])
 
-  /** Una fila del catalogo, tocada o elegida con Enter desde la lista. */
+  /**
+   * ELEGIR un producto con el teclado (V5): Enter sobre una fila, o Enter con
+   * un nombre escrito.
+   *
+   * Si todavia no esta en el ticket, entra una unidad (o se pide el peso). Si
+   * YA esta, NO se suma otra: se selecciona su linea y se avisa que + suma.
+   * Era el "Enter que agrega de mas" de la V3: elegir y sumar eran la misma
+   * tecla, y repetir un Enter para confirmar dejaba dos unidades.
+   */
+  const elegirSinSumar = useCallback(
+    (p: ProductoVendible): string | null => {
+      const linea = items.find((l) => l.productId === p.id)
+      if (linea) {
+        setSeleccionada(p.id)
+        setEstadoCodigo('idle')
+        setMensajeCodigo(`${p.name} ya está en el ticket · con + sumás otra unidad`)
+        return null
+      }
+      return elegirProducto(p, { limpiar: true })
+    },
+    [items, elegirProducto, setSeleccionada],
+  )
+
+  /**
+   * Una fila del catalogo.
+   *
+   * Tocada con el mouse o el dedo, agrega una unidad: tocar dos veces la
+   * gaseosa son dos gaseosas, como en cualquier caja tactil. Elegida con
+   * Enter desde el teclado, ELIGE (ver `elegirSinSumar`). En los dos casos
+   * el foco vuelve al campo, que es donde cae el proximo codigo leido.
+   */
   const elegirDelCatalogo = useCallback(
     (p: Product, desdeElTeclado: boolean) => {
-      elegirProducto(p, { limpiar: true })
+      if (desdeElTeclado) elegirSinSumar(p)
+      else elegirProducto(p, { limpiar: true })
       if (buscando) limpiarBusqueda()
       setZona('campo')
-      // Quien toca vuelve al lector: ahi cae el proximo codigo. Quien navega
-      // con el teclado se queda en la lista para seguir eligiendo.
-      if (!desdeElTeclado) campo.current?.focus()
+      enfocarCampo(() => campo.current)
     },
-    [elegirProducto, buscando, limpiarBusqueda, setZona],
+    [elegirProducto, elegirSinSumar, buscando, limpiarBusqueda, setZona],
   )
 
   // --------------------------------------------------------------- escaneo
@@ -779,11 +809,11 @@ export default function VentaPage() {
   )
 
   /**
-   * → y ← sobre la fila resaltada de la LISTA.
+   * + y - sobre la fila resaltada de la LISTA (V5: ya no con las flechas).
    *
-   * Suma o resta una unidad de ese producto sin salir de la busqueda y sin
-   * mover el foco: escribir "coca", bajar y apretar → tres veces deja tres
-   * gaseosas en el ticket con el nombre todavia escrito.
+   * Suma o resta una unidad de ese producto sin salir de la lista: es la
+   * forma EXPLICITA de cambiar una cantidad desde ahi. Las flechas solo
+   * recorren.
    */
   const ajustarResaltado = useCallback(
     (delta: -1 | 1) => {
@@ -815,6 +845,16 @@ export default function VentaPage() {
     else if (searchTerm !== '') setSearchTerm('')
   }
 
+  // La version vigente de `alEscribir`, para el manejador de teclas de la
+  // ventana, que se suscribe una sola vez.
+  const alEscribirRef = useRef(alEscribir)
+  // Y la de las teclas de la gramatica, para + y − con el foco fuera del campo.
+  const alPresionarRef = useRef<(tecla: TeclaDelLector, texto: string) => boolean>(() => false)
+  useEffect(() => {
+    alEscribirRef.current = alEscribir
+    alPresionarRef.current = alPresionarEnElCampo
+  })
+
   function alPresionarEnElCampo(tecla: TeclaDelLector, textoActual: string): boolean {
     // Del `ref` y no del render: dos teclas seguidas llegan mas rapido de lo
     // que React vuelve a dibujar.
@@ -837,12 +877,13 @@ export default function VentaPage() {
         setZona('campo')
         void procesarCodigo(textoActual)
         return true
-      case 'agregar-resaltado': {
-        // Con texto y sin haber bajado todavia, Enter agrega el PRIMERO: es
-        // lo que dice la lista con la marca tenue del primer renglon.
+      case 'elegir-resaltado': {
+        // Con texto y sin haber bajado todavia, Enter elige el PRIMERO: es lo
+        // que dice la lista con la marca tenue del primer renglon. Elegir no
+        // es sumar: si ya esta en el ticket, solo se selecciona su linea.
         const elegido = visibles[zonaActual === 'lista' ? resaltadoActual : 0]
         if (elegido) {
-          elegirProducto(elegido, { limpiar: true })
+          elegirSinSumar(elegido)
           limpiarBusqueda()
         }
         return true
@@ -932,6 +973,63 @@ export default function VentaPage() {
 
       if (hayCapa || cobroAbierto) return
 
+      // Escribir sin estar en el campo lleva al campo (V5).
+      //
+      // Despues de tocar un boton --una categoria, una linea del ticket, el
+      // + de una cantidad-- el foco quedaba ahi, y lo que se tecleaba o se
+      // leia con el lector no llegaba a ningun lado. Una tecla imprimible
+      // fuera de un campo de texto pone el foco en el campo y ESCRIBE ahi
+      // ese caracter (no se confia en que el navegador lo mueva solo: con un
+      // lector rapido el primer digito se perdia). Las teclas siguientes ya
+      // caen en el campo, y el Enter del lector se procesa ahi, sin depender
+      // de ningun reloj.
+      //
+      // + y − fuera del campo --despues de un clic en un lugar vacio de la
+      // pantalla-- cambian la cantidad de la linea elegida, como con el campo
+      // vacio. Escribirlos en el campo buscaba "+" y no sumaba nada. Con algo
+      // escrito en el campo, se escriben ahi como cualquier tecla.
+      const signo = e.key === '−' ? '-' : e.key
+      if (
+        !enCampo &&
+        !e.defaultPrevented &&
+        (signo === '+' || signo === '-') &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        (campo.current?.value ?? '') === ''
+      ) {
+        e.preventDefault()
+        if (!e.repeat) alPresionarRef.current(signo, '')
+        return
+      }
+
+      // El espacio no: activa el boton enfocado. La barra tampoco: es el
+      // atajo al campo, mas abajo. Y nada que otro manejador ya haya resuelto
+      // (el + y el - del ticket).
+      if (
+        !enCampo &&
+        !e.defaultPrevented &&
+        e.key.length === 1 &&
+        e.key !== ' ' &&
+        e.key !== '/' &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey
+      ) {
+        const input = campo.current
+        if (input) {
+          e.preventDefault()
+          input.focus()
+          const siguiente = input.value + e.key
+          // En el acto: la tecla siguiente del lector llega en milisegundos y
+          // tiene que encontrar este caracter ya escrito en el campo.
+          flushSync(() => {
+            alEscribirRef.current(siguiente)
+          })
+        }
+        return
+      }
+
       // Alt+N abre el alta rapida manual. Sin permiso no hace nada, en vez de
       // abrir un formulario que el servidor va a rechazar.
       if (e.altKey && e.key.toLowerCase() === 'n') {
@@ -1015,11 +1113,25 @@ export default function VentaPage() {
         setSeleccionada(id)
         setZona(id === null ? 'campo' : 'ticket')
       }}
+      onVolverAlCampo={enfocar}
       onCantidad={cambiarCantidad}
       onAjustar={ajustarLinea}
       onQuitar={quitarLinea}
       onEditarPeso={editarPeso}
-      onEditando={setEditandoCantidad}
+      onEditando={(editando) => {
+        setEditandoCantidad(editando)
+        // Terminada la cantidad escrita a mano, el foco vuelve al campo: el
+        // proximo codigo leido tiene que caer ahi y no en la nada. Pero
+        // despues de que el foco termine de moverse: si se fue con Tab al "+"
+        // o con un clic a otra linea, se respeta. Moverlo durante la salida
+        // cancelaba ese movimiento y dejaba el resto del ticket sin Tab.
+        if (!editando) {
+          requestAnimationFrame(() => {
+            const activo = document.activeElement
+            if (activo === null || activo === document.body) enfocar()
+          })
+        }
+      }}
       onVaciar={() => {
         conDeshacer('Ticket vaciado', () => {
           vaciar()
@@ -1048,32 +1160,17 @@ export default function VentaPage() {
    */
   const ayudaDeTeclado =
     zona === 'ticket'
-      ? '↑↓ línea · ←→ cantidad · Supr quita · Enter cobrar · Esc volver'
+      ? '↑↓ elegir línea · + − cantidad · Supr quitar · Enter cobrar · Esc volver'
       : zona === 'lista'
-        ? '↑↓ elegir · → suma · ← quita · Enter agrega · Esc volver'
+        ? '↑↓ recorrer · Enter elegir · + − cantidad · Esc volver'
         : buscando
-          ? '↓ elegir de la lista · Enter agrega el primero'
+          ? '↓ recorrer la lista · Enter elegir el primero'
           : items.length > 0
-            ? '↓ elegir producto · Enter revisar el ticket'
-            : '↓ elegir producto de la lista'
-
-  const selectorDeModo = (className: string) => (
-    <SelectorDeModo
-      modo={modo}
-      onModo={(m) => {
-        elegirModo(m)
-        enfocar()
-      }}
-      leyendo={estadoCodigo === 'reading' || estadoCodigo === 'ok'}
-      className={className}
-    />
-  )
+            ? 'Enter: pasar a cobrar · + − cantidad de la última línea'
+            : 'Escaneá un producto o escribí su nombre'
 
   const cabecera = (
     <div className="flex items-center gap-2">
-      {/* En el telefono el selector no entra al lado de un campo utilizable:
-          baja al renglon de las secciones, que ahi mide 44 px igual. */}
-      {selectorDeModo('hidden sm:flex')}
       <ScannerInput
         ref={campo}
         value={texto}
@@ -1084,10 +1181,8 @@ export default function VentaPage() {
         loading={buscando && isLoading}
         hint={ayudaDeTeclado}
         pie={false}
-        label={modo === 'lector' ? 'Escaneá un código de barras' : 'Buscá un producto por nombre'}
-        placeholder={
-          modo === 'lector' ? 'Escaneá un código de barras' : 'Buscá un producto por nombre…'
-        }
+        label="Escaneá o buscá un producto"
+        placeholder="Escaneá el código o escribí el nombre…"
         onEditingChange={setEscribiendo}
         className="min-w-0 flex-1"
       />
@@ -1189,7 +1284,6 @@ export default function VentaPage() {
 
   const barraDeSecciones = (
     <div className="flex min-h-7 shrink-0 items-center gap-3">
-      {selectorDeModo('sm:hidden')}
       <Secciones
         seccion={seccion}
         onSeccion={elegirSeccion}
@@ -1203,12 +1297,12 @@ export default function VentaPage() {
       <p
         aria-hidden="true"
         className={cn(
-          'shrink-0 truncate text-xs',
+          'shrink-0 truncate text-sm',
           estadoCodigo === 'error'
-            ? 'max-w-[45%] font-medium text-danger'
+            ? 'max-w-[45%] font-semibold text-danger'
             : mensajeCodigo
-              ? 'hidden max-w-[45%] text-ink-muted sm:block'
-              : 'hidden text-ink-faint lg:block',
+              ? 'hidden max-w-[50%] font-medium text-ink sm:block'
+              : 'hidden text-ink-muted lg:block',
         )}
       >
         {mensajeCodigo ?? ayudaDeTeclado}

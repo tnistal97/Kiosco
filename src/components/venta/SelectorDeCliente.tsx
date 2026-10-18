@@ -208,7 +208,7 @@ export function SelectorDeCliente({
                 <li key={c.id}>
                   <button
                     type="button"
-                    className="flex w-full items-center justify-between gap-3 px-1 py-2 text-left hover:bg-surface-2"
+                    className="flex w-full items-center justify-between gap-3 px-1 py-2 text-left hover:bg-sunken"
                     onClick={() => {
                       onElegir(c)
                       setAbierto(false)

@@ -57,7 +57,11 @@ export function DialogoNuevoInventario({
   const [alcance, setAlcance] = useState<Alcance>('ALL')
   const [categoria, setCategoria] = useState('')
   const [categorias, setCategorias] = useState<Categoria[]>([])
-  const [aCiegas, setACiegas] = useState(true)
+  // V5: por omision SE VE el stock del sistema mientras se cuenta. Es el
+  // flujo que se pidio ("mostrar stock del sistema, cargar lo contado, ver la
+  // diferencia"). Contar sin verlo sigue disponible en "Más opciones".
+  const [aCiegas, setACiegas] = useState(false)
+  const [masOpciones, setMasOpciones] = useState(false)
   const [conRecuento, setConRecuento] = useState(false)
   const [umbral, setUmbral] = useState('1')
   const [notas, setNotas] = useState('')
@@ -68,7 +72,8 @@ export function DialogoNuevoInventario({
     if (!abierto) return
     setAlcance('ALL')
     setCategoria('')
-    setACiegas(true)
+    setACiegas(false)
+    setMasOpciones(false)
     setConRecuento(false)
     setUmbral('1')
     setNotas('')
@@ -117,7 +122,7 @@ export function DialogoNuevoInventario({
       })
       onCreado(sesion.id)
     } catch (err) {
-      setError(mensajeDeError(err, 'No se pudo crear el inventario.'))
+      setError(mensajeDeError(err, 'No se pudo empezar el inventario. Probá de nuevo.'))
       setEnviando(false)
     }
   }
@@ -126,21 +131,23 @@ export function DialogoNuevoInventario({
     <Dialog
       open={abierto}
       onClose={onCerrar}
-      title="Nuevo inventario físico"
+      title="Nuevo inventario"
+      description="Elegí qué vas a contar. Después cargás lo que encontrás de cada producto."
       size="md"
       dismissible={!enviando}
       footer={
         <>
-          <Button variant="secondary" onClick={onCerrar} disabled={enviando}>
+          <Button variant="secondary" size="lg" onClick={onCerrar} disabled={enviando}>
             Cancelar
           </Button>
           <Button
             variant="primary"
+            size="lg"
             loading={enviando}
             disabled={enviando || falta || !umbralValido}
             onClick={() => void crear()}
           >
-            Crear inventario
+            Empezar a contar
           </Button>
         </>
       }
@@ -153,13 +160,15 @@ export function DialogoNuevoInventario({
         )}
 
         <RadioGroup
-          legend="Qué se cuenta"
+          legend="¿Qué vas a contar?"
           name="alcance"
           value={alcance}
           onChange={setAlcance}
           options={alcancesOfrecidos.map((a) => ({
             value: a,
-            label: etiquetaDeAlcance(a),
+            label: a === 'ALL' ? 'Todo el negocio' : etiquetaDeAlcance(a),
+            description:
+              a === 'ALL' ? 'Todos los productos que están en venta' : 'Solo los de una categoría',
             disabled: enviando,
           }))}
           columns={2}
@@ -188,65 +197,71 @@ export function DialogoNuevoInventario({
           </Field>
         )}
 
-        <div className="rounded-md border border-line bg-sunken p-3">
-          <Checkbox
-            checked={aCiegas}
-            disabled={enviando}
-            label="Conteo a ciegas"
-            description="Quien cuenta no ve lo que el sistema espera. Es lo que hace que el conteo sea un conteo y no una confirmación."
-            onChange={(e) => {
-              setACiegas(e.target.checked)
+        <div className="border-t border-line pt-3">
+          <Button
+            variant="ghost"
+            aria-expanded={masOpciones}
+            onClick={() => {
+              setMasOpciones((v) => !v)
             }}
-          />
-          {!aCiegas && (
-            <p className="mt-2 text-xs text-warning">
-              Sin conteo a ciegas, quien recorre el depósito ve el número esperado antes de contar.
-            </p>
-          )}
+          >
+            {masOpciones ? 'Menos opciones ▴' : 'Más opciones ▾'}
+          </Button>
         </div>
 
-        <div className="rounded-md border border-line bg-sunken p-3">
-          <Checkbox
-            checked={conRecuento}
-            disabled={enviando}
-            label="Requerir segundo conteo si hay diferencia"
-            description="La línea se vuelve a contar una vez. El primer conteo queda guardado."
-            onChange={(e) => {
-              setConRecuento(e.target.checked)
-            }}
-          />
-          {conRecuento && (
-            <Field
-              className="mt-3"
-              label="A partir de qué diferencia"
-              hint="En unidades. Una diferencia menor no pide recuento."
-              error={problemaDelUmbral}
-            >
-              <NumericInput
-                modo="cantidad"
-                value={umbral}
+        {masOpciones && (
+          <>
+            <div className="rounded-md border border-line bg-raised p-3">
+              <Checkbox
+                checked={aCiegas}
                 disabled={enviando}
-                onChange={setUmbral}
+                label="No mostrar el stock del sistema mientras se cuenta"
+                description="Quien cuenta no ve cuánto debería haber. Las diferencias aparecen al terminar."
+                onChange={(e) => {
+                  setACiegas(e.target.checked)
+                }}
+              />
+            </div>
+
+            <div className="rounded-md border border-line bg-raised p-3">
+              <Checkbox
+                checked={conRecuento}
+                disabled={enviando}
+                label="Pedir que se cuente dos veces si hay mucha diferencia"
+                description="El producto se vuelve a contar una vez. El primer conteo queda guardado."
+                onChange={(e) => {
+                  setConRecuento(e.target.checked)
+                }}
+              />
+              {conRecuento && (
+                <Field
+                  className="mt-3"
+                  label="A partir de qué diferencia"
+                  hint="En unidades. Una diferencia menor no pide recuento."
+                  error={problemaDelUmbral}
+                >
+                  <NumericInput
+                    modo="cantidad"
+                    value={umbral}
+                    disabled={enviando}
+                    onChange={setUmbral}
+                  />
+                </Field>
+              )}
+            </div>
+
+            <Field label="Nota" hint="Opcional. Por ejemplo: quién cuenta.">
+              <Textarea
+                rows={2}
+                value={notas}
+                disabled={enviando}
+                onChange={(e) => {
+                  setNotas(e.target.value)
+                }}
               />
             </Field>
-          )}
-        </div>
-
-        <Field label="Notas" hint="Por qué se cuenta, quién recorre, lo que convenga anotar.">
-          <Textarea
-            rows={2}
-            value={notas}
-            disabled={enviando}
-            onChange={(e) => {
-              setNotas(e.target.value)
-            }}
-          />
-        </Field>
-
-        <Alert tone="info">
-          Las líneas se generan al crear la sesión: una por producto y partida con unidades. Contar
-          no cierra el local — lo esperado se lee en el momento de contar.
-        </Alert>
+          </>
+        )}
       </div>
     </Dialog>
   )

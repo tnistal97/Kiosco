@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { verifySessionToken, SESSION_COOKIE } from '@/server/auth/token'
 import type { ApiErrorBody } from '@/server/http/errors'
 import { REQUEST_ID_HEADER, requestIdDe } from '@/server/http/requestId'
+import { funcionesHabilitadas, rutaDeshabilitada } from '@/lib/funciones'
 
 /**
  * Middleware de navegacion.
@@ -175,7 +176,16 @@ export async function middleware(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value
   const claims = token ? await verifySessionToken(token) : null
 
-  if (claims) return NextResponse.next()
+  if (claims) {
+    // Pantallas de una funcion que esta instalacion no usa (lotes, compras):
+    // se va a la pantalla que si usa, con una redireccion limpia y no con una
+    // pagina a medio dibujar. La API no pasa por aca. Ver `@/lib/funciones`.
+    const destino = pathname.startsWith('/api/')
+      ? null
+      : rutaDeshabilitada(pathname, funcionesHabilitadas(process.env))
+    if (destino !== null) return NextResponse.redirect(new URL(destino, origenDe(req, host)))
+    return NextResponse.next()
+  }
 
   // Las APIs responden 401; no tiene sentido redirigir una peticion fetch al
   // HTML del login. Ademas asi el cliente puede distinguir "sesion vencida".

@@ -72,7 +72,7 @@ export function Field({
         <label
           htmlFor={ctx.id}
           className={cn(
-            'text-sm font-medium text-ink-muted',
+            'text-sm font-semibold text-ink',
             labelHidden && 'sr-only', // sigue asociada, solo no se ve
           )}
         >
@@ -101,10 +101,13 @@ export function Field({
   )
 }
 
+// Borde `line-strong` (3:1 contra cualquier fondo) y fondo blanco: un campo
+// tiene que verse como campo. Antes era `line` sobre `sunken`, 1.2:1 en el
+// tema claro, y un campo vacio era una mancha gris sin borde.
 const CONTROL =
-  'w-full rounded-md border bg-sunken px-3 text-ink transition-colors ' +
-  'placeholder:text-ink-faint disabled:opacity-50 disabled:cursor-not-allowed ' +
-  'hover:border-line-strong'
+  'w-full rounded-md border bg-field px-3 text-base text-ink transition-colors ' +
+  'placeholder:text-ink-faint hover:border-ink-faint ' +
+  'disabled:cursor-not-allowed disabled:bg-disabled-bg disabled:text-disabled-ink disabled:border-line'
 
 /** Atributos que salen del contexto de `Field`, para no repetirlos en cada control. */
 function atributosDe(ctx: CtxCampo | null, propios: { id?: string }) {
@@ -133,7 +136,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   return (
     <input
       ref={ref}
-      className={cn(CONTROL, 'h-control', malo ? 'border-danger' : 'border-line', className)}
+      className={cn(CONTROL, 'h-control', malo ? 'border-danger' : 'border-line-strong', className)}
       {...atributosDe(ctx, rest)}
       {...rest}
     />
@@ -152,7 +155,7 @@ export const Textarea = forwardRef<
       className={cn(
         CONTROL,
         'resize-y py-2.5',
-        ctx?.tieneError ? 'border-danger' : 'border-line',
+        ctx?.tieneError ? 'border-danger' : 'border-line-strong',
         className,
       )}
       {...atributosDe(ctx, rest)}
@@ -177,7 +180,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         className={cn(
           CONTROL,
           'h-control appearance-none pr-9',
-          ctx?.tieneError ? 'border-danger' : 'border-line',
+          ctx?.tieneError ? 'border-danger' : 'border-line-strong',
           className,
         )}
         {...atributosDe(ctx, rest)}
@@ -214,13 +217,13 @@ export function Checkbox({
       className={cn(
         'flex min-h-touch cursor-pointer select-none items-start gap-3 rounded-md px-1 py-2',
         'hover:bg-raised',
-        rest.disabled && 'cursor-not-allowed opacity-50 hover:bg-transparent',
+        rest.disabled && 'cursor-not-allowed text-disabled-ink hover:bg-transparent',
         className,
       )}
     >
       <input
         type="checkbox"
-        className="mt-0.5 h-5 w-5 shrink-0 rounded-xs border border-line-strong bg-sunken accent-primary"
+        className="mt-0.5 h-5 w-5 shrink-0 rounded-xs border border-line-strong bg-field accent-primary"
         {...rest}
       />
       <span className="flex flex-col gap-0.5">
@@ -265,7 +268,7 @@ export function RadioGroup<T extends string>({
 
   return (
     <fieldset className={cn('flex flex-col gap-1.5', className)}>
-      <legend className="mb-1.5 text-sm font-medium text-ink-muted">{legend}</legend>
+      <legend className="mb-1.5 text-sm font-semibold text-ink">{legend}</legend>
       <div className={cn('grid gap-2', grilla)}>
         {options.map((op) => {
           const activo = value === op.value
@@ -275,9 +278,9 @@ export function RadioGroup<T extends string>({
               className={cn(
                 'flex min-h-touch cursor-pointer items-center gap-2.5 rounded-md border px-3 py-2 transition-colors',
                 activo
-                  ? 'border-primary bg-primary-quiet text-ink'
-                  : 'border-line bg-sunken text-ink-muted hover:border-line-strong hover:text-ink',
-                op.disabled && 'cursor-not-allowed opacity-45',
+                  ? 'border-primary bg-primary-quiet text-ink ring-1 ring-primary'
+                  : 'border-line-strong bg-field text-ink hover:bg-raised',
+                op.disabled && 'cursor-not-allowed bg-disabled-bg text-disabled-ink',
               )}
             >
               <input

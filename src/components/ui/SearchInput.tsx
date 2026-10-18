@@ -24,18 +24,33 @@ export interface SearchInputProps
   /** Texto de ayuda debajo, p. ej. el atajo de teclado. */
   hint?: string
   size?: 'md' | 'lg'
+  /**
+   * Muestra la etiqueta arriba del campo (UX V5). Por omision solo la oye el
+   * lector de pantalla: la caja no tiene lugar para un renglon mas.
+   */
+  labelVisible?: boolean
 }
 
 export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(function SearchInput(
-  { label, loading = false, onClear, hint, className, value, size = 'md', ...rest },
+  {
+    label,
+    loading = false,
+    onClear,
+    hint,
+    className,
+    value,
+    size = 'md',
+    labelVisible = false,
+    ...rest
+  },
   ref,
 ) {
   const id = useId()
   const hayTexto = typeof value === 'string' && value.length > 0
 
   return (
-    <div className="flex w-full flex-col gap-1">
-      <label htmlFor={id} className="sr-only">
+    <div className="flex w-full flex-col gap-1.5">
+      <label htmlFor={id} className={labelVisible ? 'text-sm font-semibold text-ink' : 'sr-only'}>
         {label}
       </label>
       <div className="relative">
@@ -58,8 +73,8 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
           value={value}
           autoComplete="off"
           className={cn(
-            'w-full rounded-md border border-line bg-sunken pl-11 pr-11 text-ink transition-colors',
-            'placeholder:text-ink-faint hover:border-line-strong',
+            'w-full rounded-md border border-line-strong bg-field pl-11 pr-11 text-ink transition-colors',
+            'placeholder:text-ink-faint hover:border-ink-faint',
             // Chrome dibuja su propia cruz en `type=search`; sobra, porque ya
             // hay un boton de vaciar accesible.
             '[&::-webkit-search-cancel-button]:hidden',
@@ -74,10 +89,9 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
           {!loading && hayTexto && onClear && (
             <button
               type="button"
-              tabIndex={-1}
               onClick={onClear}
-              aria-label="Vaciar la busqueda"
-              className="flex h-7 w-7 items-center justify-center rounded-full text-ink-faint transition-colors hover:bg-raised hover:text-ink"
+              aria-label="Vaciar la búsqueda"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-raised hover:text-ink"
             >
               <svg
                 className="h-4 w-4"

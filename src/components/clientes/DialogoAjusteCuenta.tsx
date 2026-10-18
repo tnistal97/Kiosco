@@ -153,7 +153,7 @@ export function DialogoAjusteCuenta({
           />
         </Field>
 
-        <div className="rounded-lg bg-surface-2 p-3 text-sm">
+        <div className="rounded-lg bg-sunken p-3 text-sm">
           <div className="flex justify-between">
             <span className="text-ink-muted">Saldo actual</span>
             <span data-numeric="">

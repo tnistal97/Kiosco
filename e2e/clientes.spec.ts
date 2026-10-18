@@ -601,7 +601,7 @@ test.describe('el mostrador', () => {
     // Y el aviso de credito muestra a cuanto va a quedar ANTES de confirmar.
     await expect(dialogo.getByText('Saldo resultante')).toBeVisible()
 
-    await dialogo.getByRole('button', { name: /^cobrar/i }).click()
+    await dialogo.getByRole('button', { name: /^confirmar venta/i }).click()
     await expect(page.getByText('Venta registrada')).toBeVisible({ timeout: 15_000 })
 
     // El cliente quedo debiendo lo que se le fio.

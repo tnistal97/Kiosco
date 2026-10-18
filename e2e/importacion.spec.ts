@@ -35,7 +35,9 @@ test('importa un CSV: columnas solas, vista previa, stock elegido y confirmacion
   const s = sufijo()
   await entrar(page, 'admin')
   await page.goto('/productos')
-  await page.getByRole('link', { name: 'Importar' }).click()
+  // V5: importar y cambiar precios estan en "Más acciones".
+  await page.getByRole('button', { name: /más acciones/i }).click()
+  await page.getByRole('menuitem', { name: /importar desde excel/i }).click()
   await expect(page).toHaveURL(/\/productos\/importar/)
 
   // Como lo guarda Excel en castellano: punto y coma y "1.500" de miles. La
@@ -109,7 +111,8 @@ test('cambia precios de una categoria con vista previa, confirmacion y deshacer'
   )
 
   await page.goto('/productos')
-  await page.getByRole('link', { name: 'Cambiar precios' }).click()
+  await page.getByRole('button', { name: /más acciones/i }).click()
+  await page.getByRole('menuitem', { name: 'Cambiar precios' }).click()
   await expect(page).toHaveURL(/\/productos\/precios/)
 
   await page.getByLabel('Categoría').selectOption({ label: categoria })

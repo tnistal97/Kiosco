@@ -93,11 +93,17 @@ export function QuantityInput({
   const ancho = size === 'sm' ? 'w-9' : 'w-touch'
 
   const boton =
-    'flex shrink-0 items-center justify-center border-line bg-raised text-ink transition-colors ' +
-    'hover:bg-line disabled:opacity-40 disabled:pointer-events-none'
+    'flex shrink-0 items-center justify-center border-line-strong bg-surface text-ink transition-colors ' +
+    'hover:bg-raised disabled:bg-disabled-bg disabled:text-disabled-ink disabled:pointer-events-none'
 
   return (
-    <div className={cn('inline-flex items-stretch rounded-md border border-line', className)}>
+    <div
+      className={cn(
+        'inline-flex items-stretch rounded-md border border-line-strong',
+        'focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus',
+        className,
+      )}
+    >
       <button
         type="button"
         aria-label={`Quitar ${deAPaso} de ${label.toLowerCase()}`}
@@ -190,9 +196,9 @@ export function QuantityInput({
           }
         }}
         className={cn(
-          'border-0 bg-sunken text-center font-semibold text-ink outline-none',
+          'border-0 bg-field text-center font-semibold text-ink focus:outline-none',
           politica.decimales === 0 ? 'w-14' : 'w-20',
-          'disabled:opacity-50',
+          'disabled:bg-disabled-bg disabled:text-disabled-ink',
           alto,
         )}
         data-numeric=""

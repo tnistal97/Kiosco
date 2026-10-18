@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Button,
@@ -15,9 +15,14 @@ import {
   problemaDeCantidad,
   problemaDeImporte,
 } from '@/components/ui'
-import { usePermiso } from '@/components/shell/SessionProvider'
+import { useFuncion, usePermiso } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
-import type { CategoriaDTO, ProductoDTO, ProveedorDTO } from '@/modules/products/dto'
+import {
+  parseCategoria,
+  type CategoriaDTO,
+  type ProductoDTO,
+  type ProveedorDTO,
+} from '@/modules/products/dto'
 import { minimoSugerido } from '@/modules/inventory/minimum'
 import { aMilesimas, cantidadDesdeTexto } from '@/lib/cantidad'
 import { aCentavos, desdeCentavos, montoDesdeTexto, textoLocalDeMonto } from '@/lib/money'
@@ -36,6 +41,7 @@ import {
   type UnidadDeVenta,
 } from '@/modules/products/units'
 import { ActividadReciente } from './ActividadReciente'
+import { CampoCodigoDeBarras } from './CampoCodigoDeBarras'
 import { CodigosDeBarras } from './CodigosDeBarras'
 import { Trazabilidad } from './Trazabilidad'
 
@@ -70,6 +76,7 @@ export function DialogoProducto({
   onGuardado,
   categorias,
   proveedores,
+  onCategoriaCreada,
 }: {
   /** null = alta. */
   producto: ProductoDTO | null
@@ -78,15 +85,29 @@ export function DialogoProducto({
   onGuardado: () => void
   categorias: CategoriaDTO[]
   proveedores: ProveedorDTO[]
+  /** Se recargan las categorias despues de crear una desde aca. */
+  onCategoriaCreada?: () => void
 }) {
   const puedeEditarPrecio = usePermiso('products.price.update')
   const puedeVerCosto = usePermiso('products.cost.view')
   const puedeEditarCosto = usePermiso('products.cost.update')
+  const puedeCrearCategoria = usePermiso('categories.manage')
+  const usaLotes = useFuncion('lotes')
   const esAlta = producto === null
+  const botonGuardar = useRef<HTMLButtonElement>(null)
+  /** "Más opciones": unidad, costo, mínimo, proveedor, otros códigos. */
+  const [masOpciones, setMasOpciones] = useState(false)
+  /** Nombre de una categoria nueva mientras se escribe; null si no se crea. */
+  const [nuevaCategoria, setNuevaCategoria] = useState<string | null>(null)
 
   const [nombre, setNombre] = useState('')
   const [codigo, setCodigo] = useState('')
   const [alternativos, setAlternativos] = useState<string[]>([])
+  /**
+   * Los alternativos ya se leyeron del servidor. Hasta entonces la lista vacia
+   * no quiere decir "sin codigos": guardar antes mandaba [] y los borraba.
+   */
+  const [alternativosLeidos, setAlternativosLeidos] = useState(false)
   const [categoria, setCategoria] = useState('')
   const [proveedor, setProveedor] = useState('')
   const [descripcion, setDescripcion] = useState('')
@@ -108,7 +129,8 @@ export function DialogoProducto({
     setNombre(producto?.name ?? '')
     setCodigo(producto?.barcode ?? '')
     setAlternativos([])
-    setCategoria(String(producto?.category.id ?? categorias[0]?.id ?? ''))
+    setAlternativosLeidos(producto === null)
+    setCategoria(String(producto?.category.id ?? ''))
     setProveedor(String(producto?.supplier?.id ?? ''))
     setDescripcion(producto?.description ?? '')
     // Los importes se rellenan YA ESCRITOS como se escriben --"1.234,56"-- y
@@ -138,6 +160,20 @@ export function DialogoProducto({
     )
     setError(null)
     setEnviando(false)
+    setMasOpciones(false)
+    setNuevaCategoria(null)
+  }, [abierto, producto])
+
+  // La categoria de un alta arranca en la primera de la lista. Va aparte del
+  // reinicio: crear una categoria desde aca recarga la lista, y eso no tiene
+  // que borrar lo que ya se escribio. Solo en un alta, y con la forma
+  // funcional: corre en el mismo paso que el reinicio, y tiene que ver la
+  // categoria que el reinicio acaba de poner, no la del render anterior (en
+  // una edicion, eso pasaba el producto a la primera categoria).
+  useEffect(() => {
+    const primera = categorias[0]
+    if (!abierto || producto !== null || !primera) return
+    setCategoria((actual) => (actual === '' ? String(primera.id) : actual))
   }, [abierto, producto, categorias])
 
   // Al abrir la ficha de un producto que ya existe se traen sus codigos
@@ -154,7 +190,9 @@ export function DialogoProducto({
       },
     })
       .then((lista) => {
-        if (vivo) setAlternativos(lista)
+        if (!vivo) return
+        setAlternativos(lista)
+        setAlternativosLeidos(true)
       })
       .catch(() => {
         // Sin los alternativos la ficha sigue siendo utilizable. No se manda
@@ -231,7 +269,8 @@ export function DialogoProducto({
         const cuerpo: Record<string, unknown> = {
           name: nombre.trim(),
           barcode: codigo.trim(),
-          alternateBarcodes: alternativos,
+          // Sin leerlos no se mandan: el servidor deja los que ya tenia.
+          ...(alternativosLeidos ? { alternateBarcodes: alternativos } : {}),
           description: descripcion.trim(),
           categoryId: Number(categoria),
           supplierId: proveedor === '' ? null : Number(proveedor),
@@ -265,6 +304,78 @@ export function DialogoProducto({
 
   const politicaVenta = politicaDe(unidadVenta)
 
+  async function crearCategoria(): Promise<void> {
+    const nombreCat = (nuevaCategoria ?? '').trim()
+    if (nombreCat === '') return
+    setError(null)
+    try {
+      const creada = await apiRequest('/api/categories', {
+        method: 'POST',
+        body: { name: nombreCat },
+        parse: parseCategoria,
+      })
+      setCategoria(String(creada.id))
+      setNuevaCategoria(null)
+      onCategoriaCreada?.()
+    } catch (err) {
+      setError(mensajeDeError(err, 'No se pudo crear la categoría. Probá con otro nombre.'))
+    }
+  }
+
+  const campoPrecio =
+    puedeEditarPrecio || esAlta ? (
+      <Field
+        label={esFraccionable(unidadVenta) ? 'Precio por kilo' : 'Precio de venta'}
+        required={esAlta}
+        error={problemaDeImporte(precio, { permitirCero: true })}
+      >
+        <NumericInput
+          modo="dinero"
+          placeholder="0,00"
+          value={precio}
+          disabled={enviando}
+          onChange={setPrecio}
+        />
+      </Field>
+    ) : (
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-semibold text-ink">Precio de venta</span>
+        <div className="flex h-control items-center justify-end rounded-md border border-line bg-sunken px-3">
+          <Money amount={producto.price} size="lg" />
+        </div>
+        <p className="text-sm text-ink-muted">Tu usuario no puede cambiar precios.</p>
+      </div>
+    )
+
+  const campoStock = esAlta ? (
+    <Field
+      label={esFraccionable(unidadVenta) ? 'Kilos que tenés ahora' : 'Unidades que tenés ahora'}
+      hint="Lo que hay hoy en el negocio. Si no sabés, dejá 0."
+      error={problemaDeCantidad(stockInicial, { unidad: unidadVenta })}
+    >
+      <NumericInput
+        modo="cantidad"
+        unidad={unidadVenta}
+        value={stockInicial}
+        disabled={enviando}
+        onChange={setStockInicial}
+      />
+    </Field>
+  ) : (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-sm font-semibold text-ink">Stock actual</span>
+      <div
+        className="flex h-control items-center justify-end rounded-md border border-line bg-sunken px-3 text-lg font-semibold text-ink"
+        data-numeric=""
+      >
+        {formatearCantidadConUnidad(producto.totalStock, producto.saleUnit)}
+      </div>
+      <p className="text-sm text-ink-muted">
+        Para corregirlo, usá «Ajustar» en la pantalla de Stock.
+      </p>
+    </div>
+  )
+
   return (
     <Dialog
       open={abierto}
@@ -274,314 +385,341 @@ export function DialogoProducto({
       dismissible={!enviando}
       footer={
         <>
-          <Button variant="secondary" onClick={onCerrar} disabled={enviando}>
+          <Button variant="secondary" size="lg" onClick={onCerrar} disabled={enviando}>
             Cancelar
           </Button>
           <Button
+            ref={botonGuardar}
             variant="primary"
+            size="lg"
             loading={enviando}
             disabled={!valido}
             onClick={() => void guardar()}
           >
-            {esAlta ? 'Crear' : 'Guardar cambios'}
+            {esAlta ? 'Guardar producto' : 'Guardar cambios'}
           </Button>
         </>
       }
     >
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-5">
         {error && (
           <Alert tone="danger" title="No se guardó">
             {error}
           </Alert>
         )}
 
-        <Seccion titulo="Información">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Nombre" required className="sm:col-span-2">
-              <Input
-                value={nombre}
-                disabled={enviando}
-                onChange={(e) => {
-                  setNombre(e.target.value)
-                }}
-              />
-            </Field>
-
-            <Field label="Categoría" required>
-              <Select
-                value={categoria}
-                disabled={enviando}
-                onChange={(e) => {
-                  setCategoria(e.target.value)
-                }}
-              >
-                {categorias.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
-            <Field label="Proveedor">
-              <Select
-                value={proveedor}
-                disabled={enviando}
-                onChange={(e) => {
-                  setProveedor(e.target.value)
-                }}
-              >
-                <option value="">Sin proveedor</option>
-                {proveedores.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
-            {!esAlta && puedeEditarPrecio && (
-              <div className="flex items-end sm:col-span-2">
-                <Checkbox
-                  checked={activo}
-                  disabled={enviando}
-                  label="En venta"
-                  description="Un producto dado de baja no aparece en la caja."
-                  onChange={(e) => {
-                    setActivo(e.target.checked)
-                  }}
-                />
-              </div>
-            )}
-
-            <Field label="Descripción" className="sm:col-span-2">
-              <Textarea
-                rows={2}
-                value={descripcion}
-                disabled={enviando}
-                onChange={(e) => {
-                  setDescripcion(e.target.value)
-                }}
-              />
-            </Field>
-          </div>
-        </Seccion>
-
-        <Seccion titulo="Identificación">
-          <CodigosDeBarras
-            principal={codigo}
-            alternativos={alternativos}
-            deshabilitado={enviando}
-            onPrincipal={setCodigo}
-            onAlternativos={setAlternativos}
+        {/* Lo justo para crear un producto: nombre, categoría, precio,
+            cuántos hay y su código. Todo lo demás, en "Más opciones". */}
+        <Field label="Nombre" required>
+          <Input
+            value={nombre}
+            disabled={enviando}
+            placeholder="Por ejemplo: Yerba mate 1 kg"
+            autoFocus={esAlta}
+            onChange={(e) => {
+              setNombre(e.target.value)
+            }}
           />
-        </Seccion>
+        </Field>
 
-        <Seccion titulo="Venta">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field
-              label="Unidad de venta"
-              hint={
-                esAlta
-                  ? 'Cómo se cobra: por unidad o por peso.'
-                  : 'No se puede cambiar si el producto ya tiene movimientos.'
-              }
+        <Field
+          label="Categoría"
+          required
+          hint={categorias.length === 0 ? 'Todavía no hay categorías: creá la primera.' : undefined}
+        >
+          <div className="flex gap-2">
+            <Select
+              value={categoria}
+              disabled={enviando}
+              onChange={(e) => {
+                setCategoria(e.target.value)
+              }}
+              className="flex-1"
             >
-              <Select
-                value={unidadVenta}
+              {categorias.length === 0 && <option value="">No hay categorías</option>}
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+            {puedeCrearCategoria && nuevaCategoria === null && (
+              <Button
+                variant="secondary"
                 disabled={enviando}
-                onChange={(e) => {
-                  const u = e.target.value as UnidadDeVenta
-                  setUnidadVenta(u)
-                  if (esAlta) setMinimo(formatearCantidadParaEditar(minimoSugerido(u), u))
+                onClick={() => {
+                  setNuevaCategoria('')
                 }}
               >
-                {UNIDADES_DE_VENTA.map((u) => (
-                  <option key={u} value={u}>
-                    {POLITICA_DE_UNIDAD[u].nombre} ({POLITICA_DE_UNIDAD[u].simbolo})
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
-            {puedeEditarPrecio || esAlta ? (
-              <Field
-                label={`Precio por ${politicaVenta.simbolo}`}
-                required={esAlta}
-                hint={esFraccionable(unidadVenta) ? 'Lo que sale un kilo entero.' : undefined}
-                error={problemaDeImporte(precio, { permitirCero: true })}
-              >
-                <NumericInput
-                  modo="dinero"
-                  value={precio}
-                  disabled={enviando}
-                  onChange={setPrecio}
-                />
-              </Field>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-baseline justify-between rounded-lg border border-line bg-sunken px-4 py-3">
-                  <span className="text-sm text-ink-muted">Precio</span>
-                  <Money amount={producto.price} size="lg" />
-                </div>
-                <p className="text-xs text-ink-faint">
-                  Cambiar precios necesita el permiso <code>products.price.update</code>.
-                </p>
-              </div>
+                + Nueva
+              </Button>
             )}
           </div>
-        </Seccion>
+        </Field>
 
-        <Seccion titulo="Compra y costo">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Unidad de compra" hint="Cómo llega del proveedor.">
-              <Select
-                value={unidadCompra}
-                disabled={enviando}
+        {nuevaCategoria !== null && (
+          <Field label="Nombre de la categoría nueva">
+            <div className="flex gap-2">
+              <Input
+                value={nuevaCategoria}
+                autoFocus
+                maxLength={80}
+                className="flex-1"
                 onChange={(e) => {
-                  setUnidadCompra(e.target.value as UnidadDeCompra)
+                  setNuevaCategoria(e.target.value)
                 }}
-              >
-                {UNIDADES_DE_COMPRA.map((u) => (
-                  <option key={u} value={u}>
-                    {NOMBRE_DE_UNIDAD_DE_COMPRA[u]}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
-            <Field
-              label="Unidades por compra"
-              hint={`Cuántos ${politicaVenta.simbolo} trae una ${NOMBRE_DE_UNIDAD_DE_COMPRA[unidadCompra].toLowerCase()}.`}
-              error={problemaDeCantidad(porCompra, { permitirCero: false })}
-            >
-              <NumericInput
-                modo="cantidad"
-                value={porCompra}
-                disabled={enviando}
-                onChange={setPorCompra}
-              />
-            </Field>
-
-            {puedeVerCosto ? (
-              <>
-                <Field
-                  label="Costo"
-                  hint={
-                    puedeEditarCosto
-                      ? 'Vacío si no se sabe. No poner el precio: sería un margen falso.'
-                      : `Necesita el permiso products.cost.update para cambiarlo.`
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    void crearCategoria()
                   }
-                  error={problemaDeImporte(costo, { permitirCero: true })}
-                >
-                  <NumericInput
-                    modo="costo"
-                    value={costo}
-                    disabled={enviando || !puedeEditarCosto}
-                    onChange={setCosto}
-                  />
-                </Field>
-
-                <div className="flex flex-col justify-end gap-1 text-sm">
-                  <Linea etiqueta="Ganancia">
-                    {rentabilidad.ganancia === null ? (
-                      <span className="text-ink-faint">—</span>
-                    ) : (
-                      <Money amount={rentabilidad.ganancia} size="sm" />
-                    )}
-                  </Linea>
-                  <Linea etiqueta="Margen">{formatearPorcentaje(rentabilidad.margen)}</Linea>
-                  <Linea etiqueta="Markup">{formatearPorcentaje(rentabilidad.markup)}</Linea>
-                  {rentabilidad.bajoCosto && (
-                    <p className="text-xs text-danger">Se vende por debajo del costo.</p>
-                  )}
-                </div>
-
-                {costoCambio && (
-                  <Field
-                    label="Motivo del cambio de costo"
-                    required
-                    className="sm:col-span-2"
-                    hint="Obligatorio. Queda en el historial de costos, que no se puede editar."
-                    error={faltaMotivoCosto && motivoCosto.length > 0 ? 'Escribí un motivo.' : null}
-                  >
-                    <Input
-                      value={motivoCosto}
-                      disabled={enviando}
-                      placeholder="Ej: aumento del proveedor, lista de mayo"
-                      onChange={(e) => {
-                        setMotivoCosto(e.target.value)
-                      }}
-                    />
-                  </Field>
-                )}
-              </>
-            ) : (
-              <p className="text-xs text-ink-faint sm:col-span-2">
-                El costo y el margen necesitan el permiso <code>products.cost.view</code>.
-              </p>
-            )}
-          </div>
-        </Seccion>
-
-        <Seccion titulo="Inventario">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {esAlta ? (
-              <Field
-                label={`Stock inicial (${politicaVenta.simbolo})`}
-                hint="Cuánto entra hoy. Queda como movimiento inicial del libro."
-                error={problemaDeCantidad(stockInicial, { unidad: unidadVenta })}
+                }}
+              />
+              <Button variant="secondary" onClick={() => void crearCategoria()}>
+                Crear
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setNuevaCategoria(null)
+                }}
               >
-                <NumericInput
-                  modo="cantidad"
-                  unidad={unidadVenta}
-                  value={stockInicial}
-                  disabled={enviando}
-                  onChange={setStockInicial}
-                />
-              </Field>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-baseline justify-between rounded-lg border border-line bg-sunken px-4 py-3">
-                  <span className="text-sm text-ink-muted">Stock actual</span>
-                  <span className="text-lg font-semibold text-ink" data-numeric="">
-                    {formatearCantidadConUnidad(producto.totalStock, producto.saleUnit)}
-                  </span>
-                </div>
-                <p className="text-xs text-ink-faint">
-                  El stock no se edita acá: se mueve con el botón <strong>Ajustar</strong> de la
-                  pantalla de stock, que pide motivo y deja la operación en el libro.
-                </p>
-              </div>
-            )}
-
-            <CampoMinimo
-              valor={minimo}
-              onCambio={setMinimo}
-              deshabilitado={enviando}
-              unidad={unidadVenta}
-              stock={producto?.totalStock ?? stockInicial}
-            />
-          </div>
-        </Seccion>
-
-        {/*
-          Trazabilidad SOLO al editar, y con su propio botón.
-
-          No al dar de alta porque un producto que todavía no existe no tiene
-          stock que repartir ni id al que colgarle partidas. Y con botón propio
-          porque cambiar la política NO es un campo más del formulario: activar
-          lotes obligatorios sobre un producto con stock exige antes decir de
-          qué partida es cada unidad, y eso es una operación con su motivo y su
-          fila en el libro de atribuciones.
-        */}
-        {!esAlta && (
-          <Seccion titulo="Trazabilidad">
-            <Trazabilidad productId={producto.id} deshabilitado={enviando} />
-          </Seccion>
+                Cancelar
+              </Button>
+            </div>
+          </Field>
         )}
 
-        {!esAlta && <ActividadReciente productId={producto.id} abierto={abierto} />}
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+          {campoPrecio}
+          {campoStock}
+        </div>
+
+        <CampoCodigoDeBarras
+          value={codigo}
+          onChange={setCodigo}
+          productoId={producto?.id ?? null}
+          deshabilitado={enviando}
+          onConfirmado={() => {
+            requestAnimationFrame(() => {
+              botonGuardar.current?.focus()
+            })
+          }}
+        />
+
+        {!esAlta && puedeEditarPrecio && (
+          <Checkbox
+            checked={activo}
+            disabled={enviando}
+            label="En venta"
+            description="Si lo sacás de venta, deja de aparecer en Vender."
+            onChange={(e) => {
+              setActivo(e.target.checked)
+            }}
+          />
+        )}
+
+        <div className="border-t border-line pt-3">
+          <Button
+            variant="ghost"
+            aria-expanded={masOpciones}
+            onClick={() => {
+              setMasOpciones((v) => !v)
+            }}
+          >
+            {masOpciones ? 'Menos opciones ▴' : 'Más opciones ▾'}
+          </Button>
+        </div>
+
+        {masOpciones && (
+          <div className="flex flex-col gap-6">
+            <Seccion titulo="Cómo se vende">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field
+                  label="Se vende por"
+                  hint={
+                    esAlta
+                      ? 'Por unidad, o por peso si se pesa en la balanza.'
+                      : 'No se puede cambiar si el producto ya tiene ventas o movimientos.'
+                  }
+                >
+                  <Select
+                    value={unidadVenta}
+                    disabled={enviando}
+                    onChange={(e) => {
+                      const u = e.target.value as UnidadDeVenta
+                      setUnidadVenta(u)
+                      if (esAlta) setMinimo(formatearCantidadParaEditar(minimoSugerido(u), u))
+                    }}
+                  >
+                    {UNIDADES_DE_VENTA.map((u) => (
+                      <option key={u} value={u}>
+                        {POLITICA_DE_UNIDAD[u].nombre} ({POLITICA_DE_UNIDAD[u].simbolo})
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <CampoMinimo
+                  valor={minimo}
+                  onCambio={setMinimo}
+                  deshabilitado={enviando}
+                  unidad={unidadVenta}
+                  stock={producto?.totalStock ?? stockInicial}
+                />
+              </div>
+            </Seccion>
+
+            <Seccion titulo="Costo">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {puedeVerCosto ? (
+                  <>
+                    <Field
+                      label="Costo"
+                      hint={
+                        puedeEditarCosto
+                          ? 'Lo que te cuesta a vos. Vacío si no lo sabés.'
+                          : 'Tu usuario no puede cambiar el costo.'
+                      }
+                      error={problemaDeImporte(costo, { permitirCero: true })}
+                    >
+                      <NumericInput
+                        modo="costo"
+                        value={costo}
+                        disabled={enviando || !puedeEditarCosto}
+                        onChange={setCosto}
+                      />
+                    </Field>
+
+                    <div className="flex flex-col justify-end gap-1 text-sm">
+                      <Linea etiqueta="Ganancia">
+                        {rentabilidad.ganancia === null ? (
+                          <span className="text-ink-faint">—</span>
+                        ) : (
+                          <Money amount={rentabilidad.ganancia} size="sm" />
+                        )}
+                      </Linea>
+                      <Linea etiqueta="Margen">{formatearPorcentaje(rentabilidad.margen)}</Linea>
+                      <Linea etiqueta="Recargo sobre el costo">
+                        {formatearPorcentaje(rentabilidad.markup)}
+                      </Linea>
+                      {rentabilidad.bajoCosto && (
+                        <p className="text-sm font-semibold text-danger">
+                          ✕ Se vende por debajo del costo.
+                        </p>
+                      )}
+                    </div>
+
+                    {costoCambio && (
+                      <Field
+                        label="¿Por qué cambia el costo?"
+                        required
+                        className="sm:col-span-2"
+                        hint="Queda guardado en el historial de costos."
+                        error={
+                          faltaMotivoCosto && motivoCosto.length > 0 ? 'Escribí un motivo.' : null
+                        }
+                      >
+                        <Input
+                          value={motivoCosto}
+                          disabled={enviando}
+                          placeholder="Por ejemplo: aumento del proveedor"
+                          onChange={(e) => {
+                            setMotivoCosto(e.target.value)
+                          }}
+                        />
+                      </Field>
+                    )}
+
+                    <Field label="Viene en" hint="Cómo te lo trae el proveedor.">
+                      <Select
+                        value={unidadCompra}
+                        disabled={enviando}
+                        onChange={(e) => {
+                          setUnidadCompra(e.target.value as UnidadDeCompra)
+                        }}
+                      >
+                        {UNIDADES_DE_COMPRA.map((u) => (
+                          <option key={u} value={u}>
+                            {NOMBRE_DE_UNIDAD_DE_COMPRA[u]}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+
+                    <Field
+                      label={`${politicaVenta.simbolo} por ${NOMBRE_DE_UNIDAD_DE_COMPRA[unidadCompra].toLowerCase()}`}
+                      error={problemaDeCantidad(porCompra, { permitirCero: false })}
+                    >
+                      <NumericInput
+                        modo="cantidad"
+                        value={porCompra}
+                        disabled={enviando}
+                        onChange={setPorCompra}
+                      />
+                    </Field>
+                  </>
+                ) : (
+                  <p className="text-sm text-ink-muted sm:col-span-2">
+                    Tu usuario no puede ver costos.
+                  </p>
+                )}
+              </div>
+            </Seccion>
+
+            <Seccion titulo="Otros datos">
+              <div className="grid grid-cols-1 gap-4">
+                {proveedores.length > 0 && (
+                  <Field label="Proveedor">
+                    <Select
+                      value={proveedor}
+                      disabled={enviando}
+                      onChange={(e) => {
+                        setProveedor(e.target.value)
+                      }}
+                    >
+                      <option value="">Sin proveedor</option>
+                      {proveedores.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                )}
+                <Field label="Descripción">
+                  <Textarea
+                    rows={2}
+                    value={descripcion}
+                    disabled={enviando}
+                    onChange={(e) => {
+                      setDescripcion(e.target.value)
+                    }}
+                  />
+                </Field>
+                <CodigosDeBarras
+                  principal={codigo}
+                  alternativos={alternativos}
+                  deshabilitado={enviando}
+                  onPrincipal={setCodigo}
+                  onAlternativos={setAlternativos}
+                  soloAlternativos
+                />
+              </div>
+            </Seccion>
+
+            {/*
+              Lotes SOLO al editar, con su propio boton, y solo si la
+              instalacion usa lotes (`KIOSCO_FUNCIONES=lotes`).
+            */}
+            {!esAlta && usaLotes && (
+              <Seccion titulo="Lotes y vencimientos">
+                <Trazabilidad productId={producto.id} deshabilitado={enviando} />
+              </Seccion>
+            )}
+
+            {!esAlta && <ActividadReciente productId={producto.id} abierto={abierto} />}
+          </div>
+        )}
       </div>
     </Dialog>
   )
@@ -625,14 +763,14 @@ function CampoMinimo({
 
   return (
     <Field
-      label={`Mínimo de reposición (${politicaDe(unidad).simbolo})`}
+      label={`Avisar cuando queden (${politicaDe(unidad).simbolo})`}
       error={problemaDeCantidad(valor, { unidad })}
       hint={
         minimo <= 0
-          ? 'Cero: sin mínimo. No va a avisar cuando quede poco.'
+          ? 'Con 0 no avisa nunca que queda poco.'
           : hay > 0 && hay <= minimo
-            ? 'Con el stock actual ya está bajo mínimo.'
-            : 'Avisa cuando quede esta cantidad o menos.'
+            ? 'Con lo que hay hoy ya figura como «Stock bajo».'
+            : 'Cuando quede esta cantidad o menos, figura como «Stock bajo».'
       }
     >
       <NumericInput
@@ -649,7 +787,7 @@ function CampoMinimo({
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section>
-      <h3 className="mb-3 border-b border-line pb-1.5 text-xs font-semibold tracking-wide text-ink-faint uppercase">
+      <h3 className="mb-3 border-b border-line pb-1.5 text-base font-semibold text-ink">
         {titulo}
       </h3>
       {children}

@@ -1,6 +1,6 @@
 'use client'
 
-import { forwardRef, useId, type KeyboardEvent, type ReactNode } from 'react'
+import { forwardRef, useId, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { cn } from './cn'
 import { Spinner } from './Button'
 import type { BarcodeStatus } from './BarcodeInput'
@@ -43,6 +43,94 @@ function teclaDe(e: KeyboardEvent<HTMLInputElement>): TeclaDelLector | null {
   if (e.ctrlKey || e.altKey || e.metaKey) return null
   const k = e.key === '−' ? '-' : e.key
   return TECLAS.has(k) ? (k as TeclaDelLector) : null
+}
+
+/**
+ * Teclas que NO se repiten al dejarlas apretadas (UX V5).
+ *
+ * Un Enter o un + sostenido disparaba la accion treinta veces por segundo:
+ * treinta unidades de mas, o un cobro abierto y confirmado sin querer. Un
+ * lector nunca manda una tecla repetida --cada caracter es una pulsacion
+ * nueva--, asi que ignorar la repeticion no lo afecta. Las flechas si se
+ * repiten: recorrer una lista larga dejando la flecha apretada es normal.
+ */
+const SIN_REPETICION = new Set<TeclaDelLector>(['Enter', '+', '-', 'Delete'])
+
+/**
+ * Un lector que escribe ENCIMA de lo que habia.
+ *
+ * Si alguien tenia "coc" escrito y pasa un producto por el lector, el campo
+ * queda "coc7790001000011" y eso, para la gramatica, es una busqueda por
+ * nombre: el codigo se perdia. Los lectores USB escriben cada caracter con
+ * pocos milisegundos de diferencia; una persona, no. Si los ultimos digitos
+ * llegaron en rafaga, son un codigo leido.
+ */
+const DIGITOS_MINIMOS_DE_RAFAGA = 6
+const PAUSA_MAXIMA_DE_RAFAGA_MS = 40
+/**
+ * Entre un digito escrito a mano y el primero del lector pasa, como minimo,
+ * el tiempo de agarrar el lector. Un lector que se traba en medio de una
+ * lectura tarda bastante menos.
+ */
+const PAUSA_DE_PERSONA_MS = 250
+/** Cuantas teclas recientes se recuerdan para separar lo escrito de lo leido. */
+const TECLAS_RECORDADAS = 64
+
+/** Un EAN-8, UPC-A, EAN-13 o GTIN-14 con su digito verificador correcto. */
+function esGtin(digitos: string): boolean {
+  if (![8, 12, 13, 14].includes(digitos.length) || !/^[0-9]+$/.test(digitos)) return false
+  let suma = 0
+  for (let i = digitos.length - 2, peso = 3; i >= 0; i--, peso = 4 - peso) {
+    suma += Number(digitos[i]) * peso
+  }
+  return (10 - (suma % 10)) % 10 === Number(digitos[digitos.length - 1])
+}
+
+interface Tecla {
+  t: number
+  c: string
+}
+
+/**
+ * Que parte de los digitos del final paso el lector.
+ *
+ * `digitos` son todos los digitos con que termina el campo; los ultimos
+ * `enRafaga` llegaron a velocidad de lector. Si hay digitos ANTES de la
+ * rafaga, pueden ser dos cosas:
+ *
+ *   - la misma lectura, cortada porque la computadora se trabo unos
+ *     milisegundos: el codigo es todo;
+ *   - numeros que la persona escribio antes de pasar el producto ("500",
+ *     "agua 500"): el codigo es solo la rafaga.
+ *
+ * Se decide por como se escribieron esos digitos (a ritmo de persona, o
+ * pegados al lector) y, si no alcanza, por cual de las dos opciones es un
+ * codigo de barras valido. Solo se separan si esos digitos se escribieron
+ * en este campo y se sabe cuando: ante la duda, el codigo es todo, como
+ * siempre.
+ */
+function codigoLeido(digitos: string, enRafaga: number, teclas: readonly Tecla[]): string {
+  const antes = digitos.length - enRafaga
+  if (antes <= 0 || enRafaga <= 0) return digitos
+  const previas = teclas.slice(-(enRafaga + antes), -enRafaga)
+  const primera = teclas[teclas.length - enRafaga]
+  const sabidas =
+    primera !== undefined &&
+    previas.length === antes &&
+    previas.map((t) => t.c).join('') === digitos.slice(0, antes)
+  if (!sabidas) return digitos
+
+  const ultimaPrevia = previas[previas.length - 1]
+  const aMano =
+    ultimaPrevia !== undefined &&
+    primera.t - ultimaPrevia.t > PAUSA_DE_PERSONA_MS &&
+    previas.every((t, i) => {
+      const anterior = previas[i - 1]
+      return anterior === undefined || t.t - anterior.t > PAUSA_MAXIMA_DE_RAFAGA_MS
+    })
+  const rafaga = digitos.slice(-enRafaga)
+  const porElVerificador = !esGtin(digitos) && esGtin(rafaga)
+  return aMano || porElVerificador ? rafaga : digitos
 }
 
 export interface ScannerInputProps {
@@ -92,10 +180,14 @@ export const ScannerInput = forwardRef<HTMLInputElement, ScannerInputProps>(func
   ref,
 ) {
   const id = useId()
+  /** Pulsaciones imprimibles recientes y seguidas, para reconocer un lector. */
+  const rafagaRef = useRef<Tecla[]>([])
+  /** Las ultimas pulsaciones imprimibles, seguidas o no. */
+  const teclasRef = useRef<Tecla[]>([])
   const idAyuda = `${id}-ayuda`
 
   const borde = {
-    idle: 'border-line focus:border-primary',
+    idle: 'border-line-strong focus:border-primary',
     reading: 'border-primary',
     ok: 'border-success',
     error: 'border-danger',
@@ -138,17 +230,79 @@ export const ScannerInput = forwardRef<HTMLInputElement, ScannerInputProps>(func
             onValueChange(e.target.value)
           }}
           onKeyDown={(e) => {
+            const ahora = performance.now()
+            const rafaga = rafagaRef.current
+            if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+              const anterior = rafaga[rafaga.length - 1]
+              const seguido =
+                anterior !== undefined && ahora - anterior.t <= PAUSA_MAXIMA_DE_RAFAGA_MS
+              rafagaRef.current = seguido ? [...rafaga, { t: ahora, c: e.key }] : [{ t: ahora, c: e.key }] // prettier-ignore
+              teclasRef.current = [...teclasRef.current, { t: ahora, c: e.key }].slice(
+                -TECLAS_RECORDADAS,
+              )
+            } else if (e.key !== 'Enter' && e.key !== 'Shift') {
+              // Borrar o mover el cursor: lo recordado ya no coincide con el
+              // texto del campo.
+              rafagaRef.current = []
+              teclasRef.current = []
+            }
+
             const tecla = teclaDe(e)
             if (tecla === null) return
-            if (onKey(tecla, e.currentTarget.value)) e.preventDefault()
+            if (e.repeat && SIN_REPETICION.has(tecla)) {
+              e.preventDefault()
+              return
+            }
+
+            const valor = e.currentTarget.value
+            if (tecla === 'Enter') {
+              // La rafaga es la PRUEBA de que paso un lector: los ultimos
+              // digitos llegaron juntos, como solo los manda un lector.
+              const caracteres = rafagaRef.current.map((r) => r.c)
+              let desde = caracteres.length
+              while (desde > 0 && /[0-9]/.test(caracteres[desde - 1] ?? '')) desde--
+              const enRafaga = caracteres.length - desde
+              const teclas = teclasRef.current
+              rafagaRef.current = []
+              teclasRef.current = []
+              const paseUnLector = enRafaga >= DIGITOS_MINIMOS_DE_RAFAGA
+              // El CODIGO son los digitos del final del campo, no solo los de
+              // la ultima rafaga: si la computadora se trabo unos milisegundos
+              // en medio de la lectura, la rafaga se corta pero el codigo sigue
+              // entero en el campo. Salvo que esos digitos de mas los haya
+              // escrito la persona antes de pasar el producto.
+              const digitos = /[0-9]+$/.exec(valor)?.[0] ?? ''
+              const leido = paseUnLector ? codigoLeido(digitos, enRafaga, teclas) : digitos
+              const antes = valor.slice(0, valor.length - leido.length)
+              // Habia algo escrito antes de la lectura: TEXTO ("coc") o
+              // numeros escritos a mano ("500"). Si no habia nada, es una
+              // lectura comun y va por el camino de siempre.
+              const habiaAlgo = /[^0-9\s]/.test(antes) || leido !== digitos
+              if (paseUnLector && habiaAlgo && leido.length >= enRafaga) {
+                // Se procesa el codigo y se devuelve lo que la persona habia
+                // escrito antes, como estaba.
+                e.preventDefault()
+                onKey('Enter', leido)
+                onValueChange(antes)
+                return
+              }
+            }
+            if (onKey(tecla, valor)) e.preventDefault()
           }}
           onFocus={() => onEditingChange?.(true)}
-          onBlur={() => onEditingChange?.(false)}
+          onBlur={() => {
+            // Las teclas recordadas NO se olvidan al salir: tocar una
+            // categoria saca el foco un instante y lo devuelve, y lo escrito
+            // sigue en el campo. Si mientras tanto el texto cambio por otro
+            // lado, ya no coinciden con el y `codigoLeido` no las usa.
+            rafagaRef.current = []
+            onEditingChange?.(false)
+          }}
           className={cn(
             // 56 px con el dedo; 48 con el mouse, donde ese renglon de mas
             // vale una fila de producto (V3).
-            'h-control-lg w-full rounded-lg border bg-sunken pr-11 pl-11 text-lg text-ink transition-colors lg:h-12',
-            'placeholder:text-ink-faint hover:border-line-strong disabled:opacity-50',
+            'h-control-lg w-full rounded-lg border bg-field pr-11 pl-11 text-lg text-ink transition-colors',
+            'placeholder:text-ink-faint hover:border-ink-faint disabled:bg-disabled-bg disabled:text-disabled-ink',
             borde,
           )}
         />

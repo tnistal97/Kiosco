@@ -13,8 +13,10 @@
  * pinta como exito, el cajero cobra y entrega la mercaderia por una venta
  * que no existe.
  *
- * Desde UX V2 Fase 1 los medios son botones, "paga con" tiene el foco al
- * abrir, hay importes rapidos y Enter cobra: eso tambien se prueba aca.
+ * UX V5: TOTAL, "¿Cómo paga?" con seis botones grandes, RECIBIDO y VUELTO, y
+ * CONFIRMAR VENTA. El foco arranca en la forma de pago: las flechas la
+ * cambian y Enter la elige y pasa a "Recibido" (o a Confirmar). Sin vuelto
+ * que dar, la venta termina sola; con vuelto, se muestra grande.
  */
 
 import { describe, it, expect, vi } from 'vitest'
@@ -52,7 +54,10 @@ const LINEAS: CartLine[] = [
 // del navegador cambiara, esta prueba se entera.
 const TOTAL = sumarMontos(precioPorCantidad('4850.00', '2.000'), '1690.00')
 
-function abrirCobro(onCobrar: (pagos: PagoParaEnviar[]) => Promise<number>) {
+function abrirCobro(
+  onCobrar: (pagos: PagoParaEnviar[]) => Promise<number>,
+  onNuevaVenta: () => void = () => undefined,
+) {
   return render(
     <DialogoCobro
       abierto
@@ -60,12 +65,20 @@ function abrirCobro(onCobrar: (pagos: PagoParaEnviar[]) => Promise<number>) {
       total={TOTAL}
       onCerrar={() => undefined}
       onCobrar={onCobrar}
-      onNuevaVenta={() => undefined}
+      onNuevaVenta={onNuevaVenta}
     />,
   )
 }
 
-const pagaCon = () => screen.getByLabelText(/^paga con/i)
+const recibido = () => screen.getByLabelText(/^recibido/i)
+const confirmar = () => screen.getByRole('button', { name: /^confirmar venta/i })
+
+/** Al abrir, el foco va a la forma de pago (en el cuadro siguiente). */
+async function esperarFocoInicial() {
+  await waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Efectivo' }))
+  })
+}
 
 describe('Cuando el pago esta declarado', () => {
   const efectivo = { method: 'CASH' as const, importe: '', recibido: '' }
@@ -75,7 +88,7 @@ describe('Cuando el pago esta declarado', () => {
     expect(pagoDeclarado(efectivoVacio, false)).toBe(false)
   })
 
-  it('escribir con cuanto paga, o el importe, alcanza', () => {
+  it('escribir cuanto recibio, o el importe, alcanza', () => {
     expect(pagoDeclarado([{ ...efectivo, recibido: '15000' }], false)).toBe(true)
     expect(pagoDeclarado([{ ...efectivo, importe: '11390' }], false)).toBe(true)
   })
@@ -89,66 +102,83 @@ describe('Cuando el pago esta declarado', () => {
   })
 })
 
-describe('Resumen y vuelto', () => {
-  it('muestra las lineas y el total', async () => {
+describe('Lo que se ve', () => {
+  it('TOTAL grande y los articulos a un toque', async () => {
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
-    // Dos veces cada uno: plegados para el telefono y a la vista en
-    // escritorio. Lo que importa es que en escritorio NO haya que desplegar
-    // nada para ver lo que se esta por cobrar (V3).
-    expect(screen.getAllByText('Yerba mate 1 kg')).toHaveLength(2)
-    expect(screen.getAllByText('Leche entera 1 L')).toHaveLength(2)
-    expect(screen.getAllByText('2 artículos')).toHaveLength(2)
+    expect(screen.getByText('TOTAL')).toBeInTheDocument()
     expect(screen.getAllByText(/11\.390/).length).toBeGreaterThan(0)
+    expect(screen.getByText('Ver los 2 artículos')).toBeInTheDocument()
+    expect(screen.getByText('Yerba mate 1 kg')).toBeInTheDocument()
   })
 
-  it('arranca en efectivo, con el foco en "paga con"', async () => {
+  it('seis formas de pago grandes, con Mercado Pago y Fiado', async () => {
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
-    expect(screen.getByRole('radio', { name: 'Efectivo' })).toBeChecked()
+    for (const nombre of [
+      'Efectivo',
+      'Transferencia',
+      'Mercado Pago',
+      'Débito',
+      'Crédito',
+      'Fiado',
+    ]) {
+      expect(screen.getByRole('radio', { name: nombre })).toBeInTheDocument()
+    }
+    // "Otro" existe pero no ocupa lugar: esta en "Más opciones".
+    expect(screen.queryByRole('radio', { name: 'Otro' })).toBeNull()
+  })
+
+  it('arranca en efectivo, con el foco en la forma de pago', async () => {
+    abrirCobro(() => Promise.resolve(1))
+    await screen.findByRole('dialog')
+
+    const efectivo = screen.getByRole('radio', { name: 'Efectivo' })
+    expect(efectivo).toBeChecked()
     await waitFor(() => {
-      expect(document.activeElement).toBe(pagaCon())
+      expect(document.activeElement).toBe(efectivo)
     })
   })
 
-  it('calcula el vuelto y lo muestra en grande', async () => {
+  it('calcula el VUELTO y lo muestra en grande', async () => {
     const usuario = userEvent.setup()
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
-    await usuario.type(pagaCon(), '15000')
+    await usuario.type(recibido(), '15000')
 
     // 15.000 − 11.390 = 3.610
     await waitFor(() => {
       expect(screen.getByText(/3\.610/)).toBeInTheDocument()
     })
-    expect(screen.getByText(/3\.610/).className).toMatch(/text-3xl/)
+    expect(screen.getByText('VUELTO')).toBeInTheDocument()
+    expect(screen.getByText(/3\.610/).className).toMatch(/text-4xl/)
   })
 
-  it('avisa cuando el monto recibido no alcanza', async () => {
+  it('avisa cuando lo recibido no alcanza', async () => {
     const usuario = userEvent.setup()
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
-    await usuario.type(pagaCon(), '5000')
+    await usuario.type(recibido(), '5000')
 
     await waitFor(() => {
-      expect(screen.getByText(/se recibió menos/i)).toBeInTheDocument()
+      expect(screen.getByText(/te dio menos que el total/i)).toBeInTheDocument()
     })
-    expect(screen.getByRole('button', { name: /^cobrar/i })).toBeDisabled()
+    expect(confirmar()).toBeDisabled()
   })
 
-  it('el monto recibido solo aparece con efectivo', async () => {
+  it('"Recibido" solo aparece con efectivo', async () => {
     const usuario = userEvent.setup()
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
-    expect(pagaCon()).toBeInTheDocument()
+    expect(recibido()).toBeInTheDocument()
 
     await usuario.click(screen.getByRole('radio', { name: 'Débito' }))
-    expect(screen.queryByLabelText(/^paga con/i)).toBeNull()
+    expect(screen.queryByLabelText(/^recibido/i)).toBeNull()
   })
 
   it('propone billetes por encima del total, y "Justo"', async () => {
@@ -162,10 +192,10 @@ describe('Resumen y vuelto', () => {
     expect(screen.getByRole('button', { name: /20\.000/ })).toBeInTheDocument()
 
     await usuario.click(screen.getByRole('button', { name: /20\.000/ }))
-    expect(pagaCon()).toHaveValue('20.000,00')
+    expect(recibido()).toHaveValue('20.000,00')
 
     await usuario.click(screen.getByRole('button', { name: /^justo/i }))
-    expect(pagaCon()).toHaveValue('11.390,00')
+    expect(recibido()).toHaveValue('11.390,00')
   })
 
   it('acepta "15.000" con punto de miles como quince mil', async () => {
@@ -173,52 +203,94 @@ describe('Resumen y vuelto', () => {
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
-    await usuario.type(pagaCon(), '15.000')
+    await usuario.type(recibido(), '15.000')
     await waitFor(() => {
       expect(screen.getByText(/3\.610/)).toBeInTheDocument()
     })
   })
+
+  it('el cliente aparece solo con Fiado', async () => {
+    const usuario = userEvent.setup()
+    abrirCobro(() => Promise.resolve(1))
+    await screen.findByRole('dialog')
+
+    expect(screen.queryByText(/^Cliente/)).toBeNull()
+    await usuario.click(screen.getByRole('radio', { name: 'Fiado' }))
+    expect(screen.getByText(/^Cliente/)).toBeInTheDocument()
+  })
 })
 
-describe('Teclado del cobro', () => {
-  it('una letra elige el medio, aunque el foco este en "paga con"', async () => {
+describe('Teclado del cobro: flechas recorren, Enter avanza', () => {
+  it('las flechas cambian la forma de pago y Enter la elige y pasa a "Recibido"', async () => {
     const usuario = userEvent.setup()
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
     await waitFor(() => {
-      expect(document.activeElement).toBe(pagaCon())
+      expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Efectivo' }))
     })
+
+    await usuario.keyboard('{ArrowRight}')
+    expect(screen.getByRole('radio', { name: 'Transferencia' })).toBeChecked()
+    await usuario.keyboard('{ArrowLeft}')
+    expect(screen.getByRole('radio', { name: 'Efectivo' })).toBeChecked()
+
+    await usuario.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(recibido())
+    })
+  })
+
+  it('Enter sobre una forma que no es efectivo pasa a Confirmar', async () => {
+    const usuario = userEvent.setup()
+    abrirCobro(() => Promise.resolve(1))
+    await screen.findByRole('dialog')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Efectivo' }))
+    })
+
+    await usuario.keyboard('{ArrowRight}')
+    await usuario.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(confirmar())
+    })
+  })
+
+  it('una letra elige la forma de pago, aunque el foco este en "Recibido"', async () => {
+    const usuario = userEvent.setup()
+    abrirCobro(() => Promise.resolve(1))
+    await screen.findByRole('dialog')
+    await esperarFocoInicial()
+    recibido().focus()
 
     await usuario.keyboard('t')
     expect(screen.getByRole('radio', { name: 'Transferencia' })).toBeChecked()
-    expect(screen.queryByLabelText(/^paga con/i)).toBeNull()
+    expect(screen.queryByLabelText(/^recibido/i)).toBeNull()
+
+    await usuario.keyboard('m')
+    expect(screen.getByRole('radio', { name: 'Mercado Pago' })).toBeChecked()
 
     await usuario.keyboard('e')
     expect(screen.getByRole('radio', { name: 'Efectivo' })).toBeChecked()
-    await waitFor(() => {
-      expect(document.activeElement).toBe(pagaCon())
-    })
   })
 
   it('J pone el importe justo', async () => {
     const usuario = userEvent.setup()
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
-    await waitFor(() => {
-      expect(document.activeElement).toBe(pagaCon())
-    })
+    await esperarFocoInicial()
+    recibido().focus()
 
     await usuario.keyboard('j')
-    expect(pagaCon()).toHaveValue('11.390,00')
+    expect(recibido()).toHaveValue('11.390,00')
   })
 
-  it('Enter en "paga con" cobra', async () => {
+  it('Enter en "Recibido" confirma la venta y muestra el vuelto', async () => {
     const usuario = userEvent.setup()
     const cobrar = vi.fn(() => Promise.resolve(9))
     abrirCobro(cobrar)
     await screen.findByRole('dialog')
 
-    await usuario.type(pagaCon(), '15000')
+    await usuario.type(recibido(), '15000')
     // Los primeros 300 ms no cobran: es lo que separa un Enter a proposito
     // de uno que rebota desde el ticket.
     await esperar(350)
@@ -235,80 +307,115 @@ describe('Teclado del cobro', () => {
     const cobrar = vi.fn(() => Promise.resolve(9))
     abrirCobro(cobrar)
     await screen.findByRole('dialog')
-    await waitFor(() => {
-      expect(document.activeElement).toBe(pagaCon())
-    })
+    await esperarFocoInicial()
+    recibido().focus()
+    await usuario.keyboard('j')
 
     await usuario.keyboard('{Enter}')
     expect(cobrar).not.toHaveBeenCalled()
   })
 
-  it('Enter NO cobra mientras nadie dijo con cuanto paga', async () => {
-    // El caso que mas importa de la V3: dos Enter distraidos desde el
-    // buscador no pueden terminar en una venta registrada. El campo esta
-    // vacio --lo que se ve en gris es un placeholder-- asi que no hay pago
+  it('Enter NO cobra mientras nadie dijo como se paga', async () => {
+    // Dos Enter distraidos no pueden terminar en una venta: con el cursor en
+    // "Recibido" vacio y sin haber elegido forma de pago, no hay pago
     // declarado, y Enter no vende por mucho que se espere.
     const usuario = userEvent.setup()
     const cobrar = vi.fn(() => Promise.resolve(9))
     abrirCobro(cobrar)
     await screen.findByRole('dialog')
+    await esperarFocoInicial()
+    recibido().focus()
     await esperar(350)
 
     await usuario.keyboard('{Enter}')
     await usuario.keyboard('{Enter}')
     expect(cobrar).not.toHaveBeenCalled()
-    expect(screen.getByText(/falta decir cómo se paga/i)).toBeInTheDocument()
+    expect(screen.getByText(/falta decir cómo paga/i)).toBeInTheDocument()
 
     // Y en cuanto se declara --J pone el importe justo--, cobra.
     await usuario.keyboard('j')
     await usuario.keyboard('{Enter}')
-    await screen.findByText(/venta registrada/i)
-    expect(cobrar).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(cobrar).toHaveBeenCalledTimes(1)
+    })
   })
 
-  it('el campo "paga con" no propone el total como si estuviera cargado', async () => {
+  it('el campo "Recibido" no propone el total como si estuviera cargado', async () => {
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
-    expect(pagaCon()).toHaveValue('')
-    expect(pagaCon().getAttribute('placeholder')).not.toMatch(/11\.390/)
-    expect(screen.getByText(/sin declarar/i)).toBeInTheDocument()
+    expect(recibido()).toHaveValue('')
+    expect(recibido().getAttribute('placeholder')).not.toMatch(/11\.390/)
   })
 
-  it('elegir un medio ya es declarar como se paga: Enter confirma', async () => {
+  it('elegir Mercado Pago lo manda como transferencia con referencia', async () => {
     const usuario = userEvent.setup()
     const cobrar = vi.fn(() => Promise.resolve(9))
-    abrirCobro(cobrar)
+    const nueva = vi.fn()
+    abrirCobro(cobrar, nueva)
     await screen.findByRole('dialog')
     await esperar(350)
 
+    await usuario.click(screen.getByRole('radio', { name: 'Mercado Pago' }))
+    await usuario.click(confirmar())
+
+    await waitFor(() => {
+      expect(cobrar).toHaveBeenCalledTimes(1)
+    })
+    const [pagos] = cobrar.mock.calls[0] as unknown as [PagoParaEnviar[]]
+    expect(pagos).toEqual([{ method: 'TRANSFER', amount: TOTAL, reference: 'Mercado Pago' }])
+  })
+
+  it('sin vuelto que dar la venta termina sola: no hay otra pantalla que cerrar', async () => {
+    const usuario = userEvent.setup()
+    const cobrar = vi.fn(() => Promise.resolve(9))
+    const nueva = vi.fn()
+    abrirCobro(cobrar, nueva)
+    await screen.findByRole('dialog')
+    await esperarFocoInicial()
+    await esperar(350)
+
+    // T elige Transferencia; Enter la confirma y pasa a "Confirmar venta";
+    // el segundo Enter confirma la venta.
     await usuario.keyboard('t')
     expect(screen.getByRole('radio', { name: 'Transferencia' })).toBeChecked()
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Transferencia' }))
+    })
+    await usuario.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(confirmar())
+    })
     await usuario.keyboard('{Enter}')
 
-    await screen.findByText(/venta registrada/i)
+    await waitFor(() => {
+      expect(nueva).toHaveBeenCalledOnce()
+    })
     expect(cobrar).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText(/^vuelto$/i)).toBeNull()
   })
 })
 
 describe('Pago dividido', () => {
-  it('muestra un renglon por medio y el pendiente', async () => {
+  it('esta en "Más opciones" y muestra un renglon por medio', async () => {
     const usuario = userEvent.setup()
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
 
+    expect(screen.queryByRole('button', { name: /dividir el pago/i })).toBeNull()
+    await usuario.click(screen.getByRole('button', { name: /más opciones/i }))
     await usuario.click(screen.getByRole('button', { name: /dividir el pago/i }))
 
     expect(screen.getByRole('radiogroup', { name: 'Medio del pago 1' })).toBeInTheDocument()
     expect(screen.getByRole('radiogroup', { name: 'Medio del pago 2' })).toBeInTheDocument()
 
     // El primero se lleva lo que reste: la venta ya esta cubierta.
-    expect(screen.getByText(/cubierto/i)).toBeInTheDocument()
+    expect(screen.getByText(/cubre el total/i)).toBeInTheDocument()
 
     // Con un importe en el primero, el segundo (sin importe) toma el resto.
     await usuario.type(screen.getByLabelText('Importe del pago 1'), '10000')
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /^cobrar/i })).toBeEnabled()
+      expect(confirmar()).toBeEnabled()
     })
   })
 })
@@ -325,7 +432,7 @@ describe('Proteccion contra el doble cobro', () => {
     )
 
     abrirCobro(cobrar)
-    const boton = await screen.findByRole('button', { name: /^cobrar/i })
+    const boton = await screen.findByRole('button', { name: /^confirmar venta/i })
 
     await usuario.click(boton)
     await usuario.click(boton)
@@ -336,15 +443,17 @@ describe('Proteccion contra el doble cobro', () => {
     resolver(42)
   })
 
-  it('despues de una venta correcta el boton de cobrar ya no esta', async () => {
+  it('despues de una venta con vuelto el boton de confirmar ya no esta', async () => {
     const usuario = userEvent.setup()
     const cobrar = vi.fn(() => Promise.resolve(42))
 
     abrirCobro(cobrar)
-    await usuario.click(await screen.findByRole('button', { name: /^cobrar/i }))
+    await screen.findByRole('dialog')
+    await usuario.type(recibido(), '15000')
+    await usuario.click(confirmar())
 
     await screen.findByText(/venta registrada/i)
-    expect(screen.queryByRole('button', { name: /^cobrar/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^confirmar venta/i })).toBeNull()
     expect(cobrar).toHaveBeenCalledTimes(1)
   })
 
@@ -358,7 +467,7 @@ describe('Proteccion contra el doble cobro', () => {
         }),
     )
 
-    await usuario.click(await screen.findByRole('button', { name: /^cobrar/i }))
+    await usuario.click(await screen.findByRole('button', { name: /^confirmar venta/i }))
     await usuario.keyboard('{Escape}')
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
@@ -366,19 +475,19 @@ describe('Proteccion contra el doble cobro', () => {
   })
 })
 
-describe('Una venta correcta', () => {
-  it('muestra numero, total, medio y vuelto', async () => {
+describe('Una venta correcta con vuelto', () => {
+  it('muestra numero, total, medio y VUELTO grande', async () => {
     const usuario = userEvent.setup()
     abrirCobro(() => Promise.resolve(128))
     await screen.findByRole('dialog')
 
-    await usuario.type(pagaCon(), '15000')
-    await usuario.click(screen.getByRole('button', { name: /^cobrar/i }))
+    await usuario.type(recibido(), '15000')
+    await usuario.click(confirmar())
 
     await screen.findByText(/venta registrada/i)
     expect(screen.getByText(/#128/)).toBeInTheDocument()
     expect(screen.getByText('Efectivo')).toBeInTheDocument()
-    expect(screen.getByText(/vuelto/i)).toBeInTheDocument()
+    expect(screen.getByText('VUELTO')).toBeInTheDocument()
     // El vuelto es lo que se lee en voz alta: va en el tamanio mas grande.
     expect(screen.getByText(/3\.610/).className).toMatch(/text-4xl/)
     expect(screen.getByRole('button', { name: /nueva venta/i })).toBeInTheDocument()
@@ -388,10 +497,11 @@ describe('Una venta correcta', () => {
 describe('Una venta rechazada', () => {
   it('un 403 NO se muestra como exito', async () => {
     const usuario = userEvent.setup()
+    const nueva = vi.fn()
     const cobrar = vi.fn(() => Promise.reject(new Error('No tiene permiso para registrar ventas')))
 
-    abrirCobro(cobrar)
-    await usuario.click(await screen.findByRole('button', { name: /^cobrar/i }))
+    abrirCobro(cobrar, nueva)
+    await usuario.click(await screen.findByRole('button', { name: /^confirmar venta/i }))
 
     await screen.findByRole('alert')
     expect(screen.getByText(/no se registró la venta/i)).toBeInTheDocument()
@@ -401,6 +511,7 @@ describe('Una venta rechazada', () => {
       screen.queryByText(/venta registrada/i),
       'un rechazo del servidor se pinto como una venta correcta',
     ).toBeNull()
+    expect(nueva, 'un rechazo dejo la caja lista para otra venta').not.toHaveBeenCalled()
   })
 
   it('un fallo deja reintentar', async () => {
@@ -411,12 +522,12 @@ describe('Una venta rechazada', () => {
       .mockResolvedValueOnce(77)
 
     abrirCobro(cobrar)
-    const boton = await screen.findByRole('button', { name: /^cobrar/i })
-
-    await usuario.click(boton)
+    await screen.findByRole('dialog')
+    await usuario.type(recibido(), '15000')
+    await usuario.click(confirmar())
     await screen.findByRole('alert')
 
-    await usuario.click(screen.getByRole('button', { name: /^cobrar/i }))
+    await usuario.click(confirmar())
     await screen.findByText(/venta registrada/i)
 
     expect(cobrar).toHaveBeenCalledTimes(2)
@@ -427,7 +538,7 @@ describe('Una venta rechazada', () => {
     const usuario = userEvent.setup()
     abrirCobro(() => Promise.reject(new Error('Stock insuficiente de Yerba mate 1 kg')))
 
-    await usuario.click(await screen.findByRole('button', { name: /^cobrar/i }))
+    await usuario.click(await screen.findByRole('button', { name: /^confirmar venta/i }))
     await screen.findByRole('alert')
 
     // El cajero necesita saber QUE falto para resolverlo en el mostrador.

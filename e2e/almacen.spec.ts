@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { PRODUCTOS, entrar, escanear, totalDelTicket } from './ayudantes'
+import { PRODUCTOS, entrar, escanear, totalDelTicket, terminarVenta } from './ayudantes'
 
 /**
  * Lo que la Fase 3B agrega, de punta a punta y contra el navegador.
@@ -38,28 +38,50 @@ async function buscar(page: Page, texto: string): Promise<void> {
 async function abrirFicha(page: Page, nombre: string) {
   await page.goto('/productos')
   await buscar(page, nombre)
-  await filaCon(page, nombre).locator('button[aria-expanded]').first().click()
-  await page.getByRole('menuitem', { name: 'Editar' }).click()
+  // V5: "Editar" esta a la vista en la fila, con palabra.
+  await filaCon(page, nombre)
+    .getByRole('button', { name: /^Editar / })
+    .click()
   await tituloDelDialogo(page).waitFor()
   return page.getByRole('dialog')
 }
 
+/** Lo que no es nombre, categoria, precio, stock ni codigo esta en "Más opciones". */
+async function masOpciones(ficha: ReturnType<Page['getByRole']>): Promise<void> {
+  await ficha.getByRole('button', { name: /más opciones/i }).click()
+}
+
 test.describe('Un producto que se cuenta', () => {
-  test('se crea con su unidad y el escaneo agrega una sola unidad', async ({ page }) => {
+  test('se crea con lo basico, el codigo se escanea y el escaneo en la caja agrega una sola unidad', async ({
+    page,
+  }) => {
     await entrar(page, 'encargado')
 
     await page.goto('/productos')
     await page.getByRole('button', { name: /nuevo producto/i }).click()
     await tituloDelDialogo(page).waitFor()
 
+    // Cinco campos a la vista y nada mas: nombre, categoria, precio, cuantos
+    // hay y el codigo. La unidad, el costo y el minimo, en "Más opciones".
     const ficha = page.getByRole('dialog')
+    await expect(ficha.getByLabel(/se vende por/i)).toHaveCount(0)
+    await expect(ficha.getByLabel(/^costo/i)).toHaveCount(0)
     await ficha.getByLabel('Nombre').fill('Fosforos largos')
-    await ficha.getByLabel(/código principal/i).fill('9001111100001')
-    await ficha.getByLabel(/unidad de venta/i).selectOption('UNIT')
-    await ficha.getByLabel(/^precio por/i).fill('890')
-    await ficha.getByLabel(/stock inicial/i).fill('12')
-    await ficha.getByRole('button', { name: 'Crear' }).click()
-    await page.waitForTimeout(1500)
+    await ficha.getByLabel(/precio de venta/i).fill('890')
+    await ficha.getByLabel(/unidades que tenés ahora/i).fill('12')
+
+    // El codigo, como lo manda un lector USB: rapido y con Enter. Enter NO
+    // guarda el formulario: confirma el codigo y pasa a "Guardar producto".
+    await ficha.getByLabel('Código de barras').click()
+    await page.keyboard.type('9001111100001', { delay: 5 })
+    await page.keyboard.press('Enter')
+    await expect(ficha.getByText('✓ Código detectado')).toBeVisible()
+    await expect(ficha.getByRole('button', { name: 'Guardar producto' })).toBeFocused()
+    await expect(page.getByRole('dialog')).toHaveCount(1)
+
+    // Y Enter sobre "Guardar producto" lo guarda.
+    await page.keyboard.press('Enter')
+    await expect(page.getByText('Producto creado.')).toBeVisible()
 
     await page.goto('/venta')
     await escanear(page, '9001111100001')
@@ -129,9 +151,9 @@ test.describe('Un producto que se pesa', () => {
       .click()
     await page
       .getByRole('dialog')
-      .getByRole('button', { name: /^cobrar/i })
+      .getByRole('button', { name: /^confirmar venta/i })
       .click()
-    await page.getByRole('button', { name: 'Nueva venta' }).waitFor()
+    await terminarVenta(page)
 
     // El libro lo anoto con la fraccion exacta.
     await page.goto('/stock/movimientos')
@@ -163,7 +185,7 @@ test.describe('Un producto que se pesa', () => {
     // Con los dos movimientos: el original no se edito ni se borro.
     await page.goto('/stock/movimientos')
     await buscar(page, PRODUCTOS.queso.nombre)
-    await expect(filaCon(page, 'Anulación de venta')).toContainText('0,500')
+    await expect(filaCon(page, 'Venta anulada')).toContainText('0,500')
   })
 
   test('un ajuste fraccionado deja su fila en el libro', async ({ page }) => {
@@ -194,17 +216,19 @@ test.describe('El costo', () => {
     await entrar(page, 'encargado')
 
     const ficha = await abrirFicha(page, PRODUCTOS.leche.nombre)
+    await masOpciones(ficha)
     await expect(ficha.getByLabel(/^costo/i)).toHaveCount(1)
     await expect(ficha.getByText('Margen', { exact: true })).toHaveCount(1)
-    await expect(ficha.getByText('Markup', { exact: true })).toHaveCount(1)
+    await expect(ficha.getByText('Recargo sobre el costo', { exact: true })).toHaveCount(1)
 
     await ficha.getByLabel(/^costo/i).fill('1300')
     // El campo de motivo aparece solo cuando el costo cambia de verdad.
-    await ficha.getByLabel(/motivo del cambio de costo/i).fill('Aumento del proveedor')
+    await ficha.getByLabel(/por qué cambia el costo/i).fill('Aumento del proveedor')
     await ficha.getByRole('button', { name: 'Guardar cambios' }).click()
     await page.waitForTimeout(2000)
 
     const otraVez = await abrirFicha(page, PRODUCTOS.leche.nombre)
+    await masOpciones(otraVez)
     await expect(otraVez.getByText('Actividad reciente')).toHaveCount(1)
     await expect(otraVez.getByText(/^Costo:/)).toHaveCount(1)
     await expect(otraVez.getByText('Aumento del proveedor')).toHaveCount(1)
@@ -216,7 +240,7 @@ test.describe('El costo', () => {
     await page.goto('/productos')
     await buscar(page, PRODUCTOS.leche.nombre)
 
-    await expect(page.getByText('Markup')).toHaveCount(0)
+    await expect(page.getByText('Recargo sobre el costo')).toHaveCount(0)
     await expect(page.getByText('Margen', { exact: true })).toHaveCount(0)
   })
 
@@ -262,7 +286,8 @@ test.describe('El lector encuentra por cualquiera de los codigos', () => {
     await entrar(page, 'encargado')
 
     const ficha = await abrirFicha(page, PRODUCTOS.gaseosa.nombre)
-    await ficha.getByPlaceholder(/escaneá o escribí/i).fill('9002222200002')
+    await masOpciones(ficha)
+    await ficha.getByLabel('Otros códigos').fill('9002222200002')
     await ficha.getByRole('button', { name: 'Agregar' }).click()
     await expect(ficha.getByText('9002222200002')).toHaveCount(1)
     await ficha.getByRole('button', { name: 'Guardar cambios' }).click()
@@ -280,7 +305,7 @@ test.describe('El stock ya no se edita desde la ficha', () => {
 
     const ficha = await abrirFicha(page, PRODUCTOS.yerba.nombre)
     await expect(ficha.getByText('Stock actual')).toHaveCount(1)
-    await expect(ficha.getByText(/se mueve con el botón/i)).toHaveCount(1)
+    await expect(ficha.getByText(/usá «Ajustar»/i)).toHaveCount(1)
 
     // Y no hay ningun campo para escribirlo.
     await expect(ficha.getByLabel(/^stock actual/i)).toHaveCount(0)
@@ -291,7 +316,8 @@ test.describe('El stock ya no se edita desde la ficha', () => {
     await entrar(page, 'encargado')
 
     const ficha = await abrirFicha(page, PRODUCTOS.yerba.nombre)
-    await ficha.getByLabel(/unidad de venta/i).selectOption('KG')
+    await masOpciones(ficha)
+    await ficha.getByLabel(/se vende por/i).selectOption('KG')
     await ficha.getByRole('button', { name: 'Guardar cambios' }).click()
 
     await expect(ficha.getByText(/no se puede cambiar la unidad de venta/i)).toHaveCount(1)

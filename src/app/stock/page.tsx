@@ -1,23 +1,21 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   PageContainer,
-  Alert,
   Button,
   ButtonLink,
-  Card,
   CardList,
   CardListItem,
   EmptyState,
   ErrorState,
-  MetricCard,
-  Money,
+  EstadoStockBadge,
+  Field,
   Pagination,
   SearchInput,
   Select,
   SkeletonRows,
-  StockBadge,
   TBody,
   TD,
   TH,
@@ -26,6 +24,8 @@ import {
   Table,
   TableWrap,
   aviso,
+  cn,
+  formatQuantity,
 } from '@/components/ui'
 import { DialogoAjusteStock } from '@/components/stock/DialogoAjusteStock'
 import { usePermiso } from '@/components/shell/SessionProvider'
@@ -35,19 +35,32 @@ import { parseReposicion, type ReposicionDTO } from '@/modules/inventory/dto'
 
 const POR_PAGINA = 25
 
+type Filtro = 'todos' | 'bajo' | 'sin'
+
 /**
- * Inventario.
+ * Stock. UX V5.
  *
- * Mira lo mismo que el catalogo pero desde la otra punta: aca importa cuanto
- * hay, no cuanto sale. Por eso arranca ordenado por lo que falta y el ajuste
- * es la accion principal de cada fila.
+ * Contesta una sola pregunta: "¿qué mercadería tengo?". Producto, cuánto hay
+ * y, solo cuando dice algo, el estado: "Stock bajo" o "Sin stock". Lo que
+ * falta se encuentra con un toque en "Stock bajo" o "Sin stock", que ademas
+ * dicen cuantos hay. Nada de metricas sueltas ni de precios: para eso esta
+ * Productos.
  *
- * Todo ajuste exige motivo y queda auditado. No hay forma de cambiar el stock
- * sin decir por que.
+ * `?estado=bajo` o `?estado=sin` abre la lista ya filtrada: es a donde lleva
+ * el aviso de Inicio.
  */
 export default function StockPage() {
+  return (
+    <Suspense fallback={null}>
+      <StockContenido />
+    </Suspense>
+  )
+}
+
+function StockContenido() {
   const puedeAjustar = usePermiso('stock.adjust')
   const puedeVerMovimientos = usePermiso('inventory.movements.view')
+  const puedeContar = usePermiso('inventoryCounts.view')
 
   const {
     products,
@@ -63,13 +76,15 @@ export default function StockPage() {
     fetchProducts,
     isLoading,
     error,
-  } = useProducts({ enServidor: true, pageSize: POR_PAGINA })
+  } = useProducts({
+    enServidor: true,
+    pageSize: POR_PAGINA,
+    // De la A a la Z. Sin pedirlo, la API ordena al reves y la lista
+    // empezaba por la Z aunque el encabezado dijera "▲".
+    filtrosIniciales: { sortBy: 'name', sortDir: 'asc' },
+  })
 
   const [ajustando, setAjustando] = useState<Product | null>(null)
-
-  // Los tres números son de TODA la sucursal, no de la página que se está
-  // viendo. Contar sobre `products` daba "2 agotados" cuando había 40, y esa
-  // clase de número es peor que no mostrar ninguno.
   const [reposicion, setReposicion] = useState<ReposicionDTO | null>(null)
 
   const recargarReposicion = useCallback(() => {
@@ -84,214 +99,243 @@ export default function StockPage() {
     recargarReposicion()
   }, [recargarReposicion])
 
+  const filtro: Filtro = filtros.sinStock ? 'sin' : filtros.lowStock ? 'bajo' : 'todos'
+
+  const elegirFiltro = useCallback(
+    (f: Filtro) => {
+      aplicarFiltros({ ...filtros, lowStock: f === 'bajo', sinStock: f === 'sin' })
+    },
+    [filtros, aplicarFiltros],
+  )
+
+  // El filtro que pide la direccion se aplica una sola vez, al entrar.
+  const params = useSearchParams()
+  const aplicado = useRef(false)
+  useEffect(() => {
+    if (aplicado.current) return
+    aplicado.current = true
+    const pedido = params.get('estado')
+    if (pedido === 'bajo' || pedido === 'sin') elegirFiltro(pedido)
+  }, [params, elegirFiltro])
+
+  const opciones: Array<{ valor: Filtro; etiqueta: string; cuantos: number | null }> = [
+    { valor: 'todos', etiqueta: 'Todos', cuantos: null },
+    { valor: 'bajo', etiqueta: 'Stock bajo', cuantos: reposicion?.bajoMinimo ?? null },
+    { valor: 'sin', etiqueta: 'Sin stock', cuantos: reposicion?.agotados ?? null },
+  ]
+
   return (
     <PageContainer>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <MetricCard label="Productos en esta página" value={products.length} />
-        <MetricCard
-          label="Bajo mínimo"
-          value={reposicion?.bajoMinimo ?? 0}
-          tone={(reposicion?.bajoMinimo ?? 0) > 0 ? 'warning' : 'neutral'}
-          detail="Llegaron al mínimo configurado"
-        />
-        <MetricCard
-          label="Agotados"
-          value={reposicion?.agotados ?? 0}
-          tone={(reposicion?.agotados ?? 0) > 0 ? 'danger' : 'neutral'}
-          detail="No se pueden vender"
-        />
-      </div>
-
-      {/* El aviso de que nadie configuró mínimos. Sin esto, "0 bajo mínimo" se
-          lee como "está todo bien", cuando lo que pasa es que el sistema no
-          sabe cuánto tiene que haber de nada. */}
-      {reposicion !== null && reposicion.sinMinimo > 0 && (
-        <Alert tone="info" title="Todavía no hay mínimos configurados">
-          {reposicion.sinMinimo === 1
-            ? 'Un producto activo no tiene mínimo de reposición.'
-            : `${reposicion.sinMinimo} productos activos no tienen mínimo de reposición.`}{' '}
-          Hasta que se los cargues, el aviso de stock bajo no puede sonar para ellos: solo vas a ver
-          los que ya están agotados. Se carga desde la ficha de cada producto.
-        </Alert>
-      )}
-
-      {puedeVerMovimientos && (
-        <div className="flex justify-end">
-          <ButtonLink href="/stock/lotes" variant="secondary" size="sm">
-            Lotes
-          </ButtonLink>
-          <ButtonLink href="/inventarios" variant="secondary" size="sm">
-            Inventarios
-          </ButtonLink>
-          <ButtonLink href="/stock/movimientos" variant="secondary" size="sm">
-            Ver movimientos
-          </ButtonLink>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+        <div className="min-w-0 flex-1">
+          <SearchInput
+            label="Buscar productos"
+            labelVisible
+            size="lg"
+            placeholder="Nombre o código de barras"
+            value={searchTerm}
+            loading={isLoading}
+            onClear={() => {
+              setSearchTerm('')
+            }}
+            onChange={(e) => {
+              setSearchTerm(e.target.value)
+            }}
+          />
         </div>
-      )}
-
-      <Card padded={false}>
-        <div className="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-end">
-          <div className="lg:max-w-md lg:flex-1">
-            <SearchInput
-              label="Buscar productos"
-              placeholder="Nombre o código de barras…"
-              value={searchTerm}
-              loading={isLoading}
-              onClear={() => {
-                setSearchTerm('')
-              }}
-              onChange={(e) => {
-                setSearchTerm(e.target.value)
-              }}
-            />
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Select
-              aria-label="Categoría"
-              value={filtros.categoryId === undefined ? '' : String(filtros.categoryId)}
-              onChange={(e) => {
-                aplicarFiltros({
-                  ...filtros,
-                  categoryId: e.target.value === '' ? undefined : Number(e.target.value),
-                })
-              }}
-              className="w-auto"
-            >
-              <option value="">Todas las categorías</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-
-            <Select
-              aria-label="Filtro de stock"
-              value={filtros.sinStock ? 'agotados' : filtros.lowStock ? 'bajos' : ''}
-              onChange={(e) => {
-                const v = e.target.value
-                aplicarFiltros({ ...filtros, lowStock: v === 'bajos', sinStock: v === 'agotados' })
-              }}
-              className="w-auto"
-            >
-              <option value="">Todo el inventario</option>
-              <option value="bajos">Solo bajo mínimo</option>
-              <option value="agotados">Solo agotados</option>
-            </Select>
-          </div>
-        </div>
-
-        <div className="p-3">
-          {error ? (
-            <ErrorState description={error} onRetry={() => void fetchProducts()} />
-          ) : isLoading ? (
-            <SkeletonRows rows={8} />
-          ) : products.length === 0 ? (
-            <EmptyState
-              title="Nada que mostrar"
-              description="Probá con otro texto o quitá los filtros."
-            />
-          ) : (
-            <>
-              <div className="hidden md:block">
-                <TableWrap className="border-0">
-                  <Table caption="Inventario de la sucursal">
-                    <THead>
-                      <TR>
-                        <TH>Producto</TH>
-                        <TH>Categoría</TH>
-                        <TH>Stock</TH>
-                        <TH align="right">Precio</TH>
-                        <TH align="right">
-                          <span className="sr-only">Acciones</span>
-                        </TH>
-                      </TR>
-                    </THead>
-                    <TBody>
-                      {products.map((p) => (
-                        <TR key={p.id}>
-                          <TD>
-                            <p className="font-medium text-ink">{p.name}</p>
-                            {p.barcode && (
-                              <p className="font-mono text-xs text-ink-faint">{p.barcode}</p>
-                            )}
-                          </TD>
-                          <TD className="text-ink-muted">{p.category.name}</TD>
-                          <TD>
-                            <StockBadge
-                              quantity={p.totalStock}
-                              minimum={p.minimumStock}
-                              unit={p.saleUnit}
-                            />
-                          </TD>
-                          <TD align="right">
-                            <Money amount={p.price} size="sm" tone="muted" />
-                          </TD>
-                          <TD align="right">
-                            {puedeAjustar && (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => {
-                                  setAjustando(p)
-                                }}
-                              >
-                                Ajustar
-                              </Button>
-                            )}
-                          </TD>
-                        </TR>
-                      ))}
-                    </TBody>
-                  </Table>
-                </TableWrap>
-              </div>
-
-              <CardList className="md:hidden">
-                {products.map((p) => (
-                  <CardListItem key={p.id}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-ink">{p.name}</p>
-                        <p className="mt-0.5 text-xs text-ink-faint">{p.category.name}</p>
-                        <div className="mt-2">
-                          <StockBadge
-                            quantity={p.totalStock}
-                            minimum={p.minimumStock}
-                            unit={p.saleUnit}
-                          />
-                        </div>
-                      </div>
-                      {puedeAjustar && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => {
-                            setAjustando(p)
-                          }}
-                        >
-                          Ajustar
-                        </Button>
-                      )}
-                    </div>
-                  </CardListItem>
-                ))}
-              </CardList>
-
-              <Pagination
-                className="mt-4"
-                page={page}
-                pageSize={POR_PAGINA}
-                total={total}
-                totalPages={totalPages}
-                onPageChange={setPage}
-                disabled={isLoading}
-              />
-            </>
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          {puedeVerMovimientos && (
+            <ButtonLink href="/stock/movimientos" variant="secondary" size="lg">
+              Ver movimientos
+            </ButtonLink>
+          )}
+          {puedeContar && (
+            <ButtonLink href="/inventarios" variant="secondary" size="lg">
+              Hacer inventario
+            </ButtonLink>
           )}
         </div>
-      </Card>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div role="group" aria-label="Mostrar" className="flex flex-wrap gap-2">
+          {opciones.map((o) => {
+            const activo = filtro === o.valor
+            return (
+              <button
+                key={o.valor}
+                type="button"
+                aria-pressed={activo}
+                onClick={() => {
+                  elegirFiltro(o.valor)
+                }}
+                className={cn(
+                  'inline-flex min-h-control items-center gap-2 rounded-md px-4 text-[0.9375rem] font-semibold transition-colors',
+                  activo
+                    ? 'border-2 border-primary bg-primary-quiet text-ink'
+                    : 'border border-line-strong bg-surface text-ink hover:bg-raised',
+                )}
+              >
+                {o.valor === 'bajo' && (
+                  <span aria-hidden="true" className="text-warning">
+                    ▲
+                  </span>
+                )}
+                {o.valor === 'sin' && (
+                  <span aria-hidden="true" className="text-danger">
+                    ✕
+                  </span>
+                )}
+                {o.etiqueta}
+                {o.cuantos !== null && (
+                  <span
+                    className="rounded-sm bg-raised px-1.5 text-sm text-ink-muted"
+                    data-numeric=""
+                  >
+                    {o.cuantos}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        <Field label="Categoría" className="sm:w-56">
+          <Select
+            value={filtros.categoryId === undefined ? '' : String(filtros.categoryId)}
+            onChange={(e) => {
+              aplicarFiltros({
+                ...filtros,
+                categoryId: e.target.value === '' ? undefined : Number(e.target.value),
+              })
+            }}
+          >
+            <option value="">Todas</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+
+      {error ? (
+        <ErrorState description={error} onRetry={() => void fetchProducts()} />
+      ) : isLoading ? (
+        <SkeletonRows rows={8} />
+      ) : products.length === 0 ? (
+        <EmptyState
+          title={
+            filtro === 'sin'
+              ? 'No hay productos sin stock'
+              : filtro === 'bajo'
+                ? 'No hay productos con stock bajo'
+                : 'No encontramos productos'
+          }
+          description={
+            filtro === 'todos'
+              ? 'Probá con otra palabra o elegí «Todas» en categoría.'
+              : 'Está todo en orden.'
+          }
+        />
+      ) : (
+        <>
+          <div className="hidden md:block">
+            <TableWrap>
+              <Table caption="Stock de la sucursal">
+                <THead>
+                  <TR>
+                    <TH>Producto</TH>
+                    <TH align="right">Stock actual</TH>
+                    <TH>Estado</TH>
+                    <TH align="right">
+                      <span className="sr-only">Acciones</span>
+                    </TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {products.map((p) => (
+                    <TR key={p.id}>
+                      <TD>
+                        <p className="font-semibold text-ink">{p.name}</p>
+                        <p className="text-sm text-ink-muted">{p.category.name}</p>
+                      </TD>
+                      <TD align="right" className="text-lg font-semibold" data-numeric="">
+                        {formatQuantity(p.totalStock, p.saleUnit)}
+                      </TD>
+                      <TD>
+                        <EstadoStockBadge estado={p.estado} mostrarNormal />
+                      </TD>
+                      <TD align="right">
+                        {puedeAjustar && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            aria-label={`Ajustar el stock de ${p.name}`}
+                            onClick={() => {
+                              setAjustando(p)
+                            }}
+                          >
+                            Ajustar
+                          </Button>
+                        )}
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </TableWrap>
+          </div>
+
+          <CardList className="md:hidden">
+            {products.map((p) => (
+              <CardListItem key={p.id}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-base font-semibold text-ink">{p.name}</p>
+                    <p className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="text-lg font-semibold text-ink" data-numeric="">
+                        {formatQuantity(p.totalStock, p.saleUnit)}
+                      </span>
+                      <EstadoStockBadge estado={p.estado} mostrarNormal />
+                    </p>
+                  </div>
+                  {puedeAjustar && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      aria-label={`Ajustar el stock de ${p.name}`}
+                      onClick={() => {
+                        setAjustando(p)
+                      }}
+                    >
+                      Ajustar
+                    </Button>
+                  )}
+                </div>
+              </CardListItem>
+            ))}
+          </CardList>
+
+          <Pagination
+            page={page}
+            pageSize={POR_PAGINA}
+            total={total}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            disabled={isLoading}
+          />
+        </>
+      )}
+
+      {reposicion !== null && reposicion.sinMinimo > 0 && filtro === 'bajo' && (
+        <p className="text-sm text-ink-muted">
+          {reposicion.sinMinimo === 1
+            ? 'Un producto no tiene cargado cuándo avisar que queda poco.'
+            : `${String(reposicion.sinMinimo)} productos no tienen cargado cuándo avisar que queda poco.`}{' '}
+          Se carga en Productos → Editar → Más opciones.
+        </p>
+      )}
 
       <DialogoAjusteStock
         producto={ajustando}
@@ -300,7 +344,7 @@ export default function StockPage() {
         }}
         onAjustado={() => {
           setAjustando(null)
-          aviso.ok('Stock ajustado. Quedó registrado en el libro de inventario.')
+          aviso.ok('Stock ajustado. Quedó en Movimientos.')
           void fetchProducts()
           recargarReposicion()
         }}

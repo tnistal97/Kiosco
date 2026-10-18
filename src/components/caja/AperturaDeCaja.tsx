@@ -161,7 +161,7 @@ export function AperturaDeCaja({ volver }: { volver: string }) {
       <PageHeader
         title="Abrir la caja"
         status={<StatusBadge tone="warning">Cerrada</StatusBadge>}
-        description="Contá lo que hay en el cajón y empezá el turno."
+        description="Contá la plata que hay en el cajón y abrí la caja."
       />
 
       {error && (
@@ -210,7 +210,7 @@ export function AperturaDeCaja({ volver }: { volver: string }) {
         </p>
 
         {conNota ? (
-          <Field label="Nota" hint="Queda en el turno. Opcional." className="mt-5">
+          <Field label="Nota" hint="Opcional." className="mt-5">
             <Textarea
               rows={2}
               value={nota}

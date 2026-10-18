@@ -123,7 +123,7 @@ export function Dialog({
       <DialogBackdrop
         transition={!rapido}
         className={cn(
-          'fixed inset-0 bg-overlay/80 backdrop-blur-[2px]',
+          'fixed inset-0 bg-scrim',
           rapido ? 'animate-aparecer' : 'transition-opacity duration-150 data-[closed]:opacity-0',
         )}
       />
@@ -264,7 +264,7 @@ export function ConfirmationDialog({
       }
     >
       <div className="flex flex-col gap-4">
-        <div className="text-sm text-ink-muted">{message}</div>
+        <div className="text-base text-ink">{message}</div>
         {children}
       </div>
     </Dialog>

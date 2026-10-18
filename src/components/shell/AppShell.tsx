@@ -5,7 +5,6 @@ import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode 
 import { Drawer, IconButton, cn } from '@/components/ui'
 import { navegacionPara, tituloDe } from './navigation'
 import { ListaGrupos, Marca, Sidebar } from './Sidebar'
-import { ThemeToggle } from './ThemeToggle'
 import { UserMenu } from './UserMenu'
 import { EstadoCaja } from './EstadoCaja'
 import { useSession, type SesionCliente } from './SessionProvider'
@@ -77,7 +76,7 @@ function useHayRed(): boolean {
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
-  const { session, permisos } = useSession()
+  const { session, permisos, funciones } = useSession()
   const [cajonAbierto, setCajonAbierto] = useState(false)
   /**
    * `null` = sin preferencia guardada; entonces la barra arranca expandida.
@@ -148,14 +147,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     return <SesionVencida pathname={pathname} />
   }
 
-  const grupos = navegacionPara(permisos)
+  const grupos = navegacionPara(permisos, funciones)
   const titulo = tituloDe(pathname)
   const comercio = session.branchName
 
   return (
     <div className="flex h-dvh overflow-hidden bg-bg">
       <Sidebar
-        permisos={permisos}
+        grupos={grupos}
         collapsed={contraida}
         onToggle={alternarContraida}
         comercio={comercio}
@@ -192,7 +191,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           la navegacion y el total. Ahora cada tabla se desplaza dentro de su
           propio contenedor, que es lo que corresponde.
         */}
-        <main id="contenido" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+        {/* `relative`: los textos solo para lectores de pantalla (`sr-only`,
+            posicion absoluta) se ubican dentro de este panel. Sin eso se
+            ubicaban en el documento, lo estiraban por debajo de la pantalla y
+            al terminar la lista se desplazaba la ventana entera, dejando una
+            franja vacia. */}
+        <main
+          id="contenido"
+          tabIndex={-1}
+          className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto focus:outline-none"
+        >
           {children}
         </main>
       </div>
@@ -236,16 +244,12 @@ function Cabecera({
         <Marca compacta nombre={session.branchName} />
       </div>
 
-      <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-ink sm:text-lg">
+      <h1 className="min-w-0 flex-1 truncate text-lg font-semibold text-ink sm:text-xl">
         {titulo}
       </h1>
 
       <div className="flex shrink-0 items-center gap-1 sm:gap-2">
         <EstadoCaja />
-        <span className="hidden max-w-40 truncate text-sm text-ink-muted xl:inline">
-          {session.branchName}
-        </span>
-        <ThemeToggle />
         <UserMenu session={session} />
       </div>
     </header>

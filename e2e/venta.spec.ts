@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { PRODUCTOS, entrar, escanear, leerMonto, totalDelTicket } from './ayudantes'
+import { PRODUCTOS, entrar, escanear, leerMonto, totalDelTicket, terminarVenta } from './ayudantes'
 
 /**
  * El camino que se recorre cien veces por dia: escanear, cobrar, siguiente.
@@ -30,10 +30,11 @@ test('registra una venta de tres productos escaneando', async ({ page }) => {
   const dialogo = page.getByRole('dialog')
   await expect(dialogo).toBeAttached()
 
-  await dialogo.getByRole('button', { name: /^cobrar/i }).click()
+  await dialogo.getByRole('button', { name: /^confirmar venta/i }).click()
 
-  await expect(page.getByText('Venta registrada')).toBeVisible()
-  await expect(page.getByText(/^#\d+$/)).toBeVisible()
+  // Sin vuelto, la venta termina sola y avisa; el numero queda en el ticket.
+  await expect(page.getByText(/Venta registrada/).first()).toBeVisible()
+  await expect(page.getByText(/^Última venta #\d+$/)).toBeVisible()
 })
 
 test('el foco vuelve al codigo despues de una venta', async ({ page }) => {
@@ -41,10 +42,10 @@ test('el foco vuelve al codigo despues de una venta', async ({ page }) => {
   await page.keyboard.press('F12')
 
   const dialogo = page.getByRole('dialog')
-  await dialogo.getByRole('button', { name: /^cobrar/i }).click()
+  await dialogo.getByRole('button', { name: /^confirmar venta/i }).click()
   await expect(page.getByText('Venta registrada')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Nueva venta' }).click()
+  await terminarVenta(page)
 
   // Listo para el proximo cliente sin tocar nada.
   await expect(page.locator('[data-barcode-input]')).toBeFocused()
@@ -109,7 +110,7 @@ test('la venta se puede hacer entera con el teclado', async ({ page }) => {
   const dialogo = page.getByRole('dialog')
   await expect(dialogo).toBeAttached()
 
-  await dialogo.getByRole('button', { name: /^cobrar/i }).click()
+  await dialogo.getByRole('button', { name: /^confirmar venta/i }).click()
   await expect(page.getByText('Venta registrada')).toBeVisible()
 })
 

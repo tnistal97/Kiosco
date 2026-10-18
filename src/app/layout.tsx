@@ -4,6 +4,7 @@ import { headers } from 'next/headers'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/server/auth/session'
 import { nombreDelComercio } from '@/server/comercio'
+import { funcionesHabilitadas, permisosVisibles } from '@/lib/funciones'
 import { ZONA_POR_DEFECTO } from '@/lib/tiempo'
 import { AppShell } from '@/components/shell/AppShell'
 import { SessionProvider, type SesionCliente } from '@/components/shell/SessionProvider'
@@ -21,7 +22,7 @@ export function generateMetadata(): Metadata {
     title: nombre,
     description: 'Punto de venta, caja y stock',
     manifest: '/manifest.json',
-    appleWebApp: { capable: true, title: nombre, statusBarStyle: 'black-translucent' },
+    appleWebApp: { capable: true, title: nombre, statusBarStyle: 'default' },
   }
 }
 
@@ -31,7 +32,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#0c1117',
+  themeColor: '#f4f5f7',
 }
 
 /**
@@ -62,7 +63,10 @@ async function sesionParaElCliente(): Promise<SesionCliente | null> {
     // que suponer que el dispositivo esta en el mismo huso que el comercio.
     // Ver docs/TIMEZONE_POLICY.md.
     timeZone: sucursal?.timeZone ?? ZONA_POR_DEFECTO,
-    permissions: [...session.permissions],
+    // Sin los permisos de las funciones que esta instalacion no usa (lotes,
+    // compras): asi cada pantalla esconde lo suyo sola. El servidor sigue
+    // autorizando con los permisos reales. Ver `@/lib/funciones`.
+    permissions: permisosVisibles(session.permissions, funcionesHabilitadas()),
   }
 }
 
@@ -85,7 +89,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           Saltar al contenido
         </a>
 
-        <SessionProvider session={session} comercio={nombreDelComercio()}>
+        <SessionProvider
+          session={session}
+          comercio={nombreDelComercio()}
+          funciones={funcionesHabilitadas()}
+        >
           <AppShell>{children}</AppShell>
         </SessionProvider>
 

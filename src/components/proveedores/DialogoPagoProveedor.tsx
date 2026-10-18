@@ -259,7 +259,7 @@ export function DialogoPagoProveedor({
           </Alert>
         )}
 
-        <div className="grid gap-3 rounded-lg bg-surface-2 p-3 text-sm sm:grid-cols-3">
+        <div className="grid gap-3 rounded-lg bg-sunken p-3 text-sm sm:grid-cols-3">
           <div>
             <div className="text-xs text-ink-faint">Saldo</div>
             <div className="font-medium text-ink" data-numeric="">

@@ -34,27 +34,34 @@ export type ButtonSize = 'sm' | 'md' | 'lg' | 'xl'
 const VARIANTES: Record<ButtonVariant, string> = {
   primary:
     'bg-primary text-ink-on-solid hover:bg-primary-hover active:bg-primary-hover border border-transparent font-semibold',
+  // UX V5: un solo color de accion. `confirm` existia para pintar de verde
+  // cobrar y guardar, pero el verde quedo reservado para "salio bien" (el
+  // aviso de venta registrada, un arqueo que cuadra). Se conserva el nombre
+  // para no tocar cada llamada; se ve igual que `primary`.
   confirm:
-    'bg-success text-ink-on-solid hover:bg-success-hover active:bg-success-hover border border-transparent font-semibold',
-  secondary:
-    'bg-raised text-ink hover:bg-line border border-line-strong hover:border-line-strong font-medium',
-  ghost: 'bg-transparent text-ink-muted hover:bg-raised hover:text-ink border border-transparent',
-  danger:
-    'bg-transparent text-danger hover:bg-danger-quiet border border-danger/45 hover:border-danger font-medium',
+    'bg-primary text-ink-on-solid hover:bg-primary-hover active:bg-primary-hover border border-transparent font-semibold',
+  secondary: 'bg-surface text-ink hover:bg-raised border border-line-strong font-semibold',
+  ghost:
+    'bg-transparent text-ink-muted hover:bg-raised hover:text-ink border border-transparent font-medium',
+  danger: 'bg-surface text-danger hover:bg-danger-quiet border border-danger font-semibold',
 }
 
 const TAMANIOS: Record<ButtonSize, string> = {
   sm: 'h-touch px-3 text-sm gap-2 rounded-md',
-  md: 'h-touch px-4 text-sm gap-2 rounded-md',
+  md: 'h-control px-4 text-[0.9375rem] gap-2 rounded-md',
   lg: 'h-control-lg px-6 text-base gap-2.5 rounded-lg',
   // Solo para la accion principal del punto de venta: cobrar. Se aprieta con
   // el cliente enfrente y tiene que encontrarse sin mirar.
   xl: 'h-control-xl px-8 text-lg gap-3 rounded-lg',
 }
 
+// Deshabilitado con colores propios y no con opacidad: un boton apagado al
+// 45 % quedaba en 2:1 y no se sabia si estaba apagado o mal impreso.
 const BASE =
   'inline-flex items-center justify-center whitespace-nowrap transition-colors select-none ' +
-  'disabled:opacity-45 disabled:pointer-events-none'
+  'disabled:pointer-events-none disabled:bg-disabled-bg disabled:text-disabled-ink ' +
+  'disabled:border-line disabled:shadow-none aria-disabled:pointer-events-none ' +
+  'aria-disabled:bg-disabled-bg aria-disabled:text-disabled-ink aria-disabled:border-line'
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
@@ -116,11 +123,15 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   { label, children, size = 'md', variant = 'ghost', className, ...rest },
   ref,
 ) {
+  // `px-0!` y no `p-0`: el tamanio del boton trae su `px-*`, y sin
+  // tailwind-merge gana el que el CSS ponga despues. Con `lg` ganaba `px-6`,
+  // al icono le quedaban 8 px y se encogia hasta ser un punto (el de la
+  // camara en Vender). `[&>svg]:shrink-0` es la segunda red.
   const cuadrado: Record<ButtonSize, string> = {
-    sm: 'h-touch w-touch p-0 rounded-md',
-    md: 'h-touch w-touch p-0 rounded-md',
-    lg: 'h-control-lg w-control-lg p-0 rounded-lg',
-    xl: 'h-control-xl w-control-xl p-0 rounded-lg',
+    sm: 'h-touch w-touch px-0! rounded-md [&>svg]:shrink-0',
+    md: 'h-control w-control px-0! rounded-md [&>svg]:shrink-0',
+    lg: 'h-control-lg w-control-lg px-0! rounded-lg [&>svg]:shrink-0',
+    xl: 'h-control-xl w-control-xl px-0! rounded-lg [&>svg]:shrink-0',
   }
 
   return (

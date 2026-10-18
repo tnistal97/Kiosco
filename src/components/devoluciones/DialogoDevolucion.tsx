@@ -468,7 +468,7 @@ export function DialogoDevolucion({
           />
         </Field>
 
-        <div className="flex justify-between rounded-lg bg-surface-2 p-3">
+        <div className="flex justify-between rounded-lg bg-sunken p-3">
           <span className="text-ink-muted">Crédito total</span>
           <span className="text-lg font-semibold text-ink" data-numeric="">
             <Money amount={credito} />

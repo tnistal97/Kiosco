@@ -60,7 +60,8 @@ export function DropdownMenu({
 
 const ITEM =
   'flex min-h-touch w-full items-center gap-2.5 rounded-md px-3 text-sm text-ink ' +
-  'data-[focus]:bg-raised data-[disabled]:opacity-45 data-[disabled]:pointer-events-none'
+  'data-[focus]:bg-primary-quiet data-[focus]:outline-2 data-[focus]:-outline-offset-2 data-[focus]:outline-focus ' +
+  'data-[disabled]:text-disabled-ink data-[disabled]:pointer-events-none'
 
 export function DropdownItem({
   children,

@@ -83,7 +83,7 @@ async function recibir(
 ): Promise<{ receiptId: number; total: string }> {
   return page.evaluate(
     async ({ supplierId: s, cajas: q, costo: c }) => {
-      const productos = await fetch('/api/products?pageSize=100').then(
+      const productos = await fetch('/api/products?q=Gaseosa%20cola&pageSize=20').then(
         (r) => r.json() as Promise<{ data: Array<{ id: number; name: string }> }>,
       )
       const gaseosa = productos.data.find((p) => p.name.includes('Gaseosa cola'))
