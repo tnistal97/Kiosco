@@ -1,27 +1,37 @@
 # Despliegue en luchandopormas.com
 
 > Servidor Oracle Cloud `gosto-vps` (`129.213.133.204`), Ubuntu 22.04.5 LTS
-> ARM64. Puesta en marcha del 3 de septiembre de 2026.
+> ARM64. Puesta en marcha del 3 de septiembre de 2026; última actualización
+> el 18 de octubre de 2026 (commit `2a11b76`).
 >
-> Este documento describe **este** despliegue. El de
-> [`PRODUCTION_CURRENT_STATE.md`](PRODUCTION_CURRENT_STATE.md) es otro
-> servidor (`kiosco.nistal.net`, PM2, Node 18) y no se tocó.
+> Este documento describe **este** despliegue. Al 18 de octubre los tres
+> dominios —`luchandopormas.com`, `almacen.nistal.net` y `kiosco.nistal.net`—
+> resuelven a este servidor. El de
+> [`PRODUCTION_CURRENT_STATE.md`](PRODUCTION_CURRENT_STATE.md) es el servidor
+> anterior (PM2, Node 18) y no se tocó.
 >
 > Ningún secreto vive en este archivo. Dónde están, sí; cuáles son, no.
 
 ## Qué corre y dónde
 
-| Pieza          | Valor                                                         |
-| -------------- | ------------------------------------------------------------- |
-| Código         | `/srv/kiosco/app` — clon de `release/almacen-v1`              |
-| Usuario        | `kiosco` (UID 116, de sistema, **sin sudo**, shell `nologin`) |
-| Proceso        | systemd, unidad `kiosco.service`                              |
-| Puerto interno | **127.0.0.1:3099** — nunca `0.0.0.0`                          |
-| Node           | 22.23.2 LTS (`apt-mark hold`, no sube solo a 24)              |
-| Base           | PostgreSQL 14.24, `kiosco`, escucha solo en `localhost`       |
-| Rol de base    | `kiosco` — no superusuario, sin `CREATEDB` ni `CREATEROLE`    |
-| Proxy          | Nginx 1.18, único servicio público                            |
-| Secretos       | `/srv/kiosco/app/.env` — `600 kiosco:kiosco`                  |
+| Pieza          | Valor                                                                        |
+| -------------- | ---------------------------------------------------------------------------- |
+| Código         | `/srv/kiosco/app` — clon de `feat/ux-v2-phase2-1-lista-navegacion`           |
+| Usuario        | `kiosco` (UID 116, de sistema, **sin sudo**, shell `nologin`)                |
+| Proceso        | systemd, unidad `kiosco.service`                                             |
+| Puerto interno | **127.0.0.1:3099** — nunca `0.0.0.0`                                         |
+| Node           | 22.23.2 LTS (`apt-mark hold`, no sube solo a 24)                             |
+| Base           | PostgreSQL 14.24, `kiosco`, escucha solo en `localhost`                      |
+| Rol de base    | `kiosco` — no superusuario, sin `CREATEDB` ni `CREATEROLE`                   |
+| Proxy          | Nginx 1.18, único servicio público                                           |
+| Secretos       | `/srv/kiosco/app/.env` — `600 kiosco:kiosco`                                 |
+| Funciones      | `KIOSCO_FUNCIONES` sin definir: modo almacén, sin Lotes ni Compras           |
+| Dominios       | `KIOSCO_HOSTS` con los tres, más `www.luchandopormas.com`                    |
+| Memoria        | 3,9 GB de RAM y 2 GB de swap, **compartidos con otras aplicaciones** (abajo) |
+
+`/srv/kiosco` es `750 kiosco:kiosco`: como `ubuntu`, un `test -f`, un `ls` o un
+comodín sobre algo de adentro fallan sin decir por qué. Para mirar, `sudo`; para
+tocar, `sudo -u kiosco`.
 
 ### Por qué systemd y no PM2
 
@@ -56,14 +66,56 @@ sudo -u kiosco bash -lc 'cd /srv/kiosco/app && set -a && . ./.env && set +a && n
 
 ### Desplegar una versión nueva
 
+Es la secuencia del despliegue del 18 de octubre de 2026. Antes de empezar:
+árbol limpio en el servidor, `origin/<rama>` en el commit que se quiere
+desplegar, y un respaldo de la base (ver [Respaldos](#respaldos)).
+
 ```bash
-sudo -u kiosco git -C /srv/kiosco/app pull --ff-only origin release/almacen-v1
-sudo -u kiosco bash -lc 'cd /srv/kiosco/app && npm ci --omit=dev --no-audit && npx prisma generate'
-sudo -u kiosco bash -lc 'cd /srv/kiosco/app && set -a && . ./.env && set +a && npx prisma migrate deploy'
-sudo -u kiosco bash -lc 'cd /srv/kiosco/app && set -a && . ./.env && set +a && npm run build'
-sudo systemctl restart kiosco
-curl -s http://127.0.0.1:3099/api/health   # el commit tiene que ser el nuevo
+APP=/srv/kiosco/app
+RAMA=feat/ux-v2-phase2-1-lista-navegacion
+PREV=/srv/kiosco/releases/prev-$(date -u +%Y%m%d-%H%M%S)
+
+# 0. Comprobar antes de tocar nada
+sudo -u kiosco git -C $APP status --porcelain        # tiene que salir vacío
+sudo -u kiosco git -C $APP fetch origin
+sudo -u kiosco git -C $APP rev-parse origin/$RAMA    # el commit esperado
+free -m                                              # ver "Memoria", abajo
+
+# 1. Detener y guardar lo que hoy funciona, para volver sin reconstruir
+sudo systemctl stop kiosco
+sudo -u kiosco mkdir -p $PREV
+sudo -u kiosco git -C $APP rev-parse HEAD | sudo -u kiosco tee $PREV/sha.txt
+sudo -u kiosco cp -a $APP/.next $PREV/next
+sudo -u kiosco mv $APP/node_modules $PREV/node_modules
+sudo test -f $APP/build-info.json && sudo -u kiosco cp -p $APP/build-info.json $PREV/
+
+# 2. Código, dependencias, base y build
+sudo -u kiosco git -C $APP checkout $RAMA
+sudo -u kiosco git -C $APP merge --ff-only origin/$RAMA
+sudo -u kiosco bash -lc "cd $APP && npm ci --no-audit --no-fund && npx prisma generate"
+sudo -u kiosco bash -lc "cd $APP && set -a && . ./.env && set +a && npx prisma migrate deploy"
+sudo -u kiosco bash -lc "cd $APP && set -a && . ./.env && set +a && npm run build"
+sudo test -f $APP/.next/BUILD_ID                     # sin esto, el build no terminó
+
+# 3. Arrancar y comprobar
+sudo systemctl daemon-reload
+sudo systemctl start kiosco
+curl -s http://127.0.0.1:3099/api/health             # el commit tiene que ser el nuevo
 ```
+
+**`npm ci` completo, sin `--omit=dev`.** El build necesita las dependencias de
+desarrollo —`typescript`, `tailwindcss`, `@tailwindcss/postcss`, `prisma`—: con
+`--omit=dev` no compila. `--omit=dev` solo sirve donde llega un artefacto ya
+construido, como en [`PRODUCTION_CUTOVER.md`](PRODUCTION_CUTOVER.md). Este
+servidor construye en el lugar. Con la caché de npm del usuario `kiosco`,
+`npm ci` tarda unos 30 segundos y el build unos 2 minutos.
+
+**Correrlo desatendido.** Si la conexión SSH se corta a mitad de camino, el
+servicio queda detenido y el árbol a medias. El 18 de octubre la secuencia se
+subió como guion a `/tmp` y se lanzó con
+`nohup setsid bash guion.sh > guion.log 2>&1 < /dev/null`. El guion volvía
+solo a la versión anterior si fallaba cualquier paso; el log quedó en
+`/srv/kiosco/backups/`.
 
 `build-info.json` no se versiona a propósito: lo escribe `npm run build`
 (`prebuild` → `scripts/escribir-build-info.mjs`) con la versión, el commit y
@@ -72,16 +124,63 @@ health de producción decía `commit: desconocido`: durante un incidente nadie
 habría sabido qué estaba corriendo. Si el commit del health no es el que se
 acaba de desplegar, el despliegue no terminó.
 
+### Memoria: el build puede tirar al resto del servidor
+
+El servidor tiene 3,9 GB de RAM y 2 GB de swap, y no es solo de Kiosco: corren
+otras aplicaciones, entre ellas `crmleads-worker.service` y el sitio de
+`cooperativajovenes.com`. Antes del despliegue del 18 de octubre la swap ya
+estaba usada a medias (1,2 GB).
+
+Ese día el primer build terminó bien. El segundo, idéntico, dejó al servidor
+sin memoria a las 13:07 UTC. El kernel mató un proceso de `crmleads-worker`,
+que systemd reinició solo a los 33 segundos. Durante unos cinco minutos el
+servidor no contestó SSH ni HTTPS. El build terminó igual y la aplicación
+arrancó bien.
+
+- **Con el servicio detenido**, como en la secuencia de arriba: libera unos
+  300 MB.
+- **Mirar `free -m` antes.** Si la memoria disponible está muy por debajo de
+  los 2,4 GB que había ese día, esperar o liberar antes de construir.
+- **La salida de fondo es no construir acá:** armar el artefacto en otra
+  máquina con `scripts/release-artifact.mjs`, como describe
+  [`PRODUCTION_CUTOVER.md`](PRODUCTION_CUTOVER.md). No está probado en este
+  servidor.
+
 ### Volver atrás
 
-El despliegue es un checkout de git: revertir es moverse de commit y
-reconstruir.
+El despliegue es un checkout de git: revertir es moverse de commit y volver
+a poner el `node_modules` y el `.next` de esa versión.
+
+**Rápido, con lo que guardó el paso 1** (sin reconstruir):
 
 ```bash
-sudo -u kiosco git -C /srv/kiosco/app log --oneline -10     # elegir destino
-sudo -u kiosco git -C /srv/kiosco/app checkout <SHA>
-# repetir npm ci / build / restart de arriba
+APP=/srv/kiosco/app
+PREV=/srv/kiosco/releases/prev-AAAAMMDD-HHMMSS        # el del despliegue a deshacer
+
+sudo systemctl stop kiosco
+sudo -u kiosco git -C $APP checkout "$(sudo cat $PREV/sha.txt)"
+sudo -u kiosco rm -rf $APP/node_modules $APP/.next
+sudo -u kiosco cp -a $PREV/node_modules $APP/node_modules
+sudo -u kiosco cp -a $PREV/next $APP/.next
+if sudo test -f $PREV/build-info.json; then
+  sudo -u kiosco cp -p $PREV/build-info.json $APP/build-info.json
+else
+  sudo -u kiosco rm -f $APP/build-info.json
+fi
+sudo systemctl start kiosco
+curl -s http://127.0.0.1:3099/api/health   # el commit anterior, o "desconocido"
 ```
+
+**`build-info.json` también vuelve.** Vive fuera de `.next`. Si se restaura el
+build viejo y se deja el `build-info.json` nuevo, `/api/health` informa el
+commit nuevo mientras corre el viejo, que es justo la mentira que el archivo
+vino a evitar. Pasó el 18 de octubre en una vuelta atrás automática y se
+corrigió antes de seguir.
+
+**Sin la copia del paso 1:** `checkout <SHA>` y repetir `npm ci` y build.
+
+El `checkout` de un SHA deja el repositorio con la cabeza separada. Para el
+despliegue siguiente, `git checkout <rama>` antes del `merge --ff-only`.
 
 **Si la versión nueva trajo migraciones, esto no alcanza.** Prisma no
 deshace migraciones: hay que restaurar la base desde el respaldo previo al
@@ -89,11 +188,32 @@ despliegue (abajo) y recién después mover el código.
 
 ## Respaldos
 
-| Qué                  | Dónde                           |
-| -------------------- | ------------------------------- |
-| Base (`pg_dump -Fc`) | `/var/backups/kiosco/db/`       |
-| Secretos y config    | `/var/backups/kiosco/config/`   |
-| Config del servidor  | `/var/backups/kiosco/config-*/` |
+| Qué                                 | Dónde                              |
+| ----------------------------------- | ---------------------------------- |
+| Base (`pg_dump -Fc`)                | `/var/backups/kiosco/db/`          |
+| Secretos y config                   | `/var/backups/kiosco/config/`      |
+| Config del servidor                 | `/var/backups/kiosco/config-*/`    |
+| Antes de cada despliegue (a mano)   | `/srv/kiosco/backups/pre-deploy-*` |
+| Versión anterior, lista para volver | `/srv/kiosco/releases/prev-*`      |
+
+**Antes de cada despliegue**, además del automático, un volcado propio con
+nombre del despliegue. Los permisos son `600 kiosco:kiosco` y la carpeta es
+`700`. `DATABASE_URL` sale del `.env` sin mostrarse. `pg_dump` no acepta el
+`?schema=public` que lleva Prisma, así que se recorta:
+
+```bash
+TS=$(date -u +%Y%m%d-%H%M%S)
+sudo install -d -m 700 -o kiosco -g kiosco /srv/kiosco/backups
+sudo -u kiosco bash -c 'umask 077; set -a; . /srv/kiosco/app/.env; set +a;
+  pg_dump --format=custom --no-password --file="$1" "${DATABASE_URL%%\?*}"' \
+  _ /srv/kiosco/backups/pre-deploy-$TS.dump
+sudo -u kiosco pg_restore --list /srv/kiosco/backups/pre-deploy-$TS.dump | head -5
+```
+
+Junto al volcado van copias del `.env`, de la unidad de systemd y de los vhosts
+de Nginx, en `/srv/kiosco/backups/pre-deploy-$TS-config/`. El del 18 de
+octubre es `pre-deploy-ux-v5-20261018-125545`. Su versión anterior,
+`6827064`, quedó en `/srv/kiosco/releases/prev-20261018-130155`.
 
 - Automático: `kiosco-backup.timer`, todos los días a las **03:15 UTC**
   (00:15 en Argentina), con `Persistent=true` — si la máquina estaba apagada,
@@ -181,6 +301,24 @@ la aplicación— pero nadie entra con la del repositorio.
 | Swap             | 2 GB, `vm.swappiness=10`, persistente en `/etc/fstab`   |
 | Journal          | tope de 500 MB, retención 1 mes                         |
 
+### Fail2ban también bloquea al que despliega
+
+La jaula `sshd` no distingue entre un atacante y el operador. El 18 de
+octubre, mientras el build tenía al servidor sin memoria, las conexiones SSH
+se cortaron con timeouts y resets. Fail2ban bloqueó la IP del operador
+durante una hora (13:07 a 14:07 UTC). Desde afuera se ve como un
+`Connection timed out` en el puerto 22, mientras HTTPS sigue andando.
+
+- Pocas conexiones y de a una. Nada de bucles que reintenten SSH cada pocos
+  segundos ni sondas TCP sueltas al puerto 22.
+- Lo largo, desatendido en el servidor (`nohup setsid`). Así un corte no
+  obliga a reconectar a ciegas.
+- Si el bloqueo ya ocurrió: esperar la hora. Si la IP ya había sido bloqueada
+  antes, el bloqueo dura más (es creciente). Si hay otra vía de entrada, como
+  otra IP o la consola de Oracle Cloud:
+  `sudo fail2ban-client status sshd` y
+  `sudo fail2ban-client set sshd unbanip <IP>`.
+
 ### Las dos capas de firewall
 
 Oracle Cloud instala sus **propias** reglas iptables además de UFW. En la
@@ -207,22 +345,86 @@ sirve a nadie de este lado.
 
 ## Nginx
 
-- `/etc/nginx/sites-available/luchandopormas.com` — el vhost.
+- `/etc/nginx/sites-enabled/luchandopormas.com` — el vhost de
+  `luchandopormas.com` y `www`. **Es un archivo, no un enlace, y no es el de
+  Kiosco** (ver abajo).
+- `/etc/nginx/sites-available/kiosco.nistal.net`, enlazado desde
+  `sites-enabled/` — `kiosco.nistal.net` y `almacen.nistal.net`. Lo administra
+  el plugin de Nginx de certbot y tiene tres bloques:
+  - 443 para `kiosco.nistal.net`, con su certificado;
+  - 443 para `almacen.nistal.net`, con el suyo;
+  - 80 para los dos, que redirige a HTTPS.
 - `/etc/nginx/conf.d/kiosco-global.conf` — zonas de límite y `server_tokens off`.
 - El vhost `default` de Ubuntu **no se tocó**: sigue atendiendo cualquier otro nombre.
 
-Límites: 30 req/s generales por IP, **5 por minuto en `/api/auth/login`**, 40
-conexiones simultáneas, cuerpo de 5 MB. El límite del login cubre lo que
-`src/server/auth/loginAttempts.ts` no ve: el mismo origen probando usuarios
-distintos.
+**`almacen.nistal.net` tiene bloque propio desde el 18 de octubre de 2026.**
+Antes compartía el bloque 443 de `kiosco.nistal.net` y presentaba ese
+certificado. El navegador daba error de certificado aunque la aplicación
+respondía bien detrás. Ya existía un certificado de `almacen.nistal.net`, pero
+ningún bloque lo usaba. Un bloque de Nginx tiene un solo certificado, así que
+se separó en dos con las mismas `location`. La renovación se comprobó con
+`certbot renew --dry-run --cert-name almacen.nistal.net`.
 
-Cabeceras: `Strict-Transport-Security` y `Content-Security-Policy` las pone
-Nginx; `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` y
-`Permissions-Policy` ya las pone Next (`next.config.ts`) y **no se duplican**.
+Al copiar un bloque `listen [::]:443 ssl ipv6only=on;`, el segundo va **sin**
+`ipv6only=on`: ese parámetro se puede poner una sola vez por dirección y
+puerto en toda la configuración.
 
-La CSP lleva `'unsafe-inline'` en `script-src` porque Next inyecta el estado
-de hidratación como script en línea. Quitarlo pide nonces por petición, que
-es un cambio en la aplicación y no en el proxy. `'unsafe-eval'` **no** está.
+### El vhost de `luchandopormas.com` es de otro proyecto
+
+Revisado el 18 de octubre de 2026. El archivo activo,
+`sites-enabled/luchandopormas.com`, lo escribió e instaló **otro proyecto del
+servidor**: AMEIRAA / Cooperativa Jóvenes. Su encabezado dice que se instala
+con el `deploy/install.sh` de ese proyecto y que su aplicación corre en
+`127.0.0.1:3010` (`cooperativajovenes.service`).
+
+En ese archivo alguien cambió a mano el `proxy_pass` a `3099`, y por eso el
+dominio muestra Kiosco. La copia de `sites-available/luchandopormas.com`
+todavía apunta a `3010`. El vhost original de Kiosco quedó guardado como
+`sites-available/luchandopormas.com.previo-20261005`.
+
+**El riesgo:** si ese otro proyecto vuelve a correr su instalador,
+`luchandopormas.com` pasa a mostrar la otra aplicación y Kiosco desaparece de
+ese dominio, sin tocar nada de Kiosco. `almacen.nistal.net` y
+`kiosco.nistal.net` no dependen de ese archivo. Queda por decidir a qué
+aplicación le corresponde el dominio.
+
+**Lo que hoy NO tiene ningún dominio de Kiosco**, comprobado leyendo los dos
+vhosts y las cabeceras de respuesta:
+
+- **Sin `limit_req` ni `limit_conn`.** Las zonas `kiosco_general`,
+  `kiosco_login` y `kiosco_conn` están definidas en `kiosco-global.conf`, pero
+  ningún vhost activo las usa. El límite de intentos de login de la
+  aplicación (`src/server/auth/loginAttempts.ts`) sigue valiendo. El de Nginx,
+  que cubría el mismo origen probando usuarios distintos, no.
+- **Sin `Strict-Transport-Security` ni `Content-Security-Policy`.** El vhost de
+  la Cooperativa no las pone porque supone que su aplicación las manda, y
+  Kiosco no las manda. Kiosco sí manda `X-Frame-Options`,
+  `X-Content-Type-Options`, `Referrer-Policy` y `Permissions-Policy`
+  (`next.config.ts`).
+- En `luchandopormas.com`, además:
+  - el cuerpo máximo es de 15 MB y no de 5;
+  - `/api/jobs/` responde 404, cosa que no afecta a Kiosco;
+  - si Kiosco está caído, el 502 muestra la página de error de la Cooperativa.
+
+Pendiente: volver a aplicar los límites y las cabeceras en los vhosts de
+Kiosco. No se hizo en el despliegue del 18 de octubre, que solo tocó el bloque
+de `almacen.nistal.net`.
+
+### Cómo era el vhost original
+
+Según la versión anterior de esta guía, el vhost original de Kiosco hacía
+esto. Su copia es `luchandopormas.com.previo-20261005`.
+
+- Límites: 30 req/s generales por IP, **5 por minuto en `/api/auth/login`**, 40
+  conexiones simultáneas y cuerpo de 5 MB.
+- Cabeceras: `Strict-Transport-Security` y `Content-Security-Policy` las ponía
+  Nginx. Las demás las pone Next y no se duplicaban.
+
+La CSP llevaba `'unsafe-inline'` en `script-src` porque Next inyecta el estado
+de hidratación como script en línea. Quitarlo pide nonces por petición, que es
+un cambio en la aplicación y no en el proxy. `'unsafe-eval'` **no** estaba.
+
+Después de cualquier cambio en Nginx:
 
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
@@ -250,9 +452,23 @@ se silencia.
 | Renovación | `certbot.timer`, dos veces por día             |
 | Método     | `webroot` sobre `/var/www/certbot`             |
 
-El certificado se pidió con `certonly --webroot` **a propósito**: el plugin
-de nginx reescribe el vhost, y este lleva CSP, límites de petición y cabeceras
-que no conviene que toque un renovador automático.
+Los de `kiosco.nistal.net` y `almacen.nistal.net` son dos certificados
+separados, uno por nombre:
+
+| Dato       | Valor                                                              |
+| ---------- | ------------------------------------------------------------------ |
+| Nombres    | `kiosco.nistal.net` y `almacen.nistal.net`, cada uno con el suyo   |
+| Vencen     | **2027-01-12** los dos                                             |
+| Renovación | `certbot.timer`; autenticador e instalador `nginx` (plugin)        |
+| Comprobado | `certbot renew --dry-run --cert-name almacen.nistal.net`, 18/10/26 |
+
+`certbot renew --dry-run` sin terminal espera un rato al azar, hasta unos 8
+minutos, antes de empezar; parece colgado y no lo está. Para probar a mano,
+`--no-random-sleep-on-renew`.
+
+El certificado de `luchandopormas.com` se pidió con `certonly --webroot` **a
+propósito**: el plugin de nginx reescribe el vhost, y no conviene que un
+renovador automático toque ese archivo.
 
 Como consecuencia, `options-ssl-nginx.conf` y `ssl-dhparams.pem` —que crea el
 plugin— no existen. Los parámetros TLS están escritos en el vhost. No hace
@@ -281,12 +497,26 @@ sudo certbot renew --dry-run       # probar la renovación sin gastarla
   cuando haya tiempo.
 - **El health dice el commit.** Ante cualquier duda sobre qué está corriendo:
   `curl -s https://luchandopormas.com/api/health`.
-- **Dos variables nuevas, las dos opcionales para esta instalación.**
-  `COMMERCE_NAME` es el nombre del comercio y se lee al atender (reiniciar, no
-  recompilar); si falta, sigue valiendo `NEXT_PUBLIC_COMMERCE_NAME`.
-  `KIOSCO_HOSTS` son los dominios aceptados; si falta, valen los tres de
-  siempre. Ver [`ALTA_DE_INSTANCIA.md`](ALTA_DE_INSTANCIA.md) para otro
-  comercio.
+- **Variables que se leen al atender** (cambiarlas es editar el `.env` y
+  reiniciar, sin recompilar):
+  - `COMMERCE_NAME` es el nombre del comercio. No está definida acá; vale
+    `NEXT_PUBLIC_COMMERCE_NAME`.
+  - `KIOSCO_HOSTS` son los dominios aceptados. Acá lleva los cuatro:
+    `luchandopormas.com`, `www.luchandopormas.com`, `kiosco.nistal.net` y
+    `almacen.nistal.net`. **Un dominio nuevo hay que agregarlo acá además de
+    en Nginx**; si no, la aplicación contesta 421 "Host no reconocido".
+  - `KIOSCO_FUNCIONES` no está definida, y eso es el modo almacén: sin Lotes ni
+    Compras (órdenes, proveedores, devoluciones). `todas` las vuelve a mostrar;
+    no borra datos, solo cambia lo que se ve.
+  - Para otro comercio, ver [`ALTA_DE_INSTANCIA.md`](ALTA_DE_INSTANCIA.md).
+- **systemd avisa en cada arranque** que ignora `StartLimitIntervalSec`. Esa
+  clave va en `[Unit]` y no en `[Service]`, donde está. Como se ignora, el
+  intervalo del límite de reinicios queda en el valor por omisión de systemd.
+  Pendiente moverla; no se tocó la unidad.
+- **Bots con nombres inventados**: más de mil respuestas 421 el 18 de octubre
+  en el log de acceso. Es la lista de `KIOSCO_HOSTS` haciendo su trabajo, no un
+  error. Lo mismo los `Server Reference ID did not match` del journal: son
+  peticiones falsas de escáneres, no de usuarios.
 
 ## El fallo de `https://localhost:3099/login`
 
@@ -362,36 +592,30 @@ unset NUEVA
 queda en el historial. El guion la lee por entrada estándar: nunca viaja como
 argumento, que sería visible en `ps` para cualquiera con una sesión abierta.
 
-## kiosco.nistal.net
+## kiosco.nistal.net y almacen.nistal.net
 
-**Todavía no apunta a este servidor.** Resuelve a `31.97.82.132`, que es otra
-máquina (la que describe `PRODUCTION_CURRENT_STATE.md`).
+**Ya apuntan a este servidor.** Al 18 de octubre de 2026 los dos resuelven a
+`129.213.133.204`, igual que `luchandopormas.com`. Antes `kiosco.nistal.net`
+iba a `31.97.82.132`, el servidor que describe
+[`PRODUCTION_CURRENT_STATE.md`](PRODUCTION_CURRENT_STATE.md).
 
-Lo que ya está hecho de este lado: el nombre está en la lista de hosts que la
-aplicación acepta (`src/middleware.ts`) y en el `server_name` del bloque HTTP
-del vhost, de modo que la validación ACME funcione apenas el DNS cambie.
-
-Lo que falta, en este orden:
-
-1. Cambiar el registro `A` de `kiosco.nistal.net` a `129.213.133.204`.
-2. Esperar la propagación y comprobarla:
-   `nslookup kiosco.nistal.net 8.8.8.8`
-3. Ampliar el certificado y agregar el bloque HTTPS:
+Para comprobarlo hay que preguntarle a un DNS público. En una red con sufijo de
+búsqueda, como `.com.ar`, el `nslookup` de Windows le agrega el sufijo al
+nombre y devuelve una dirección que no tiene nada que ver:
 
 ```bash
-sudo certbot certonly --webroot -w /var/www/certbot \
-  -d luchandopormas.com -d www.luchandopormas.com -d kiosco.nistal.net \
-  --cert-name luchandopormas.com --expand
+nslookup kiosco.nistal.net. 8.8.8.8      # con el punto final, sin sufijos
 ```
 
-Después hay que añadir un `server` en el puerto 443 con
-`server_name kiosco.nistal.net;` apuntando al mismo `proxy_pass`. **No antes:**
-anunciar un nombre que el certificado no cubre da un error de certificado en el
-navegador, que es peor que no responder.
+Cada nombre tiene su certificado y su bloque 443 en
+`/etc/nginx/sites-available/kiosco.nistal.net` (ver [Nginx](#nginx)), y los
+dos están en `KIOSCO_HOSTS`. Para agregar otro nombre hacen falta las tres
+cosas. Si falta el certificado, el navegador da error. Si falta el nombre en
+`KIOSCO_HOSTS`, la aplicación contesta 421.
 
-Ese dominio servirá la aplicación directamente, sin redirigir al canónico: la
-aplicación no usa un framework de autenticación que exija una única URL — la
-sesión es un JWT propio en una cookie por host — así que los tres nombres
+Estos dominios sirven la aplicación directamente, sin redirigir al canónico.
+La aplicación no usa un framework de autenticación que exija una única URL: la
+sesión es un JWT propio en una cookie por host, así que los tres nombres
 funcionan por igual. `www` sí redirige, pero por otro motivo: `www` y el
 dominio pelado son el mismo sitio, y dos orígenes serían dos sesiones distintas
 para la misma persona.

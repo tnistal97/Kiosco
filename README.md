@@ -4,19 +4,21 @@ Sistema de gestión para un almacén de barrio: punto de venta, control de caja,
 stock por sucursal y auditoría de operaciones. Funciona como PWA, con lector de
 códigos de barras por cámara y por lector USB.
 
-> **Estado al 30 de septiembre de 2026**
+> **Estado al 18 de octubre de 2026**
 >
-> - **En línea:** la rama `release/almacen-v1`, puesta en marcha el 3 de
->   septiembre de 2026. Qué corre, dónde y cómo se opera está en
+> - **En línea:** la rama `feat/ux-v2-phase2-1-lista-navegacion`, commit
+>   `2a11b76`, desplegada el 18 de octubre de 2026 en `luchandopormas.com`,
+>   `almacen.nistal.net` y `kiosco.nistal.net`, en modo almacén (sin Lotes ni
+>   Compras). Qué corre, dónde y cómo se opera está en
 >   [docs/DEPLOY_LUCHANDOPORMAS.md](docs/DEPLOY_LUCHANDOPORMAS.md).
-> - **En `feat/ux-v2-phase2-1-lista-navegacion`, sin desplegar:** la nueva
->   experiencia de caja y venta (UX V2 y V3) y la preventa **P0**: contraseñas
->   desde la aplicación, alta de una instancia nueva, importación de productos
->   desde Excel o CSV y cambio masivo de precios. El informe está en
->   [docs/P0_PREVENTA.md](docs/P0_PREVENTA.md).
-> - **Propuesto, esperando aprobación:** UX V4, la simplificación para
->   almacenes. Ver
->   [docs/UX_V4_ALMACENES_PROPUESTA.md](docs/UX_V4_ALMACENES_PROPUESTA.md).
+> - **Lo que trae esa versión:** la nueva experiencia de caja y venta (UX V2 y
+>   V3), la preventa **P0** —contraseñas desde la aplicación, alta de una
+>   instancia nueva, importación de productos desde Excel o CSV y cambio
+>   masivo de precios, en [docs/P0_PREVENTA.md](docs/P0_PREVENTA.md)— y la
+>   interfaz simple para el primer almacén (UX V5), en
+>   [docs/ENTREGA_ALMACEN_UI.md](docs/ENTREGA_ALMACEN_UI.md).
+> - `release/almacen-v1` fue la versión en línea desde el 3 de septiembre
+>   hasta ese despliegue.
 >
 > El diagnóstico del servidor anterior, y los bloqueantes que impidieron
 > encenderlo, siguen escritos en
