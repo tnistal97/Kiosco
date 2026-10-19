@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { ScannerInput, type TeclaDelLector } from '@/components/ui/ScannerInput'
@@ -145,6 +145,24 @@ describe('El campo unico', () => {
       '+',
       '-',
     ])
+  })
+
+  it('→, ←, Enter, + y − sostenidos se anuncian UNA vez; ↑ y ↓ se repiten (V6)', () => {
+    // → y ← cambian cantidades desde la V6: treinta repeticiones por dejar
+    // el dedo apoyado serian treinta unidades. ↑ ↓ recorren, y recorrer una
+    // lista larga con la flecha apretada es normal.
+    const onKey = vi.fn(() => true)
+    render(<Campo onKey={onKey} />)
+    const campo = screen.getByRole('textbox')
+    for (const key of ['ArrowRight', 'ArrowLeft', 'Enter', '+', '-']) {
+      fireEvent.keyDown(campo, { key })
+      fireEvent.keyDown(campo, { key, repeat: true })
+      fireEvent.keyDown(campo, { key, repeat: true })
+    }
+    fireEvent.keyDown(campo, { key: 'ArrowDown' })
+    fireEvent.keyDown(campo, { key: 'ArrowDown', repeat: true })
+    const teclas = onKey.mock.calls.map((c) => (c as unknown as [TeclaDelLector, string])[0])
+    expect(teclas).toEqual(['ArrowRight', 'ArrowLeft', 'Enter', '+', '-', 'ArrowDown', 'ArrowDown'])
   })
 
   it('cuando la pantalla no toma la tecla, el navegador la escribe', async () => {

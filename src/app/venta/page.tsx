@@ -24,21 +24,26 @@ import { AvisoCajaCerrada } from '@/components/venta/AvisoCajaCerrada'
 import { EscanerCamara } from '@/components/venta/EscanerCamara'
 import { DialogoAltaRapida } from '@/components/venta/DialogoAltaRapida'
 import { CodigoSinResolver, type EstadoDelCodigo } from '@/components/venta/CodigoSinResolver'
+import { GuiaDeTeclado, ayudaEnTexto } from '@/components/venta/GuiaDeTeclado'
 import { ProductBrowser } from '@/components/venta/ProductBrowser'
 import { Secciones, type SeccionDelCatalogo } from '@/components/venta/Secciones'
 import { POSLayout } from '@/components/venta/POSLayout'
 import { useFavoritos } from '@/components/venta/useFavoritos'
 import { useFrecuentes } from '@/components/venta/useFrecuentes'
 import { useProductosPorIds } from '@/components/venta/useProductosPorIds'
-import { enfocarCampo } from '@/components/venta/foco'
+import { enfocarCampo, esEditable } from '@/components/venta/foco'
 import { useEstadoInmediato } from '@/components/venta/useEstadoInmediato'
 import {
   accionDeTecla,
+  enterAvanza,
+  esRepeticionIgnorada,
+  esTeclaReservada,
   modoDelCampo,
   moverResaltado,
   moverSeleccion,
   seleccionTrasQuitar,
-  type ZonaDelPos,
+  type AccionDelPos,
+  type EtapaDelPos,
 } from '@/components/venta/teclado'
 import { useSession, usePermiso } from '@/components/shell/SessionProvider'
 import { notificarCambioDeCaja } from '@/components/shell/EstadoCaja'
@@ -67,6 +72,12 @@ const FILAS_POR_CONSULTA = 60
 
 /** Cuantos productos entran en "Frecuentes": favoritos primero, despues los mas vendidos. */
 const TOPE_DE_FRECUENTES = 24
+
+/**
+ * Desde que ancho el carrito es un panel fijo y no una hoja (el `xl` de
+ * Tailwind). Por debajo, pasar al carrito con el teclado abre la hoja.
+ */
+const CARRITO_COMO_PANEL = '(min-width: 1280px)'
 
 /**
  * Lo minimo que hace falta saber de un producto para ponerlo en el ticket.
@@ -115,28 +126,31 @@ function productoDeLinea(linea: CartLine): ProductoVendible {
 }
 
 /**
- * El punto de venta. UX V3.
+ * El punto de venta. UX V3, teclado V6.
  *
- * Desde el primer momento se ve la estructura entera: el modo, el campo, las
- * secciones, la lista de productos y el ticket con su total y "Cobrar". Se
- * vende de tres maneras que terminan en el mismo lugar: escaneando, tocando
- * una fila, o escribiendo el nombre y eligiendo con las flechas.
+ * Desde el primer momento se ve la estructura entera: el buscador, las
+ * etapas, las secciones, la lista de productos y el carrito con su total y
+ * "Cobrar". Se vende de tres maneras que terminan en el mismo lugar:
+ * escaneando, tocando una fila, o escribiendo el nombre y agregando con →.
  *
  * TRES IDEAS QUE HAY QUE ENTENDER ANTES DE TOCAR ESTO
  * ---------------------------------------------------
- * 1. EL FOCO VIVE EN EL CAMPO. Lo elegido en la lista y en el ticket es
+ * 1. EL FOCO VIVE EN EL BUSCADOR. Lo elegido en la lista y en el carrito es
  *    estado, no foco: por eso el lector sigue funcionando mientras se
  *    recorre el catalogo. Solo un dialogo se lleva el foco, y vuelve solo.
- * 2. LA TECLA SIGNIFICA LO QUE DICE LA ZONA. `campo`, `lista` o `ticket`;
- *    la tabla completa esta en `teclado.ts` y es una funcion pura. Esta
- *    pantalla ejecuta, no decide.
- * 3. ENTER NO COBRA. Campo vacio con ticket pasa a REVISAR; revisando abre
- *    el cobro; el cobro exige un pago declarado. Tres pasos deliberados
- *    entre el ultimo producto y una venta registrada.
+ *    Si el foco quedo en otro lado, la primera letra lo trae de vuelta.
+ * 2. LA VENTA TIENE TRES ETAPAS: productos, carrito y cobro. Cada tecla
+ *    significa una sola cosa en cada etapa; la tabla completa esta en
+ *    `teclado.ts` y es una funcion pura. Esta pantalla ejecuta, no decide.
+ * 3. ENTER AVANZA UNA ETAPA, NUNCA SUMA. Productos → carrito → cobro →
+ *    confirmar: cuatro Enter deliberados entre el ultimo producto y una venta
+ *    registrada, y dos Enter demasiado pegados cuentan como uno. El Enter del
+ *    lector es la unica excepcion: agrega el codigo leido y no cambia de
+ *    etapa.
  *
- * Lo que no cambio: el lector escribe en el campo y manda Enter, sin ningun
- * clic previo; el precio, el stock y el credito los decide el servidor; el
- * ticket sobrevive a un F5 y se restaura con precios frescos.
+ * Lo que no cambio: el lector escribe en el buscador y manda Enter, sin
+ * ningun clic previo; el precio, el stock y el credito los decide el
+ * servidor; el ticket sobrevive a un F5 y se restaura con precios frescos.
  */
 export default function VentaPage() {
   const { session } = useSession()
@@ -174,22 +188,22 @@ export default function VentaPage() {
   const hidratar = useCartStore((s) => s.hidratar)
   const usarSucursal = useCartStore((s) => s.usarSucursal)
 
-  /** Lo escrito en el campo unico. Digitos: codigo. Letras: busqueda. */
+  /** Lo escrito en el buscador. Digitos: codigo. Letras: busqueda. */
   const [texto, setTexto] = useState('')
-  /**
-   * A que responden las flechas: al texto, a la lista, o al ticket.
-   *
-   * El foco del navegador no se mueve --vive en el campo, por el lector--,
-   * asi que esto es lo unico que distingue "estoy escribiendo" de "tengo un
-   * producto elegido". Ver `teclado.ts`.
-   */
   // Los tres se leen y se escriben dentro de la misma rafaga de teclas, asi
   // que van con `useEstadoInmediato`: el manejador de la tecla siguiente
   // tiene que ver lo que hizo la anterior, no el estado del ultimo dibujo.
-  const [zona, setZona, zonaRef] = useEstadoInmediato<ZonaDelPos>('campo')
-  /** Fila de la lista elegida con ↑ ↓. */
-  const [resaltado, setResaltado, resaltadoRef] = useEstadoInmediato(0)
-  /** Producto de la linea del ticket elegida con el teclado. */
+  /** Productos o carrito. El cobro es `cobroAbierto`. Ver `teclado.ts`. */
+  const [etapa, setEtapa, etapaRef] = useEstadoInmediato<EtapaDelPos>('productos')
+  /**
+   * El producto ELEGIDO a proposito con ↑ ↓, por su id.
+   *
+   * Por id y no por posicion: mientras la busqueda viaja al servidor la lista
+   * se reacomoda, y "la tercera fila" pasa a ser otro producto. Null es "nada
+   * elegido a mano"; escribiendo un nombre, entonces, manda el primero.
+   */
+  const [elegido, setElegido, elegidoRef] = useEstadoInmediato<number | null>(null)
+  /** Producto de la linea del carrito elegida con el teclado. */
   const [seleccionada, setSeleccionada, seleccionadaRef] = useEstadoInmediato<number | null>(null)
   const [editandoCantidad, setEditandoCantidad] = useState(false)
   const [escribiendo, setEscribiendo] = useState(false)
@@ -221,6 +235,14 @@ export default function VentaPage() {
   const [recargaDeFrecuentes, setRecargaDeFrecuentes] = useState(0)
   /** La ultima venta registrada en esta pantalla. Referencia, nada mas. */
   const [ultimaVenta, setUltimaVenta] = useState<{ id: number; total: Monto } | null>(null)
+
+  /**
+   * Cuando fue el ultimo Enter que hizo algo: avanzar una etapa o agregar un
+   * codigo. Un Enter de avance que llega antes de `PAUSA_ENTRE_ETAPAS_MS` se
+   * ignora: es lo que impide que un doble Enter rapido salte dos etapas, o
+   * que el Enter de mas de un lector mal configurado pase al carrito.
+   */
+  const ultimoEnter = useRef<number | null>(null)
 
   const campo = useRef<HTMLInputElement>(null)
 
@@ -266,13 +288,13 @@ export default function VentaPage() {
   const elegirSeccion = useCallback(
     (s: SeccionDelCatalogo) => {
       setSeccion(s)
-      setResaltado(0)
-      setZona('campo')
+      setElegido(null)
+      setEtapa('productos')
       // Elegir una categoria con el mouse dejaba el foco en el boton, y el
       // proximo codigo leido no caia en el campo (V5).
       enfocarCampo(() => campo.current)
     },
-    [setResaltado, setZona],
+    [setElegido, setEtapa],
   )
 
   // La categoria filtra el catalogo, pero NO la busqueda: "yerba" escrito
@@ -298,11 +320,11 @@ export default function VentaPage() {
    *
    * Mientras la consulta viaja --120 ms de espera mas lo que tarde el
    * servidor-- la lista seguia mostrando los resultados anteriores. Escribir
-   * "yerba" y bajar enseguida elegia la primera fila de la lista VIEJA, y →
-   * agregaba ese producto. Ahora, mientras el servidor no haya contestado
-   * para lo que hay escrito, se muestra lo ya cargado que coincide: mismo
-   * criterio que el servidor --el nombre contiene el texto, sin distinguir
-   * mayusculas-- y una lista que nunca miente.
+   * "yerba" y agregar enseguida elegia la primera fila de la lista VIEJA.
+   * Ahora, mientras el servidor no haya contestado para lo que hay escrito,
+   * se muestra lo ya cargado que coincide: mismo criterio que el servidor
+   * --el nombre contiene el texto, sin distinguir mayusculas-- y una lista
+   * que nunca miente.
    */
   const termino = texto.trim()
   const esperandoResultados = buscando && terminoAplicado !== termino
@@ -324,13 +346,36 @@ export default function VentaPage() {
   const hayMasParaVer = !enFrecuentes && !esperandoResultados && hayMas
 
   /**
-   * Que fila se marca.
+   * El producto sobre el que actuan → y ←.
    *
-   * Eligiendo, la que dicen las flechas. Escribiendo, la PRIMERA y con una
-   * marca mas floja: es la que agregaria Enter, y conviene que se vea cual es
-   * antes de apretarlo.
+   * El elegido a mano con ↑ ↓, si sigue en la lista. Si no hay ninguno y se
+   * esta escribiendo un nombre, el PRIMER resultado: escribir "coca" y
+   * apretar → agrega la primera coca, la que se ve marcada. Sin busqueda y
+   * sin nada elegido, ninguno: → no agrega algo que nadie eligio.
    */
-  const indiceResaltado = zona === 'lista' ? resaltado : buscando && visibles.length > 0 ? 0 : -1
+  const productoElegido = useCallback(
+    (textoActual: string, id: number | null = elegidoRef.current): Product | null => {
+      if (id !== null) {
+        const p = visibles.find((v) => v.id === id)
+        if (p) return p
+      }
+      return modoDelCampo(textoActual) === 'busqueda' ? (visibles[0] ?? null) : null
+    },
+    [visibles, elegidoRef],
+  )
+
+  /** La fila marcada en la lista: solo en la etapa de productos. */
+  const indiceResaltado = useMemo(() => {
+    if (etapa !== 'productos') return -1
+    const p = productoElegido(texto, elegido)
+    return p ? visibles.findIndex((v) => v.id === p.id) : -1
+  }, [etapa, productoElegido, texto, visibles, elegido])
+
+  /** Cuanto hay de cada producto en el carrito, para la marca de la lista. */
+  const enCarrito = useMemo(
+    () => new Map(items.map((l) => [l.productId, formatearCantidadConUnidad(l.quantity, l.saleUnit)])), // prettier-ignore
+    [items],
+  )
 
   /**
    * El escaner global escucha salvo cuando molestaria.
@@ -389,7 +434,8 @@ export default function VentaPage() {
       )
       if (r === 'sin-stock') return motivoDeStock(p, 'sin-stock')
       if (r === 'tope-de-stock') return motivoDeStock(p, 'tope-de-stock')
-      // Lo que se acaba de agregar queda elegido: → suma una, Supr lo quita.
+      // Lo que se acaba de agregar queda elegido en el carrito: al pasar a
+      // revisarlo, las flechas arrancan ahi.
       setSeleccionada(p.id)
       registrarFrecuente(p.id)
       return null
@@ -398,12 +444,12 @@ export default function VentaPage() {
   )
 
   /**
-   * Lo que pasa al elegir un producto, por escaneo, busqueda o fila.
+   * Una unidad de un producto, por escaneo, por → o por un toque.
    *
    * Un producto por unidad se agrega y listo. Uno que se pesa abre el dialogo
    * INMEDIATAMENTE, sin pasos intermedios: despues de pasar un queso por el
-   * lector, lo unico que puede seguir es el peso. Vale igual para → sobre una
-   * fila: un producto por kilo no tiene "una unidad mas" (decision V3).
+   * lector, lo unico que puede seguir es el peso. Vale igual para →: un
+   * producto por kilo no tiene "una unidad mas" (decision V3).
    */
   const elegirProducto = useCallback(
     (
@@ -436,51 +482,24 @@ export default function VentaPage() {
 
   const limpiarBusqueda = useCallback(() => {
     setTexto('')
-    setResaltado(0)
-    setZona('campo')
+    setElegido(null)
     setSearchTerm('')
-  }, [setSearchTerm, setResaltado, setZona])
+  }, [setSearchTerm, setElegido])
 
   /**
-   * ELEGIR un producto con el teclado (V5): Enter sobre una fila, o Enter con
-   * un nombre escrito.
+   * Una fila del catalogo tocada con el dedo o el mouse: una unidad mas.
    *
-   * Si todavia no esta en el ticket, entra una unidad (o se pide el peso). Si
-   * YA esta, NO se suma otra: se selecciona su linea y se avisa que + suma.
-   * Era el "Enter que agrega de mas" de la V3: elegir y sumar eran la misma
-   * tecla, y repetir un Enter para confirmar dejaba dos unidades.
+   * Tocar dos veces la gaseosa son dos gaseosas, como en cualquier caja
+   * tactil. El foco vuelve al campo, que es donde cae el proximo codigo leido.
    */
-  const elegirSinSumar = useCallback(
-    (p: ProductoVendible): string | null => {
-      const linea = items.find((l) => l.productId === p.id)
-      if (linea) {
-        setSeleccionada(p.id)
-        setEstadoCodigo('idle')
-        setMensajeCodigo(`${p.name} ya está en el ticket · con + sumás otra unidad`)
-        return null
-      }
-      return elegirProducto(p, { limpiar: true })
-    },
-    [items, elegirProducto, setSeleccionada],
-  )
-
-  /**
-   * Una fila del catalogo.
-   *
-   * Tocada con el mouse o el dedo, agrega una unidad: tocar dos veces la
-   * gaseosa son dos gaseosas, como en cualquier caja tactil. Elegida con
-   * Enter desde el teclado, ELIGE (ver `elegirSinSumar`). En los dos casos
-   * el foco vuelve al campo, que es donde cae el proximo codigo leido.
-   */
-  const elegirDelCatalogo = useCallback(
-    (p: Product, desdeElTeclado: boolean) => {
-      if (desdeElTeclado) elegirSinSumar(p)
-      else elegirProducto(p, { limpiar: true })
+  const tocarProducto = useCallback(
+    (p: Product) => {
+      elegirProducto(p, { limpiar: true })
       if (buscando) limpiarBusqueda()
-      setZona('campo')
+      setEtapa('productos')
       enfocarCampo(() => campo.current)
     },
-    [elegirProducto, elegirSinSumar, buscando, limpiarBusqueda, setZona],
+    [elegirProducto, buscando, limpiarBusqueda, setEtapa],
   )
 
   // --------------------------------------------------------------- escaneo
@@ -492,19 +511,22 @@ export default function VentaPage() {
    * distinguen, y cada uno tiene su siguiente paso:
    *
    *   invalido      el codigo no puede existir. Ni se consulta.
-   *   encontrado    se agrega, o se pide el peso. Sin ruido.
+   *   encontrado    se agrega UNA unidad, o se pide el peso. Sin ruido.
    *   sin stock     se dice y no se agrega.
    *   inactivo      se nombra el producto y se ofrece reactivarlo.
    *   no registrado se ofrece darlo de alta.
    *   sin red       se ofrece reintentar, y se aclara que no se creo nada.
+   *
+   * La etapa NO cambia (V6): leer un codigo mientras se revisa el carrito
+   * agrega el producto y se sigue revisando, con esa linea elegida.
    */
   const procesarCodigo = useCallback(
     async (crudo: string) => {
       const codigo = normalizarCodigo(crudo)
       setSinResolver(null)
-      // Un codigo leido manda: lo elegido en la lista o en el ticket se suelta
-      // y la pantalla vuelve a estar lista para el siguiente.
-      setZona('campo')
+      // Un codigo leido manda: lo elegido a mano en la lista se suelta, y →
+      // ya no suma un producto que el cajero dejo de mirar.
+      setElegido(null)
 
       const roto = motivoDeCodigoInvalido(codigo)
       if (roto !== null) {
@@ -556,7 +578,7 @@ export default function VentaPage() {
         setSinResolver({ tipo: 'sin-red', codigo, mensaje })
       }
     },
-    [elegirProducto, buscarPorCodigo, setZona],
+    [elegirProducto, buscarPorCodigo, setElegido],
   )
 
   /** El producto recien creado entra al ticket por el MISMO camino que uno viejo. */
@@ -701,13 +723,57 @@ export default function VentaPage() {
     if (seleccionada !== null && !ids.includes(seleccionada)) setSeleccionada(null)
   }, [ids, seleccionada, setSeleccionada])
 
+  // Un carrito vacio no se revisa: si se quito la ultima linea, se vuelve a
+  // productos.
+  useEffect(() => {
+    if (etapa === 'carrito' && items.length === 0) setEtapa('productos')
+  }, [etapa, items.length, setEtapa])
+
+  /**
+   * Abrir el cobro: la tercera etapa. Esc vuelve al carrito, asi que abrirlo
+   * --con Enter, con F12 o con el boton-- deja la venta en el carrito.
+   */
   const abrirCobro = useCallback(() => {
     if (items.length > 0 && !cobroAbierto) {
+      setEtapa('carrito')
       abrirCapa(() => {
         setCobroAbierto(true)
       })
     }
-  }, [items.length, cobroAbierto, abrirCapa])
+  }, [items.length, cobroAbierto, abrirCapa, setEtapa])
+
+  /**
+   * Pasar a revisar el carrito: la segunda etapa.
+   *
+   * La busqueda se limpia: al volver con Esc se empieza a buscar lo que
+   * sigue, sin tener que borrar lo anterior. La linea elegida es la ultima
+   * que entro, o la primera. Por debajo de 1280 px el carrito no esta a la
+   * vista y se abre como hoja.
+   */
+  const entrarAlCarrito = useCallback(
+    (linea?: number) => {
+      setEtapa('carrito')
+      setSeleccionada((s) => linea ?? (s !== null && ids.includes(s) ? s : (ids[0] ?? null)))
+      setTexto('')
+      setElegido(null)
+      setSearchTerm('')
+      if (
+        typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        !window.matchMedia(CARRITO_COMO_PANEL).matches
+      ) {
+        abrirCapa(() => {
+          setTicketAbierto(true)
+        })
+      }
+    },
+    [ids, setEtapa, setSeleccionada, setElegido, setSearchTerm, abrirCapa],
+  )
+
+  const volverAProductos = useCallback(() => {
+    setEtapa('productos')
+    setTicketAbierto(false)
+  }, [setEtapa])
 
   const editarPeso = useCallback(
     (productId: number, limpiar = true) => {
@@ -777,11 +843,12 @@ export default function VentaPage() {
   )
 
   /**
-   * Una unidad mas o menos sobre una linea del ticket.
+   * Una unidad mas o menos sobre una linea del carrito.
    *
-   * Con una sola unidad, ← la quita: es lo que se espera cuando se resta
-   * hasta cero, y volver atras esta a un toque. Un producto por peso no tiene
-   * paso: abre el peso.
+   * EXACTAMENTE una. Con una sola unidad, ← la quita --nunca queda una linea
+   * en cero ni en negativo-- y volver atras esta a un toque. En el tope de
+   * stock, + no suma y se dice por que. Un producto por peso no tiene paso:
+   * abre el peso.
    */
   const ajustarLinea = useCallback(
     (linea: CartLine, delta: -1 | 1) => {
@@ -793,6 +860,10 @@ export default function VentaPage() {
       const minimo = aMilesimas(politicaDe(linea.saleUnit).minimo)
       if (delta === -1 && aMilesimas(cantidad) < minimo) {
         quitarLinea(linea.productId)
+        return
+      }
+      if (delta === 1 && aMilesimas(cantidad) > aMilesimas(linea.stock)) {
+        aviso.atencion(`${linea.name}: ${motivoDeStock(productoDeLinea(linea), 'tope-de-stock')}.`)
         return
       }
       cambiarCantidad(linea.productId, cantidad)
@@ -809,159 +880,174 @@ export default function VentaPage() {
   )
 
   /**
-   * + y - sobre la fila resaltada de la LISTA (V5: ya no con las flechas).
+   * → y ← sobre un producto de la lista (V6).
    *
-   * Suma o resta una unidad de ese producto sin salir de la lista: es la
-   * forma EXPLICITA de cambiar una cantidad desde ahi. Las flechas solo
-   * recorren.
+   * → agrega exactamente una unidad: si no estaba en el carrito entra con
+   * una, si estaba suma una. ← resta una solo si esta en el carrito; si no
+   * esta, no hace nada. En cero la linea se quita, como en el carrito.
    */
-  const ajustarResaltado = useCallback(
-    (delta: -1 | 1) => {
-      const p = visibles[resaltadoRef.current]
-      if (!p) return
+  const ajustarProducto = useCallback(
+    (p: Product, delta: -1 | 1) => {
       const linea = items.find((l) => l.productId === p.id)
       if (delta === 1) {
         if (linea && esFraccionable(linea.saleUnit)) editarPeso(linea.productId, false)
         else elegirProducto(p, { limpiar: false })
         return
       }
-      // Restar de lo que no esta en el ticket no hace nada: no hay de donde.
       if (linea) ajustarLinea(linea, -1)
     },
-    [visibles, resaltadoRef, items, elegirProducto, editarPeso, ajustarLinea],
+    [items, elegirProducto, editarPeso, ajustarLinea],
+  )
+
+  /** ↑ ↓ en la lista de productos. Bajar desde la ultima trae mas. */
+  const moverProducto = useCallback(
+    (delta: -1 | 1, textoActual: string) => {
+      const actual = productoElegido(textoActual)
+      const indice = actual ? visibles.findIndex((v) => v.id === actual.id) : -1
+      const siguiente = moverResaltado(indice, delta, visibles.length)
+      if (siguiente === indice && delta === 1 && hayMas) cargarMas()
+      setElegido(visibles[siguiente]?.id ?? null)
+    },
+    [productoElegido, visibles, hayMas, cargarMas, setElegido],
   )
 
   // --------------------------------------------------------------- teclado
 
-  /** Lo que se escribe en el campo unico: letras buscan, digitos esperan Enter. */
+  /**
+   * Lo que se escribe en el buscador.
+   *
+   * Letras: una busqueda, y escribir es SIEMPRE estar en productos --tambien
+   * si se estaba revisando el carrito--. El primer resultado queda elegido.
+   * Digitos: un codigo (el lector, o uno tipeado), que se resuelve con Enter
+   * y no cambia de etapa.
+   */
   function alEscribir(t: string) {
     setTexto(t)
-    // Escribir SIEMPRE devuelve el mando al texto: ← y → vuelven a mover el
-    // cursor en cuanto se toca una letra, aunque hubiera una fila elegida.
-    setZona('campo')
-    setResaltado(0)
+    setElegido(null)
     if (sinResolver !== null) setSinResolver(null)
-    if (modoDelCampo(t) === 'busqueda') setSearchTerm(t)
-    else if (searchTerm !== '') setSearchTerm('')
+    if (modoDelCampo(t) === 'busqueda') {
+      setEtapa('productos')
+      setSearchTerm(t)
+    } else if (searchTerm !== '') {
+      setSearchTerm('')
+    }
   }
 
   // La version vigente de `alEscribir`, para el manejador de teclas de la
   // ventana, que se suscribe una sola vez.
   const alEscribirRef = useRef(alEscribir)
-  // Y la de las teclas de la gramatica, para + y − con el foco fuera del campo.
+  // Y la de las teclas de la gramatica, para cuando el foco esta fuera del
+  // campo (un clic en un lugar vacio, una fila de la lista).
   const alPresionarRef = useRef<(tecla: TeclaDelLector, texto: string) => boolean>(() => false)
   useEffect(() => {
     alEscribirRef.current = alEscribir
     alPresionarRef.current = alPresionarEnElCampo
   })
 
-  function alPresionarEnElCampo(tecla: TeclaDelLector, textoActual: string): boolean {
-    // Del `ref` y no del render: dos teclas seguidas llegan mas rapido de lo
-    // que React vuelve a dibujar.
-    const zonaActual = zonaRef.current
-    const resaltadoActual = resaltadoRef.current
-    const seleccionadaActual = seleccionadaRef.current
-    const accion = accionDeTecla(tecla, {
-      zona: zonaActual,
-      texto: textoActual,
-      hayLineas: items.length > 0,
-      haySeleccion: seleccionadaActual !== null,
-      hayResultados: visibles.length > 0,
-      resaltado: resaltadoActual,
-      hayAviso: sinResolver !== null,
-    })
-
+  /** Hacer lo que dice la gramatica. Ver `accionDeTecla`. */
+  function ejecutar(accion: AccionDelPos, textoActual: string): void {
+    const ahora = performance.now()
     switch (accion) {
       case 'buscar-codigo':
+        // El Enter del lector agrega y NO cambia de etapa. Cuenta como Enter:
+        // si el lector manda uno de mas, ese no pasa al carrito.
+        ultimoEnter.current = ahora
         setTexto('')
-        setZona('campo')
         void procesarCodigo(textoActual)
-        return true
-      case 'elegir-resaltado': {
-        // Con texto y sin haber bajado todavia, Enter elige el PRIMERO: es lo
-        // que dice la lista con la marca tenue del primer renglon. Elegir no
-        // es sumar: si ya esta en el ticket, solo se selecciona su linea.
-        const elegido = visibles[zonaActual === 'lista' ? resaltadoActual : 0]
-        if (elegido) {
-          elegirSinSumar(elegido)
-          limpiarBusqueda()
-        }
-        return true
-      }
-      case 'revisar-ticket':
-        // Enter con el campo vacio NO cobra: pasa a revisar el ticket, que es
-        // donde se ve lo que se esta por cobrar. El segundo Enter abre el cobro.
-        setZona('ticket')
-        setSeleccionada((s) => s ?? ids[0] ?? null)
-        return true
-      case 'cobrar':
+        return
+      case 'ir-al-carrito':
+        // Dos Enter demasiado pegados no saltan dos etapas.
+        if (!enterAvanza(ahora, ultimoEnter.current)) return
+        ultimoEnter.current = ahora
+        entrarAlCarrito()
+        return
+      case 'carrito-vacio':
+        setEstadoCodigo('idle')
+        setMensajeCodigo('El carrito está vacío · elegí un producto y agregalo con →')
+        return
+      case 'ir-al-cobro':
+        if (!enterAvanza(ahora, ultimoEnter.current)) return
+        ultimoEnter.current = ahora
         abrirCobro()
-        return true
-      case 'entrar-a-la-lista':
-        setZona('lista')
-        setResaltado(0)
-        return true
-      case 'resultado-anterior':
-        setResaltado((i) => moverResaltado(i, -1, visibles.length))
-        return true
-      case 'resultado-siguiente':
-        setResaltado((i) => {
-          const siguiente = moverResaltado(i, 1, visibles.length)
-          // Bajar desde la ultima trae mas, en vez de quedarse trabado en el
-          // final de la pagina cargada.
-          if (siguiente === i && hayMas) cargarMas()
-          return siguiente
-        })
-        return true
-      case 'sumar-resaltado':
-        ajustarResaltado(1)
-        return true
-      case 'restar-resaltado':
-        ajustarResaltado(-1)
-        return true
+        return
+      case 'producto-anterior':
+        moverProducto(-1, textoActual)
+        return
+      case 'producto-siguiente':
+        moverProducto(1, textoActual)
+        return
+      case 'sumar-producto':
+      case 'restar-producto': {
+        const p = productoElegido(textoActual)
+        if (p) ajustarProducto(p, accion === 'sumar-producto' ? 1 : -1)
+        return
+      }
       case 'linea-anterior':
-        setSeleccionada(moverSeleccion(ids, seleccionadaActual, -1))
-        return true
+        setSeleccionada(moverSeleccion(ids, seleccionadaRef.current, -1))
+        return
       case 'linea-siguiente':
-        setSeleccionada(moverSeleccion(ids, seleccionadaActual, 1))
-        return true
-      case 'cantidad-menos':
-        ajustarSeleccionada(-1)
-        return true
-      case 'cantidad-mas':
+        setSeleccionada(moverSeleccion(ids, seleccionadaRef.current, 1))
+        return
+      case 'sumar-linea':
         ajustarSeleccionada(1)
-        return true
+        return
+      case 'restar-linea':
+        ajustarSeleccionada(-1)
+        return
       case 'quitar-linea':
-        if (seleccionadaActual !== null) quitarLinea(seleccionadaActual)
-        return true
-      case 'limpiar-campo':
+        if (seleccionadaRef.current !== null) quitarLinea(seleccionadaRef.current)
+        return
+      case 'limpiar-busqueda':
         limpiarBusqueda()
-        return true
-      case 'volver-al-campo':
-        // Escape suelta lo elegido y devuelve el mando al texto, que queda
-        // como estaba: un paso atras, sin perder nada.
-        setZona('campo')
-        setSeleccionada(null)
-        return true
+        return
+      case 'soltar-producto':
+        setElegido(null)
+        return
+      case 'volver-a-productos':
+        volverAProductos()
+        return
       case 'cerrar-aviso':
         setSinResolver(null)
         setEstadoCodigo('idle')
         setMensajeCodigo(null)
-        return true
+        return
       case 'nada':
-        return false
+        return
     }
   }
 
   /**
-   * Los alias de siempre, para quien ya los tenia en los dedos. No se
-   * muestran en ningun boton: la gramatica principal se descubre sola.
+   * Una tecla de la gramatica, desde el buscador o --por la ventana-- desde
+   * cualquier lugar que no sea un campo de texto. `true` = la tecla se uso y
+   * no hace lo nativo.
+   */
+  function alPresionarEnElCampo(tecla: TeclaDelLector, textoActual: string): boolean {
+    // De las referencias y no del render: dos teclas seguidas llegan mas
+    // rapido de lo que React vuelve a dibujar.
+    const accion = accionDeTecla(tecla, {
+      etapa: etapaRef.current,
+      texto: textoActual,
+      hayLineas: items.length > 0,
+      haySeleccion: seleccionadaRef.current !== null,
+      hayResultados: visibles.length > 0,
+      hayProductoElegido: productoElegido(textoActual) !== null,
+      hayAviso: sinResolver !== null,
+    })
+    ejecutar(accion, textoActual)
+    return accion !== 'nada' || esTeclaReservada(tecla)
+  }
+
+  /**
+   * Las teclas que llegan a la ventana sin que nadie las haya usado.
+   *
+   * Es lo que hace que la gramatica funcione "aunque el foco este en otro
+   * lado": despues de un clic en una categoria, en un lugar vacio, en una
+   * fila. Nunca dentro de un campo de texto --ahi se escribe-- ni con un
+   * dialogo o un cajon abierto --tienen sus propias teclas--.
    */
   useEffect(() => {
     function alPresionar(e: KeyboardEvent) {
-      const enCampo =
-        e.target instanceof HTMLElement &&
-        ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)
+      const enCampo = esEditable(e.target)
 
       // F12 cobra desde cualquier lado. El navegador lo usa para las
       // herramientas de desarrollo, y en una caja eso no le sirve a nadie.
@@ -972,63 +1058,6 @@ export default function VentaPage() {
       }
 
       if (hayCapa || cobroAbierto) return
-
-      // Escribir sin estar en el campo lleva al campo (V5).
-      //
-      // Despues de tocar un boton --una categoria, una linea del ticket, el
-      // + de una cantidad-- el foco quedaba ahi, y lo que se tecleaba o se
-      // leia con el lector no llegaba a ningun lado. Una tecla imprimible
-      // fuera de un campo de texto pone el foco en el campo y ESCRIBE ahi
-      // ese caracter (no se confia en que el navegador lo mueva solo: con un
-      // lector rapido el primer digito se perdia). Las teclas siguientes ya
-      // caen en el campo, y el Enter del lector se procesa ahi, sin depender
-      // de ningun reloj.
-      //
-      // + y − fuera del campo --despues de un clic en un lugar vacio de la
-      // pantalla-- cambian la cantidad de la linea elegida, como con el campo
-      // vacio. Escribirlos en el campo buscaba "+" y no sumaba nada. Con algo
-      // escrito en el campo, se escriben ahi como cualquier tecla.
-      const signo = e.key === '−' ? '-' : e.key
-      if (
-        !enCampo &&
-        !e.defaultPrevented &&
-        (signo === '+' || signo === '-') &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        !e.metaKey &&
-        (campo.current?.value ?? '') === ''
-      ) {
-        e.preventDefault()
-        if (!e.repeat) alPresionarRef.current(signo, '')
-        return
-      }
-
-      // El espacio no: activa el boton enfocado. La barra tampoco: es el
-      // atajo al campo, mas abajo. Y nada que otro manejador ya haya resuelto
-      // (el + y el - del ticket).
-      if (
-        !enCampo &&
-        !e.defaultPrevented &&
-        e.key.length === 1 &&
-        e.key !== ' ' &&
-        e.key !== '/' &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        !e.metaKey
-      ) {
-        const input = campo.current
-        if (input) {
-          e.preventDefault()
-          input.focus()
-          const siguiente = input.value + e.key
-          // En el acto: la tecla siguiente del lector llega en milisegundos y
-          // tiene que encontrar este caracter ya escrito en el campo.
-          flushSync(() => {
-            alEscribirRef.current(siguiente)
-          })
-        }
-        return
-      }
 
       // Alt+N abre el alta rapida manual. Sin permiso no hace nada, en vez de
       // abrir un formulario que el servidor va a rechazar.
@@ -1043,11 +1072,79 @@ export default function VentaPage() {
         return
       }
 
-      // Ctrl+K y "/" llevan al campo unico. La barra sola no, si se esta
-      // escribiendo en otro campo.
+      // Ctrl+K lleva al campo unico desde cualquier lado; "/" tambien, salvo
+      // que se este escribiendo en otro campo.
       if ((e.ctrlKey && e.key.toLowerCase() === 'k') || (e.key === '/' && !enCampo)) {
         e.preventDefault()
         campo.current?.focus()
+        return
+      }
+
+      if (enCampo || e.defaultPrevented) return
+
+      const sinModificador = !e.ctrlKey && !e.altKey && !e.metaKey
+      const signo = e.key === '−' ? '-' : e.key
+
+      // + y − fuera del campo --despues de un clic en un lugar vacio de la
+      // pantalla-- son → y ←, como con el campo vacio. Con algo escrito en el
+      // campo, se escriben ahi como cualquier letra (mas abajo).
+      if (
+        sinModificador &&
+        (signo === '+' || signo === '-') &&
+        (campo.current?.value ?? '') === ''
+      ) {
+        e.preventDefault()
+        if (!e.repeat) alPresionarRef.current(signo, '')
+        return
+      }
+
+      // Escribir sin estar en el campo lleva al campo (V5).
+      //
+      // Una tecla imprimible pone el foco en el campo y ESCRIBE ahi ese
+      // caracter (no se confia en que el navegador lo mueva solo: con un
+      // lector rapido el primer digito se perdia). Las teclas siguientes ya
+      // caen en el campo, y el Enter del lector se procesa ahi.
+      //
+      // El espacio no: activa el boton enfocado.
+      if (sinModificador && e.key.length === 1 && e.key !== ' ') {
+        const input = campo.current
+        if (input) {
+          e.preventDefault()
+          input.focus()
+          const siguiente = input.value + e.key
+          // En el acto: la tecla siguiente del lector llega en milisegundos y
+          // tiene que encontrar este caracter ya escrito en el campo.
+          flushSync(() => {
+            alEscribirRef.current(siguiente)
+          })
+        }
+        return
+      }
+
+      // Las flechas y Escape con el foco en un lugar sin teclas propias
+      // (V6): significan lo mismo que en el campo, y el foco vuelve ahi.
+      // Enter solo si el foco no esta en un boton o un enlace: ahi Enter es
+      // el boton. Y solo dentro de la venta: en el menu lateral las flechas
+      // siguen siendo del navegador.
+      const enLaVenta =
+        e.target === document.body ||
+        (e.target instanceof Element && e.target.closest('main') !== null)
+      if (!enLaVenta) return
+      const enControl =
+        e.target instanceof Element && e.target.closest('button, a[href], summary') !== null
+      const esDeLaGramatica =
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight' ||
+        e.key === 'Escape' ||
+        (e.key === 'Enter' && !enControl)
+      if (sinModificador && esDeLaGramatica) {
+        e.preventDefault()
+        if (esRepeticionIgnorada(e.key, e.repeat)) return
+        const input = campo.current
+        input?.focus()
+        alPresionarRef.current(e.key, input?.value ?? '')
       }
     }
 
@@ -1084,6 +1181,7 @@ export default function VentaPage() {
     setTicketAbierto(false)
     setPesando(null)
     setSeleccionada(null)
+    setEtapa('productos')
     limpiarBusqueda()
     setEstadoCodigo('idle')
     setMensajeCodigo(null)
@@ -1107,17 +1205,24 @@ export default function VentaPage() {
       total={total}
       articulos={articulos}
       seleccionada={seleccionada}
-      revisando={zona === 'ticket'}
+      revisando={etapa === 'carrito' && items.length > 0}
       ultimaVenta={ultimaVenta}
       onSeleccionar={(id) => {
-        setSeleccionada(id)
-        setZona(id === null ? 'campo' : 'ticket')
+        // Tocar una linea es revisar el carrito; las flechas pasan a mandar
+        // ahi.
+        if (id === null) {
+          setSeleccionada(null)
+          volverAProductos()
+        } else if (etapaRef.current === 'carrito') {
+          setSeleccionada(id)
+        } else {
+          entrarAlCarrito(id)
+        }
       }}
       onVolverAlCampo={enfocar}
       onCantidad={cambiarCantidad}
       onAjustar={ajustarLinea}
       onQuitar={quitarLinea}
-      onEditarPeso={editarPeso}
       onEditando={(editando) => {
         setEditandoCantidad(editando)
         // Terminada la cantidad escrita a mano, el foco vuelve al campo: el
@@ -1133,17 +1238,16 @@ export default function VentaPage() {
         }
       }}
       onVaciar={() => {
-        conDeshacer('Ticket vaciado', () => {
+        conDeshacer('Carrito vaciado', () => {
           vaciar()
           setSeleccionada(null)
-          setZona('campo')
+          setEtapa('productos')
           enfocar()
         })
       }}
       onCobrar={abrirCobro}
       onSalir={() => {
-        setZona('campo')
-        setSeleccionada(null)
+        volverAProductos()
         campo.current?.focus()
       }}
       puedeCobrar={items.length > 0}
@@ -1151,23 +1255,7 @@ export default function VentaPage() {
     />
   )
 
-  /**
-   * La ayuda del campo dice lo que hacen las teclas AHORA.
-   *
-   * Es la mitad de la seniial de en que estado esta el teclado --la otra
-   * mitad es la fila resaltada o el ticket senialado-- y evita el cartel de
-   * "modo" que nadie lee. Cambia sola y nunca miente.
-   */
-  const ayudaDeTeclado =
-    zona === 'ticket'
-      ? '↑↓ elegir línea · + − cantidad · Supr quitar · Enter cobrar · Esc volver'
-      : zona === 'lista'
-        ? '↑↓ recorrer · Enter elegir · + − cantidad · Esc volver'
-        : buscando
-          ? '↓ recorrer la lista · Enter elegir el primero'
-          : items.length > 0
-            ? 'Enter: pasar a cobrar · + − cantidad de la última línea'
-            : 'Escaneá un producto o escribí su nombre'
+  const etapaVisible = cobroAbierto ? 'cobro' : etapa
 
   const cabecera = (
     <div className="flex items-center gap-2">
@@ -1179,7 +1267,7 @@ export default function VentaPage() {
         status={estadoCodigo}
         message={mensajeCodigo}
         loading={buscando && isLoading}
-        hint={ayudaDeTeclado}
+        hint={ayudaEnTexto(etapaVisible)}
         pie={false}
         label="Escaneá o buscá un producto"
         placeholder="Escaneá el código o escribí el nombre…"
@@ -1257,6 +1345,26 @@ export default function VentaPage() {
   )
 
   /**
+   * Lo elegido con las flechas, para quien no lo ve.
+   *
+   * El foco no se mueve --vive en el campo, por el lector-- asi que nada lo
+   * anuncia solo. Es el mismo recurso que ya usa el carrito para su linea
+   * elegida, y con el mismo texto que dice la fila.
+   */
+  const productoAnunciado =
+    etapa === 'productos' && indiceResaltado >= 0 ? visibles[indiceResaltado] : undefined
+  const enCarritoAnunciado = productoAnunciado ? enCarrito.get(productoAnunciado.id) : undefined
+  const anuncioDeSeleccion = (
+    // `aria-live` sin `role="status"`: el resultado del lector ya es el
+    // `status` de esta pantalla, y dos regiones con el mismo rol se pisan.
+    <p className="sr-only" aria-live="polite">
+      {productoAnunciado
+        ? `${productoAnunciado.name}, ${formatearCantidadConUnidad(productoAnunciado.sellableStock, productoAnunciado.saleUnit)}${enCarritoAnunciado ? `, ${enCarritoAnunciado} en el carrito` : ''}`
+        : ''}
+    </p>
+  )
+
+  /**
    * El renglon de abajo del campo: las secciones y lo ultimo que paso.
    *
    * Uno solo, de 28 px, y SIEMPRE presente --tambien mientras se busca--.
@@ -1264,24 +1372,6 @@ export default function VentaPage() {
    * lista 40 px, y el pie del campo. Juntos costaban una fila y media de
    * producto y se movian solos.
    */
-  /**
-   * Lo elegido con las flechas, para quien no lo ve.
-   *
-   * El foco no se mueve --vive en el campo, por el lector-- asi que nada lo
-   * anuncia solo. Es el mismo recurso que ya usa el ticket para su linea
-   * elegida, y con el mismo texto que dice la fila.
-   */
-  const productoElegido = zona === 'lista' ? visibles[resaltado] : undefined
-  const anuncioDeSeleccion = (
-    // `aria-live` sin `role="status"`: el resultado del lector ya es el
-    // `status` de esta pantalla, y dos regiones con el mismo rol se pisan.
-    <p className="sr-only" aria-live="polite">
-      {productoElegido
-        ? `${productoElegido.name}, ${formatearCantidadConUnidad(productoElegido.sellableStock, productoElegido.saleUnit)}`
-        : ''}
-    </p>
-  )
-
   const barraDeSecciones = (
     <div className="flex min-h-7 shrink-0 items-center gap-3">
       <Secciones
@@ -1292,21 +1382,21 @@ export default function VentaPage() {
         deshabilitado={buscando}
         className="min-w-0 flex-1"
       />
-      {/* El resultado del ultimo codigo, o lo que hacen las teclas ahora. El
-          error se queda; la ayuda solo donde hay ancho. */}
-      <p
-        aria-hidden="true"
-        className={cn(
-          'shrink-0 truncate text-sm',
-          estadoCodigo === 'error'
-            ? 'max-w-[45%] font-semibold text-danger'
-            : mensajeCodigo
-              ? 'hidden max-w-[50%] font-medium text-ink sm:block'
-              : 'hidden text-ink-muted lg:block',
-        )}
-      >
-        {mensajeCodigo ?? ayudaDeTeclado}
-      </p>
+      {/* El resultado del ultimo codigo. El error se queda. Lo que hacen las
+          teclas va en la guia de arriba (V6). */}
+      {mensajeCodigo && (
+        <p
+          aria-hidden="true"
+          className={cn(
+            'shrink-0 truncate text-sm',
+            estadoCodigo === 'error'
+              ? 'max-w-[45%] font-semibold text-danger'
+              : 'hidden max-w-[50%] font-medium text-ink sm:block',
+          )}
+        >
+          {mensajeCodigo}
+        </p>
+      )}
     </div>
   )
 
@@ -1370,7 +1460,12 @@ export default function VentaPage() {
     <>
       {anuncioDeSeleccion}
       <POSLayout
-        cabecera={cabecera}
+        cabecera={
+          <>
+            {cabecera}
+            <GuiaDeTeclado etapa={etapaVisible} className="hidden shrink-0 md:flex" />
+          </>
+        }
         secciones={barraDeSecciones}
         avisos={avisos}
         catalogo={
@@ -1384,13 +1479,26 @@ export default function VentaPage() {
             hayMas={hayMasParaVer}
             onCargarMas={cargarMas}
             resaltado={indiceResaltado}
-            listaActiva={zona === 'lista'}
-            onResaltar={setResaltado}
-            onElegir={elegirDelCatalogo}
+            listaActiva={etapa === 'productos'}
+            onResaltar={(i) => {
+              setEtapa('productos')
+              setElegido(visibles[i]?.id ?? null)
+            }}
+            onElegir={tocarProducto}
+            onAjustar={(p, delta) => {
+              setEtapa('productos')
+              setElegido(p.id)
+              ajustarProducto(p, delta)
+            }}
+            onContinuar={() => {
+              campo.current?.focus()
+              alPresionarRef.current('Enter', '')
+            }}
+            enCarrito={enCarrito}
             esFavorito={favoritos.esFavorito}
             onFavorito={favoritos.alternar}
             onVolverAlLector={() => {
-              setZona('campo')
+              setEtapa('productos')
               campo.current?.focus()
             }}
             className="h-full"
@@ -1402,13 +1510,12 @@ export default function VentaPage() {
         puedeCobrar={items.length > 0}
         ticketAbierto={ticketAbierto}
         onAbrirTicket={() => {
+          if (items.length > 0) setEtapa('carrito')
           abrirCapa(() => {
             setTicketAbierto(true)
           })
         }}
-        onCerrarTicket={() => {
-          setTicketAbierto(false)
-        }}
+        onCerrarTicket={volverAProductos}
         onCobrar={abrirCobro}
       />
 
@@ -1469,7 +1576,9 @@ export default function VentaPage() {
       <DialogoCobro
         abierto={cobroAbierto}
         onCerrar={() => {
+          // Esc en el cobro vuelve al carrito, con la venta intacta.
           setCobroAbierto(false)
+          if (items.length > 0) setEtapa('carrito')
           enfocar()
         }}
         lineas={items}

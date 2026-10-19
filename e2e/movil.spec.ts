@@ -116,7 +116,7 @@ test('los botones principales llegan a 44 px', async ({ page }) => {
   expect(problemas, `objetivos tactiles por debajo de 44 px:\n${problemas.join('\n')}`).toEqual([])
 })
 
-test('con el dedo: tocar una fila de la lista la manda al ticket', async ({ page }) => {
+test('con el dedo: tocar una fila de la lista la manda al carrito', async ({ page }) => {
   await page.goto('/venta')
   await page.evaluate(() => {
     localStorage.removeItem('kiosco:ticket')
@@ -132,10 +132,10 @@ test('con el dedo: tocar una fila de la lista la manda al ticket', async ({ page
   const nombre = ((await primera.getAttribute('aria-label')) ?? '').split(', ')[0] ?? ''
   await primera.tap()
 
-  await expect(page.getByRole('button', { name: /^ticket/i })).toContainText('1 artículo')
-  await page.getByRole('button', { name: /^ticket/i }).click()
+  await expect(page.getByRole('button', { name: /^carrito/i })).toContainText('1 artículo')
+  await page.getByRole('button', { name: /^carrito/i }).click()
   await expect(
-    page.getByRole('dialog', { name: /ticket/i }).getByText(nombre, { exact: true }),
+    page.getByRole('dialog', { name: /carrito/i }).getByText(nombre, { exact: true }),
   ).toBeVisible()
 })
 
@@ -148,15 +148,15 @@ test('el total y el boton de cobrar se ven sin desplazarse', async ({ page }) =>
   const cobrar = page.getByRole('button', { name: /^cobrar$/i })
   await expect(cobrar).toBeInViewport()
   // Y el total entra entero en su boton: no se corta contra Cobrar.
-  const boton = page.getByRole('button', { name: /^ticket/i })
+  const boton = page.getByRole('button', { name: /^carrito/i })
   const entra = await boton.evaluate((b) => {
     const monto = b.querySelector('.money')
     return monto !== null && monto.getBoundingClientRect().right <= b.getBoundingClientRect().right
   })
   expect(entra).toBe(true)
 
-  await page.getByRole('button', { name: /^ticket/i }).click()
-  const ticket = page.getByRole('dialog', { name: /ticket/i })
+  await page.getByRole('button', { name: /^carrito/i }).click()
+  const ticket = page.getByRole('dialog', { name: /carrito/i })
   await expect(ticket.getByText('Total')).toBeVisible()
 })
 
@@ -218,10 +218,10 @@ test('el alta rápida entra en 375 px y se puede completar', async ({ page }) =>
   await expect(confirmar).toBeEnabled()
   await confirmar.click()
 
-  await page.getByRole('button', { name: /^ticket/i }).click()
+  await page.getByRole('button', { name: /^carrito/i }).click()
   await expect(
     page
-      .getByRole('dialog', { name: /ticket/i })
+      .getByRole('dialog', { name: /carrito/i })
       .getByText('Creado desde el teléfono', { exact: true }),
   ).toBeVisible()
 })
@@ -275,9 +275,9 @@ for (const [ancho, codigo] of [
     await peso.fill('1,5')
     await page.getByRole('button', { name: 'Agregar' }).click()
 
-    await page.getByRole('button', { name: /^ticket/i }).click()
+    await page.getByRole('button', { name: /^carrito/i }).click()
     await expect(
-      page.getByRole('dialog', { name: /ticket/i }).getByText(nombre, { exact: true }),
+      page.getByRole('dialog', { name: /carrito/i }).getByText(nombre, { exact: true }),
     ).toBeVisible()
 
     // Diez kilos y medio en el servidor: ni 10.500 ni un 400.

@@ -1,15 +1,16 @@
 /**
  * @vitest-environment jsdom
  *
- * El ticket con una linea elegida. UX V2, Fase 1.
+ * El carrito con una linea elegida. UX V2, Fase 1; teclado V6.
  *
- * Lo que se comprueba es la gramatica cuando el foco esta en el ticket, y
+ * Lo que se comprueba es la gramatica cuando el foco esta en el carrito
+ * --↑ ↓ eligen linea, → suma una, ← resta una, Enter cobra, Esc vuelve-- y
  * una cosa que la auditoria encontro rota: despues de quitar una linea con
  * Supr, el foco caia al `body` y la caja quedaba sorda (H-06, D15).
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { Ticket, cantidadAjustada } from '@/components/venta/Ticket'
@@ -50,7 +51,6 @@ function montar(props: Partial<Parameters<typeof Ticket>[0]> = {}) {
   const onCantidad = vi.fn()
   const onAjustar = vi.fn()
   const onQuitar = vi.fn()
-  const onEditarPeso = vi.fn()
   const onSalir = vi.fn()
   render(
     <Ticket
@@ -62,7 +62,6 @@ function montar(props: Partial<Parameters<typeof Ticket>[0]> = {}) {
       onCantidad={onCantidad}
       onAjustar={onAjustar}
       onQuitar={onQuitar}
-      onEditarPeso={onEditarPeso}
       onEditando={() => undefined}
       onVaciar={() => undefined}
       onCobrar={() => undefined}
@@ -71,10 +70,10 @@ function montar(props: Partial<Parameters<typeof Ticket>[0]> = {}) {
       {...props}
     />,
   )
-  return { onSeleccionar, onCantidad, onAjustar, onQuitar, onEditarPeso, onSalir }
+  return { onSeleccionar, onCantidad, onAjustar, onQuitar, onSalir }
 }
 
-const grupo = () => screen.getByRole('group', { name: 'Líneas del ticket' })
+const grupo = () => screen.getByRole('group', { name: 'Líneas del carrito' })
 
 describe('La linea elegida', () => {
   // V5: los controles estan en TODAS las lineas. En la V3 solo aparecian en
@@ -115,7 +114,7 @@ describe('La linea elegida', () => {
   })
 })
 
-describe('Teclado con el foco en el ticket', () => {
+describe('Teclado con el foco en el carrito', () => {
   it('abajo y arriba mueven la seleccion', async () => {
     const usuario = userEvent.setup()
     const { onSeleccionar } = montar()
@@ -126,10 +125,25 @@ describe('Teclado con el foco en el ticket', () => {
     expect(onSeleccionar).toHaveBeenLastCalledWith(1)
   })
 
-  it('+ y - piden una unidad mas o menos sobre la elegida', async () => {
-    // El ticket no decide que pasa con la cantidad --si llega a cero se quita,
-    // y eso lo sabe la pantalla--: pide el ajuste y ya. La aritmetica sigue
-    // siendo la misma funcion pura.
+  it('derecha suma EXACTAMENTE una unidad e izquierda resta una (V6)', async () => {
+    // El carrito no decide que pasa con la cantidad --si llega a cero se
+    // quita, y eso lo sabe la pantalla--: pide el ajuste y ya. La aritmetica
+    // sigue siendo la misma funcion pura.
+    const usuario = userEvent.setup()
+    const { onAjustar, onSeleccionar } = montar()
+    grupo().focus()
+    await usuario.keyboard('{ArrowRight}')
+    expect(onAjustar).toHaveBeenLastCalledWith(YERBA, 1)
+    await usuario.keyboard('{ArrowLeft}')
+    expect(onAjustar).toHaveBeenLastCalledWith(YERBA, -1)
+    expect(onAjustar).toHaveBeenCalledTimes(2)
+    // Y no movieron la seleccion: eso es de ↑ ↓.
+    expect(onSeleccionar).not.toHaveBeenCalled()
+    expect(cantidadAjustada(YERBA, 1)).toBe('3.000')
+    expect(cantidadAjustada(YERBA, -1)).toBe('1.000')
+  })
+
+  it('+ y - son lo mismo que derecha e izquierda', async () => {
     const usuario = userEvent.setup()
     const { onAjustar } = montar()
     grupo().focus()
@@ -137,26 +151,24 @@ describe('Teclado con el foco en el ticket', () => {
     expect(onAjustar).toHaveBeenLastCalledWith(YERBA, 1)
     await usuario.keyboard('-')
     expect(onAjustar).toHaveBeenLastCalledWith(YERBA, -1)
-    expect(cantidadAjustada(YERBA, 1)).toBe('3.000')
-    expect(cantidadAjustada(YERBA, -1)).toBe('1.000')
   })
 
-  it('derecha e izquierda eligen linea: NUNCA cambian la cantidad (V5)', async () => {
+  it('derecha sostenida suma UNA, no treinta', async () => {
     const usuario = userEvent.setup()
-    const { onAjustar, onSeleccionar } = montar()
+    const { onAjustar } = montar()
     grupo().focus()
+    // Un toque y cuatro repeticiones del teclado (`repeat`, como las manda el
+    // navegador con la tecla apretada): solo cuenta el primero.
     await usuario.keyboard('{ArrowRight}')
-    expect(onSeleccionar).toHaveBeenLastCalledWith(2)
-    await usuario.keyboard('{ArrowLeft}')
-    expect(onSeleccionar).toHaveBeenLastCalledWith(1)
-    expect(onAjustar).not.toHaveBeenCalled()
+    for (let i = 0; i < 4; i++) fireEvent.keyDown(grupo(), { key: 'ArrowRight', repeat: true })
+    expect(onAjustar).toHaveBeenCalledOnce()
   })
 
   it('en un producto que se pesa no hay "una unidad mas": se ajusta abriendo el peso', async () => {
     const usuario = userEvent.setup()
     const { onCantidad, onAjustar } = montar({ seleccionada: 3 })
     grupo().focus()
-    await usuario.keyboard('+')
+    await usuario.keyboard('{ArrowRight}')
     expect(onCantidad).not.toHaveBeenCalled()
     expect(onAjustar).toHaveBeenCalledWith(QUESO, 1)
     expect(cantidadAjustada(QUESO, 1)).toBeNull()
@@ -181,7 +193,6 @@ describe('Teclado con el foco en el ticket', () => {
             setLineas((l) => l.filter((x) => x.productId !== id))
             setSeleccionada(2)
           }}
-          onEditarPeso={() => undefined}
           onEditando={() => undefined}
           onVaciar={() => undefined}
           onCobrar={() => undefined}
@@ -203,7 +214,7 @@ describe('Teclado con el foco en el ticket', () => {
     )
   })
 
-  it('Enter avanza al cobro: no cambia ninguna cantidad (V5)', async () => {
+  it('Enter avanza al cobro: no cambia ninguna cantidad', async () => {
     const usuario = userEvent.setup()
     const onCobrar = vi.fn()
     const { onAjustar } = montar({ onCobrar })
@@ -213,14 +224,26 @@ describe('Teclado con el foco en el ticket', () => {
     expect(onAjustar).not.toHaveBeenCalled()
   })
 
-  it('Enter en una linea que se pesa corrige el peso', async () => {
+  it('Enter avanza al cobro tambien sobre una linea que se pesa (V6)', async () => {
+    // En la V5, Enter sobre el queso abria el peso: la misma tecla hacia dos
+    // cosas segun la linea. Ahora el peso se corrige con → o ←.
     const usuario = userEvent.setup()
     const onCobrar = vi.fn()
-    const { onEditarPeso } = montar({ seleccionada: 3, onCobrar })
+    const { onAjustar } = montar({ seleccionada: 3, onCobrar })
     grupo().focus()
     await usuario.keyboard('{Enter}')
-    expect(onEditarPeso).toHaveBeenCalledWith(3)
-    expect(onCobrar).not.toHaveBeenCalled()
+    expect(onCobrar).toHaveBeenCalledOnce()
+    expect(onAjustar).not.toHaveBeenCalled()
+  })
+
+  it('Enter sostenido abre el cobro UNA vez', async () => {
+    const usuario = userEvent.setup()
+    const onCobrar = vi.fn()
+    montar({ onCobrar })
+    grupo().focus()
+    await usuario.keyboard('{Enter}')
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(grupo(), { key: 'Enter', repeat: true })
+    expect(onCobrar).toHaveBeenCalledOnce()
   })
 
   it('con el foco en la cantidad, las flechas no mueven la seleccion', async () => {
@@ -231,7 +254,7 @@ describe('Teclado con el foco en el ticket', () => {
     expect(onSeleccionar).not.toHaveBeenCalled()
   })
 
-  it('Escape devuelve el foco al lector', async () => {
+  it('Escape vuelve a productos', async () => {
     const usuario = userEvent.setup()
     const { onSalir } = montar()
     grupo().focus()
@@ -265,11 +288,23 @@ describe('El pie', () => {
 
   it('revisando, el panel dice que hacen las teclas', () => {
     montar({ revisando: true })
-    expect(screen.getByText(/Revisá el ticket/)).toBeInTheDocument()
+    expect(screen.getByText(/Revisá el carrito/)).toBeInTheDocument()
+    const ayuda = screen.getByText(/Revisá el carrito/).closest('p')
+    expect(ayuda?.textContent).toMatch(/revisar/)
+    expect(ayuda?.textContent).toMatch(/\+1/)
+    expect(ayuda?.textContent).toMatch(/−1/)
+    expect(ayuda?.textContent).toMatch(/cobrar/)
+    expect(ayuda?.textContent).toMatch(/volver/)
   })
 
   it('sin revisar no hay ayuda de teclas ocupando lugar', () => {
     montar()
-    expect(screen.queryByText(/Revisá el ticket/)).toBeNull()
+    expect(screen.queryByText(/Revisá el carrito/)).toBeNull()
+  })
+
+  it('se llama "Carrito", como la etapa', () => {
+    montar()
+    expect(screen.getByRole('region', { name: 'Carrito' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^Carrito/ })).toBeInTheDocument()
   })
 })

@@ -91,7 +91,7 @@ export function POSLayout({
       <Drawer
         open={ticketAbierto}
         onClose={onCerrarTicket}
-        title="Revisá el ticket"
+        title="Revisá el carrito"
         side="bottom"
         rapido
       >
@@ -160,7 +160,7 @@ export function BarraDeTicket({
         )}
       >
         <span className="text-xs text-ink-muted">
-          Ticket
+          Carrito
           {articulos > 0 && ` · ${String(articulos)} ${articulos === 1 ? 'artículo' : 'artículos'}`}
         </span>
         {/* En el telefono un punto mas chico: con el tamano grande, "$ 11.390,00"

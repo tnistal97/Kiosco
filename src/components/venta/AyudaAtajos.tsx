@@ -6,29 +6,31 @@ import { Dialog, IconButton } from '@/components/ui'
 /**
  * Las teclas de la caja, en un solo lugar.
  *
- * La gramatica principal va primero y se explica sola: flechas, Enter,
- * Escape, Supr. Los atajos viejos --F12, Alt+N, Ctrl+K-- siguen funcionando
- * para quien ya los tenia en los dedos, pero van al final y no se muestran en
- * ningun boton (auditoria, H-07).
+ * La gramatica principal va primero, etapa por etapa: productos, carrito y
+ * cobro (V6). Los atajos viejos --F12, Alt+N, Ctrl+K, + y −-- siguen
+ * funcionando para quien ya los tenia en los dedos, pero van al final y no se
+ * muestran en ningun boton (auditoria, H-07).
  *
  * Esto es un recordatorio, no el manual: lo que hacen las teclas AHORA lo
- * dice la linea debajo del campo, que cambia sola. Ver `teclado.ts`.
+ * dice la guia debajo del buscador, que cambia con la etapa. Ver `teclado.ts`.
  */
 const GRAMATICA: Array<{ teclas: string[]; que: string }> = [
   { teclas: ['Lector'], que: 'Pasá el producto: se agrega solo. Dos lecturas, dos unidades' },
-  { teclas: ['↑', '↓'], que: 'Recorren la lista de productos o las líneas del ticket' },
-  { teclas: ['Enter'], que: 'Elige el producto marcado. Si ya está en el ticket, no suma otro' },
-  { teclas: ['+', '−'], que: 'Una unidad más o menos (la última línea, o la elegida)' },
-  { teclas: ['Enter'], que: 'Con el campo vacío: pasa al ticket. Otra vez: abre el cobro' },
-  { teclas: ['Enter'], que: 'En el cobro: elige la forma de pago y después confirma la venta' },
-  { teclas: ['Supr'], que: 'Quita la línea elegida del ticket. Se puede deshacer' },
-  { teclas: ['Esc'], que: 'Vuelve un paso: suelta lo elegido, vacía el campo, cierra' },
+  { teclas: ['a…z'], que: 'Escribir busca: no hace falta tocar el buscador' },
+  { teclas: ['↑', '↓'], que: '1. Productos: elegir producto. 2. Carrito: elegir línea' },
+  { teclas: ['→'], que: 'Una unidad más del producto o de la línea elegida' },
+  { teclas: ['←'], que: 'Una unidad menos. En cero, la línea se quita (se puede deshacer)' },
+  { teclas: ['Enter'], que: 'Siguiente etapa: productos → carrito → cobro. Nunca suma' },
+  { teclas: ['Enter'], que: 'En el cobro: elige la forma de pago, después confirma la venta' },
+  { teclas: ['Esc'], que: 'Un paso atrás: limpia la búsqueda, vuelve del carrito o del cobro' },
 ]
 
 const ALIAS: Array<{ teclas: string[]; que: string }> = [
+  { teclas: ['+', '−'], que: 'Lo mismo que → y ←, con el buscador vacío' },
+  { teclas: ['Supr'], que: 'En el carrito, quitar la línea elegida' },
   { teclas: ['F12'], que: 'Cobrar' },
   { teclas: ['Alt', 'N'], que: 'Producto nuevo' },
-  { teclas: ['Ctrl', 'K'], que: 'Ir al campo de búsqueda' },
+  { teclas: ['Ctrl', 'K'], que: 'Ir al buscador' },
   { teclas: ['E', 'T', 'M', 'D', 'C', 'F'], que: 'En el cobro, elegir la forma de pago' },
 ]
 

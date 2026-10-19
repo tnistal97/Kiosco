@@ -17,13 +17,18 @@
  * CONFIRMAR VENTA. El foco arranca en la forma de pago: las flechas la
  * cambian y Enter la elige y pasa a "Recibido" (o a Confirmar). Sin vuelto
  * que dar, la venta termina sola; con vuelto, se muestra grande.
+ *
+ * V6: Enter en "Recibido" ya no cobra: pasa a "Confirmar venta", y recien el
+ * Enter siguiente registra la venta. Un Enter sostenido o demasiado pegado
+ * al anterior no avanza otro paso.
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DialogoCobro, type PagoParaEnviar } from '@/components/venta/DialogoCobro'
 import { pagoDeclarado } from '@/components/venta/cobro'
+import { PAUSA_ENTRE_ETAPAS_MS } from '@/components/venta/teclado'
 import type { CartLine } from '@/store/cart'
 import { sumarMontos } from '@/lib/money'
 import { precioPorCantidad } from '@/lib/cantidad'
@@ -69,6 +74,9 @@ function abrirCobro(
     />,
   )
 }
+
+/** Lo que hay que esperar entre dos Enter para que el segundo avance otro paso. */
+const PAUSA = PAUSA_ENTRE_ETAPAS_MS + 50
 
 const recibido = () => screen.getByLabelText(/^recibido/i)
 const confirmar = () => screen.getByRole('button', { name: /^confirmar venta/i })
@@ -220,14 +228,13 @@ describe('Lo que se ve', () => {
   })
 })
 
-describe('Teclado del cobro: flechas recorren, Enter avanza', () => {
+describe('Teclado del cobro: flechas recorren, Enter avanza UN paso (V6)', () => {
   it('las flechas cambian la forma de pago y Enter la elige y pasa a "Recibido"', async () => {
     const usuario = userEvent.setup()
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
-    await waitFor(() => {
-      expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Efectivo' }))
-    })
+    await esperarFocoInicial()
+    await esperar(PAUSA)
 
     await usuario.keyboard('{ArrowRight}')
     expect(screen.getByRole('radio', { name: 'Transferencia' })).toBeChecked()
@@ -244,9 +251,8 @@ describe('Teclado del cobro: flechas recorren, Enter avanza', () => {
     const usuario = userEvent.setup()
     abrirCobro(() => Promise.resolve(1))
     await screen.findByRole('dialog')
-    await waitFor(() => {
-      expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Efectivo' }))
-    })
+    await esperarFocoInicial()
+    await esperar(PAUSA)
 
     await usuario.keyboard('{ArrowRight}')
     await usuario.keyboard('{Enter}')
@@ -265,6 +271,12 @@ describe('Teclado del cobro: flechas recorren, Enter avanza', () => {
     await usuario.keyboard('t')
     expect(screen.getByRole('radio', { name: 'Transferencia' })).toBeChecked()
     expect(screen.queryByLabelText(/^recibido/i)).toBeNull()
+    // "Recibido" desaparecio con el foco adentro: el cobro lo lleva a
+    // "Confirmar venta" en el cuadro siguiente. Recien ahi la proxima letra
+    // tiene donde caer.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(confirmar())
+    })
 
     await usuario.keyboard('m')
     expect(screen.getByRole('radio', { name: 'Mercado Pago' })).toBeChecked()
@@ -284,60 +296,202 @@ describe('Teclado del cobro: flechas recorren, Enter avanza', () => {
     expect(recibido()).toHaveValue('11.390,00')
   })
 
-  it('Enter en "Recibido" confirma la venta y muestra el vuelto', async () => {
+  it('Enter en "Recibido" NO cobra: muestra el vuelto y pasa a "Confirmar venta"', async () => {
     const usuario = userEvent.setup()
     const cobrar = vi.fn(() => Promise.resolve(9))
     abrirCobro(cobrar)
     await screen.findByRole('dialog')
 
     await usuario.type(recibido(), '15000')
-    // Los primeros 300 ms no cobran: es lo que separa un Enter a proposito
-    // de uno que rebota desde el ticket.
-    await esperar(350)
+    await esperar(PAUSA)
     await usuario.keyboard('{Enter}')
 
+    await waitFor(() => {
+      expect(document.activeElement).toBe(confirmar())
+    })
+    expect(cobrar).not.toHaveBeenCalled()
+    expect(screen.getByText(/3\.610/)).toBeInTheDocument()
+
+    // El Enter siguiente, sobre "Confirmar venta", registra la venta.
+    await esperar(PAUSA)
+    await usuario.keyboard('{Enter}')
     await screen.findByText(/venta registrada/i)
     expect(cobrar).toHaveBeenCalledTimes(1)
     const [pagos] = cobrar.mock.calls[0] as unknown as [PagoParaEnviar[]]
     expect(pagos).toEqual([{ method: 'CASH', amount: TOTAL, cashReceived: '15000.00' }])
   })
 
-  it('Enter no cobra en los primeros 300 ms', async () => {
+  it('Enter en "Recibido" vacio pone el importe justo, a la vista, y pasa a Confirmar', async () => {
     const usuario = userEvent.setup()
     const cobrar = vi.fn(() => Promise.resolve(9))
     abrirCobro(cobrar)
     await screen.findByRole('dialog')
     await esperarFocoInicial()
-    recibido().focus()
-    await usuario.keyboard('j')
+    await esperar(PAUSA)
 
+    // Enter elige Efectivo (eso ya declara el pago) y lleva a Recibido.
     await usuario.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(recibido())
+    })
+    await esperar(PAUSA)
+    await usuario.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(confirmar())
+    })
+    expect(recibido()).toHaveValue('11.390,00')
     expect(cobrar).not.toHaveBeenCalled()
   })
 
-  it('Enter NO cobra mientras nadie dijo como se paga', async () => {
+  it('con un importe que no alcanza, Enter no avanza', async () => {
+    const usuario = userEvent.setup()
+    const cobrar = vi.fn(() => Promise.resolve(9))
+    abrirCobro(cobrar)
+    await screen.findByRole('dialog')
+
+    await usuario.type(recibido(), '5000')
+    await esperar(PAUSA)
+    await usuario.keyboard('{Enter}')
+    await esperar(50)
+
+    expect(document.activeElement).toBe(recibido())
+    expect(cobrar).not.toHaveBeenCalled()
+  })
+
+  it('Enter no hace nada en los primeros 300 ms', async () => {
+    const usuario = userEvent.setup()
+    const cobrar = vi.fn(() => Promise.resolve(9))
+    abrirCobro(cobrar)
+    await screen.findByRole('dialog')
+    await esperarFocoInicial()
+
+    // Recien abierto: el Enter que llega pegado al que abrio el cobro no
+    // elige la forma de pago.
+    await usuario.keyboard('{Enter}')
+    await esperar(50)
+    expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Efectivo' }))
+    expect(cobrar).not.toHaveBeenCalled()
+  })
+
+  it('doble Enter rapido: elige la forma de pago y NO avanza otro paso (caso 19)', async () => {
+    const usuario = userEvent.setup()
+    const cobrar = vi.fn(() => Promise.resolve(9))
+    abrirCobro(cobrar)
+    await screen.findByRole('dialog')
+    await esperarFocoInicial()
+    await esperar(PAUSA)
+
+    await usuario.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(recibido())
+    })
+    // Pegado al anterior: no pasa a Confirmar ni pone el justo.
+    await usuario.keyboard('{Enter}')
+    await esperar(50)
+    expect(document.activeElement).toBe(recibido())
+    expect(recibido()).toHaveValue('')
+    expect(cobrar).not.toHaveBeenCalled()
+  })
+
+  it('Enter sostenido sobre "Confirmar venta" registra UNA venta (caso 17)', async () => {
+    const usuario = userEvent.setup()
+    const cobrar = vi.fn(() => Promise.resolve(9))
+    abrirCobro(cobrar)
+    await screen.findByRole('dialog')
+    await usuario.type(recibido(), '15000')
+    await esperar(PAUSA)
+    await usuario.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(confirmar())
+    })
+    await esperar(PAUSA)
+
+    // La tecla apretada: el primer Enter y despues las repeticiones.
+    await usuario.keyboard('{Enter}')
+    for (let i = 0; i < 5; i++) {
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Enter', repeat: true })
+    }
+    await screen.findByText(/venta registrada/i)
+    expect(cobrar).toHaveBeenCalledTimes(1)
+  })
+
+  it('el Enter que confirmo no cierra el VUELTO si rebota', async () => {
+    const usuario = userEvent.setup()
+    const nueva = vi.fn()
+    abrirCobro(() => Promise.resolve(9), nueva)
+    await screen.findByRole('dialog')
+    await usuario.type(recibido(), '15000')
+    await usuario.click(confirmar())
+    const boton = await screen.findByRole('button', { name: /nueva venta/i })
+    boton.focus()
+
+    // Pegado a la confirmacion: el vuelto se queda en pantalla.
+    await usuario.keyboard('{Enter}')
+    expect(nueva).not.toHaveBeenCalled()
+    expect(screen.getByText('VUELTO')).toBeInTheDocument()
+
+    // Pasada la pausa, Enter es "Nueva venta".
+    await esperar(PAUSA)
+    await usuario.keyboard('{Enter}')
+    expect(nueva).toHaveBeenCalledOnce()
+  })
+
+  it('Enter NO avanza mientras nadie dijo como se paga', async () => {
     // Dos Enter distraidos no pueden terminar en una venta: con el cursor en
     // "Recibido" vacio y sin haber elegido forma de pago, no hay pago
-    // declarado, y Enter no vende por mucho que se espere.
+    // declarado, y Enter no avanza por mucho que se espere.
     const usuario = userEvent.setup()
     const cobrar = vi.fn(() => Promise.resolve(9))
     abrirCobro(cobrar)
     await screen.findByRole('dialog')
     await esperarFocoInicial()
     recibido().focus()
-    await esperar(350)
+    await esperar(PAUSA)
 
     await usuario.keyboard('{Enter}')
+    await esperar(PAUSA)
     await usuario.keyboard('{Enter}')
     expect(cobrar).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(recibido())
     expect(screen.getByText(/falta decir cómo paga/i)).toBeInTheDocument()
 
-    // Y en cuanto se declara --J pone el importe justo--, cobra.
+    // En cuanto se declara --J pone el importe justo--, Enter pasa a
+    // Confirmar, y el siguiente cobra.
     await usuario.keyboard('j')
+    await usuario.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(document.activeElement).toBe(confirmar())
+    })
+    await esperar(PAUSA)
     await usuario.keyboard('{Enter}')
     await waitFor(() => {
       expect(cobrar).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it('la ayuda de arriba dice lo que hace Enter en cada paso', async () => {
+    const usuario = userEvent.setup()
+    abrirCobro(() => Promise.resolve(1))
+    const dialogo = await screen.findByRole('dialog')
+    await esperarFocoInicial()
+    const ayuda = () => dialogo.querySelector('[data-ayuda-cobro]')?.textContent ?? ''
+
+    await waitFor(() => {
+      expect(ayuda()).toMatch(/forma de pago/)
+    })
+    await esperar(PAUSA)
+    await usuario.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(ayuda()).toMatch(/con cuánto paga/)
+    })
+    await usuario.type(recibido(), '15000')
+    await esperar(PAUSA)
+    await usuario.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(ayuda()).toMatch(/confirmar la venta/)
+    })
+    expect(ayuda()).toMatch(/volver al carrito/)
   })
 
   it('el campo "Recibido" no propone el total como si estuviera cargado', async () => {
@@ -354,7 +508,7 @@ describe('Teclado del cobro: flechas recorren, Enter avanza', () => {
     const nueva = vi.fn()
     abrirCobro(cobrar, nueva)
     await screen.findByRole('dialog')
-    await esperar(350)
+    await esperar(PAUSA)
 
     await usuario.click(screen.getByRole('radio', { name: 'Mercado Pago' }))
     await usuario.click(confirmar())
@@ -373,7 +527,7 @@ describe('Teclado del cobro: flechas recorren, Enter avanza', () => {
     abrirCobro(cobrar, nueva)
     await screen.findByRole('dialog')
     await esperarFocoInicial()
-    await esperar(350)
+    await esperar(PAUSA)
 
     // T elige Transferencia; Enter la confirma y pasa a "Confirmar venta";
     // el segundo Enter confirma la venta.
@@ -386,6 +540,7 @@ describe('Teclado del cobro: flechas recorren, Enter avanza', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(confirmar())
     })
+    await esperar(PAUSA)
     await usuario.keyboard('{Enter}')
 
     await waitFor(() => {

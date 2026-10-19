@@ -12,6 +12,9 @@
  * fijas. Lo que se agrego aca es lo que la lista promete y las tarjetas no
  * podian: que las columnas esten, que cada dato aparezca UNA vez --y no
  * duplicado "para la version movil"-- y que el estado se lea sin color.
+ *
+ * V6: con el foco en una fila, → suma una unidad, ← resta una y Enter pasa
+ * al carrito --no agrega--. Un toque o un clic siguen agregando una unidad.
  */
 
 import { describe, it, expect, vi } from 'vitest'
@@ -64,6 +67,8 @@ function armar(cambios: Partial<ProductBrowserProps> = {}) {
     listaActiva: false,
     onResaltar: vi.fn(),
     onElegir: vi.fn(),
+    onAjustar: vi.fn(),
+    onContinuar: vi.fn(),
     esFavorito: () => false,
     onFavorito: vi.fn(),
     onVolverAlLector: vi.fn(),
@@ -144,27 +149,62 @@ describe('El catalogo se ve antes de escribir nada', () => {
 })
 
 describe('Elegir un producto', () => {
-  it('con un toque agrega y devuelve el foco al lector', async () => {
+  it('con un toque agrega una unidad', async () => {
     const usuario = userEvent.setup()
     const { props } = armar()
     await usuario.click(fila(/^Yerba mate/))
-    expect(props.onElegir).toHaveBeenCalledWith(PRODUCTOS[0], false)
+    expect(props.onElegir).toHaveBeenCalledOnce()
+    expect(props.onElegir).toHaveBeenCalledWith(PRODUCTOS[0])
   })
 
-  it('con el teclado agrega y se queda en la grilla', async () => {
+  it('con el foco en una fila, → agrega UNA unidad y ← quita una', async () => {
+    const usuario = userEvent.setup()
+    const { props } = armar()
+    fila(/^Gaseosa/).focus()
+    await usuario.keyboard('{ArrowRight}')
+    expect(props.onAjustar).toHaveBeenLastCalledWith(PRODUCTOS[1], 1)
+    await usuario.keyboard('{ArrowLeft}')
+    expect(props.onAjustar).toHaveBeenLastCalledWith(PRODUCTOS[1], -1)
+    expect(props.onAjustar).toHaveBeenCalledTimes(2)
+    // Ni agregaron por el camino del clic ni movieron la fila enfocada.
+    expect(props.onElegir).not.toHaveBeenCalled()
+    expect(fila(/^Gaseosa/)).toHaveFocus()
+  })
+
+  it('→ sostenido agrega UNA unidad, no treinta', async () => {
+    const usuario = userEvent.setup()
+    const { props } = armar()
+    fila(/^Gaseosa/).focus()
+    await usuario.keyboard('{ArrowRight}')
+    for (let i = 0; i < 5; i++) {
+      fireEvent.keyDown(fila(/^Gaseosa/), { key: 'ArrowRight', repeat: true })
+    }
+    expect(props.onAjustar).toHaveBeenCalledOnce()
+  })
+
+  it('Enter con el foco en una fila pasa al carrito: NO agrega', async () => {
     const usuario = userEvent.setup()
     const { props } = armar()
     fila(/^Gaseosa/).focus()
     await usuario.keyboard('{Enter}')
-    expect(props.onElegir).toHaveBeenCalledTimes(1)
-    expect(props.onElegir).toHaveBeenCalledWith(PRODUCTOS[1], true)
+    expect(props.onContinuar).toHaveBeenCalledOnce()
+    expect(props.onElegir).not.toHaveBeenCalled()
+    expect(props.onAjustar).not.toHaveBeenCalled()
   })
 
-  it('un clic sintetizado por el teclado tambien cuenta como teclado', () => {
+  it('Enter sostenido no avanza dos veces', async () => {
+    const usuario = userEvent.setup()
     const { props } = armar()
-    // `detail: 0` es lo que trae el clic que dispara la barra sobre un boton.
+    fila(/^Gaseosa/).focus()
+    await usuario.keyboard('{Enter}')
+    fireEvent.keyDown(fila(/^Gaseosa/), { key: 'Enter', repeat: true })
+    expect(props.onContinuar).toHaveBeenCalledOnce()
+  })
+
+  it('la barra espaciadora sobre una fila es como tocarla: una unidad', () => {
+    const { props } = armar()
     fireEvent.click(fila(/^Gaseosa/), { detail: 0 })
-    expect(props.onElegir).toHaveBeenCalledWith(PRODUCTOS[1], true)
+    expect(props.onElegir).toHaveBeenCalledWith(PRODUCTOS[1])
   })
 
   it('Enter sobre una fila agotada no agrega nada', async () => {
@@ -188,7 +228,7 @@ describe('Elegir un producto', () => {
 })
 
 describe('La lista con el teclado', () => {
-  it('una sola fila entra con Tab; las flechas recorren el resto', async () => {
+  it('una sola fila entra con Tab; ↑ ↓ recorren el resto', async () => {
     const usuario = userEvent.setup()
     armar()
     const yerba = fila(/^Yerba mate/)
@@ -213,19 +253,30 @@ describe('La lista con el teclado', () => {
     expect(props.onVolverAlLector).toHaveBeenCalled()
   })
 
-  it('la ELEGIDA desde el campo se marca como actual', () => {
+  it('la ELEGIDA se marca como actual, con borde y contorno: no solo color', () => {
     armar({ resaltado: 2, listaActiva: true, busqueda: 'que' })
-    expect(fila(/^Queso/)).toHaveAttribute('aria-current', 'true')
+    const queso = fila(/^Queso/)
+    expect(queso).toHaveAttribute('aria-current', 'true')
+    expect(queso).toHaveAttribute('data-elegida')
+    expect(queso.className).toContain('border-l-primary')
+    expect(queso.className).toContain('outline-2')
   })
 
-  it('mientras se escribe, la primera se marca mas flojo y NO es la actual', () => {
-    // Es la diferencia visible entre escribir y elegir: la marca tenue dice
-    // "Enter agrega esta", pero las flechas siguen siendo del cursor.
+  it('fuera de la etapa de productos no hay fila marcada', () => {
+    // En el carrito y en el cobro las flechas mandan en otro lado: una marca
+    // en la lista haria creer que → todavia suma aca.
     armar({ resaltado: 0, listaActiva: false, busqueda: 'a' })
     const primera = fila(/^Yerba/)
     expect(primera).not.toHaveAttribute('aria-current')
     expect(primera).not.toHaveAttribute('data-elegida')
-    expect(primera.className).toContain('border-l-primary/50')
+  })
+
+  it('lo que ya esta en el carrito se ve en la fila, y se anuncia', () => {
+    armar({ enCarrito: new Map([[2, '3 u.']]) })
+    const gaseosa = fila(/^Gaseosa/)
+    expect(gaseosa).toHaveAccessibleName(/3 u\. en el carrito$/)
+    expect(gaseosa.querySelector('[data-en-carrito]')?.textContent).toBe('3 u.')
+    expect(fila(/^Yerba/).querySelector('[data-en-carrito]')).toBeNull()
   })
 })
 

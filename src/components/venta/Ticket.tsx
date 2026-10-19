@@ -12,10 +12,10 @@ import {
   politicaDe,
 } from '@/modules/products/units'
 import { esEditable } from './foco'
-import { moverSeleccion } from './teclado'
+import { esRepeticionIgnorada, moverSeleccion } from './teclado'
 
 /**
- * El ticket en curso.
+ * El carrito: el ticket en curso. Es la segunda etapa de la venta (V6).
  *
  * Una linea por producto: nombre y subtotal en el primer renglon; en el
  * segundo, los botones − y + con la cantidad en el medio, el precio unitario
@@ -25,15 +25,15 @@ import { moverSeleccion } from './teclado'
  * la cantidad no hay que descubrirlo.
  *
  * La seleccion es una idea de teclado, no de foco: se mueve con ↑ ↓ desde el
- * campo de escaneo sin que el cursor salga de ahi, y se marca con una barra y
- * un fondo, no solo con color. El foco real solo entra al ticket con Tab, y
- * entonces las mismas teclas funcionan desde aca.
+ * buscador sin que el cursor salga de ahi, y se marca con una barra y un
+ * fondo, no solo con color. El foco real solo entra al carrito con Tab (o al
+ * abrirlo como hoja), y entonces las mismas teclas funcionan desde aca.
  *
- * REVISAR (V3). Enter con el campo vacio no cobra: enciende `revisando`, y
+ * REVISAR (V3, V6). Enter en productos no cobra: enciende `revisando`, y
  * entonces este panel es el que manda --se enmarca, dice que hacen las teclas
- * y el Enter siguiente abre el cobro--. Es el paso que faltaba entre "sigo
- * agregando" y "estoy por cobrar", y el que hace que dos Enter distraidos ya
- * no registren una venta.
+ * y el Enter siguiente abre el cobro--. Revisando, ↑ ↓ eligen linea, → suma
+ * una unidad, ← resta una (en cero, quita la linea), Enter cobra y Esc vuelve
+ * a productos.
  *
  * `memo` en la linea no es un adorno: con quince lineas y una cantidad que
  * cambia con cada tecla, volver a renderizar el ticket entero se nota en una
@@ -156,7 +156,6 @@ export function Ticket({
   onCantidad,
   onAjustar,
   onQuitar,
-  onEditarPeso,
   onEditando,
   onVaciar,
   onCobrar,
@@ -192,8 +191,6 @@ export function Ticket({
   /** Una unidad mas o menos. La pantalla decide que pasa al llegar a cero. */
   onAjustar: (linea: CartLine, delta: -1 | 1) => void
   onQuitar: (productId: number) => void
-  /** Enter sobre una linea que se pesa: abre el peso para corregirlo. */
-  onEditarPeso: (productId: number) => void
   onEditando: (editando: boolean) => void
   onVaciar: () => void
   onCobrar: () => void
@@ -207,11 +204,27 @@ export function Ticket({
   const vacio = lineas.length === 0
   const idAyuda = useId()
   const lineaSeleccionada = lineas.find((l) => l.productId === seleccionada) ?? null
+  const grupo = useRef<HTMLDivElement>(null)
+
+  // Abierto como hoja (telefono, tablet, menos de 1280 px), el carrito tapa
+  // el buscador: revisar pone el foco en las lineas para que las flechas
+  // sigan funcionando. En escritorio el foco se queda en el buscador.
+  useEffect(() => {
+    if (!revisando) return
+    const id = requestAnimationFrame(() => {
+      const el = grupo.current
+      if (el?.closest('[role="dialog"]') && !el.contains(document.activeElement)) el.focus()
+    })
+    return () => {
+      cancelAnimationFrame(id)
+    }
+  }, [revisando])
 
   /**
-   * Las mismas teclas que en el campo de escaneo, cuando el foco esta en el
-   * ticket. Se ignoran con el foco en un campo de texto: dentro del campo de
-   * cantidad las flechas ya suben y bajan el numero, y Supr borra un digito.
+   * Las mismas teclas que en el buscador durante la etapa del carrito, cuando
+   * el foco esta aca. Se ignoran con el foco en un campo de texto: dentro del
+   * campo de cantidad las flechas ya suben y bajan el numero, y Supr borra un
+   * digito.
    *
    * El grupo enfocable es un `div` alrededor de la lista, y no la lista con
    * otro rol: un `ul` con `role="group"` deja a sus `li` sin lista que los
@@ -220,40 +233,37 @@ export function Ticket({
   function alPresionar(e: React.KeyboardEvent<HTMLDivElement>) {
     if (esEditable(e.target)) return
     const ids = lineas.map((l) => l.productId)
-    // Un Enter, un + o un Supr sostenidos no se repiten: treinta unidades de
+    // Un →, un Enter o un Supr sostenidos no se repiten: treinta unidades de
     // mas por dejar el dedo apoyado no es una forma de vender.
-    if (e.repeat && ['Enter', '+', '-', '−', 'Delete'].includes(e.key)) {
+    if (esRepeticionIgnorada(e.key, e.repeat)) {
       e.preventDefault()
       return
     }
     // Enter sobre un boton de la linea (−, +, Quitar) es ese boton, no el
-    // ticket.
+    // carrito.
     const enBoton = e.target instanceof HTMLElement && e.target.closest('button') !== null
 
     switch (e.key) {
-      // V5: las cuatro flechas recorren las lineas. Ninguna cambia cantidades.
+      // ↑ ↓ recorren las lineas. Nunca cambian una cantidad.
       case 'ArrowDown':
-      case 'ArrowRight':
         e.preventDefault()
         onSeleccionar(moverSeleccion(ids, seleccionada, 1))
         return
       case 'ArrowUp':
-      case 'ArrowLeft':
         e.preventDefault()
         onSeleccionar(moverSeleccion(ids, seleccionada, -1))
         return
+      // → y ← cambian la cantidad de la elegida, de a una. + y - son lo mismo.
+      case 'ArrowRight':
       case '+':
-        if (lineaSeleccionada) {
-          e.preventDefault()
-          onAjustar(lineaSeleccionada, 1)
-        }
+        e.preventDefault()
+        if (lineaSeleccionada) onAjustar(lineaSeleccionada, 1)
         return
+      case 'ArrowLeft':
       case '-':
       case '−':
-        if (lineaSeleccionada) {
-          e.preventDefault()
-          onAjustar(lineaSeleccionada, -1)
-        }
+        e.preventDefault()
+        if (lineaSeleccionada) onAjustar(lineaSeleccionada, -1)
         return
       case 'Delete':
         if (lineaSeleccionada) {
@@ -262,16 +272,11 @@ export function Ticket({
         }
         return
       case 'Enter':
-        // Enter avanza: del ticket, al cobro. Un producto por peso es la
-        // excepcion: ahi Enter corrige el peso, que es lo unico que se puede
-        // cambiar de esa linea.
+        // Enter avanza: del carrito, al cobro. Siempre, tambien sobre una
+        // linea que se pesa: el peso se corrige con → o ←.
         if (enBoton) return
         e.preventDefault()
-        if (lineaSeleccionada && esFraccionable(lineaSeleccionada.saleUnit)) {
-          onEditarPeso(lineaSeleccionada.productId)
-        } else if (puedeCobrar) {
-          onCobrar()
-        }
+        if (puedeCobrar) onCobrar()
         return
       case 'Escape':
         e.preventDefault()
@@ -282,7 +287,7 @@ export function Ticket({
 
   return (
     <section
-      aria-label="Ticket en curso"
+      aria-label="Carrito"
       data-revisando={revisando || undefined}
       className={cn(
         'flex min-h-0 flex-col border-line bg-surface transition-colors',
@@ -294,7 +299,7 @@ export function Ticket({
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-2.5">
         <h2 className="text-sm font-semibold text-ink">
-          Ticket
+          Carrito
           {!vacio && (
             <span className="ml-2 font-normal text-ink-muted" data-numeric="">
               {articulos} {articulos === 1 ? 'artículo' : 'artículos'}
@@ -311,10 +316,13 @@ export function Ticket({
       {/* Que hacen las teclas ahora. Solo mientras se revisa: el resto del
           tiempo el ticket es una lista y no tiene por que explicarse. */}
       {revisando && !vacio && (
-        <p className="shrink-0 border-b border-line bg-primary-quiet px-4 py-2 text-sm text-ink">
-          <strong className="font-semibold">Revisá el ticket.</strong> <Kbd>Enter</Kbd> cobrar ·{' '}
-          <Kbd>+</Kbd> <Kbd>−</Kbd> cantidad · <Kbd>Supr</Kbd> quitar · <Kbd>Esc</Kbd> seguir
-          agregando
+        <p
+          data-revisando-ayuda=""
+          className="shrink-0 border-b border-line bg-primary-quiet px-4 py-2 text-sm text-ink"
+        >
+          <strong className="font-semibold">Revisá el carrito.</strong> <Kbd>↑</Kbd> <Kbd>↓</Kbd>{' '}
+          revisar · <Kbd>→</Kbd> +1 · <Kbd>←</Kbd> −1 · <Kbd>Enter</Kbd> cobrar · <Kbd>Esc</Kbd>{' '}
+          volver
         </p>
       )}
 
@@ -326,24 +334,25 @@ export function Ticket({
           : ''}
       </p>
       <p id={idAyuda} className="sr-only">
-        Las flechas eligen una línea; más y menos cambian la cantidad; Suprimir la quita; Enter pasa
-        a cobrar.
+        Flecha arriba y abajo eligen una línea; derecha suma una unidad e izquierda resta una;
+        Suprimir la quita; Enter pasa a cobrar; Escape vuelve a los productos.
       </p>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {vacio ? (
           <div className="p-4">
             <EmptyState
-              title="El ticket está vacío"
+              title="El carrito está vacío"
               description="Escaneá un código o buscá un producto para empezar."
               className="border-0"
             />
           </div>
         ) : (
           <div
+            ref={grupo}
             role="group"
             tabIndex={0}
-            aria-label="Líneas del ticket"
+            aria-label="Líneas del carrito"
             aria-describedby={idAyuda}
             onKeyDown={alPresionar}
             className="focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"

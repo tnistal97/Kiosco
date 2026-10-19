@@ -84,7 +84,7 @@ export async function escanear(page: Page, codigo: string): Promise<void> {
 /** Total del ticket, como numero. */
 export async function totalDelTicket(page: Page): Promise<number> {
   const texto = await page
-    .getByRole('region', { name: 'Ticket en curso' })
+    .getByRole('region', { name: 'Carrito' })
     .getByText(/^\$/)
     .last()
     .innerText()

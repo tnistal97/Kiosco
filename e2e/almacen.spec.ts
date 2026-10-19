@@ -146,7 +146,7 @@ test.describe('Un producto que se pesa', () => {
     await page.keyboard.press('Enter')
 
     await page
-      .getByRole('region', { name: 'Ticket en curso' })
+      .getByRole('region', { name: 'Carrito' })
       .getByRole('button', { name: /^cobrar/i })
       .click()
     await page
@@ -277,7 +277,7 @@ test.describe('El lector encuentra por cualquiera de los codigos', () => {
     // El mismo producto, con el codigo que el proveedor manda en el pack.
     await escanear(page, PRODUCTOS.yerbaAlternativo.codigo)
 
-    const ticket = page.getByRole('region', { name: 'Ticket en curso' })
+    const ticket = page.getByRole('region', { name: 'Carrito' })
     await expect(ticket, 'el alternativo abrio una segunda linea').toContainText('1 artículo')
     expect(await totalDelTicket(page), 'no sumo a la misma linea').toBe(PRODUCTOS.yerba.precio * 2)
   })

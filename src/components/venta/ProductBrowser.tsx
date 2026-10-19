@@ -25,7 +25,7 @@ import {
   esFraccionable,
   formatearCantidadConUnidad,
 } from '@/modules/products/units'
-import { esTeclaDeGrilla, moverEnGrilla } from './teclado'
+import { esRepeticionIgnorada, esTeclaDeGrilla, moverEnGrilla } from './teclado'
 import type { SeccionDelCatalogo } from './Secciones'
 
 /**
@@ -56,17 +56,19 @@ import type { SeccionDelCatalogo } from './Secciones'
  * 4. LA ESTRELLA NO VIVE EN EL TELEFONO. Ocupaba 44 px de cada fila para una
  *    accion que no es vender.
  *
- * El lector sigue siendo instantaneo con el foco en la lista: la rafaga del
- * lector USB la toma el escucha global, que solo se calla dentro de un campo
- * de texto.
+ * El lector sigue siendo instantaneo con el foco en la lista: la primera
+ * tecla imprimible lleva el foco al buscador y la rafaga termina ahi.
  *
- * Dos maneras de recorrerla, y no compiten:
+ * Dos maneras de recorrerla, con las MISMAS teclas (V6):
  *
- *   ↑ ↓ desde el campo   marcan la fila ELEGIDA sin mover el foco (el lector
- *                        sigue funcionando); → suma, Enter agrega
+ *   desde el buscador    ↑ ↓ marcan el producto ELEGIDO sin mover el foco (el
+ *                        lector sigue funcionando)
  *   Tab                  mete el foco de verdad en la lista, para lectores de
- *                        pantalla; las flechas lo mueven, Enter agrega,
- *                        Escape vuelve al campo
+ *                        pantalla; ↑ ↓ lo mueven
+ *
+ * y en las dos, → suma una unidad del elegido, ← resta una, Enter pasa al
+ * carrito (no agrega nada) y Escape vuelve al buscador. Tocar una fila con el
+ * dedo o el mouse agrega una unidad, como en cualquier caja tactil.
  */
 
 export interface ProductBrowserProps {
@@ -82,19 +84,24 @@ export interface ProductBrowserProps {
   /** Quedan productos por traer: la lista sigue. */
   hayMas: boolean
   onCargarMas: () => void
-  /** Indice de la fila marcada. -1 si ninguna. */
+  /** Indice de la fila ELEGIDA: la que suma → y resta ←. -1 si ninguna. */
   resaltado: number
   /**
-   * La fila marcada esta ELEGIDA: las flechas mandan aca.
+   * La venta esta en la etapa de productos: la fila elegida se marca.
    *
-   * Sin esto, la marca es apenas una sugerencia --"Enter agrega esta"--
-   * mientras se escribe. Es la diferencia visible entre estar escribiendo y
-   * estar eligiendo un producto, y por eso no se dibuja igual (V3).
+   * En el carrito y en el cobro las flechas mandan en otro lado, y una marca
+   * en la lista haria creer que → todavia suma aca.
    */
   listaActiva: boolean
   onResaltar: (indice: number) => void
-  /** `desdeElTeclado`: el foco se queda en la lista para seguir eligiendo. */
-  onElegir: (producto: Product, desdeElTeclado: boolean) => void
+  /** Un toque, un clic o la barra espaciadora sobre una fila: una unidad mas. */
+  onElegir: (producto: Product) => void
+  /** → (+1) o ← (-1) con el foco en una fila. */
+  onAjustar: (producto: Product, delta: -1 | 1) => void
+  /** Enter con el foco en una fila: pasar al carrito. */
+  onContinuar: () => void
+  /** Cuanto hay de cada producto en el carrito, ya escrito ("2 u.", "0,500 kg"). */
+  enCarrito?: ReadonlyMap<number, string>
   esFavorito: (productId: number) => boolean
   onFavorito: (productId: number) => void
   onVolverAlLector: () => void
@@ -137,6 +144,9 @@ export function ProductBrowser({
   listaActiva,
   onResaltar,
   onElegir,
+  onAjustar,
+  onContinuar,
+  enCarrito,
   esFavorito,
   onFavorito,
   onVolverAlLector,
@@ -200,33 +210,35 @@ export function ProductBrowser({
   }, [])
 
   function alPresionarEnLaLista(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key === 'Escape') {
+    // Un → o un Enter sostenidos no suman ni avanzan treinta veces.
+    if (esRepeticionIgnorada(e.key, e.repeat)) {
       e.preventDefault()
-      onVolverAlLector()
       return
     }
-    // Enter agrega la fila enfocada. Se hace aca y no por la activacion
-    // nativa del boton para que dependa de la tecla y no de como cada
-    // navegador --o cada lector de pantalla-- sintetiza el clic.
-    if (e.key === 'Enter') {
-      // Un Enter sostenido no elige treinta veces.
-      if (e.repeat) {
+    const boton = e.target instanceof HTMLElement ? e.target.closest('[data-fila]') : null
+    const indice = Number(boton?.getAttribute('data-indice') ?? '-1')
+    const producto = productos[indice]
+
+    switch (e.key) {
+      case 'Escape':
         e.preventDefault()
+        onVolverAlLector()
         return
-      }
-      const boton = e.target instanceof HTMLElement ? e.target.closest('[data-fila]') : null
-      const indice = Number(boton?.getAttribute('data-indice') ?? '-1')
-      const producto = productos[indice]
-      if (boton instanceof HTMLButtonElement && !boton.disabled && producto) {
+      // Enter AVANZA al carrito, igual que desde el buscador. Se resuelve aca
+      // y no por la activacion nativa del boton, que agregaria una unidad.
+      case 'Enter':
         e.preventDefault()
-        onElegir(producto, true)
-      }
-      return
+        onContinuar()
+        return
+      case 'ArrowRight':
+      case 'ArrowLeft':
+        e.preventDefault()
+        if (producto) onAjustar(producto, e.key === 'ArrowRight' ? 1 : -1)
+        return
     }
     if (!esTeclaDeGrilla(e.key)) return
     e.preventDefault()
-    // Una sola columna: ↑ ↓ ← → mueven de a una fila, Inicio y Fin a los
-    // extremos.
+    // Una sola columna: ↑ ↓ mueven de a una fila, Inicio y Fin a los extremos.
     const siguiente = moverEnGrilla(enfocada, e.key, productos.length, 1)
     if (siguiente < 0) return
     // Bajar desde la ultima fila trae mas, en vez de quedarse trabado.
@@ -275,10 +287,10 @@ export function ProductBrowser({
                   key={p.id}
                   producto={p}
                   indice={i}
-                  resaltada={i === resaltado}
                   elegida={i === resaltado && listaActiva}
                   enfocable={i === enfocada}
                   favorito={esFavorito(p.id)}
+                  enCarrito={enCarrito?.get(p.id) ?? null}
                   onElegir={onElegir}
                   onFavorito={onFavorito}
                 />
@@ -340,32 +352,32 @@ function estadoDelProducto(producto: Product): {
 const FilaDeProducto = memo(function FilaDeProducto({
   producto,
   indice,
-  resaltada,
   elegida,
   enfocable,
   favorito,
+  enCarrito,
   onElegir,
   onFavorito,
 }: {
   producto: Product
   indice: number
-  /** Marcada: o bien elegida, o bien la que agregaria Enter. */
-  resaltada: boolean
-  /** Elegida de verdad: las flechas actuan sobre esta fila. */
+  /** Elegida: → suma y ← resta sobre esta fila. */
   elegida: boolean
   enfocable: boolean
   favorito: boolean
-  onElegir: (producto: Product, desdeElTeclado: boolean) => void
+  /** Cuanto hay ya en el carrito, o null si no esta. */
+  enCarrito: string | null
+  onElegir: (producto: Product) => void
   onFavorito: (productId: number) => void
 }) {
   const estado = estadoDelProducto(producto)
   const denominador = denominadorDePrecio(producto.saleUnit)
 
   function alClic(e: MouseEvent<HTMLButtonElement>) {
-    // `detail` es 0 cuando el clic lo disparo Enter o la barra: quien navega
-    // con el teclado se queda en la lista para seguir eligiendo; quien toca
-    // vuelve al lector, que es donde va a caer el proximo codigo.
-    onElegir(producto, e.detail === 0)
+    // Enter no llega aca: lo frena la lista, porque Enter avanza al carrito.
+    // Un toque, un clic o la barra espaciadora agregan una unidad.
+    e.preventDefault()
+    onElegir(producto)
   }
 
   return (
@@ -378,7 +390,7 @@ const FilaDeProducto = memo(function FilaDeProducto({
         tabIndex={enfocable ? 0 : -1}
         disabled={estado.agotado}
         aria-current={elegida || undefined}
-        aria-label={`${producto.name}, ${estado.agotado ? estado.texto.toLowerCase() : formatearPrecio(producto)}`}
+        aria-label={`${producto.name}, ${estado.agotado ? estado.texto.toLowerCase() : formatearPrecio(producto)}${enCarrito ? `, ${enCarrito} en el carrito` : ''}`}
         onClick={alClic}
         className={cn(
           // Telefono: dos renglones y 56 px --el nombre entero arriba, estado
@@ -396,23 +408,34 @@ const FilaDeProducto = memo(function FilaDeProducto({
           // Sin stock: fondo apagado y el estado dicho en palabras ("Sin
           // stock"), no una opacidad que deja todo ilegible.
           estado.agotado && 'cursor-not-allowed bg-sunken',
-          // Tres estados bien distintos: elegida --las flechas actuan aca--,
-          // apenas marcada --Enter la agregaria-- y el resto.
+          // Elegida: barra gruesa, fondo y un contorno de 2 px. Se distingue
+          // sin depender del color (V6): es la fila sobre la que → suma.
           elegida
-            ? 'border-l-primary bg-selection'
-            : resaltada
-              ? 'border-l-primary/50 hover:bg-raised'
-              : 'border-l-transparent hover:bg-raised focus-visible:border-l-primary focus-visible:bg-selection',
+            ? 'border-l-primary bg-selection outline-2 -outline-offset-2 outline-primary'
+            : 'border-l-transparent hover:bg-raised focus-visible:border-l-primary focus-visible:bg-selection',
         )}
       >
         {/* EL NOMBRE MANDA: se lleva todo el ancho sobrante y, si no entra,
             usa un segundo renglon en vez de cortarse. "Aceite de girasol
             900 ml" no puede terminar en "Aceite de girasol 9…". */}
-        <span className={CELDA_NOMBRE}>
+        <span className={cn(CELDA_NOMBRE, 'flex items-baseline gap-1.5')}>
+          {/* Cuanto hay ya en el carrito, delante del nombre: es lo que
+              cambian → y ←, y se ve sin mirar el otro panel. En el mismo
+              renglon, para que agregar no haga crecer la fila (V6). */}
+          {enCarrito && (
+            <span
+              aria-hidden="true"
+              data-en-carrito=""
+              title="En el carrito"
+              className="shrink-0 rounded bg-primary px-1.5 text-xs leading-5 font-semibold text-ink-on-solid"
+            >
+              {enCarrito}
+            </span>
+          )}
           <span
             data-nombre=""
             className={cn(
-              'line-clamp-2 text-[0.9375rem] leading-tight font-medium',
+              'line-clamp-2 min-w-0 text-[0.9375rem] leading-tight font-medium',
               estado.agotado ? 'text-ink-muted' : 'text-ink',
             )}
           >

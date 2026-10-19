@@ -89,6 +89,14 @@ export interface DialogProps {
    * lado del dialogo, no solo dentro del cuerpo.
    */
   onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void
+  /**
+   * Lo mismo, pero ANTES que cualquier control de adentro.
+   *
+   * Para frenar una tecla antes de que la vea nadie: el cobro descarta asi un
+   * Enter repetido o demasiado pegado al anterior, que de otro modo ya habria
+   * activado el boton enfocado.
+   */
+  onKeyDownCapture?: (e: React.KeyboardEvent<HTMLDivElement>) => void
 }
 
 export function Dialog({
@@ -105,6 +113,7 @@ export function Dialog({
   bodyClassName,
   rapido = false,
   onKeyDown,
+  onKeyDownCapture,
 }: DialogProps) {
   const registrar = useOverlays((s) => s.registrar)
 
@@ -143,6 +152,7 @@ export function Dialog({
         <DialogPanel
           transition={!rapido}
           onKeyDown={onKeyDown}
+          onKeyDownCapture={onKeyDownCapture}
           className={cn(
             'flex w-full flex-col border border-line bg-surface shadow-modal',
             rapido

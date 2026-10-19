@@ -70,7 +70,7 @@ for (const [width, height] of VIEWPORTS) {
     }).length
     const r0 = primera.getBoundingClientRect()
     const nombre = primera.querySelector<HTMLElement>('[data-nombre]')
-    const ticket = document.querySelector<HTMLElement>('section[aria-label="Ticket en curso"]')
+    const ticket = document.querySelector<HTMLElement>('section[aria-label="Carrito"]')
     const tr = ticket ? ticket.getBoundingClientRect() : null
     const aside = document.querySelector<HTMLElement>('aside')
     const ar =

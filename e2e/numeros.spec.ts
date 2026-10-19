@@ -25,7 +25,7 @@ const NUEVO = {
 } as const
 
 const dialogo = (page: Page) => page.getByRole('dialog')
-const ticket = (page: Page) => page.getByRole('region', { name: 'Ticket en curso' })
+const ticket = (page: Page) => page.getByRole('region', { name: 'Carrito' })
 
 /** Escribe tecla por tecla, como una persona. */
 async function escribir(page: Page, etiqueta: string | RegExp, valor: string): Promise<void> {

@@ -44,6 +44,7 @@ import {
 } from './PaymentSelector'
 import { pagoDeclarado, sugerenciasDeRecibido } from './cobro'
 import { esEditable } from './foco'
+import { enterAvanza } from './teclado'
 import { apiRequest } from '@/lib/api-client'
 import {
   parseEstadoDeCredito,
@@ -52,15 +53,23 @@ import {
 } from '@/modules/clients/dto'
 
 /**
- * Cobro. UX V5 (sobre la V2).
+ * Cobro. V6 (sobre la V5 y la V2). Es la tercera etapa de la venta.
  *
- * Tres pasos, de arriba hacia abajo, y Enter avanza de uno al otro:
+ * Tres pasos, de arriba hacia abajo, y cada Enter avanza UNO:
  *
  *   1. TOTAL, grande.
  *   2. ¿Cómo paga? Seis botones grandes. Las flechas recorren; Enter elige
  *      y lleva al paso 3 (en efectivo, a "Recibido"; si no, a Confirmar).
- *   3. En efectivo: RECIBIDO y VUELTO. Enter en "Recibido" confirma.
- *      CONFIRMAR VENTA es el boton principal.
+ *   3. En efectivo: RECIBIDO y VUELTO. Enter en "Recibido" NO cobra (V6): si
+ *      el importe alcanza, lleva el foco a CONFIRMAR VENTA y muestra el
+ *      vuelto; si no se escribio nada, pone el importe justo. El Enter
+ *      siguiente, ya sobre "Confirmar venta", registra la venta.
+ *
+ * Un Enter repetido (tecla sostenida) o demasiado pegado al anterior --menos
+ * de `PAUSA_ENTRE_ETAPAS_MS`-- no hace nada: se descarta antes de que lo vea
+ * cualquier control (`onKeyDownCapture`). Es lo que impide que un doble Enter
+ * rapido elija la forma de pago y confirme la venta de un saque. El mouse no
+ * tiene esa espera: un clic en "Confirmar venta" es siempre deliberado.
  *
  * Lo que casi nunca se usa --otro medio, dividir el pago, asignar la venta a
  * un cliente-- esta en "Más opciones". El cliente aparece solo si se elige
@@ -84,10 +93,9 @@ import {
  *  - el dialogo no se cierra con la venta en vuelo;
  *  - el precio, el total y el reparto los decide el servidor.
  *
- * Teclado: E D R T F O eligen el medio (tambien mientras se escribe con
- * cuanto paga), J pone el importe justo, Enter cobra, Escape vuelve. Enter no
- * cobra en los primeros 300 ms: es lo que separa "Enter, Enter" a proposito
- * de un Enter que rebota.
+ * Teclado: E T M D C F O eligen el medio (tambien mientras se escribe con
+ * cuanto paga), J pone el importe justo, Enter avanza un paso, Escape vuelve
+ * al carrito sin perder nada.
  *
  * ENTER NO COBRA SI NADIE DIJO COMO SE PAGA (V3). El dialogo se abre con
  * efectivo por el total, y eso es una SUPOSICION comoda, no un importe
@@ -144,8 +152,39 @@ function frenadoPorLimiteAlEnviar(credito: EstadoDeCreditoDTO | null): boolean {
   return credito !== null && !credito.entra
 }
 
-/** Cuanto hay que esperar desde que se abre para que Enter cobre. */
-const MS_ANTES_DE_COBRAR = 300
+/** En que paso del cobro esta el foco: decide la ayuda de teclas que se muestra. */
+type PasoDelCobro = 'medio' | 'recibido' | 'confirmar' | 'otro'
+
+/** Lo que hacen las teclas en cada paso del cobro. Discreto: una linea. */
+function AyudaDelCobro({ paso }: { paso: PasoDelCobro }) {
+  switch (paso) {
+    case 'medio':
+      return (
+        <>
+          <Kbd>←</Kbd> <Kbd>→</Kbd> forma de pago · <Kbd>Enter</Kbd> continuar · <Kbd>Esc</Kbd>{' '}
+          volver al carrito
+        </>
+      )
+    case 'recibido':
+      return (
+        <>
+          Escribí con cuánto paga · <Kbd>Enter</Kbd> continuar · <Kbd>Esc</Kbd> volver al carrito
+        </>
+      )
+    case 'confirmar':
+      return (
+        <>
+          <Kbd>Enter</Kbd> confirmar la venta · <Kbd>Esc</Kbd> volver al carrito
+        </>
+      )
+    case 'otro':
+      return (
+        <>
+          <Kbd>Esc</Kbd> volver al carrito
+        </>
+      )
+  }
+}
 
 /** Lo que se esta por cobrar, linea por linea. */
 function ArticulosDeLaVenta({ lineas }: { lineas: CartLine[] }) {
@@ -205,13 +244,21 @@ export function DialogoCobro({
   const campoPagaCon = useRef<HTMLInputElement>(null)
   /** El boton de la forma de pago elegida: recibe el foco al abrir. */
   const medioActivo = useRef<HTMLElement | null>(null)
-  const abiertoEn = useRef(0)
+  /**
+   * Cuando avanzo el cobro por ultima vez: al abrir, al elegir la forma de
+   * pago, al pasar de "Recibido" a "Confirmar", al mostrar el resultado. Un
+   * Enter que llega antes de `PAUSA_ENTRE_ETAPAS_MS` no avanza otro paso.
+   */
+  const ultimoPaso = useRef<number | null>(null)
+  /** Donde esta el foco, para la ayuda de teclas. */
+  const [paso, setPaso] = useState<PasoDelCobro>('medio')
 
   // Cada apertura arranca limpia. Sin esto, el vuelto de la venta anterior
   // sigue escrito en el campo.
   useEffect(() => {
     if (!abierto) return
-    abiertoEn.current = Date.now()
+    ultimoPaso.current = performance.now()
+    setPaso('medio')
     setPagos([nuevaLinea(0)])
     setDividido(false)
     setSiguienteClave(1)
@@ -380,6 +427,23 @@ export function DialogoCobro({
     }
   }, [abierto, hecha, medioPrincipal, dividido])
 
+  // La ayuda de teclas sigue al foco: dice lo que hace Enter AHORA.
+  useEffect(() => {
+    if (!abierto || hecha) return
+    function alEnfocar() {
+      const activo = document.activeElement
+      if (!(activo instanceof HTMLElement) || !activo.closest('[role="dialog"]')) return
+      if (activo.closest('[role="radiogroup"]')) setPaso('medio')
+      else if (activo === campoPagaCon.current) setPaso('recibido')
+      else if (activo === botonCobrar.current) setPaso('confirmar')
+      else setPaso('otro')
+    }
+    document.addEventListener('focusin', alEnfocar)
+    return () => {
+      document.removeEventListener('focusin', alEnfocar)
+    }
+  }, [abierto, hecha])
+
   function actualizar(clave: number, cambio: Partial<LineaDePago>) {
     setPagos((actuales) => actuales.map((p) => (p.clave === clave ? { ...p, ...cambio } : p)))
   }
@@ -392,13 +456,68 @@ export function DialogoCobro({
 
   /**
    * Enter sobre una forma de pago: queda elegida y el foco pasa al paso
-   * siguiente. En efectivo, a "Recibido"; en cualquier otra, a Confirmar.
+   * siguiente. En efectivo, a "Recibido"; en fiado, a elegir el cliente --sin
+   * cliente no hay venta que confirmar--; en cualquier otra, a Confirmar.
    */
   function confirmarMedio(opcion: OpcionDeCobro) {
+    ultimoPaso.current = performance.now()
     requestAnimationFrame(() => {
-      if (esEfectivo(opcion.method)) campoPagaCon.current?.focus()
-      else botonCobrar.current?.focus()
+      if (esEfectivo(opcion.method)) {
+        campoPagaCon.current?.focus()
+        return
+      }
+      if (esCuenta(opcion.method)) {
+        const selector = document.querySelector<HTMLElement>(
+          '[role="dialog"] [data-selector-cliente] input, [role="dialog"] [data-selector-cliente] button',
+        )
+        if (selector) {
+          selector.focus()
+          return
+        }
+      }
+      botonCobrar.current?.focus()
     })
+  }
+
+  /**
+   * Enter en "Recibido" (o en un importe del pago dividido): NO cobra.
+   *
+   * Si lo recibido alcanza, el foco pasa a "Confirmar venta" con el vuelto ya
+   * a la vista, y recien el Enter siguiente registra la venta. Sin nada
+   * escrito, se toma el importe justo --y se ve escrito, para que nadie
+   * confirme un numero que no esta en pantalla--. Si no alcanza, el foco se
+   * queda: el cartel de "Falta" ya dice cuanto.
+   */
+  function pasarAConfirmar() {
+    if (esEfectivo(principal.method) && !dividido && principal.recibido.trim() === '') {
+      ponerRecibido(principal.clave, total)
+    } else if (faltaEnAlgunEfectivo || !puedeCobrar) {
+      return
+    }
+    ultimoPaso.current = performance.now()
+    requestAnimationFrame(() => {
+      botonCobrar.current?.focus()
+    })
+  }
+
+  /**
+   * El freno de Enter, antes de que lo vea ningun control.
+   *
+   * Un Enter sostenido no se repite, y uno que llega menos de
+   * `PAUSA_ENTRE_ETAPAS_MS` despues del paso anterior no avanza otro. Sin
+   * esto, "Enter Enter" rapido sobre la forma de pago la elegia y, con el foco
+   * ya en "Confirmar venta", registraba la venta en el mismo gesto. El
+   * buscador de clientes queda afuera de la espera: ahi Enter elige a una
+   * persona, no avanza el cobro.
+   */
+  function frenarEnter(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== 'Enter') return
+    const enSelector =
+      e.target instanceof HTMLElement && e.target.closest('[data-selector-cliente]') !== null
+    if (e.repeat || (!enSelector && !enterAvanza(performance.now(), ultimoPaso.current))) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
   }
 
   function dividir() {
@@ -467,6 +586,9 @@ export function DialogoCobro({
         onNuevaVenta()
         return
       }
+      // El resultado tambien es un paso: el Enter que confirmo, si rebota o
+      // se sostiene, no puede cerrar el VUELTO antes de que alguien lo lea.
+      ultimoPaso.current = performance.now()
       setHecha({
         id,
         total,
@@ -496,26 +618,20 @@ export function DialogoCobro({
     if (elemento?.closest('[data-selector-cliente]')) return
 
     if (e.key === 'Enter') {
-      if (e.repeat) {
-        e.preventDefault()
-        return
-      }
       // Un boton con el foco hace lo suyo con Enter (Volver, Justo, un medio).
-      // Tambien "Cobrar $ X": tener el foco puesto ahi y apretar Enter es
-      // apretar el boton, y eso ya es declarar el pago.
-      if (elemento?.tagName === 'BUTTON') return
-      if (!puedeCobrar) return
-      // Nadie dijo todavia como se paga: Enter no vende. Se explica y se
+      // Tambien "Confirmar venta": tener el foco puesto ahi y apretar Enter es
+      // apretar el boton, y eso ya es declarar el pago. Es la UNICA forma de
+      // registrar la venta con el teclado.
+      if (elemento?.tagName === 'BUTTON' || elemento?.tagName === 'SUMMARY') return
+      e.preventDefault()
+      // Nadie dijo todavia como se paga: Enter no avanza. Se explica y se
       // lleva el cursor a donde hay que decirlo.
       if (!hayPagoDeclarado) {
-        e.preventDefault()
         setFaltaDeclarar(true)
         campoPagaCon.current?.focus()
         return
       }
-      if (Date.now() - abiertoEn.current < MS_ANTES_DE_COBRAR) return
-      e.preventDefault()
-      void cobrar()
+      pasarAConfirmar()
       return
     }
 
@@ -554,6 +670,7 @@ export function DialogoCobro({
         title="Venta registrada"
         size="sm"
         rapido
+        onKeyDownCapture={frenarEnter}
         footer={
           <Button variant="primary" size="xl" block autoFocus onClick={onNuevaVenta}>
             Nueva venta
@@ -614,12 +731,18 @@ export function DialogoCobro({
       open={abierto}
       onClose={onCerrar}
       title="Cobrar"
+      description={
+        <span className="hidden sm:inline" data-ayuda-cobro="">
+          <AyudaDelCobro paso={paso} />
+        </span>
+      }
       size="lg"
       rapido
       dismissible={!enviando}
       initialFocus={medioActivo}
       fullScreenMobile
       onKeyDown={teclas}
+      onKeyDownCapture={frenarEnter}
       footer={
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           {/* Solo se habla cuando algo falta: "todo bien" no necesita cartel. */}

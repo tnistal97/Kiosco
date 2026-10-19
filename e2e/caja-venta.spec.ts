@@ -16,7 +16,7 @@ import { PRODUCTOS, entrar, escanear, leerMetrica, leerMonto, terminarVenta } fr
  * navegan, y por eso se comprueban con URL y no con `getByRole('dialog')`.
  */
 
-const ticket = (page: Page) => page.getByRole('region', { name: 'Ticket en curso' })
+const ticket = (page: Page) => page.getByRole('region', { name: 'Carrito' })
 const campo = (page: Page) => page.locator('[data-barcode-input]')
 const fila = (page: Page, nombre: string) =>
   page.getByRole('group', { name: 'Productos' }).getByRole('button', { name: new RegExp(`^${nombre}, `) }) // prettier-ignore
@@ -170,14 +170,23 @@ test.describe('La caja, guiada', () => {
     const antes = await tieneQueHaber()
     const ventasAntes = await leerMetrica(page, 'Ventas de hoy')
 
-    // Una venta con lo justo, solo con el teclado.
+    // Una venta con lo justo, solo con el teclado (V6): carrito, cobro,
+    // Efectivo, Recibido vacio = justo, Confirmar. Cada Enter avanza un paso,
+    // y entre dos Enter tiene que pasar la pausa entre etapas.
     await page.goto('/venta')
     await expect(campo(page)).toBeFocused()
     await escanear(page, PRODUCTOS.yerba.codigo)
     await page.keyboard.press('Enter')
+    await page.waitForTimeout(400)
     await page.keyboard.press('Enter')
     await expect(page.getByRole('dialog').getByRole('radio', { name: 'Efectivo' })).toBeFocused()
+    await page.waitForTimeout(400)
     await page.keyboard.press('Enter')
+    await page.waitForTimeout(400)
+    await page.keyboard.press('Enter')
+    await expect(
+      page.getByRole('dialog').getByRole('button', { name: /^confirmar venta/i }),
+    ).toBeFocused()
     await page.waitForTimeout(400)
     await page.keyboard.press('Enter')
     await expect(page.getByText(/Venta registrada/).first()).toBeVisible({ timeout: 15_000 })
@@ -219,7 +228,7 @@ test.describe('Vender', () => {
     await expect(primera).toContainText('$')
     await expect(fila(page, PRODUCTOS.yerba.nombre)).toContainText('u.')
     // Y el ticket vacio dice que hacer, con "Cobrar" a la vista pero apagado.
-    await expect(page.getByText('El ticket está vacío')).toBeVisible()
+    await expect(page.getByText('El carrito está vacío')).toBeVisible()
     await expect(ticket(page).getByRole('button', { name: /^Cobrar/ })).toBeDisabled()
   })
 
@@ -244,8 +253,8 @@ test.describe('Vender', () => {
 
   test('9. elegir un producto de la lista visible, con el teclado', async ({ page }) => {
     // ↓ elige una fila SIN mover el foco: el lector tiene que seguir
-    // funcionando mientras se recorre la lista (V3). ↑ ↓ la recorren y Enter
-    // agrega.
+    // funcionando mientras se recorre la lista (V3). ↑ ↓ la recorren y →
+    // agrega (V6).
     await page.getByRole('button', { name: 'Todos' }).click()
     await campo(page).click()
     await expect(campo(page)).toBeFocused()
@@ -260,7 +269,7 @@ test.describe('Vender', () => {
     const segunda = filas.nth(1)
     await expect(segunda).toHaveAttribute('data-elegida')
     const nombre = (await segunda.getAttribute('aria-label'))?.split(', ')[0] ?? ''
-    await page.keyboard.press('Enter')
+    await page.keyboard.press('ArrowRight')
     await expect(ticket(page).getByText(nombre, { exact: true })).toBeVisible()
 
     // Y el foco nunca se fue del campo.
@@ -268,23 +277,31 @@ test.describe('Vender', () => {
   })
 
   test('9b. Tab tambien entra a la lista, y ahi el foco es real', async ({ page }) => {
-    // El camino de quien usa lector de pantalla: Tab entra, las flechas
-    // mueven el foco de verdad, Enter agrega y Escape vuelve al lector.
+    // El camino de quien usa lector de pantalla: Tab entra, ↑ ↓ mueven el
+    // foco de verdad, → agrega y Escape vuelve al lector.
     await page.getByRole('button', { name: 'Todos' }).click()
     const primera = page.locator('[data-fila]').first()
     await expect(primera).toBeVisible()
     await primera.focus()
     await page.keyboard.press('ArrowDown')
-    await expect(page.locator('[data-fila]').nth(1)).toBeFocused()
+    const segunda = page.locator('[data-fila]').nth(1)
+    await expect(segunda).toBeFocused()
+    const nombre = (await segunda.getAttribute('aria-label'))?.split(', ')[0] ?? ''
+    await page.keyboard.press('ArrowRight')
+    await expect(ticket(page).getByText(nombre, { exact: true })).toBeVisible()
+    await expect(segunda).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(campo(page)).toBeFocused()
   })
 
-  test('buscar por nombre filtra la misma lista, y Enter agrega', async ({ page }) => {
+  test('buscar por nombre filtra la misma lista, y → agrega', async ({ page }) => {
     await campo(page).fill('yerba')
     await expect(page.getByRole('group', { name: 'Resultados de la búsqueda' })).toBeVisible()
-    await campo(page).press('Enter')
+    await campo(page).press('ArrowRight')
     await expect(ticket(page).getByText(PRODUCTOS.yerba.nombre, { exact: true })).toBeVisible()
+    // La busqueda queda: se puede seguir sumando con →. Esc la limpia.
+    await expect(campo(page)).toHaveValue('yerba')
+    await campo(page).press('Escape')
     await expect(campo(page)).toHaveValue('')
   })
 
@@ -311,7 +328,7 @@ test.describe('Vender', () => {
     // Nueva venta: el lector recupera el foco y el ticket queda vacio.
     await terminarVenta(page)
     await expect(campo(page)).toBeFocused()
-    await expect(page.getByText('El ticket está vacío')).toBeVisible()
+    await expect(page.getByText('El carrito está vacío')).toBeVisible()
   })
 
   test('4. cobrar por transferencia: un toque y confirmar', async ({ page }) => {
@@ -384,14 +401,14 @@ test.describe('Vender', () => {
     await ticket(page)
       .getByRole('button', { name: `Quitar ${PRODUCTOS.leche.nombre}` })
       .click()
-    await expect(page.getByText('El ticket está vacío')).toBeVisible()
+    await expect(page.getByText('El carrito está vacío')).toBeVisible()
     await expect(ticket(page).getByRole('button', { name: /^Cobrar/ })).toBeDisabled()
   })
 
   test('caso: un producto agotado se ve, se explica y no entra', async ({ page }) => {
     await escanear(page, PRODUCTOS.agotado.codigo)
     await expect(page.getByRole('status').first()).toContainText('agotado')
-    await expect(page.getByText('El ticket está vacío')).toBeVisible()
+    await expect(page.getByText('El carrito está vacío')).toBeVisible()
 
     // En la lista tambien: la fila esta, apagada, y dice por que.
     await campo(page).fill('helado')

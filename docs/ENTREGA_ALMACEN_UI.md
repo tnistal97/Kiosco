@@ -53,35 +53,21 @@ sola con un aviso; si hay, queda el VUELTO en grande y "Nueva venta".
 
 ## 6. Gramática exacta de teclado
 
-Tres reglas: **las flechas solo se mueven**, **Enter elige o avanza una etapa**, **la
-cantidad cambia con + y −**. Enter nunca es "+1".
+Desde octubre de 2026 rige la **gramática V6**: la venta tiene tres etapas
+(**1. Productos › 2. Carrito › 3. Cobro**) y cada eje tiene una sola responsabilidad:
+**↑ ↓ eligen, → suma una unidad, ← resta una, Enter avanza una etapa, Esc vuelve una**.
+Enter nunca suma. El detalle completo, con el cobro paso a paso y las protecciones contra
+Enter de más, está en `docs/TECLADO_VENTA_V6.md`.
 
-| Dónde                | Tecla                    | Qué hace                                                                                          |
-| -------------------- | ------------------------ | ------------------------------------------------------------------------------------------------- |
-| Campo                | letras                   | Buscan por nombre                                                                                 |
-|                      | ↓                        | Entra a la lista de productos                                                                     |
-|                      | Enter con dígitos        | Busca ese código y agrega una unidad (como el lector)                                             |
-|                      | Enter con texto          | Elige el producto marcado                                                                         |
-|                      | Enter con el campo vacío | Pasa al ticket ("Revisá el ticket")                                                               |
-|                      | + / − con el campo vacío | Suma o resta una unidad a la línea elegida                                                        |
-| Lista                | ↑ ↓ ← →                  | Recorren (↑ en la primera vuelve al campo)                                                        |
-|                      | Enter                    | **Elige**: si no está en el ticket agrega 1; si ya está, solo la selecciona y avisa "con + sumás" |
-|                      | + / −                    | Suma o resta una unidad de ese producto                                                           |
-| Ticket               | ↑ ↓ ← →                  | Eligen línea                                                                                      |
-|                      | + / −                    | Una unidad más o menos (en cero se quita, con "Deshacer")                                         |
-|                      | Supr                     | Quita la línea (con "Deshacer")                                                                   |
-|                      | Enter                    | Abre el cobro                                                                                     |
-|                      | Tab                      | Recorre los controles de la línea (−, cantidad, +, Quitar) sin volver al campo                    |
-| Cobro                | ← → ↑ ↓                  | Cambian la forma de pago                                                                          |
-|                      | Enter sobre una forma    | La elige y pasa a **Recibido** (efectivo) o a **Confirmar venta**                                 |
-|                      | Enter en Recibido        | Confirma (nunca en los primeros 300 ms)                                                           |
-|                      | E T M D C F              | Efectivo, Transferencia, Mercado Pago, Débito, Crédito, Fiado                                     |
-| Resultado con vuelto | Enter                    | Nueva venta, con el foco en el campo                                                              |
-| Siempre              | F12 · Ctrl+K o "/" · Esc | Cobrar · ir al campo (la "/" no se escribe) · volver                                              |
+| Etapa     | ↑ ↓             | →             | ←                      | Enter            | Esc                 |
+| --------- | --------------- | ------------- | ---------------------- | ---------------- | ------------------- |
+| Productos | Elegir producto | Agregar uno   | Quitar uno (si está)   | Pasar al carrito | Limpiar la búsqueda |
+| Carrito   | Elegir línea    | +1            | −1 (en cero, se quita) | Abrir el cobro   | Volver a productos  |
+| Cobro     | Forma de pago   | Forma de pago | Forma de pago          | Avanzar un paso  | Volver al carrito   |
 
-Enter, +, − y Supr **no se repiten** si se dejan apretados. Con el foco fuera del campo
-(después de un clic en un lugar vacío), **+ y − cambian la cantidad** de la línea elegida
-en vez de escribirse, y cualquier otra tecla vuelve al campo y se escribe ahí.
+Escribir busca aunque el foco esté en otro lado. El lector (CÓDIGO + Enter) agrega una
+unidad y no cambia de etapa. Enter, ←, →, + y − no se repiten si se dejan apretados, y dos
+Enter a menos de 300 ms avanzan una sola etapa.
 
 ## 7. Lector de códigos de barras
 

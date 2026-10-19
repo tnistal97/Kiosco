@@ -71,7 +71,7 @@ async function crearYAgregar(page: Page): Promise<void> {
     .click()
 }
 
-const ticket = (page: Page) => page.getByRole('region', { name: 'Ticket en curso' })
+const ticket = (page: Page) => page.getByRole('region', { name: 'Carrito' })
 
 // ---------------------------------------------------------------------------
 

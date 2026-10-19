@@ -46,15 +46,23 @@ function teclaDe(e: KeyboardEvent<HTMLInputElement>): TeclaDelLector | null {
 }
 
 /**
- * Teclas que NO se repiten al dejarlas apretadas (UX V5).
+ * Teclas que NO se repiten al dejarlas apretadas (UX V5, V6).
  *
  * Un Enter o un + sostenido disparaba la accion treinta veces por segundo:
- * treinta unidades de mas, o un cobro abierto y confirmado sin querer. Un
+ * treinta unidades de mas, o un cobro abierto y confirmado sin querer. Desde
+ * la V6 ← y → tambien cambian cantidades, asi que tampoco se repiten. Un
  * lector nunca manda una tecla repetida --cada caracter es una pulsacion
- * nueva--, asi que ignorar la repeticion no lo afecta. Las flechas si se
- * repiten: recorrer una lista larga dejando la flecha apretada es normal.
+ * nueva--, asi que ignorar la repeticion no lo afecta. ↑ y ↓ si se repiten:
+ * recorrer una lista larga dejando la flecha apretada es normal.
  */
-const SIN_REPETICION = new Set<TeclaDelLector>(['Enter', '+', '-', 'Delete'])
+const SIN_REPETICION = new Set<TeclaDelLector>([
+  'Enter',
+  '+',
+  '-',
+  'Delete',
+  'ArrowLeft',
+  'ArrowRight',
+])
 
 /**
  * Un lector que escribe ENCIMA de lo que habia.

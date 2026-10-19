@@ -18,7 +18,7 @@ test('registra una venta de tres productos escaneando', async ({ page }) => {
   await escanear(page, PRODUCTOS.gaseosa.codigo)
   await escanear(page, PRODUCTOS.leche.codigo)
 
-  const ticket = page.getByRole('region', { name: 'Ticket en curso' })
+  const ticket = page.getByRole('region', { name: 'Carrito' })
   await expect(ticket.getByText(PRODUCTOS.yerba.nombre, { exact: true })).toBeVisible()
   await expect(ticket.getByText(PRODUCTOS.gaseosa.nombre, { exact: true })).toBeVisible()
   await expect(ticket.getByText(PRODUCTOS.leche.nombre, { exact: true })).toBeVisible()
@@ -49,14 +49,14 @@ test('el foco vuelve al codigo despues de una venta', async ({ page }) => {
 
   // Listo para el proximo cliente sin tocar nada.
   await expect(page.locator('[data-barcode-input]')).toBeFocused()
-  await expect(page.getByText('El ticket está vacío')).toBeVisible()
+  await expect(page.getByText('El carrito está vacío')).toBeVisible()
 })
 
 test('escanear el mismo producto dos veces suma cantidad, no lineas', async ({ page }) => {
   await escanear(page, PRODUCTOS.yerba.codigo)
   await escanear(page, PRODUCTOS.yerba.codigo)
 
-  const ticket = page.getByRole('region', { name: 'Ticket en curso' })
+  const ticket = page.getByRole('region', { name: 'Carrito' })
   await expect(ticket.getByText(PRODUCTOS.yerba.nombre, { exact: true })).toHaveCount(1)
   await expect(
     ticket.getByText('1 artículo'),
@@ -72,14 +72,14 @@ test('un codigo desconocido avisa y no agrega nada', async ({ page }) => {
   // el codigo a la vista y lo que se puede hacer. El detalle esta en
   // e2e/alta-rapida.spec.ts; aca solo importa que avise y no agregue nada.
   await expect(page.getByText('Código no registrado')).toBeVisible()
-  await expect(page.getByText('El ticket está vacío')).toBeVisible()
+  await expect(page.getByText('El carrito está vacío')).toBeVisible()
 })
 
 test('un producto agotado no se puede vender', async ({ page }) => {
   await escanear(page, PRODUCTOS.agotado.codigo)
 
   await expect(page.getByText(/sin stock disponible|agotado/i).first()).toBeVisible()
-  await expect(page.getByText('El ticket está vacío')).toBeVisible()
+  await expect(page.getByText('El carrito está vacío')).toBeVisible()
 })
 
 test('un producto dado de baja se distingue de uno inexistente', async ({ page }) => {
@@ -88,7 +88,7 @@ test('un producto dado de baja se distingue de uno inexistente', async ({ page }
   // El cajero necesita poder decirle al cliente por que no se puede vender.
   await expect(page.getByText('Producto inactivo')).toBeVisible()
   await expect(page.getByText(/dado de baja/i).last()).toBeVisible()
-  await expect(page.getByText('El ticket está vacío')).toBeVisible()
+  await expect(page.getByText('El carrito está vacío')).toBeVisible()
 })
 
 test('la venta se puede hacer entera con el teclado', async ({ page }) => {
@@ -127,10 +127,11 @@ test('Ctrl+K lleva al campo unico, donde tambien se busca por nombre', async ({ 
   await buscador.type('Yerba')
   await page.waitForTimeout(800)
 
-  // Flecha abajo y Enter: el resultado entra al ticket sin tocar el mouse.
-  await page.keyboard.press('Enter')
+  // → agrega el primer resultado, el que se ve elegido, sin tocar el mouse
+  // (V6). Enter ya no agrega: pasa al carrito.
+  await page.keyboard.press('ArrowRight')
 
-  const ticket = page.getByRole('region', { name: 'Ticket en curso' })
+  const ticket = page.getByRole('region', { name: 'Carrito' })
   await expect(ticket.getByText(PRODUCTOS.yerba.nombre, { exact: true })).toBeVisible()
 })
 
@@ -164,7 +165,7 @@ test('el ticket sobrevive a un F5 y se restaura con precios del servidor', async
   await page.reload()
   await page.getByText(/ticket recuperado/i).waitFor()
 
-  const ticket = page.getByRole('region', { name: 'Ticket en curso' })
+  const ticket = page.getByRole('region', { name: 'Carrito' })
   await expect(ticket.getByText(PRODUCTOS.yerba.nombre, { exact: true })).toBeVisible()
   await expect(ticket.getByText(PRODUCTOS.leche.nombre, { exact: true })).toBeVisible()
   expect(await totalDelTicket(page)).toBe(antes)
@@ -180,6 +181,6 @@ test('cerrar sesion borra el ticket guardado', async ({ page }) => {
   await entrar(page, 'cajero')
   await page.goto('/venta')
 
-  await expect(page.getByText('El ticket está vacío')).toBeVisible()
+  await expect(page.getByText('El carrito está vacío')).toBeVisible()
   await expect(page.getByText(/ticket recuperado/i)).toHaveCount(0)
 })
