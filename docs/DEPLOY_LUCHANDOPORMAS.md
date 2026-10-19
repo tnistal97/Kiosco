@@ -2,11 +2,13 @@
 
 > Servidor Oracle Cloud `gosto-vps` (`129.213.133.204`), Ubuntu 22.04.5 LTS
 > ARM64. Puesta en marcha del 3 de septiembre de 2026; última actualización
-> el 18 de octubre de 2026 (commit `2a11b76`).
+> el 19 de octubre de 2026 (commit `fef6c65`, teclado de la venta V6).
 >
-> Este documento describe **este** despliegue. Al 18 de octubre los tres
-> dominios —`luchandopormas.com`, `almacen.nistal.net` y `kiosco.nistal.net`—
-> resuelven a este servidor. El de
+> Este documento describe **este** despliegue. `almacen.nistal.net` y
+> `kiosco.nistal.net` resuelven a este servidor. `luchandopormas.com` también
+> lo hacía hasta que **venció el 18 de octubre** (ver
+> [Lo que hay que saber](#lo-que-hay-que-saber-para-el-próximo-despliegue)).
+> El de
 > [`PRODUCTION_CURRENT_STATE.md`](PRODUCTION_CURRENT_STATE.md) es el servidor
 > anterior (PM2, Node 18) y no se tocó.
 >
@@ -16,7 +18,7 @@
 
 | Pieza          | Valor                                                                        |
 | -------------- | ---------------------------------------------------------------------------- |
-| Código         | `/srv/kiosco/app` — clon de `feat/ux-v2-phase2-1-lista-navegacion`           |
+| Código         | `/srv/kiosco/app` — hoy en `fix/venta-keyboard-flow-v2` (`fef6c65`)          |
 | Usuario        | `kiosco` (UID 116, de sistema, **sin sudo**, shell `nologin`)                |
 | Proceso        | systemd, unidad `kiosco.service`                                             |
 | Puerto interno | **127.0.0.1:3099** — nunca `0.0.0.0`                                         |
@@ -31,7 +33,13 @@
 
 `/srv/kiosco` es `750 kiosco:kiosco`: como `ubuntu`, un `test -f`, un `ls` o un
 comodín sobre algo de adentro fallan sin decir por qué. Para mirar, `sudo`; para
-tocar, `sudo -u kiosco`.
+tocar, `sudo -u kiosco`. Un comodín lo expande la shell de `ubuntu` **antes** del
+`sudo`: `sudo chmod 600 /srv/kiosco/backups/x/*` falla con "No such file";
+`sudo bash -c 'chmod 600 /srv/kiosco/backups/x/*'` no.
+
+El clon se instaló siguiendo **una sola rama**: su `remote.origin.fetch` es
+`+refs/heads/feat/ux-v2-phase2-1-lista-navegacion:…`. Un `git fetch origin`
+pelado no trae ninguna otra; hay que pedirla por nombre (abajo).
 
 ### Por qué systemd y no PM2
 
@@ -64,11 +72,133 @@ sudo systemctl restart kiosco
 sudo -u kiosco bash -lc 'cd /srv/kiosco/app && set -a && . ./.env && set +a && npx tsx scripts/integrity-check.ts'
 ```
 
-### Desplegar una versión nueva
+### Desplegar una versión nueva, sin corte
 
-Es la secuencia del despliegue del 18 de octubre de 2026. Antes de empezar:
-árbol limpio en el servidor, `origin/<rama>` en el commit que se quiere
-desplegar, y un respaldo de la base (ver [Respaldos](#respaldos)).
+Desde el 19 de octubre de 2026 el build se hace **aparte**, en un `git worktree`,
+con la aplicación atendiendo. El servicio solo se detiene para cambiar de
+construcción: ese día el corte fue de **3 segundos** (`2a11b76` → `fef6c65`).
+Antes de empezar: árbol limpio en el servidor, el commit ya subido a GitHub y
+un respaldo de la base (ver [Respaldos](#respaldos)).
+
+Sirve cuando **no cambian `package.json`, `package-lock.json` ni `prisma/`**: el
+worktree usa el `node_modules` de producción a través de un enlace. Si cambian,
+ver [Con dependencias o migraciones nuevas](#con-dependencias-o-migraciones-nuevas).
+
+```bash
+APP=/srv/kiosco/app
+RAMA=fix/venta-keyboard-flow-v2                     # la que se despliega
+NUEVO=<sha completo>                                # el commit esperado
+ANTERIOR=$(sudo -u kiosco git -C $APP rev-parse HEAD)
+TS=$(date -u +%Y%m%d-%H%M%S)
+BUILD=/srv/kiosco/build/$TS
+PREV=/srv/kiosco/releases/prev-$TS
+
+# 0. Traer la rama, por nombre (el clon sigue una sola) y comprobar
+sudo -u kiosco git -C $APP fetch origin "+refs/heads/$RAMA:refs/remotes/origin/$RAMA"
+sudo -u kiosco git -C $APP rev-parse origin/$RAMA                      # = $NUEVO
+sudo -u kiosco git -C $APP merge-base --is-ancestor $ANTERIOR $NUEVO   # avance rápido
+sudo -u kiosco git -C $APP diff --name-only $ANTERIOR $NUEVO -- \
+  package.json package-lock.json prisma                               # tiene que salir vacío
+
+# 1. Build aparte, con la aplicación andando y la memoria acotada
+sudo -u kiosco mkdir -p /srv/kiosco/build
+sudo -u kiosco git -C $APP worktree add --detach $BUILD $NUEVO
+sudo -u kiosco ln -s $APP/node_modules $BUILD/node_modules
+sudo systemd-run --scope --unit=kiosco-build-$TS -p MemoryMax=2000M -p MemorySwapMax=900M \
+  sudo -u kiosco -H bash -lc "cd $BUILD && set -a && . $APP/.env && set +a &&
+    export NODE_OPTIONS=--max-old-space-size=2560 && npm run build -- --no-lint"
+sudo test -f $BUILD/.next/BUILD_ID                  # sin esto, el build no terminó
+sudo -u kiosco grep commit $BUILD/build-info.json   # tiene que ser $NUEVO
+
+# 2. Probarlo en el 3097, sin tocar producción (ver abajo)
+
+# 3. Cambiar: el único momento sin servicio
+sudo systemctl stop kiosco
+sudo -u kiosco mkdir -p $PREV
+echo $ANTERIOR | sudo -u kiosco tee $PREV/sha.txt
+sudo -u kiosco cp -p $APP/build-info.json $APP/public/sw.js $PREV/
+sudo -u kiosco mv $APP/.next $PREV/next
+sudo -u kiosco git -C $APP checkout --no-track -b $RAMA $NUEVO   # rama ya existente: checkout + merge --ff-only
+sudo -u kiosco mv $BUILD/.next $APP/.next
+sudo -u kiosco cp -p $BUILD/build-info.json $APP/build-info.json
+sudo -u kiosco cp -p $BUILD/public/sw.js $APP/public/sw.js
+sudo systemctl start kiosco
+curl -s http://127.0.0.1:3099/api/health            # el commit tiene que ser el nuevo
+
+# 4. Limpiar el worktree (el .next ya se movió)
+sudo -u kiosco git -C $APP worktree remove --force $BUILD
+```
+
+**La prueba del paso 2.** La construcción nueva se levanta desde su propia
+carpeta como servicio pasajero. Al arrancar, la aplicación solo valida el
+entorno (`src/instrumentation.ts`), así que apuntarla a la base de producción
+para pedir un par de páginas no escribe nada:
+
+```bash
+sudo systemd-run --unit=kiosco-prueba-$TS --uid=kiosco --gid=kiosco \
+  -p WorkingDirectory=$BUILD -p EnvironmentFile=$APP/.env -p MemoryMax=768M \
+  -E NODE_ENV=production /usr/bin/node $BUILD/node_modules/next/dist/bin/next start -p 3097 -H 127.0.0.1
+curl -s http://127.0.0.1:3097/api/health                                             # commit nuevo
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: kiosco.nistal.net' http://127.0.0.1:3097/login   # 200
+sudo systemctl stop kiosco-prueba-$TS
+```
+
+**Por qué el build va acotado, y con esos tres ajustes.** `systemd-run --scope`
+encierra el build en su propio cgroup: si se pasa de memoria, el kernel mata al
+build y no a otra aplicación del servidor, que es lo que pasó el 18 de octubre
+(ver [Memoria](#memoria-el-build-puede-tirar-al-resto-del-servidor)). Con ese
+tope, el 19 de octubre el build falló dos veces antes de salir:
+
+- **Con lint**, el kernel lo mató (salida 137) en "Linting and checking validity
+  of types": el ESLint con información de tipos y el chequeo de tipos corren a
+  la vez y pasan los 2 GB. El lint se corre antes, en la máquina de desarrollo
+  (`npm run lint`), sobre el mismo commit; los tipos **sí** se chequean en el
+  servidor.
+- **Sin lint pero con el heap por omisión**, V8 se quedó sin memoria en el
+  chequeo de tipos: calcula su límite (~1 GB) a partir del tope del cgroup.
+- Con `--no-lint`, `--max-old-space-size=2560` y 900 MB de swap dentro del
+  cgroup tardó **64 segundos**, con un pico de 2,6 GB usados en todo el servidor
+  y sin tocar la swap del resto.
+
+**Si el build muere, el scope puede quedar vivo.** Cuando el kernel mata un
+solo proceso, los demás siguen: el 19 de octubre quedaron dos `node` huérfanos
+con 2 GB y la memoria disponible del servidor bajó a 855 MB.
+`systemctl list-units 'kiosco-build-*'` los muestra y
+`sudo systemctl stop kiosco-build-<ts>.scope` los termina. Revisarlo siempre
+después de un build fallido.
+
+**`--no-track`, no `--track`.** Como el clon sigue una sola rama,
+`git checkout -b X --track origin/X` falla con "is not a branch" **después de
+escribir los archivos**: queda la cabeza en el commit viejo, con el árbol y el
+índice del nuevo. Pasó el 19 de octubre; el guion volvió solo a la versión
+anterior (un par de segundos sin servicio) y se terminó con
+`checkout --no-track -b X <sha>`, que no tocó ningún archivo porque el árbol ya
+era ese.
+
+**`public/sw.js` también viaja.** Serwist escribe el service worker en
+`public/`, no en `.next`. Si se cambia solo `.next`, producción sigue sirviendo
+el `sw.js` de la versión anterior, con su lista de archivos vieja.
+
+**Mover `.next` de carpeta funciona.** En `.next/server` aparece la ruta
+absoluta del worktree en unos 270 archivos, pero son claves de los manifiestos
+de componentes cliente (`clientModules`, `entryCSSFiles`), no rutas que se lean
+del disco. Se comprobó el 19 de octubre levantando una copia con el worktree
+original renombrado, es decir inaccesible: `/login`, su CSS y su JS
+respondieron 200.
+
+**Correrlo desatendido.** El 19 de octubre la secuencia se dividió en tres
+guiones subidos a `/tmp` (respaldos y build; prueba en el 3097; cambio con
+vuelta atrás automática), cada uno en una sola conexión SSH. El build se lanzó
+con `nohup setsid` para que un corte de la conexión no lo matara.
+
+### Con dependencias o migraciones nuevas
+
+Si cambian `package.json`, `package-lock.json` o `prisma/`, el worktree no puede
+usar el `node_modules` de producción y hay que construir en el lugar, con el
+servicio detenido. Es la secuencia del 18 de octubre de 2026; el build lleva
+los mismos ajustes de memoria que arriba. El corte dura lo que tarden `npm ci`,
+las migraciones y el build: unos 3 minutos si nada falla (`npm ci` ~30 s, build
+~2 min):
 
 ```bash
 APP=/srv/kiosco/app
@@ -77,7 +207,7 @@ PREV=/srv/kiosco/releases/prev-$(date -u +%Y%m%d-%H%M%S)
 
 # 0. Comprobar antes de tocar nada
 sudo -u kiosco git -C $APP status --porcelain        # tiene que salir vacío
-sudo -u kiosco git -C $APP fetch origin
+sudo -u kiosco git -C $APP fetch origin "+refs/heads/$RAMA:refs/remotes/origin/$RAMA"
 sudo -u kiosco git -C $APP rev-parse origin/$RAMA    # el commit esperado
 free -m                                              # ver "Memoria", abajo
 
@@ -88,13 +218,16 @@ sudo -u kiosco git -C $APP rev-parse HEAD | sudo -u kiosco tee $PREV/sha.txt
 sudo -u kiosco cp -a $APP/.next $PREV/next
 sudo -u kiosco mv $APP/node_modules $PREV/node_modules
 sudo test -f $APP/build-info.json && sudo -u kiosco cp -p $APP/build-info.json $PREV/
+sudo -u kiosco cp -p $APP/public/sw.js $PREV/
 
 # 2. Código, dependencias, base y build
 sudo -u kiosco git -C $APP checkout $RAMA
 sudo -u kiosco git -C $APP merge --ff-only origin/$RAMA
 sudo -u kiosco bash -lc "cd $APP && npm ci --no-audit --no-fund && npx prisma generate"
 sudo -u kiosco bash -lc "cd $APP && set -a && . ./.env && set +a && npx prisma migrate deploy"
-sudo -u kiosco bash -lc "cd $APP && set -a && . ./.env && set +a && npm run build"
+sudo systemd-run --scope -p MemoryMax=2000M -p MemorySwapMax=900M \
+  sudo -u kiosco -H bash -lc "cd $APP && set -a && . ./.env && set +a &&
+    export NODE_OPTIONS=--max-old-space-size=2560 && npm run build -- --no-lint"
 sudo test -f $APP/.next/BUILD_ID                     # sin esto, el build no terminó
 
 # 3. Arrancar y comprobar
@@ -115,7 +248,8 @@ servicio queda detenido y el árbol a medias. El 18 de octubre la secuencia se
 subió como guion a `/tmp` y se lanzó con
 `nohup setsid bash guion.sh > guion.log 2>&1 < /dev/null`. El guion volvía
 solo a la versión anterior si fallaba cualquier paso; el log quedó en
-`/srv/kiosco/backups/`.
+`/srv/kiosco/backups/`. Ese día el build corrió sin tope de memoria; con el
+tope de hoy, el OOM de abajo no habría alcanzado a otras aplicaciones.
 
 `build-info.json` no se versiona a propósito: lo escribe `npm run build`
 (`prebuild` → `scripts/escribir-build-info.mjs`) con la versión, el commit y
@@ -137,10 +271,11 @@ que systemd reinició solo a los 33 segundos. Durante unos cinco minutos el
 servidor no contestó SSH ni HTTPS. El build terminó igual y la aplicación
 arrancó bien.
 
-- **Con el servicio detenido**, como en la secuencia de arriba: libera unos
-  300 MB.
-- **Mirar `free -m` antes.** Si la memoria disponible está muy por debajo de
-  los 2,4 GB que había ese día, esperar o liberar antes de construir.
+- **Acotado con `systemd-run --scope`**, como en las dos secuencias de
+  arriba: desde el 19 de octubre el build tiene su propio tope (2 GB de RAM y
+  900 MB de swap). Si se pasa, muere el build y no otra aplicación.
+- **Mirar `free -m` antes.** El 19 de octubre había 2,8 GB disponibles con la
+  aplicación andando, y el pico del build llevó el servidor a 2,6 GB usados.
 - **La salida de fondo es no construir acá:** armar el artefacto en otra
   máquina con `scripts/release-artifact.mjs`, como describe
   [`PRODUCTION_CUTOVER.md`](PRODUCTION_CUTOVER.md). No está probado en este
@@ -149,9 +284,33 @@ arrancó bien.
 ### Volver atrás
 
 El despliegue es un checkout de git: revertir es moverse de commit y volver
-a poner el `node_modules` y el `.next` de esa versión.
+a poner el `.next`, el `build-info.json`, el `public/sw.js` y, si se tocó, el
+`node_modules` de esa versión.
 
-**Rápido, con lo que guardó el paso 1** (sin reconstruir):
+**Después de un despliegue sin corte**, con lo que guardó el paso 3 (el
+`node_modules` no cambió):
+
+```bash
+APP=/srv/kiosco/app
+PREV=/srv/kiosco/releases/prev-AAAAMMDD-HHMMSS        # el del despliegue a deshacer
+RAMA_ANTERIOR=feat/ux-v2-phase2-1-lista-navegacion    # sigue en $(cat $PREV/sha.txt)
+
+sudo systemctl stop kiosco
+sudo -u kiosco mv $APP/.next /srv/kiosco/build/next-descartado-$(date -u +%H%M%S)
+sudo -u kiosco mv $PREV/next $APP/.next
+sudo -u kiosco cp -p $PREV/build-info.json $APP/build-info.json
+sudo -u kiosco cp -p $PREV/sw.js $APP/public/sw.js
+sudo -u kiosco git -C $APP checkout $RAMA_ANTERIOR
+sudo systemctl start kiosco
+curl -s http://127.0.0.1:3099/api/health   # el commit anterior
+```
+
+Para el despliegue del 19 de octubre: `PREV=/srv/kiosco/releases/prev-20261019-221115`
+(`2a11b76`), con la rama `feat/ux-v2-phase2-1-lista-navegacion` todavía en ese
+commit.
+
+**Después de un despliegue en el lugar**, con lo que guardó su paso 1 (sin
+reconstruir):
 
 ```bash
 APP=/srv/kiosco/app
@@ -167,6 +326,7 @@ if sudo test -f $PREV/build-info.json; then
 else
   sudo -u kiosco rm -f $APP/build-info.json
 fi
+if sudo test -f $PREV/sw.js; then sudo -u kiosco cp -p $PREV/sw.js $APP/public/sw.js; fi
 sudo systemctl start kiosco
 curl -s http://127.0.0.1:3099/api/health   # el commit anterior, o "desconocido"
 ```
@@ -211,9 +371,15 @@ sudo -u kiosco pg_restore --list /srv/kiosco/backups/pre-deploy-$TS.dump | head 
 ```
 
 Junto al volcado van copias del `.env`, de la unidad de systemd y de los vhosts
-de Nginx, en `/srv/kiosco/backups/pre-deploy-$TS-config/`. El del 18 de
-octubre es `pre-deploy-ux-v5-20261018-125545`. Su versión anterior,
-`6827064`, quedó en `/srv/kiosco/releases/prev-20261018-130155`.
+de Nginx, en `/srv/kiosco/backups/pre-deploy-$TS-config/`.
+
+| Despliegue    | Respaldo previo                                      | Versión anterior, lista para volver          |
+| ------------- | ---------------------------------------------------- | -------------------------------------------- |
+| 18 de octubre | `pre-deploy-ux-v5-20261018-125545` (234.346 bytes)   | `6827064` en `releases/prev-20261018-130155` |
+| 19 de octubre | `pre-deploy-teclado-20261019-220150` (234.799 bytes) | `2a11b76` en `releases/prev-20261019-221115` |
+
+`releases/prev-20261019-220946` es del intento del 19 de octubre que volvió
+atrás solo: tiene `sha.txt`, `build-info.json` y `sw.js`, no un `.next`.
 
 - Automático: `kiosco-backup.timer`, todos los días a las **03:15 UTC**
   (00:15 en Argentina), con `Persistent=true` — si la máquina estaba apagada,
@@ -532,8 +698,14 @@ sudo certbot renew --dry-run       # probar la renovación sin gastarla
 - **El aviso de React #418** (hidratación) aparece en la consola del navegador.
   Es del código, no del despliegue, y no impide usar el sistema. Vale mirarlo
   cuando haya tiempo.
+- **`luchandopormas.com` venció** en Hostinger el 18 de octubre de 2026 (se
+  registró el 18 de octubre de 2024). Sus servidores de nombres pasaron a
+  `ns1.dns-expired.com` y `ns2.dns-expired.com`, que lo apuntan a
+  `2.57.91.92`: desde afuera no responde. Este servidor lo sigue sirviendo:
+  `curl --resolve luchandopormas.com:443:127.0.0.1 https://luchandopormas.com/api/health`
+  da 200. Se arregla renovándolo en Hostinger; acá no hay nada que tocar.
 - **El health dice el commit.** Ante cualquier duda sobre qué está corriendo:
-  `curl -s https://luchandopormas.com/api/health`.
+  `curl -s https://kiosco.nistal.net/api/health`.
 - **Variables que se leen al atender** (cambiarlas es editar el `.env` y
   reiniciar, sin recompilar):
   - `COMMERCE_NAME` es el nombre del comercio. No está definida acá; vale
