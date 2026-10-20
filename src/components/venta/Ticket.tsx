@@ -298,7 +298,20 @@ export function Ticket({
       )}
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-2.5">
-        <h2 className="text-sm font-semibold text-ink">
+        <h2 className="flex items-center text-sm font-semibold text-ink">
+          {/* El mismo numero que en la guia de etapas: el carrito es el paso 2. */}
+          <span
+            aria-hidden="true"
+            data-numeric=""
+            className={cn(
+              'mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold',
+              revisando
+                ? 'bg-primary text-ink-on-solid'
+                : 'border border-line-strong text-ink-muted',
+            )}
+          >
+            2
+          </span>
           Carrito
           {!vacio && (
             <span className="ml-2 font-normal text-ink-muted" data-numeric="">

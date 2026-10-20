@@ -282,13 +282,13 @@ test.describe('Caja', () => {
     await expect(page.getByRole('link', { name: 'Cerrar caja' })).toBeVisible()
   })
 
-  test('el detalle muestra las cajas anteriores, con la abierta', async ({ page }) => {
+  test('las cajas anteriores se ven sin abrir nada, con la abierta', async ({ page }) => {
     await entrar(page, 'encargado')
     await page.goto('/caja')
 
-    // Lo secundario esta detras de "Ver detalle".
-    await expect(page.getByText('Cajas anteriores')).toHaveCount(0)
-    await page.getByRole('button', { name: /ver detalle/i }).click()
+    // UX V5, segunda vuelta: ya no hay "Ver detalle". Lo que estaba detras
+    // queda en la pantalla, debajo de la caja.
+    await expect(page.getByRole('button', { name: /ver detalle/i })).toHaveCount(0)
     await expect(page.getByText('Cajas anteriores')).toBeVisible()
     // La caja en curso aparece con su estado escrito, no solo con un color.
     await expect(page.getByText('Abierto').first()).toBeVisible()
@@ -317,7 +317,6 @@ test.describe('Caja', () => {
   test('los ingresos y los egresos se distinguen sin depender del color', async ({ page }) => {
     await entrar(page, 'encargado')
     await page.goto('/caja')
-    await page.getByRole('button', { name: /ver detalle/i }).click()
     await page.getByLabel('Período').selectOption('7')
     await page.waitForTimeout(1200)
 

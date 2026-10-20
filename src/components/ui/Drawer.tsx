@@ -26,6 +26,7 @@ export function Drawer({
   children,
   footer,
   rapido = false,
+  ancho = 'normal',
   className,
 }: {
   open: boolean
@@ -42,6 +43,11 @@ export function Drawer({
    * que es lo que explica de donde salio.
    */
   rapido?: boolean
+  /**
+   * `amplio` para un panel de consulta con columnas --las ventas del dia--,
+   * no para el menu. Solo cambia los cajones laterales.
+   */
+  ancho?: 'normal' | 'amplio'
   className?: string
 }) {
   const registrar = useOverlays((s) => s.registrar)
@@ -78,7 +84,9 @@ export function Drawer({
             rapido ? 'animate-aparecer' : 'transition duration-200 ease-out',
             hoja
               ? 'max-h-[88dvh] w-full rounded-t-xl border-t data-[closed]:translate-y-full'
-              : 'w-[86vw] max-w-sm',
+              : ancho === 'amplio'
+                ? 'w-[94vw] max-w-2xl'
+                : 'w-[86vw] max-w-sm',
             side === 'left' && 'border-r data-[closed]:-translate-x-full',
             side === 'right' && 'border-l data-[closed]:translate-x-full',
             className,

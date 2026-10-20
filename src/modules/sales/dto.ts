@@ -3,6 +3,8 @@
  */
 
 import { esObjeto, lista, numero, texto, textoOpcional } from '@/lib/api-client'
+import { unidadDeVentaODefecto, type UnidadDeVenta } from '@/modules/products/units'
+import { aMilesimas, type TextoCantidad } from '@/lib/cantidad'
 import {
   CERO,
   montoODefecto,
@@ -17,8 +19,21 @@ export type EstadoVenta = 'completed' | 'canceled'
 export interface ItemVentaDTO {
   id: number
   quantity: number
+  /** La cantidad tal como la manda el servidor ("0.425"), para escribirla con su unidad. */
+  cantidad: TextoCantidad
+  /** En que unidad se vendio. Sin ella "0,425" no se puede leer. */
+  saleUnit: UnidadDeVenta
   price: Monto
   product: { id: number; name: string }
+}
+
+/** Una linea de pago de una venta: como se cobro y, en efectivo, con cuanto y el vuelto. */
+export interface PagoVentaDTO {
+  method: string
+  amount: Monto
+  cashReceived: Monto | null
+  changeGiven: Monto | null
+  reference: string | null
 }
 
 export interface VentaDTO {
@@ -31,6 +46,10 @@ export interface VentaDTO {
   cancelReason: string | null
   user: { id: number; name: string }
   canceledBy: { id: number; name: string } | null
+  /** A quien se le vendio; null en la venta al mostrador. */
+  cliente: { id: number; name: string } | null
+  /** Los pagos, en orden. Vacio si el servidor no los mando. */
+  pagos: PagoVentaDTO[]
   items: ItemVentaDTO[]
 }
 
@@ -43,15 +62,44 @@ function parsePersonaOpcional(raw: unknown): { id: number; name: string } | null
   return esObjeto(raw) ? parsePersona(raw) : null
 }
 
+/** "2.000" → 2. Una cadena que no es cantidad vale 0 en vez de romper el listado. */
+function cantidadEnNumero(texto: string): number {
+  try {
+    return aMilesimas(texto) / 1000
+  } catch {
+    return 0
+  }
+}
+
 export function parseItemVenta(raw: unknown): ItemVentaDTO {
   if (!esObjeto(raw)) {
     throw new Error('La respuesta no tiene la forma de un item de venta')
   }
+  // El servidor manda la cantidad como TEXTO ("2.000", "0.425") desde que
+  // existen los productos por peso. `numero()` solo acepta numeros y la
+  // dejaba en 0: el detalle mostraba "×0" y subtotales de $ 0,00.
+  const crudo = raw.quantity
+  const cantidad: TextoCantidad = typeof crudo === 'string' ? crudo : String(numero(crudo))
   return {
     id: numero(raw.id),
-    quantity: numero(raw.quantity),
+    quantity: typeof crudo === 'string' ? cantidadEnNumero(crudo) : numero(crudo),
+    cantidad,
+    saleUnit: unidadDeVentaODefecto(raw.saleUnit),
     price: montoODefecto(raw.price),
     product: parsePersona(raw.product),
+  }
+}
+
+export function parsePagoVenta(raw: unknown): PagoVentaDTO {
+  if (!esObjeto(raw)) {
+    throw new Error('La respuesta no tiene la forma de un pago')
+  }
+  return {
+    method: texto(raw.method, 'OTHER'),
+    amount: montoODefecto(raw.amount),
+    cashReceived: montoOpcional(raw.cashReceived),
+    changeGiven: montoOpcional(raw.changeGiven),
+    reference: textoOpcional(raw.reference),
   }
 }
 
@@ -81,6 +129,8 @@ export function parseVenta(raw: unknown): VentaDTO {
     cancelReason: textoOpcional(raw.cancelReason),
     user: parsePersona(raw.user),
     canceledBy: parsePersonaOpcional(raw.canceledBy),
+    cliente: parsePersonaOpcional(raw.client),
+    pagos: lista(raw.payments, parsePagoVenta),
     items,
   }
 }

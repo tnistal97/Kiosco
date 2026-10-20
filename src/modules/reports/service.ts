@@ -28,7 +28,13 @@ import type { Monto } from '@/lib/money'
 import { aMonto, dinero, restar } from '@/server/money'
 import type { TextoCantidad } from '@/lib/cantidad'
 import type { Permission } from '@/server/authz/permissions'
-import { MEDIO_EFECTIVO, etiquetaDeMedio } from '@/modules/sales/payment-methods'
+import {
+  MEDIO_EFECTIVO,
+  MEDIO_MERCADO_PAGO,
+  REFERENCIA_MERCADO_PAGO,
+  etiquetaDeMedio,
+  etiquetaDePagoHecho,
+} from '@/modules/sales/payment-methods'
 import { etiquetaDeTipo } from '@/modules/inventory/movement-types'
 import type { RangoQuery } from './schemas'
 
@@ -312,16 +318,21 @@ export async function reporteDeVentas(
       desde,
       hasta,
     ),
+    // Mercado Pago se guarda como TRANSFERENCIA con su referencia (UX V5). Se
+    // separa aca, en el agrupamiento, porque en el mostrador son dos cosas
+    // distintas: "¿cuanto entro por Mercado Pago?" es una pregunta del dia.
     filas(
-      `SELECT p."method"         AS medio,
+      `SELECT CASE WHEN p."method" = 'TRANSFER' AND p."reference" = $4 THEN $5 ELSE p."method" END AS medio,
               sum(p."amount")::numeric(14,2)::text AS cobrado,
               count(*)::text        AS operaciones
          FROM "SalePayment" p JOIN "Sale" s ON s."id" = p."saleId"
         WHERE s."branchId" = $1 AND s."date" >= $2::timestamp AND s."date" <= $3::timestamp AND s."status" = 'completed'
-        GROUP BY p."method" ORDER BY sum(p."amount") DESC`,
+        GROUP BY 1 ORDER BY sum(p."amount") DESC`,
       branchId,
       desde,
       hasta,
+      REFERENCIA_MERCADO_PAGO,
+      MEDIO_MERCADO_PAGO,
     ),
   ])
 
@@ -351,7 +362,7 @@ export async function reporteDeVentas(
     })),
     porMedio: porMedio.map((f) => ({
       medio: f.medio ?? '',
-      etiqueta: etiquetaDeMedio(f.medio ?? ''),
+      etiqueta: etiquetaDePagoHecho(f.medio ?? '', null),
       cobrado: monto(f.cobrado),
       operaciones: Number(f.operaciones ?? 0),
     })),
@@ -1030,7 +1041,11 @@ export interface ReporteDeCaja {
   ventasEnEfectivo: Monto
   detalle: Array<{
     turno: number
+    /** Instante de apertura, ISO 8601 en UTC. */
     abierto: string
+    /** Instante de cierre, ISO 8601 en UTC; null si sigue abierto. */
+    cerrado: string | null
+    abrio: string | null
     cerradoPor: string | null
     esperado: Monto | null
     contado: Monto | null
@@ -1076,13 +1091,16 @@ export async function reporteDeCaja(session: Session, query: RangoQuery): Promis
     ),
     filas(
       `SELECT sh."id"::text                AS turno,
-              sh."openedAt"::text          AS abierto,
+              to_char(sh."openedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS abierto,
+              to_char(sh."closedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "cerradoEl",
+              a."name"                     AS abrio,
               u."name"                     AS cerrado,
               sh."expectedAmount"::numeric(14,2)::text AS esperado,
               sh."countedAmount"::numeric(14,2)::text  AS contado,
               sh."difference"::numeric(14,2)::text     AS diferencia
          FROM "CashShift" sh
          LEFT JOIN "User" u ON u."id" = sh."closedById"
+         LEFT JOIN "User" a ON a."id" = sh."openedById"
         WHERE sh."branchId" = $1 AND sh."openedAt" >= $2::timestamp AND sh."openedAt" <= $3::timestamp
           AND sh."status" <> 'legacy'
         ORDER BY sh."openedAt" DESC LIMIT ${String(TOPE_RANKING * 2)}`,
@@ -1106,6 +1124,8 @@ export async function reporteDeCaja(session: Session, query: RangoQuery): Promis
     detalle: detalle.map((f) => ({
       turno: Number(f.turno ?? 0),
       abierto: f.abierto ?? '',
+      cerrado: f.cerradoEl ?? null,
+      abrio: f.abrio ?? null,
       cerradoPor: f.cerrado ?? null,
       esperado: f.esperado === null ? null : monto(f.esperado),
       contado: f.contado === null ? null : monto(f.contado),

@@ -253,9 +253,14 @@ test.describe('accesibilidad automatizada', () => {
     await entrar(page, 'duenio')
     await page.goto('/reportes')
     await page.getByRole('heading', { level: 1 }).waitFor()
-    // Se espera a que las seis secciones esten calculadas: analizar la
-    // pantalla mientras carga mide un esqueleto, no el reporte.
-    await page.getByRole('heading', { name: 'Rentabilidad' }).waitFor({ timeout: 20_000 })
+    // Se espera al resumen de hoy y al reporte elegido: analizar la pantalla
+    // mientras carga mide un esqueleto, no el reporte.
+    await page.locator('[data-resumen-hoy]').waitFor({ timeout: 20_000 })
+    await page
+      .getByRole('region', { name: 'Ventas por día' })
+      .getByRole('table')
+      .or(page.getByText('No hubo ventas en el período.'))
+      .waitFor({ timeout: 20_000 })
 
     const { violations } = await analizar(page)
     expect(detalle(violations)).toBe('sin faltas')

@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Drawer, IconButton, cn } from '@/components/ui'
 import { navegacionPara, tituloDe } from './navigation'
+import { ID_ACCIONES_DE_CABECERA } from './AccionesDeCabecera'
 import { ListaGrupos, Marca, Sidebar } from './Sidebar'
 import { UserMenu } from './UserMenu'
 import { EstadoCaja } from './EstadoCaja'
@@ -244,9 +245,11 @@ function Cabecera({
         <Marca compacta nombre={session.branchName} />
       </div>
 
-      <h1 className="min-w-0 flex-1 truncate text-lg font-semibold text-ink sm:text-xl">
-        {titulo}
-      </h1>
+      <h1 className="min-w-0 truncate text-lg font-semibold text-ink sm:text-xl">{titulo}</h1>
+      {/* Las acciones propias de la pantalla, pegadas al titulo: "Ventas de
+          hoy" en Vender. Las pone la pantalla con `AccionesDeCabecera`. */}
+      <div id={ID_ACCIONES_DE_CABECERA} className="flex shrink-0 items-center gap-2 empty:hidden" />
+      <div className="flex-1" />
 
       <div className="flex shrink-0 items-center gap-1 sm:gap-2">
         <EstadoCaja />

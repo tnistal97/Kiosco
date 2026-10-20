@@ -28,6 +28,8 @@ import { GuiaDeTeclado, ayudaEnTexto } from '@/components/venta/GuiaDeTeclado'
 import { ProductBrowser } from '@/components/venta/ProductBrowser'
 import { Secciones, type SeccionDelCatalogo } from '@/components/venta/Secciones'
 import { POSLayout } from '@/components/venta/POSLayout'
+import { VentasDeHoy } from '@/components/venta/VentasDeHoy'
+import { AccionesDeCabecera } from '@/components/shell/AccionesDeCabecera'
 import { useFavoritos } from '@/components/venta/useFavoritos'
 import { useFrecuentes } from '@/components/venta/useFrecuentes'
 import { useProductosPorIds } from '@/components/venta/useProductosPorIds'
@@ -156,6 +158,7 @@ export default function VentaPage() {
   const { session } = useSession()
   const hayCapa = useHayCapaAbierta()
   const puedeCrearProducto = usePermiso('products.quickCreate')
+  const puedeVerVentas = usePermiso('sales.view')
   const puedeReactivar = usePermiso('products.update')
 
   const {
@@ -210,6 +213,7 @@ export default function VentaPage() {
   const [cobroAbierto, setCobroAbierto] = useState(false)
   const [ticketAbierto, setTicketAbierto] = useState(false)
   const [camaraAbierta, setCamaraAbierta] = useState(false)
+  const [ventasDeHoyAbierto, setVentasDeHoyAbierto] = useState(false)
   /** Lo que se esta pesando: un producto nuevo, o una linea que se corrige. */
   const [pesando, setPesando] = useState<{
     producto: ProductoVendible
@@ -1459,6 +1463,23 @@ export default function VentaPage() {
   return (
     <>
       {anuncioDeSeleccion}
+      {/* Junto al titulo "Vender": consultar lo vendido sin perder el carrito. */}
+      {puedeVerVentas && (
+        <AccionesDeCabecera>
+          <Button
+            variant="secondary"
+            size="sm"
+            data-ventas-de-hoy=""
+            onClick={() => {
+              abrirCapa(() => {
+                setVentasDeHoyAbierto(true)
+              })
+            }}
+          >
+            Ventas de hoy
+          </Button>
+        </AccionesDeCabecera>
+      )}
       <POSLayout
         cabecera={
           <>
@@ -1559,6 +1580,14 @@ export default function VentaPage() {
         onYaExistia={usarProductoNuevo}
         onCategoriaCreada={() => {
           void fetchCategories()
+        }}
+      />
+
+      <VentasDeHoy
+        abierto={ventasDeHoyAbierto}
+        onCerrar={() => {
+          setVentasDeHoyAbierto(false)
+          enfocar()
         }}
       />
 

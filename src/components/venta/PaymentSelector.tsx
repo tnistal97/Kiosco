@@ -4,7 +4,8 @@ import type { MutableRefObject } from 'react'
 import { cn } from '@/components/ui'
 import {
   MEDIOS_COBRABLES,
-  etiquetaDeMedio,
+  REFERENCIA_MERCADO_PAGO,
+  etiquetaDePagoHecho,
   type MedioCobrable,
 } from '@/modules/sales/payment-methods'
 
@@ -37,7 +38,7 @@ export interface OpcionDeCobro {
   tecla: string
 }
 
-export const REFERENCIA_MERCADO_PAGO = 'Mercado Pago'
+export { REFERENCIA_MERCADO_PAGO }
 
 export const OPCIONES_DE_COBRO: readonly OpcionDeCobro[] = [
   { id: 'CASH', method: 'CASH', referencia: null, label: 'Efectivo', tecla: 'E' },
@@ -91,8 +92,7 @@ export function medioDeTecla(tecla: string): MedioCobrable | null {
 
 /** Etiqueta de un pago ya hecho, con Mercado Pago por su nombre. */
 export function etiquetaDePago(method: MedioCobrable, referencia: string | null): string {
-  if (method === 'TRANSFER' && referencia === REFERENCIA_MERCADO_PAGO) return 'Mercado Pago'
-  return method === 'ACCOUNT' ? 'Fiado' : etiquetaDeMedio(method)
+  return etiquetaDePagoHecho(method, referencia)
 }
 
 export function PaymentSelector({

@@ -130,6 +130,32 @@ export function etiquetaDeMedio(medio: string): string {
   return conocido ?? medio
 }
 
+/**
+ * Mercado Pago. UX V5.
+ *
+ * No es un medio propio del sistema: para la caja y la cuenta corriente es una
+ * TRANSFERENCIA --no entra al cajon--, guardada con esta referencia. Se
+ * distingue solo para mostrarla con su nombre en el mostrador y en los
+ * reportes.
+ */
+export const REFERENCIA_MERCADO_PAGO = 'Mercado Pago'
+
+/**
+ * El "medio" con que los REPORTES separan Mercado Pago de las demas
+ * transferencias. Nunca se guarda: es un rotulo de agrupacion.
+ */
+export const MEDIO_MERCADO_PAGO = 'MERCADO_PAGO'
+
+/**
+ * Nombre de un pago YA HECHO, con Mercado Pago y el fiado por el nombre que se
+ * usa en el mostrador.
+ */
+export function etiquetaDePagoHecho(medio: string, referencia: string | null): string {
+  if (medio === MEDIO_MERCADO_PAGO) return 'Mercado Pago'
+  if (medio === 'TRANSFER' && referencia === REFERENCIA_MERCADO_PAGO) return 'Mercado Pago'
+  return medio === 'ACCOUNT' ? 'Fiado' : etiquetaDeMedio(medio)
+}
+
 /** El codigo del efectivo, para las consultas que filtran por el. */
 export const MEDIO_EFECTIVO = 'CASH' satisfies MedioDePago
 

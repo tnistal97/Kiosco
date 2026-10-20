@@ -29,6 +29,22 @@ export interface VentaDelReporte {
   total: Monto
   user: { id: number; name: string }
   canceledBy: { id: number; name: string } | null
+  /** A quien se le vendio. null es lo normal: venta al mostrador. */
+  client: { id: number; name: string } | null
+  /**
+   * Como se cobro, linea por linea. UX V5.
+   *
+   * `paymentMethod` dice uno solo --el del movimiento de caja-- y una venta
+   * puede cobrarse en partes. Para el detalle hace falta todo: los medios, con
+   * cuanto pago el cliente y cuanto vuelto se le dio.
+   */
+  payments: Array<{
+    method: string
+    amount: Monto
+    cashReceived: Monto | null
+    changeGiven: Monto | null
+    reference: string | null
+  }>
   items: Array<{
     id: number
     quantity: TextoCantidad
@@ -125,6 +141,17 @@ export async function reporteDeVentas(
         cancelReason: true,
         user: { select: { id: true, name: true } },
         canceledBy: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true } },
+        payments: {
+          orderBy: { id: 'asc' },
+          select: {
+            method: true,
+            amount: true,
+            cashReceived: true,
+            changeGiven: true,
+            reference: true,
+          },
+        },
         items: {
           select: {
             id: true,
@@ -177,10 +204,17 @@ export async function reporteDeVentas(
       `
     : null
 
-  const data: VentaDelReporte[] = ventas.map(({ cashMovements, items, ...venta }) => ({
+  const data: VentaDelReporte[] = ventas.map(({ cashMovements, items, payments, ...venta }) => ({
     ...venta,
     date: venta.date.toISOString(),
     paymentMethod: cashMovements[0]?.paymentMethod ?? null,
+    payments: payments.map((p) => ({
+      method: p.method,
+      amount: aMonto(p.amount),
+      cashReceived: p.cashReceived === null ? null : aMonto(p.cashReceived),
+      changeGiven: p.changeGiven === null ? null : aMonto(p.changeGiven),
+      reference: p.reference,
+    })),
     items: items.map(({ product, ...i }) => ({
       ...i,
       quantity: aTextoCantidad(i.quantity),

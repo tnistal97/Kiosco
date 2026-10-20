@@ -158,8 +158,7 @@ test.describe('Un entero pelado entra en todos lados', () => {
     await dialogo(page).getByRole('button', { name: 'Registrar ingreso' }).click()
     await expect(page.getByText('Ingreso registrado.')).toBeVisible({ timeout: 15_000 })
 
-    // La lista de movimientos esta en "Ver detalle".
-    await page.getByRole('button', { name: /ver detalle/i }).click()
+    // La lista de movimientos esta a la vista, debajo de la caja.
     await expect(page.getByText('Prueba de números').first()).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('$ 10.000,00').first()).toBeVisible()
   })

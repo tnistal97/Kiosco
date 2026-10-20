@@ -304,9 +304,14 @@ test.describe('Dia 3: el costo historico no se mueve', () => {
     await entrar(page, 'admin')
     await page.goto('/reportes')
 
-    await expect(page.getByRole('heading', { name: 'Ventas' })).toBeVisible({ timeout: 20_000 })
+    // UX V5: el resumen del dia arriba, y un reporte a la vez.
+    await expect(page.getByRole('heading', { name: 'Resumen de hoy' })).toBeVisible({
+      timeout: 20_000,
+    })
     await expect(page.getByText('Ticket promedio').first()).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Rentabilidad' })).toBeVisible()
+    await page.getByRole('button', { name: 'Ganancia' }).click()
+    await expect(page.getByRole('region', { name: 'Ganancia' })).toBeVisible()
+    await expect(page.getByText('Ganancia bruta')).toBeVisible({ timeout: 20_000 })
   })
 
   test('el cajero ve sus ventas pero no entra a Reportes', async ({ page }) => {

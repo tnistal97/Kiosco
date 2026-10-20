@@ -27,7 +27,10 @@ import {
   Table,
   TableWrap,
   aviso,
+  cn,
 } from '@/components/ui'
+import { AyudaCaja } from '@/components/caja/AyudaCaja'
+import { CuentaDeLaCaja } from '@/components/caja/CuentaDeLaCaja'
 import { DialogoArqueo } from '@/components/caja/DialogoArqueo'
 import { HistorialTurnos } from '@/components/caja/HistorialTurnos'
 import { DialogoMovimiento, type TipoDeMovimiento } from '@/components/caja/DialogoMovimiento'
@@ -40,9 +43,11 @@ import {
   parseArqueos,
   parseEstadoDeCaja,
   parseMovimientos,
+  parseTurnos,
   type ArqueoDTO,
   type EstadoDeCajaDTO,
   type MovimientoDTO,
+  type TurnoDTO,
 } from '@/modules/cash/dto'
 import { parsePaginaVentas } from '@/modules/sales/dto'
 import { esObjeto, numero } from '@/lib/api-client'
@@ -66,23 +71,44 @@ function parsePaginaMovimientos(raw: unknown): Pagina {
 }
 
 function horaCorta(iso: string): string {
-  return new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString('es-AR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
 }
 
 /**
- * Caja. UX V5.
+ * "Desde las 08:02", o con la fecha si la caja se abrio otro dia: una caja que
+ * sigue abierta desde ayer tiene que notarse.
+ */
+function desdeCuando(iso: string): string {
+  const abierta = new Date(iso)
+  const esDeHoy = abierta.toDateString() === new Date().toDateString()
+  return esDeHoy ? `Desde las ${horaCorta(iso)}` : `Abierta desde el ${fechaCorta(iso)}`
+}
+
+/**
+ * Caja. UX V5, segunda vuelta.
  *
- * Responde, de arriba hacia abajo, lo que se pregunta en el mostrador:
+ * Responde, de arriba hacia abajo y SIN ABRIR NADA, lo que se pregunta en el
+ * mostrador:
  *
  *   1. ¿Está abierta o cerrada? En grande, con palabra y simbolo.
  *   2. ¿Cuánta plata tiene que haber en el cajón? La cifra mas grande.
- *   3. ¿De dónde sale ese número? Ventas, ingresos y egresos, en una fila.
- *   4. ¿Qué puedo hacer? Registrar ingreso, registrar egreso, contar la
- *      caja, cerrarla. Botones con verbo, no un "Nuevo movimiento" generico.
+ *   3. ¿De dónde sale ese número? La cuenta completa: monto inicial, ventas
+ *      en efectivo, ingresos, egresos y el saldo esperado.
+ *   4. ¿Cuadra? La diferencia del ultimo conteo de esta caja, o el aviso de
+ *      que todavia no se conto.
+ *   5. ¿Qué puedo hacer? Registrar ingreso, registrar egreso, contar la caja,
+ *      cerrarla.
  *
- * Todo lo demas --la lista de movimientos, las cajas anteriores, los
- * conteos-- esta detras de "Ver detalle": sirve para revisar, no para
- * atender.
+ * Debajo, a la vista y no detras de "Ver detalle" (pedido del dueño): los
+ * movimientos de hoy, los ultimos conteos y las cajas anteriores. Con la caja
+ * cerrada se muestra la cuenta del ultimo cierre, que es lo que se quiere
+ * revisar al dia siguiente.
+ *
+ * "Cómo funciona" explica en cinco preguntas que es abrir y cerrar.
  *
  * Las reglas no cambiaron: los numeros salen tal cual del turno abierto
  * (/api/cash/shift), y abrir y cerrar siguen siendo pantallas guiadas.
@@ -98,10 +124,11 @@ export default function CajaPage() {
 
   const [caja, setCaja] = useState<EstadoDeCajaDTO | null>(null)
   const [ventasDeHoy, setVentasDeHoy] = useState<{ total: Monto; cantidad: number } | null>(null)
+  const [ultimoConteo, setUltimoConteo] = useState<ArqueoDTO | null>(null)
+  const [ultimoCierre, setUltimoCierre] = useState<TurnoDTO | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [detalle, setDetalle] = useState(false)
   const [movimiento, setMovimiento] = useState<TipoDeMovimiento | null>(null)
   const [arqueoAbierto, setArqueoAbierto] = useState(false)
   const [recarga, setRecarga] = useState(0)
@@ -111,18 +138,25 @@ export default function CajaPage() {
     setError(null)
     try {
       const d = hoy()
-      const [estado, ventas] = await Promise.all([
+      const [estado, ventas, conteos, cierres] = await Promise.all([
         apiRequest('/api/cash/shift', { parse: parseEstadoDeCaja }),
         verVentasEnPesos
           ? apiRequest(`/api/admin/sales?start=${d}&end=${d}&page=1&pageSize=1`, {
               parse: parsePaginaVentas,
             }).catch(() => null)
           : Promise.resolve(null),
+        // Lo que acompaña al estado no frena la pantalla: si falla, se omite.
+        apiRequest('/api/cash/count?limite=1', { parse: parseArqueos }).catch(() => []),
+        apiRequest('/api/cash/shifts?estado=closed&page=1&pageSize=1', {
+          parse: parseTurnos,
+        }).catch(() => []),
       ])
       setCaja(estado)
       setVentasDeHoy(
         ventas ? { total: ventas.totales.recaudado, cantidad: ventas.totales.ventas } : null,
       )
+      setUltimoConteo(conteos[0] ?? null)
+      setUltimoCierre(cierres[0] ?? null)
     } catch (err) {
       setError(mensajeDeError(err, 'No se pudo consultar la caja. Revisá la conexión y reintentá.'))
     } finally {
@@ -164,76 +198,105 @@ export default function CajaPage() {
   }
 
   const turno = caja?.turno ?? null
+  const ayuda = (
+    <AyudaCaja
+      requiereTurno={caja?.politica.requiereTurno ?? false}
+      umbralDiferencia={caja?.politica.umbralDiferencia ?? CERO}
+    />
+  )
+  // El conteo solo dice algo de ESTA caja si se hizo despues de abrirla.
+  const conteoDelTurno =
+    turno !== null &&
+    ultimoConteo !== null &&
+    new Date(ultimoConteo.date).getTime() >= new Date(turno.openedAt).getTime()
+      ? ultimoConteo
+      : null
 
   return (
     <PageContainer>
       {turno === null ? (
         // ------------------------------------------------ CAJA CERRADA
-        <section className="flex flex-col items-start gap-4 rounded-lg border border-line bg-surface p-6 sm:p-8">
-          <p
-            className="inline-flex items-center gap-2 rounded-md bg-warning-quiet px-3 py-1.5 text-lg font-bold tracking-wide text-warning"
-            data-estado-caja="cerrada"
-          >
-            <span aria-hidden="true">●</span> CAJA CERRADA
-          </p>
+        <section className="flex flex-col gap-5 rounded-lg border border-line bg-surface p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p
+              className="inline-flex items-center gap-2 rounded-md bg-warning-quiet px-3 py-1.5 text-lg font-bold tracking-wide text-warning"
+              data-estado-caja="cerrada"
+            >
+              <span aria-hidden="true">●</span> CAJA CERRADA
+            </p>
+            {ayuda}
+          </div>
           <p className="max-w-xl text-lg text-ink">
             {caja?.politica.requiereTurno
               ? 'Para empezar a vender, abrí la caja contando la plata que hay en el cajón.'
               : 'Se puede vender igual, pero conviene abrir la caja para saber cuánta plata tendría que haber.'}
           </p>
           {puedeAbrir ? (
-            <ButtonLink href="/caja/abrir" variant="primary" size="xl">
-              Abrir caja
-            </ButtonLink>
+            <div>
+              <ButtonLink href="/caja/abrir" variant="primary" size="xl">
+                Abrir caja
+              </ButtonLink>
+            </div>
           ) : (
             <p className="text-base text-ink-muted">
               Tu usuario no puede abrir la caja. Pedíselo al encargado.
             </p>
           )}
+
+          {ultimoCierre !== null && <UltimoCierre turno={ultimoCierre} />}
         </section>
       ) : (
         // ------------------------------------------------ CAJA ABIERTA
         <section className="flex flex-col gap-6 rounded-lg border border-line bg-surface p-5 sm:p-6">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <p
-              className="inline-flex items-center gap-2 rounded-md bg-success-quiet px-3 py-1.5 text-lg font-bold tracking-wide text-success"
-              data-estado-caja="abierta"
-            >
-              <span aria-hidden="true">✓</span> CAJA ABIERTA
-            </p>
-            <p className="text-base text-ink-muted">
-              Desde las {horaCorta(turno.openedAt)} · abrió {turno.openedBy.name}
-            </p>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <p
+                className="inline-flex items-center gap-2 rounded-md bg-success-quiet px-3 py-1.5 text-lg font-bold tracking-wide text-success"
+                data-estado-caja="abierta"
+              >
+                <span aria-hidden="true">✓</span> CAJA ABIERTA
+              </p>
+              <p className="text-base text-ink-muted">
+                {desdeCuando(turno.openedAt)} · abrió {turno.openedBy.name}
+              </p>
+            </div>
+            {ayuda}
           </div>
 
-          <Metric
-            size="lg"
-            label="Tiene que haber en el cajón"
-            value={<Money amount={turno.expectedAmount} size="hero" />}
-            hint={
-              <>
-                Empezó con <Money amount={turno.openingAmount} size="sm" tone="muted" />
-              </>
-            }
-          />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-10">
+            <div className="flex flex-col gap-4">
+              <Metric
+                size="lg"
+                label="Tiene que haber en el cajón"
+                value={<Money amount={turno.expectedAmount} size="hero" />}
+                hint="Saldo esperado: solo el efectivo."
+              />
+              <EstadoDelConteo conteo={conteoDelTurno} puedeContar={puedeArquear} />
+            </div>
 
-          <MetricRow className="border-t border-line pt-5">
-            {ventasDeHoy !== null && (
+            <div className="rounded-lg border border-line bg-sunken p-4">
+              <h2 className="mb-3 text-sm font-semibold text-ink">De dónde sale</h2>
+              <CuentaDeLaCaja
+                inicial={turno.openingAmount}
+                ventasEnEfectivo={turno.ventasEnEfectivo}
+                cantidadDeVentas={turno.cantidadDeVentas}
+                ingresos={turno.ingresos}
+                egresos={turno.egresos}
+                esperado={turno.expectedAmount}
+              />
+            </div>
+          </div>
+
+          {ventasDeHoy !== null && (
+            <MetricRow className="border-t border-line pt-5">
               <Metric
                 label="Ventas de hoy"
                 value={<Money amount={ventasDeHoy.total} size="lg" />}
-                hint={`${String(ventasDeHoy.cantidad)} ${ventasDeHoy.cantidad === 1 ? 'venta' : 'ventas'}, todas las formas de pago`}
+                hint={`${String(ventasDeHoy.cantidad)} ${ventasDeHoy.cantidad === 1 ? 'venta' : 'ventas'}, todas las formas de pago (no todo entra al cajón)`}
                 href={verVentas ? '/ventas' : undefined}
               />
-            )}
-            <Metric
-              label="Ventas en efectivo"
-              value={<Money amount={turno.ventasEnEfectivo} size="lg" />}
-              hint={`${String(turno.cantidadDeVentas)} ${turno.cantidadDeVentas === 1 ? 'venta' : 'ventas'} desde que se abrió`}
-            />
-            <Metric label="Ingresos" value={<Money amount={turno.ingresos} size="lg" />} />
-            <Metric label="Egresos" value={<Money amount={turno.egresos} size="lg" />} />
-          </MetricRow>
+            </MetricRow>
+          )}
 
           <div className="flex flex-col gap-2 border-t border-line pt-5 sm:flex-row sm:flex-wrap">
             {puedeMover && (
@@ -278,26 +341,11 @@ export default function CajaPage() {
         </section>
       )}
 
-      <div>
-        <Button
-          variant="ghost"
-          aria-expanded={detalle}
-          aria-controls="caja-detalle"
-          onClick={() => {
-            setDetalle((v) => !v)
-          }}
-        >
-          {detalle ? 'Ocultar detalle ▴' : 'Ver detalle ▾'}
-        </Button>
+      <div className="flex flex-col gap-8">
+        <MovimientosDeCaja recarga={recarga} />
+        <UltimosConteos recarga={recarga} />
+        <HistorialTurnos recargar={recarga} />
       </div>
-
-      {detalle && (
-        <div id="caja-detalle" className="flex flex-col gap-8">
-          <MovimientosDeCaja recarga={recarga} />
-          <UltimosConteos recarga={recarga} />
-          <HistorialTurnos recargar={recarga} />
-        </div>
-      )}
 
       <DialogoMovimiento
         abierto={movimiento !== null}
@@ -327,7 +375,118 @@ export default function CajaPage() {
   )
 }
 
-/** La lista de movimientos de caja, con sus filtros. Solo dentro de "Ver detalle". */
+/**
+ * ¿Cuadra? El ultimo conteo de esta caja contra lo que tenia que haber EN ESE
+ * MOMENTO. Sin conteo, lo dice: una diferencia que nadie midio no es cero.
+ */
+function EstadoDelConteo({
+  conteo,
+  puedeContar,
+}: {
+  conteo: ArqueoDTO | null
+  puedeContar: boolean
+}) {
+  if (conteo === null) {
+    return (
+      <p
+        data-diferencia-caja="sin-contar"
+        className="rounded-md border border-line px-3 py-2 text-base text-ink-muted"
+      >
+        <strong className="font-semibold text-ink">Diferencia:</strong> todavía no se contó esta
+        caja.
+        {puedeContar && ' Usá “Contar caja” para ver si falta o sobra plata.'}
+      </p>
+    )
+  }
+
+  const cuadra = esCero(conteo.difference)
+  const falta = esNegativo(conteo.difference)
+  return (
+    <div
+      data-diferencia-caja={cuadra ? 'cuadra' : falta ? 'falta' : 'sobra'}
+      className={cn(
+        'rounded-md border px-3 py-2',
+        cuadra ? 'border-success/40 bg-success-quiet' : 'border-warning/40 bg-warning-quiet',
+      )}
+    >
+      <p className={cn('text-base font-semibold', cuadra ? 'text-success' : 'text-warning')}>
+        {cuadra ? (
+          <>
+            <span aria-hidden="true">✓ </span>Diferencia: ninguna, cuadró
+          </>
+        ) : (
+          <>
+            <span aria-hidden="true">▲ </span>Diferencia: {falta ? 'faltan' : 'sobran'}{' '}
+            <Money amount={absMonto(conteo.difference)} size="md" />
+          </>
+        )}
+      </p>
+      <p className="mt-0.5 text-sm text-ink-muted">
+        Último conteo a las {horaCorta(conteo.date)} ({conteo.user.name}): contó{' '}
+        <Money amount={conteo.amount} size="sm" tone="muted" /> y tenía que haber{' '}
+        <Money amount={conteo.expected} size="sm" tone="muted" />.
+      </p>
+    </div>
+  )
+}
+
+/** La cuenta de la ultima caja cerrada, para revisarla al dia siguiente. */
+function UltimoCierre({ turno }: { turno: TurnoDTO }) {
+  const diferencia = turno.difference
+  return (
+    <div className="flex flex-col gap-3 border-t border-line pt-5">
+      <div>
+        <h2 className="text-lg font-semibold text-ink">Último cierre</h2>
+        <p className="text-sm text-ink-muted">
+          Abrió {turno.openedBy.name} el {fechaCorta(turno.openedAt)}
+          {turno.closedAt && (
+            <>
+              {' '}
+              · cerró {turno.closedBy?.name ?? '—'} el {fechaCorta(turno.closedAt)}
+            </>
+          )}
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-10">
+        <CuentaDeLaCaja
+          className="rounded-lg border border-line bg-sunken p-4"
+          inicial={turno.openingAmount}
+          ventasEnEfectivo={turno.ventasEnEfectivo}
+          cantidadDeVentas={turno.cantidadDeVentas}
+          ingresos={turno.ingresos}
+          egresos={turno.egresos}
+          esperado={turno.expectedAmount}
+        />
+        <dl className="flex flex-col gap-1.5 self-start text-base">
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-ink-muted">Contado al cerrar</dt>
+            <dd>{turno.countedAmount === null ? '—' : <Money amount={turno.countedAmount} />}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-ink-muted">Diferencia</dt>
+            <dd>
+              {diferencia === null ? (
+                '—'
+              ) : esCero(diferencia) ? (
+                <span className="font-semibold text-success">✓ Cuadró</span>
+              ) : (
+                <span className="font-semibold text-warning">
+                  ▲ {esNegativo(diferencia) ? 'Faltó' : 'Sobró'}{' '}
+                  <Money amount={absMonto(diferencia)} size="md" />
+                </span>
+              )}
+            </dd>
+          </div>
+          {turno.closingNotes && (
+            <p className="mt-1 text-sm text-ink-muted">“{turno.closingNotes}”</p>
+          )}
+        </dl>
+      </div>
+    </div>
+  )
+}
+
+/** La lista de movimientos de caja, con sus filtros. */
 function MovimientosDeCaja({ recarga }: { recarga: number }) {
   const [movimientos, setMovimientos] = useState<MovimientoDTO[]>([])
   const [pagina, setPagina] = useState(1)

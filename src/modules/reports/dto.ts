@@ -249,7 +249,11 @@ export interface ReporteCajaDTO {
   ventasEnEfectivo: Monto
   detalle: Array<{
     turno: number
+    /** ISO 8601. */
     abierto: string
+    /** ISO 8601, o null si sigue abierto. */
+    cerrado: string | null
+    abrio: string | null
     cerradoPor: string | null
     esperado: Monto | null
     contado: Monto | null
@@ -273,6 +277,8 @@ export function parseReporteCaja(d: unknown): ReporteCajaDTO {
       return {
         turno: numero(f.turno),
         abierto: texto(f.abierto),
+        cerrado: textoOpcional(f.cerrado),
+        abrio: textoOpcional(f.abrio),
         cerradoPor: textoOpcional(f.cerradoPor),
         esperado: montoOpcional(f.esperado),
         contado: montoOpcional(f.contado),

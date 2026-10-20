@@ -7,10 +7,10 @@ import { Kbd, cn } from '@/components/ui'
  *
  * Un renglon, siempre en el mismo lugar debajo del buscador:
  *
- *   ① Productos › ② Carrito › ③ Cobro          ↑↓ Elegir producto · → Agregar …
+ *   (✓) Productos ── (2) Carrito ── (3) Cobro       ↑↓ Revisar · → +1 …
  *
- * La etapa actual va llena, en negrita y con `aria-current="step"`: se
- * distingue sin depender del color. Las teclas cambian con la etapa y nunca
+ * La etapa actual va llena, en negrita y con `aria-current="step"`; las ya
+ * hechas llevan tilde. Se distingue sin depender del color. Las teclas cambian con la etapa y nunca
  * mienten: son las mismas que decide `accionDeTecla`.
  *
  * Solo desde 768 px: en un telefono no hay teclado fisico, y ese renglon vale
@@ -60,35 +60,64 @@ export function ayudaEnTexto(etapa: EtapaVisible): string {
 }
 
 export function GuiaDeTeclado({ etapa, className }: { etapa: EtapaVisible; className?: string }) {
+  const actual = ETAPAS.findIndex((e) => e.id === etapa)
   return (
     <div
       data-guia-de-teclado=""
       data-etapa={etapa}
-      className={cn('min-h-7 items-center justify-between gap-3', className)}
+      className={cn(
+        'min-h-8 items-center justify-between gap-2 rounded-lg border border-line bg-surface px-1.5 py-0.5',
+        className,
+      )}
     >
+      {/* Tres pasos unidos por una linea: lo hecho lleva tilde, el paso
+          actual va lleno y en negrita, lo que falta queda en gris. Se lee de
+          un vistazo donde esta la venta, sin depender del color. */}
       <ol
         aria-label="Etapas de la venta"
         className="flex shrink-0 items-center gap-0.5 text-[0.8125rem]"
       >
         {ETAPAS.map((e, i) => {
-          const actual = e.id === etapa
+          const esActual = i === actual
+          const hecha = i < actual
           return (
-            <li key={e.id} className="flex items-center gap-1">
+            <li key={e.id} className="flex items-center gap-0.5">
               {i > 0 && (
-                <span aria-hidden="true" className="text-ink-faint">
-                  ›
-                </span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'h-0.5 w-3 rounded-full',
+                    i <= actual ? 'bg-primary' : 'bg-line-strong/50',
+                  )}
+                />
               )}
               <span
-                aria-current={actual ? 'step' : undefined}
+                aria-current={esActual ? 'step' : undefined}
+                data-paso={hecha ? 'hecho' : esActual ? 'actual' : 'pendiente'}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-full border px-2 leading-6',
-                  actual
-                    ? 'border-primary bg-primary font-semibold text-ink-on-solid'
-                    : 'border-transparent text-ink-muted',
+                  'inline-flex items-center gap-1 rounded-full py-0.5 pr-2 pl-0.5 leading-5',
+                  esActual
+                    ? 'bg-primary-quiet font-semibold text-ink'
+                    : hecha
+                      ? 'text-ink'
+                      : 'text-ink-muted',
                 )}
               >
-                <span data-numeric="">{i + 1}.</span>
+                <span
+                  aria-hidden="true"
+                  data-numeric=""
+                  className={cn(
+                    'inline-flex h-[1.125rem] w-[1.125rem] shrink-0 items-center justify-center rounded-full text-[0.6875rem] font-bold',
+                    esActual
+                      ? 'bg-primary text-ink-on-solid'
+                      : hecha
+                        ? 'border border-primary text-primary'
+                        : 'border border-line-strong text-ink-muted',
+                  )}
+                >
+                  {hecha ? '✓' : i + 1}
+                </span>
+                <span className="sr-only">Paso {i + 1}: </span>
                 {e.nombre}
               </span>
             </li>
@@ -99,7 +128,7 @@ export function GuiaDeTeclado({ etapa, className }: { etapa: EtapaVisible; class
           vez y en palabras, como descripcion del buscador. */}
       <p
         aria-hidden="true"
-        className="flex min-w-0 flex-wrap items-center justify-end gap-x-2.5 text-[0.8125rem] text-ink-muted"
+        className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 text-[0.8125rem] text-ink-muted"
       >
         {ATAJOS[etapa].map((a) => (
           <span key={a.que} className="inline-flex items-center gap-0.5 whitespace-nowrap">

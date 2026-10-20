@@ -13,6 +13,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  Kbd,
   Money,
   SkeletonRows,
   cn,
@@ -119,8 +120,8 @@ export interface ProductBrowserProps {
  */
 const COLUMNAS = [
   'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3',
-  'sm:grid-cols-[minmax(0,1fr)_auto_6.5rem]',
-  '2xl:grid-cols-[minmax(0,1fr)_8.5rem_auto_6.5rem]',
+  'sm:grid-cols-[minmax(0,1fr)_auto_8.5rem]',
+  '2xl:grid-cols-[minmax(0,1fr)_8.5rem_auto_8.5rem]',
 ].join(' ')
 
 const CELDA_NOMBRE = 'col-span-2 col-start-1 row-start-1 min-w-0 sm:col-span-1'
@@ -154,6 +155,9 @@ export function ProductBrowser({
 }: ProductBrowserProps) {
   const lista = useRef<HTMLDivElement>(null)
   const contenedor = useRef<HTMLDivElement>(null)
+  // El lugar del "/ kg" se reserva solo si hay algo que se pesa a la vista:
+  // alinea los precios sin dejar un hueco en una lista de puras unidades.
+  const hayPorPeso = productos.some((p) => esFraccionable(p.saleUnit))
   const centinela = useRef<HTMLDivElement>(null)
   /** La fila que recibe el foco con Tab. Sigue a la marcada. */
   const [enfocada, setEnfocada] = useState(0)
@@ -280,7 +284,7 @@ export function ProductBrowser({
               role="group"
               aria-label={buscando ? 'Resultados de la búsqueda' : 'Productos'}
               onKeyDown={alPresionarEnLaLista}
-              className="border-y border-line bg-surface"
+              className="overflow-hidden rounded-lg border border-line bg-surface"
             >
               {productos.map((p, i) => (
                 <FilaDeProducto
@@ -291,6 +295,7 @@ export function ProductBrowser({
                   enfocable={i === enfocada}
                   favorito={esFavorito(p.id)}
                   enCarrito={enCarrito?.get(p.id) ?? null}
+                  lugarParaUnidad={hayPorPeso}
                   onElegir={onElegir}
                   onFavorito={onFavorito}
                 />
@@ -327,6 +332,8 @@ export function ProductBrowser({
  * que sacarlo de la gondola.
  */
 function estadoDelProducto(producto: Product): {
+  /** "Hay", delante de la cantidad, cuando no hay nada que avisar. */
+  etiqueta?: string
   texto: string
   tono: string
   agotado: boolean
@@ -335,16 +342,26 @@ function estadoDelProducto(producto: Product): {
   const porVencimiento = agotado && aMilesimas(producto.expiredStock) > 0
   const cantidad = formatearCantidadConUnidad(producto.sellableStock, producto.saleUnit)
 
+  // UX V5: el stock acompania, no compite con el nombre ni con el precio. En
+  // gris y chico cuando esta bien; con color --y en palabras-- solo cuando
+  // pide atencion.
   if (agotado) {
-    return { texto: porVencimiento ? 'Vencido' : 'Sin stock', tono: 'text-danger', agotado: true }
+    return {
+      texto: porVencimiento ? 'Vencido' : 'Sin stock',
+      tono: 'font-medium text-danger',
+      agotado: true,
+    }
   }
   if (producto.estado === 'LOW') {
-    return { texto: `Quedan ${cantidad}`, tono: 'text-warning', agotado: false }
+    return { texto: `Quedan ${cantidad}`, tono: 'font-medium text-warning', agotado: false }
   }
   const porPeso = esFraccionable(producto.saleUnit)
+  // "Hay" delante: sin la palabra, "10 u." se confundia con lo que ya esta en
+  // el carrito, que se escribe igual. "Hay 10 u." / "Quedan 3 u." / "Sin stock".
   return {
+    etiqueta: 'Hay',
     texto: porPeso ? `${cantidad} · se pesa` : cantidad,
-    tono: 'text-ink-muted',
+    tono: 'text-ink-faint',
     agotado: false,
   }
 }
@@ -356,6 +373,7 @@ const FilaDeProducto = memo(function FilaDeProducto({
   enfocable,
   favorito,
   enCarrito,
+  lugarParaUnidad,
   onElegir,
   onFavorito,
 }: {
@@ -367,6 +385,8 @@ const FilaDeProducto = memo(function FilaDeProducto({
   favorito: boolean
   /** Cuanto hay ya en el carrito, o null si no esta. */
   enCarrito: string | null
+  /** Reservar el lugar del "/ kg" aunque este no lo use, para alinear los precios. */
+  lugarParaUnidad: boolean
   onElegir: (producto: Product) => void
   onFavorito: (productId: number) => void
 }) {
@@ -399,7 +419,7 @@ const FilaDeProducto = memo(function FilaDeProducto({
           // La linea que separa las filas es una SOMBRA y no un borde: un
           // borde de 1 px por fila son 14 px cada quince filas, y a 40 px por
           // fila eso es exactamente una fila menos a la vista.
-          'w-full border-l-[3px] py-1 pr-2 pl-2 text-left transition-colors',
+          'w-full border-l-4 py-1 pr-2 pl-2 text-left transition-colors',
           'shadow-[inset_0_-1px_0_var(--color-line)]',
           'min-h-14 sm:min-h-10 [@media(pointer:coarse)]:min-h-12',
           'xl:pr-11',
@@ -408,8 +428,9 @@ const FilaDeProducto = memo(function FilaDeProducto({
           // Sin stock: fondo apagado y el estado dicho en palabras ("Sin
           // stock"), no una opacidad que deja todo ilegible.
           estado.agotado && 'cursor-not-allowed bg-sunken',
-          // Elegida: barra gruesa, fondo y un contorno de 2 px. Se distingue
-          // sin depender del color (V6): es la fila sobre la que → suma.
+          // Elegida: barra gruesa, fondo, contorno de 2 px y la pista "→
+          // agregar". Se distingue sin depender del color (V6): es la fila
+          // sobre la que → suma.
           elegida
             ? 'border-l-primary bg-selection outline-2 -outline-offset-2 outline-primary'
             : 'border-l-transparent hover:bg-raised focus-visible:border-l-primary focus-visible:bg-selection',
@@ -435,25 +456,51 @@ const FilaDeProducto = memo(function FilaDeProducto({
           <span
             data-nombre=""
             className={cn(
-              'line-clamp-2 min-w-0 text-[0.9375rem] leading-tight font-medium',
-              estado.agotado ? 'text-ink-muted' : 'text-ink',
+              'line-clamp-2 min-w-0 text-base leading-tight font-semibold',
+              estado.agotado ? 'font-medium text-ink-muted' : 'text-ink',
             )}
           >
             {producto.name}
           </span>
+          {/* La pista de la fila elegida: que hace → aca. Desde 768 px, igual
+              que la guia de teclas; en un telefono no hay flechas. */}
+          {elegida && !estado.agotado && (
+            <span
+              aria-hidden="true"
+              data-pista-elegida=""
+              className="ml-auto hidden shrink-0 items-center gap-1 self-center text-xs whitespace-nowrap text-primary md:inline-flex"
+            >
+              <Kbd className="text-primary">→</Kbd> agregar
+            </span>
+          )}
         </span>
 
         <span className={cn(CELDA_CATEGORIA, 'truncate text-sm text-ink-faint')}>
           {producto.category.name}
         </span>
 
-        <span className={cn(CELDA_ESTADO, 'text-[0.8125rem]', estado.tono)} data-numeric="">
-          {estado.texto}
+        <span
+          className={cn(CELDA_ESTADO, 'text-xs whitespace-nowrap', estado.tono)}
+          data-numeric=""
+          data-stock=""
+        >
+          {estado.etiqueta && <span className="mr-1">{estado.etiqueta}</span>}
+          <span>{estado.texto}</span>
         </span>
 
+        {/* El precio, alineado a la derecha y en cifras tabulares: los pesos
+            quedan uno debajo del otro. El "/ kg" va en su propio lugar fijo,
+            asi un producto por peso no corre su precio a la izquierda. */}
         <span className={cn(CELDA_PRECIO, 'flex items-baseline justify-end gap-1')} data-numeric="">
-          <Money amount={producto.price} size="md" />
-          {denominador && <span className="text-xs text-ink-faint">{denominador}</span>}
+          <Money
+            amount={producto.price}
+            size="md"
+            tone={estado.agotado ? 'muted' : 'neutral'}
+            className="font-semibold"
+          />
+          {(denominador || lugarParaUnidad) && (
+            <span className="text-xs text-ink-faint sm:w-8 sm:shrink-0">{denominador}</span>
+          )}
         </span>
       </button>
 

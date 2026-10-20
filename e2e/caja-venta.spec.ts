@@ -139,8 +139,7 @@ test.describe('La caja, guiada', () => {
     await expect(page.getByText('Egreso registrado.')).toBeVisible({ timeout: 15_000 })
     await expect.poll(tieneQueHaber).toBe(antes + 1000)
 
-    // Y en el detalle, el egreso dice lo que es, con palabra y signo.
-    await page.getByRole('button', { name: /ver detalle/i }).click()
+    // Y en los movimientos, el egreso dice lo que es, con palabra y signo.
     const fila = page.getByRole('row').filter({ hasText: 'Pago al panadero' }).first()
     await expect(fila).toContainText('Egreso')
     await expect(fila).toContainText('−$')
@@ -204,7 +203,8 @@ test.describe('La caja, guiada', () => {
     await dialogo.getByLabel('Efectivo contado').fill(String(esperado))
     await dialogo.getByRole('button', { name: 'Guardar conteo' }).click()
     await expect(dialogo).toBeHidden({ timeout: 15_000 })
-    await page.getByRole('button', { name: /ver detalle/i }).click()
+    // La diferencia del conteo, arriba y sin abrir nada; y en los ultimos conteos.
+    await expect(page.locator('[data-diferencia-caja="cuadra"]')).toBeVisible()
     await expect(page.getByText('✓ Cuadró').first()).toBeVisible()
   })
 })
