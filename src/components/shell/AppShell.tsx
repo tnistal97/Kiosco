@@ -10,6 +10,7 @@ import { UserMenu } from './UserMenu'
 import { EstadoCaja } from './EstadoCaja'
 import { useSession, type SesionCliente } from './SessionProvider'
 import { AvisoDeSesionVencida, SesionVencida } from './SesionVencida'
+import { CambioDeClaveObligatorio } from '@/components/usuarios/CambioDeClaveObligatorio'
 
 const CLAVE_CONTRAIDA = 'kiosco:menu-contraido'
 
@@ -147,6 +148,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (!hayRed || sinConexion) return <>{children}</>
     return <SesionVencida pathname={pathname} />
   }
+
+  // Contrasena temporal: no hay aplicacion que mostrar hasta cambiarla. El
+  // servidor igual corta cada pedido a la API (PASSWORD_CHANGE_REQUIRED);
+  // esto evita dibujar pantallas que solo darian error.
+  if (session.debeCambiarClave) return <CambioDeClaveObligatorio />
 
   const grupos = navegacionPara(permisos, funciones)
   const titulo = tituloDe(pathname)

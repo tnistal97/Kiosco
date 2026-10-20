@@ -162,6 +162,7 @@ describe('Vista previa', () => {
       role: 'admin',
       branchId: fx.branchA.id,
       permissions: permisos,
+      mustChangePassword: false,
     }
     await expect(
       previsualizarPrecios(sesion, {

@@ -255,6 +255,7 @@ describe('Ninguna consulta se repite por fila (N+1)', () => {
         role: 'cajero',
         name: 'Cajero',
         username: fx.cajero.username,
+        mustChangePassword: false,
         permissions: new Set<never>(),
       }
 
@@ -422,6 +423,7 @@ async function crearOrdenes(n: number, lineas = 1): Promise<void> {
     username: fx.admin.username,
     role: 'admin',
     branchId: fx.branchA.id,
+    mustChangePassword: false,
     permissions: new Set([
       'purchases.create',
       'purchases.update',

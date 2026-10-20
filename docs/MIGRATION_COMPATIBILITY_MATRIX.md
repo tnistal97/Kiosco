@@ -17,12 +17,12 @@
 
 ## El resumen que importa
 
-De las 43 migraciones de la cadena:
+De las 44 migraciones de la cadena:
 
 | Categoría                          | Cuántas |
 | ---------------------------------- | ------: |
 | A — compatible hacia atrás         |       1 |
-| B — rollback de código seguro      |      31 |
+| B — rollback de código seguro      |      32 |
 | **C — rollback de base necesario** |   **8** |
 | **D — irreversible**               |   **3** |
 
@@ -65,6 +65,7 @@ volver. O el despliegue entero avanza, o el despliegue entero se restaura.
 |  35–38 | Fase 4C — anticipos y devoluciones                |   B   | Tablas nuevas; el resto no las mira.                                                                                                                                                                                        |
 |  39–43 | Fase 4D — lotes e inventario físico               |   B   | Tablas nuevas + columnas con default `'NONE'`.                                                                                                                                                                              |
 |     43 | `20260814100000_phase5a_indices_de_lectura`       | **A** | Un índice. Se crea y se borra sin tocar un dato.                                                                                                                                                                            |
+|     44 | `20261020190000_user_must_change_password`        |   B   | `User.mustChangePassword`, `NOT NULL DEFAULT false`. El código viejo no la lee.                                                                                                                                             |
 
 ## Las tres irreversibles, en detalle
 

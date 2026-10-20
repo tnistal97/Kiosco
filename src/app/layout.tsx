@@ -67,6 +67,7 @@ async function sesionParaElCliente(): Promise<SesionCliente | null> {
     // compras): asi cada pantalla esconde lo suyo sola. El servidor sigue
     // autorizando con los permisos reales. Ver `@/lib/funciones`.
     permissions: permisosVisibles(session.permissions, funcionesHabilitadas()),
+    debeCambiarClave: session.mustChangePassword,
   }
 }
 

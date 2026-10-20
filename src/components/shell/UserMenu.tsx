@@ -25,6 +25,7 @@ const ROL_LEGIBLE: Record<string, string> = {
   repositor: 'Repositor',
   compras: 'Compras',
   auditor: 'Auditor',
+  operador: 'Operador',
 }
 
 export function rolLegible(rol: string): string {

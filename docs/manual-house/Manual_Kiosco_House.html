@@ -1,0 +1,1654 @@
+<!doctype html>
+<html lang="es-AR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kiosco House · Guía para trabajar en el local</title>
+    <meta name="description" content="Manual de uso de Kiosco para el personal de House." />
+    <!--
+  Fuente editable del manual. El PDF se genera con:
+    npx tsx scripts/manual-house/pdf.ts
+  Cada <section class="pagina"> es UNA hoja A4. Si un texto no entra, el
+  generador avisa y no escribe el PDF: hay que repartirlo en otra hoja.
+  Las capturas salen de scripts/manual-house/capturas.ts.
+-->
+    <link rel="stylesheet" href="manual.css" />
+    <script src="capturas/marcas.js"></script>
+  </head>
+  <body>
+    <!-- ============================================================ PORTADA -->
+    <section class="pagina portada" id="portada">
+      <div class="portada-arriba">
+        <div class="logo">H</div>
+        <p class="sobretitulo">Kiosco · sistema de ventas, caja y stock</p>
+        <h1>Kiosco House</h1>
+        <p class="subtitulo">Guía rápida para trabajar en el local</p>
+        <ul class="portada-temas">
+          <li>Entrar y abrir la caja</li>
+          <li>Cargar productos</li>
+          <li>Vender y cobrar</li>
+          <li>Contar y cerrar la caja</li>
+          <li>Stock, inventario y reportes</li>
+        </ul>
+      </div>
+      <div class="portada-imagen"><img src="capturas/09-carrito.png" alt="" /></div>
+      <p class="portada-pie">Versión de octubre de 2026</p>
+    </section>
+
+    <!-- ============================================================ ÍNDICE -->
+    <section class="pagina">
+      <div class="contenido">
+        <h1 class="titulo-simple">Contenido</h1>
+        <ol class="indice">
+          <li data-ir="cap-1"><span>Entrar al sistema</span></li>
+          <li data-ir="cap-2"><span>La pantalla principal</span></li>
+          <li data-ir="cap-3"><span>Empezar el día</span></li>
+          <li data-ir="cap-4"><span>Cargar productos</span></li>
+          <li data-ir="cap-5"><span>Hacer una venta</span></li>
+          <li data-ir="cap-6"><span>Formas de pago</span></li>
+          <li data-ir="cap-7"><span>Ventas de hoy</span></li>
+          <li data-ir="cap-8"><span>La caja</span></li>
+          <li data-ir="cap-9"><span>Contar y cerrar la caja</span></li>
+          <li data-ir="cap-10"><span>Stock</span></li>
+          <li data-ir="cap-11"><span>Inventario</span></li>
+          <li data-ir="cap-12"><span>Reportes</span></li>
+          <li data-ir="cap-13"><span>Final del día</span></li>
+          <li data-ir="cap-14"><span>Si algo sale mal</span></li>
+          <li data-ir="cap-15"><span>Ayuda</span></li>
+        </ol>
+
+        <div class="caja-nota">
+          <h3>Cómo leer esta guía</h3>
+          <ul>
+            <li>Está ordenada como un día de trabajo: entrar, abrir la caja, vender y cerrar.</li>
+            <li>
+              Los <span class="marca-ej">1</span> naranjas de las imágenes señalan lo que se explica
+              en el texto.
+            </li>
+            <li>
+              Las teclas se muestran así: <kbd>Enter</kbd> <kbd>Esc</kbd> <kbd>↑</kbd> <kbd>↓</kbd>
+              <kbd>←</kbd> <kbd>→</kbd>.
+            </li>
+            <li>Los productos, precios y montos de las imágenes son ejemplos.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 1 ENTRAR -->
+    <section class="pagina" id="cap-1">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">1</span>
+          <div>
+            <h1>Entrar al sistema</h1>
+            <p>Kiosco se usa desde el navegador. No hay que instalar nada.</p>
+          </div>
+        </header>
+
+        <h2>Para entrar</h2>
+        <ol class="pasos">
+          <li>
+            Abrí el navegador (Chrome, Edge o el que uses) y escribí
+            <strong>kiosco.nistal.net</strong> en la barra de direcciones. Conviene guardarla en
+            favoritos.
+          </li>
+          <li>
+            En <strong>Usuario</strong> <span class="m">1</span>, escribí tu usuario tal como te lo
+            dieron. Respetá las mayúsculas y minúsculas.
+          </li>
+          <li>
+            En <strong>Contraseña</strong> <span class="m">2</span>, escribí tu contraseña. Con el
+            ojito podés ver lo que escribiste.
+          </li>
+          <li>Tocá <strong>Entrar</strong> <span class="m">3</span> o apretá <kbd>Enter</kbd>.</li>
+        </ol>
+
+        <figure
+          class="captura angosta"
+          data-captura="01b-login-completo"
+          data-marcas="usuario,clave,entrar"
+          data-recorte="0.3,0.03,0.4,0.82"
+        >
+          <img src="capturas/01b-login-completo.png" alt="Pantalla para entrar" />
+        </figure>
+
+        <div class="importante">
+          <strong>Importante</strong>
+          El responsable del sistema te entregará tu contraseña inicial. Es temporal: sirve solo
+          para el primer ingreso.
+        </div>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">1 · Entrar al sistema</p>
+        <h2>La primera vez: elegí tu contraseña</h2>
+        <p>
+          La primera vez que entrás, el sistema te pide cambiar la contraseña inicial por una tuya.
+          Hasta que no lo hagas no vas a ver el menú.
+        </p>
+        <div class="lado-a-lado">
+          <ol class="pasos">
+            <li>En <strong>Contraseña temporal</strong>, escribí la que te dieron.</li>
+            <li>
+              En <strong>Contraseña nueva</strong>, escribí una que vayas a recordar. Tiene que
+              tener <strong>al menos 10 caracteres</strong>.
+            </li>
+            <li>Escribila otra vez en <strong>Repetí la contraseña nueva</strong>.</li>
+            <li>Tocá <strong>Guardar y entrar</strong>. Listo: ya estás adentro.</li>
+            <li>
+              Si en ese momento no podés, tocá <strong>Salir</strong>: la próxima vez que entres te
+              lo va a pedir de nuevo.
+            </li>
+          </ol>
+          <figure class="captura" data-recorte="0.34,0.06,0.32,0.86">
+            <img src="capturas/02-primer-ingreso.png" alt="Elegí tu contraseña" />
+          </figure>
+        </div>
+
+        <div class="dos-columnas">
+          <div class="consejo">
+            <strong>Consejo</strong>
+            Elegí algo fácil de recordar para vos y difícil de adivinar para otros, por ejemplo tres
+            palabras y un número.
+          </div>
+          <div class="importante">
+            <strong>Importante</strong>
+            No anotes la contraseña a la vista ni se la pases a nadie: cada venta queda registrada
+            con tu nombre.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">1 · Entrar al sistema</p>
+        <h2>Otras cosas útiles</h2>
+        <table class="tabla">
+          <thead>
+            <tr>
+              <th>Si querés…</th>
+              <th>Hacé esto</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Salir del sistema</td>
+              <td>Tocá tu nombre, arriba a la derecha, y elegí <strong>Cerrar sesión</strong>.</td>
+            </tr>
+            <tr>
+              <td>Cambiar tu contraseña más adelante</td>
+              <td>
+                Andá a <strong>Configuración</strong>, buscá <strong>Contraseña</strong> y tocá
+                <strong>Cambiar contraseña</strong>.
+              </td>
+            </tr>
+            <tr>
+              <td>Recuperar una contraseña olvidada</td>
+              <td>
+                Pedile al responsable del sistema que la restablezca. Al entrar vas a elegir una
+                nueva.
+              </td>
+            </tr>
+            <tr>
+              <td>Entrar después de equivocarte varias veces</td>
+              <td>
+                El sistema te hace esperar <strong>15 minutos</strong>. Esperá y probá de nuevo con
+                cuidado.
+              </td>
+            </tr>
+            <tr>
+              <td>Seguir trabajando si dice que la sesión venció</td>
+              <td>
+                Volvé a entrar con tu usuario y contraseña. Lo que estabas vendiendo no se cobró.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <figure class="captura angosta" data-recorte="0.3,0.085,0.56,0.915">
+          <img src="capturas/32-configuracion.png" alt="Configuración" />
+          <figcaption>
+            En <strong>Configuración</strong> ves tu usuario, el local y el cambio de contraseña.
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============================================================ 2 PANTALLA PRINCIPAL -->
+    <section class="pagina" id="cap-2">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">2</span>
+          <div>
+            <h1>La pantalla principal</h1>
+            <p>
+              Al entrar vas a ver <strong>Inicio</strong>. A la izquierda está el menú: desde ahí
+              vas a todas las partes del sistema.
+            </p>
+          </div>
+        </header>
+
+        <figure class="captura" data-captura="03-inicio" data-marcas="menu">
+          <img src="capturas/03-inicio.png" alt="Inicio" />
+          <figcaption>
+            <span class="m">1</span> El menú. Arriba a la derecha ves si la caja está abierta (y
+            cuánto tiene) y tu nombre.
+          </figcaption>
+        </figure>
+
+        <table class="tabla menu-tabla">
+          <tbody>
+            <tr>
+              <th>Vender</th>
+              <td>Para cobrarle a un cliente. Es la pantalla que más vas a usar.</td>
+            </tr>
+            <tr>
+              <th>Caja</th>
+              <td>
+                Abrir y cerrar la caja, anotar la plata que entra o sale y ver cuánto tiene que
+                haber en el cajón.
+              </td>
+            </tr>
+            <tr>
+              <th>Productos</th>
+              <td>La lista de lo que se vende. Para cargar productos nuevos y cambiar precios.</td>
+            </tr>
+            <tr>
+              <th>Stock</th>
+              <td>
+                Cuánto queda de cada producto, qué se está terminando y la mercadería que llega.
+              </td>
+            </tr>
+            <tr>
+              <th>Inventario</th>
+              <td>Para contar la mercadería y corregir lo que dice el sistema.</td>
+            </tr>
+            <tr>
+              <th>Clientes</th>
+              <td>Los clientes con cuenta (fiado) y cuánto debe cada uno.</td>
+            </tr>
+            <tr>
+              <th>Reportes</th>
+              <td>Cuánto se vendió, cómo se pagó, qué se vendió más y cómo cerraron las cajas.</td>
+            </tr>
+            <tr>
+              <th>Configuración</th>
+              <td>Tus datos y el cambio de contraseña.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============================================================ 3 EMPEZAR EL DÍA -->
+    <section class="pagina" id="cap-3">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">3</span>
+          <div>
+            <h1>Empezar el día</h1>
+            <p>
+              Antes de vender hay que <strong>abrir la caja</strong>: decirle al sistema con cuánta
+              plata empieza el cajón.
+            </p>
+          </div>
+        </header>
+
+        <ol class="pasos">
+          <li>Entrá al sistema.</li>
+          <li>Andá a <strong>Caja</strong>.</li>
+          <li>
+            Fijate qué dice arriba: <strong>CAJA CERRADA</strong> o <strong>CAJA ABIERTA</strong>.
+          </li>
+          <li>Si dice <strong>CAJA CERRADA</strong>, tocá <strong>Abrir caja</strong>.</li>
+          <li>
+            Contá los billetes y monedas que hay en el cajón y escribí el total en
+            <strong>Efectivo inicial</strong>.
+          </li>
+          <li>Tocá <strong>Abrir caja</strong> o apretá <kbd>Enter</kbd>. Ya podés vender.</li>
+        </ol>
+
+        <figure class="captura" data-recorte="0.16,0.07,0.84,0.38">
+          <img src="capturas/04-caja-cerrada.png" alt="Caja cerrada" />
+          <figcaption>
+            Así se ve la caja cerrada. El botón <strong>Abrir caja</strong> lleva a la pantalla para
+            abrirla.
+          </figcaption>
+        </figure>
+
+        <div class="importante">
+          <strong>Si dice CAJA ABIERTA</strong>
+          Mirá al lado desde cuándo y quién la abrió. Si es de <strong>otro día</strong> o la abrió
+          <strong>otra persona</strong>, no empieces a vender: avisale al responsable para que la
+          cierre. Así cada caja tiene la plata de un solo turno.
+        </div>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">3 · Empezar el día</p>
+        <h2>Abrir la caja</h2>
+        <figure
+          class="captura"
+          data-captura="05-abrir-caja"
+          data-marcas="inicial"
+          data-recorte="0.16,0.07,0.84,0.6"
+        >
+          <img src="capturas/05-abrir-caja.png" alt="Abrir la caja" />
+          <figcaption>
+            <span class="m">1</span> <strong>Efectivo inicial</strong>: los billetes y monedas que
+            hay ahora en el cajón. Puede ser cero.
+          </figcaption>
+        </figure>
+
+        <div class="ejemplo">
+          <strong>Ejemplo</strong>
+          <p>En el cajón hay 4 billetes de $2.000, 1 billete de $1.000 y $1.000 en monedas.</p>
+          <p class="cuenta-linea">$8.000 + $1.000 + $1.000 = <strong>$10.000</strong></p>
+          <p>
+            En <strong>Efectivo inicial</strong> escribís <strong>10000</strong> y tocás
+            <strong>Abrir caja</strong>.
+          </p>
+        </div>
+
+        <div class="importante">
+          <strong>Importante</strong>
+          Escribí lo que hay de verdad en el cajón, aunque sea $0. El monto inicial no se puede
+          corregir después: es el punto de partida de toda la cuenta del día.
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 CARGAR PRODUCTOS -->
+    <section class="pagina" id="cap-4">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">4</span>
+          <div>
+            <h1>Cargar productos</h1>
+            <p>
+              El local empieza <strong>sin productos cargados</strong>. Cada producto se carga una
+              sola vez; después lo vendés escaneándolo o buscándolo por el nombre.
+            </p>
+          </div>
+        </header>
+
+        <div class="lado-a-lado">
+          <ol class="pasos">
+            <li>Andá a <strong>Productos</strong> y tocá <strong>+ Nuevo producto</strong>.</li>
+            <li>
+              <strong>Nombre</strong> <span class="m">1</span>: cómo lo vas a buscar. Marca, tipo y
+              tamaño.
+            </li>
+            <li>
+              <strong>Categoría</strong> <span class="m">2</span>: elegila de la lista. Si no
+              existe, tocá <strong>+ Nueva</strong>, escribí el nombre y tocá
+              <strong>Crear</strong>.
+            </li>
+            <li>
+              <strong>Precio de venta</strong> <span class="m">3</span>: el precio al público.
+            </li>
+            <li>
+              <strong>Unidades que tenés ahora</strong> <span class="m">4</span>: cuántas hay en el
+              local. Si no sabés, dejá 0.
+            </li>
+            <li>
+              <strong>Código de barras</strong> <span class="m">5</span>: tocá el campo y pasá el
+              producto por el lector.
+            </li>
+            <li>Tocá <strong>Guardar producto</strong> <span class="m">6</span>.</li>
+          </ol>
+          <figure
+            class="captura"
+            data-captura="07-nuevo-producto"
+            data-marcas="nombre,categoria,precio,stock,codigo,guardar"
+          >
+            <img src="capturas/07-nuevo-producto.png" alt="Nuevo producto" />
+          </figure>
+        </div>
+
+        <div class="ejemplo">
+          <strong>Ejemplo</strong>
+          <table class="tabla compacta">
+            <tbody>
+              <tr>
+                <th>Nombre</th>
+                <td>Coca Cola 2.25 L</td>
+              </tr>
+              <tr>
+                <th>Categoría</th>
+                <td>Bebidas</td>
+              </tr>
+              <tr>
+                <th>Precio de venta</th>
+                <td>$3.500</td>
+              </tr>
+              <tr>
+                <th>Unidades que tenés ahora</th>
+                <td>12</td>
+              </tr>
+              <tr>
+                <th>Código de barras</th>
+                <td>escanear la botella con el lector</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">4 · Cargar productos</p>
+        <h2>El código de barras</h2>
+        <table class="tabla">
+          <tbody>
+            <tr>
+              <th>Con el lector</th>
+              <td>
+                El lector funciona como un teclado. Hacé clic en <strong>Código de barras</strong> y
+                pasá el producto: el número aparece solo y abajo dice
+                <strong>✓ Código detectado</strong>.
+              </td>
+            </tr>
+            <tr>
+              <th>A mano</th>
+              <td>Si el lector no lo lee, escribí los números que están debajo de las barras.</td>
+            </tr>
+            <tr>
+              <th>Sin código</th>
+              <td>
+                Si el producto no tiene código (algo suelto o hecho en el local), dejá el campo
+                vacío. Lo vas a vender buscándolo por el nombre.
+              </td>
+            </tr>
+            <tr>
+              <th>Ya cargado</th>
+              <td>
+                Si aparece <strong>«Ese código ya lo tiene…»</strong>, ese producto ya existe: no lo
+                cargues de nuevo.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>La categoría</h2>
+        <p>
+          Sirve para ordenar la lista y para filtrar en Vender, en Stock y en el inventario. Usá
+          pocas y claras: <em>Bebidas, Almacén, Lácteos, Limpieza, Golosinas, Fiambrería</em>. Para
+          crear una nueva desde el producto: <strong>+ Nueva</strong> → escribí el nombre →
+          <strong>Crear</strong>.
+        </p>
+
+        <h2>Más opciones</h2>
+        <p>
+          Abajo del formulario, <strong>Más opciones</strong> tiene datos que no hacen falta para
+          empezar: si el producto se vende por kilo, cuándo avisarte que quedan pocas unidades y una
+          descripción.
+        </p>
+
+        <div class="consejo">
+          <strong>Desde Vender también se puede</strong>
+          Si escaneás en Vender un código que no está cargado, el sistema dice
+          <strong>«No hay ningún producto con este código»</strong> y te ofrece
+          <strong>Crear producto</strong> ahí mismo, sin perder la venta.
+        </div>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">4 · Cargar productos</p>
+        <div class="recuadro-azul">
+          <h2>Cómo cargar el negocio por primera vez</h2>
+          <p>
+            Lo más ordenado es ir <strong>producto por producto</strong>, una góndola o un estante a
+            la vez:
+          </p>
+          <ol class="pasos">
+            <li>Tomá un producto y <strong>escanealo</strong> en Código de barras.</li>
+            <li>Escribí el <strong>nombre</strong> como lo vas a buscar.</li>
+            <li>Elegí la <strong>categoría</strong> (o creala).</li>
+            <li>Poné el <strong>precio</strong> de venta.</li>
+            <li>Contá cuántos hay y escribilo en <strong>Unidades que tenés ahora</strong>.</li>
+            <li><strong>Guardá</strong> y seguí con el siguiente.</li>
+          </ol>
+          <p class="chico">
+            Si un producto viene en varios tamaños o sabores con códigos distintos, cargá cada uno
+            por separado. Al terminar, mirá <strong>Stock</strong> para confirmar las cantidades.
+          </p>
+        </div>
+
+        <h2>Cambiar un precio o corregir un producto</h2>
+        <ol class="pasos">
+          <li>Andá a <strong>Productos</strong> y buscalo por el nombre o el código.</li>
+          <li>Tocá <strong>Editar</strong> en su fila.</li>
+          <li>
+            Cambiá lo que haga falta (precio, nombre, categoría, código) y tocá
+            <strong>Guardar cambios</strong>.
+          </li>
+        </ol>
+        <figure class="captura" data-recorte="0.16,0,0.84,0.62">
+          <img src="capturas/19-productos.png" alt="Lista de productos" />
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============================================================ 5 VENDER -->
+    <section class="pagina" id="cap-5">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">5</span>
+          <div>
+            <h1>Hacer una venta</h1>
+            <p>Una venta tiene tres pasos, que el sistema muestra arriba de la lista.</p>
+          </div>
+        </header>
+
+        <div class="flujo">
+          <div>
+            <span>1</span><strong>Productos</strong>
+            <p>Buscar y agregar lo que lleva el cliente</p>
+          </div>
+          <div class="flecha">→</div>
+          <div>
+            <span>2</span><strong>Carrito</strong>
+            <p>Revisar cantidades y total</p>
+          </div>
+          <div class="flecha">→</div>
+          <div>
+            <span>3</span><strong>Cobro</strong>
+            <p>Elegir cómo paga y confirmar</p>
+          </div>
+        </div>
+
+        <figure class="captura" data-captura="08-vender" data-marcas="buscar,pasos">
+          <img src="capturas/08-vender.png" alt="Vender" />
+          <figcaption>
+            <span class="m">1</span> Buscador y lector de código. <span class="m">2</span> Los tres
+            pasos, con las teclas de cada uno.
+          </figcaption>
+        </figure>
+
+        <h3>Paso 1 · Productos</h3>
+        <table class="teclas">
+          <tbody>
+            <tr>
+              <td>escribir letras</td>
+              <td>buscar el producto (alcanzan unas letras)</td>
+            </tr>
+            <tr>
+              <td><kbd>↑</kbd> <kbd>↓</kbd></td>
+              <td>elegir un producto de la lista</td>
+            </tr>
+            <tr>
+              <td><kbd>→</kbd></td>
+              <td>agregar una unidad</td>
+            </tr>
+            <tr>
+              <td><kbd>←</kbd></td>
+              <td>quitar una unidad</td>
+            </tr>
+            <tr>
+              <td><kbd>Enter</kbd></td>
+              <td>ir al carrito</td>
+            </tr>
+            <tr>
+              <td><kbd>Esc</kbd></td>
+              <td>borrar la búsqueda o volver</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">5 · Hacer una venta</p>
+        <div class="recuadro-azul">
+          <h2>Con el lector de código</h2>
+          <p>
+            Pasá el producto por el lector: el sistema lee el código, apreta <kbd>Enter</kbd> solo y
+            <strong>agrega una unidad</strong>. Si lleva dos, pasalo dos veces. No hace falta tocar
+            nada más: podés seguir pasando productos.
+          </p>
+        </div>
+
+        <h2>Paso 2 · Carrito</h2>
+        <figure class="captura" data-captura="09-carrito" data-marcas="carrito,cobrar">
+          <img src="capturas/09-carrito.png" alt="Carrito" />
+          <figcaption>
+            <span class="m">1</span> El carrito: cada producto con su cantidad y su precio, y el
+            total abajo. <span class="m">2</span> Cobrar.
+          </figcaption>
+        </figure>
+        <table class="teclas">
+          <tbody>
+            <tr>
+              <td><kbd>↑</kbd> <kbd>↓</kbd></td>
+              <td>revisar los productos del carrito</td>
+            </tr>
+            <tr>
+              <td><kbd>→</kbd></td>
+              <td>sumar uno</td>
+            </tr>
+            <tr>
+              <td><kbd>←</kbd></td>
+              <td>quitar uno (si llega a cero, el producto sale del carrito)</td>
+            </tr>
+            <tr>
+              <td><kbd>Enter</kbd></td>
+              <td>cobrar</td>
+            </tr>
+            <tr>
+              <td><kbd>Esc</kbd></td>
+              <td>volver a productos</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="chico">
+          Con el mouse también: los botones <strong>−</strong> y <strong>+</strong> cambian la
+          cantidad, <strong>Quitar</strong> saca un producto y <strong>Vaciar</strong> borra todo el
+          carrito.
+        </p>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">5 · Hacer una venta</p>
+        <h2>Paso 3 · Cobro</h2>
+        <div class="lado-a-lado">
+          <ol class="pasos">
+            <li>
+              Elegí <strong>cómo paga</strong> <span class="m">1</span>.
+              <strong>Efectivo</strong> viene marcado.
+            </li>
+            <li>
+              Si paga en efectivo, escribí cuánto te da en <strong>Recibido</strong>
+              <span class="m">2</span>, o tocá un botón (<strong>Justo</strong>, $20.000…). El
+              <strong>vuelto</strong> aparece a la derecha.
+            </li>
+            <li>
+              <kbd>Enter</kbd> te lleva a <strong>Confirmar venta</strong> <span class="m">3</span>;
+              otro <kbd>Enter</kbd> confirma.
+            </li>
+            <li>
+              Si hay vuelto, el sistema lo muestra grande. Dalo y tocá
+              <strong>Nueva venta</strong> (o <kbd>Enter</kbd>).
+            </li>
+          </ol>
+          <figure class="captura" data-captura="10-cobro" data-marcas="medios,recibido,confirmar">
+            <img src="capturas/10-cobro.png" alt="Cobrar" />
+          </figure>
+        </div>
+
+        <div class="lado-a-lado alineado">
+          <div>
+            <table class="teclas">
+              <tbody>
+                <tr>
+                  <td>tocar</td>
+                  <td>elegir la forma de pago</td>
+                </tr>
+                <tr>
+                  <td>escribir</td>
+                  <td>cuánto te da el cliente</td>
+                </tr>
+                <tr>
+                  <td><kbd>Enter</kbd></td>
+                  <td>continuar / confirmar</td>
+                </tr>
+                <tr>
+                  <td><kbd>Esc</kbd></td>
+                  <td>volver al carrito</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="importante">
+              <strong>Importante</strong>
+              La venta se registra al <strong>confirmar</strong>. Antes, revisá el total y la forma
+              de pago.
+            </div>
+          </div>
+          <figure class="captura chica">
+            <img src="capturas/11-vuelto.png" alt="Venta registrada con el vuelto" />
+            <figcaption>Venta registrada: el vuelto, grande.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 6 FORMAS DE PAGO -->
+    <section class="pagina" id="cap-6">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">6</span>
+          <div>
+            <h1>Formas de pago</h1>
+            <p>Se eligen en el cobro, en <strong>¿Cómo paga?</strong></p>
+          </div>
+        </header>
+
+        <table class="tabla pagos">
+          <tbody>
+            <tr>
+              <th>Efectivo</th>
+              <td>
+                Billetes y monedas. Pide <strong>Recibido</strong> y muestra el
+                <strong>Vuelto</strong>. Es lo único que entra al cajón.
+              </td>
+            </tr>
+            <tr>
+              <th>Transferencia</th>
+              <td>
+                El cliente transfiere a la cuenta del local. Confirmá la venta cuando veas que la
+                plata llegó.
+              </td>
+            </tr>
+            <tr>
+              <th>Mercado Pago</th>
+              <td>
+                El cliente paga con el QR o con la aplicación. Confirmá cuando veas el pago
+                aprobado.
+              </td>
+            </tr>
+            <tr>
+              <th>Débito</th>
+              <td>Con tarjeta de débito, en el posnet.</td>
+            </tr>
+            <tr>
+              <th>Crédito</th>
+              <td>Con tarjeta de crédito, en el posnet.</td>
+            </tr>
+            <tr>
+              <th>Fiado</th>
+              <td>
+                Queda anotado en la cuenta del cliente para que pague después. Solo para los
+                clientes que habilitó el responsable. Si el cliente no aparece, pedile al
+                responsable que lo cargue.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="recuadro-azul">
+          <h2>Recibido y vuelto</h2>
+          <p>
+            Aparecen solo con <strong>Efectivo</strong>. <strong>Recibido</strong> es lo que te da
+            el cliente; <strong>Vuelto</strong> es lo que le devolvés.
+          </p>
+          <div class="cuenta-grande">
+            <div><span>Total</span><strong>$16.500</strong></div>
+            <div><span>Recibido</span><strong>$20.000</strong></div>
+            <div class="resultado"><span>Vuelto</span><strong>$3.500</strong></div>
+          </div>
+        </div>
+
+        <div class="importante">
+          <strong>Importante</strong>
+          Débito, crédito, transferencia y Mercado Pago <strong>no entran al cajón</strong>: no
+          suman a lo que tiene que haber en la caja. Por eso, elegí siempre la forma de pago real.
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 7 VENTAS DE HOY -->
+    <section class="pagina" id="cap-7">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">7</span>
+          <div>
+            <h1>Ventas de hoy</h1>
+            <p>
+              En <strong>Vender</strong>, al lado del título, está el botón
+              <strong>Ventas de hoy</strong>. Muestra todas las ventas del día, de la más nueva a la
+              más vieja.
+            </p>
+          </div>
+        </header>
+
+        <div class="lado-a-lado parejo">
+          <figure class="captura">
+            <img src="capturas/12-ventas-de-hoy.png" alt="Lista de ventas de hoy" />
+            <figcaption>
+              La lista: hora, forma de pago, número de venta, quién cobró, total y estado.
+            </figcaption>
+          </figure>
+          <figure class="captura">
+            <img src="capturas/13-detalle-venta.png" alt="Detalle de una venta" />
+            <figcaption>
+              El detalle: productos, cantidades, precios, total, cómo se pagó, recibido y vuelto.
+            </figcaption>
+          </figure>
+        </div>
+
+        <ol class="pasos">
+          <li>
+            Tocá <strong>Ventas de hoy</strong>. Arriba ves cuántas ventas hubo, el total vendido y
+            las anuladas.
+          </li>
+          <li>
+            Para ver una venta, tocala (o elegila con <kbd>↑</kbd> <kbd>↓</kbd> y apretá
+            <kbd>Enter</kbd>).
+          </li>
+          <li>
+            Para volver a la lista, tocá <strong>← Todas las ventas de hoy</strong>. Para cerrar,
+            <kbd>Esc</kbd> o la ✕: volvés a vender.
+          </li>
+        </ol>
+
+        <div class="importante">
+          <strong>Si te equivocaste en una venta ya cobrada</strong>
+          No se puede borrar. Anotá el número de la venta (por ejemplo, <strong>#12</strong>) y
+          avisale al responsable para que la anule.
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 8 CAJA -->
+    <section class="pagina" id="cap-8">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">8</span>
+          <div>
+            <h1>La caja</h1>
+            <p>
+              La caja es el registro de la plata del cajón durante tu turno: con cuánto empezaste,
+              qué entró y qué salió.
+            </p>
+          </div>
+        </header>
+
+        <table class="tabla glosario">
+          <tbody>
+            <tr>
+              <th>Abrir la caja</th>
+              <td>Empezar el turno contando el cajón y diciéndole al sistema cuánto hay.</td>
+            </tr>
+            <tr>
+              <th>Monto inicial</th>
+              <td>La plata que había en el cajón al abrir.</td>
+            </tr>
+            <tr>
+              <th>Ventas en efectivo</th>
+              <td>Lo que se cobró en efectivo desde que se abrió.</td>
+            </tr>
+            <tr>
+              <th>Ingresos</th>
+              <td>
+                Plata que entra al cajón y no es una venta. Ejemplo: el cambio que trae el dueño.
+              </td>
+            </tr>
+            <tr>
+              <th>Egresos</th>
+              <td>Plata que sale del cajón. Ejemplo: el pago al panadero.</td>
+            </tr>
+            <tr>
+              <th>Tiene que haber en el cajón</th>
+              <td>
+                Lo que el sistema calcula que tendría que haber. Se compara con lo que contás.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="ejemplo">
+          <strong>Ejemplo</strong>
+          <table class="cuenta">
+            <tbody>
+              <tr>
+                <td></td>
+                <td>Monto inicial</td>
+                <td>$10.000</td>
+              </tr>
+              <tr>
+                <td>+</td>
+                <td>Ventas en efectivo</td>
+                <td>$50.000</td>
+              </tr>
+              <tr>
+                <td>+</td>
+                <td>Ingreso (cambio que trajo el dueño)</td>
+                <td>$5.000</td>
+              </tr>
+              <tr>
+                <td>−</td>
+                <td>Egreso (pago al panadero)</td>
+                <td>$2.000</td>
+              </tr>
+              <tr class="total">
+                <td>=</td>
+                <td>Tiene que haber en el cajón</td>
+                <td>$63.000</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">8 · La caja</p>
+        <h2>La pantalla de la caja</h2>
+        <figure
+          class="captura"
+          data-captura="16-caja-abierta"
+          data-marcas="tiene-que-haber,cuenta,ingreso,egreso,contar,cerrar"
+        >
+          <img src="capturas/16-caja-abierta.png" alt="Caja abierta" />
+        </figure>
+        <ol class="leyenda">
+          <li>
+            <span class="m">1</span
+            ><span
+              ><strong>Tiene que haber en el cajón</strong>: el número que importa. Solo cuenta el
+              efectivo.</span
+            >
+          </li>
+          <li>
+            <span class="m">2</span
+            ><span
+              ><strong>De dónde sale</strong>: la cuenta completa, igual al ejemplo de la página
+              anterior.</span
+            >
+          </li>
+          <li>
+            <span class="m">3</span
+            ><span><strong>Registrar ingreso</strong>: plata que entra y no es una venta.</span>
+          </li>
+          <li>
+            <span class="m">4</span
+            ><span><strong>Registrar egreso</strong>: plata que sale del cajón.</span>
+          </li>
+          <li>
+            <span class="m">5</span
+            ><span
+              ><strong>Contar caja</strong>: un control en medio del día. La caja sigue
+              abierta.</span
+            >
+          </li>
+          <li>
+            <span class="m">6</span
+            ><span><strong>Cerrar caja</strong>: al terminar el turno (capítulo 9).</span>
+          </li>
+        </ol>
+        <p class="chico">
+          Más abajo están los <strong>movimientos de caja</strong> (cada venta, ingreso y egreso con
+          su hora) y las <strong>cajas anteriores</strong>. El botón
+          <strong>Cómo funciona</strong> explica todo esto en la misma pantalla.
+        </p>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">8 · La caja</p>
+        <h2>Registrar un ingreso o un egreso</h2>
+        <ol class="pasos">
+          <li>
+            En <strong>Caja</strong>, tocá <strong>Registrar ingreso</strong> (entra plata) o
+            <strong>Registrar egreso</strong> (sale plata).
+          </li>
+          <li>
+            En <strong>Importe</strong>, escribí cuánto. En el ingreso, dejá
+            <strong>Efectivo</strong> como forma de pago si la plata entra al cajón; el egreso
+            siempre sale del cajón.
+          </li>
+          <li>
+            En <strong>Motivo</strong>, escribí para qué: es lo que se lee al revisar la caja.
+          </li>
+          <li>
+            Tocá <strong>Registrar ingreso</strong> (o <strong>Registrar egreso</strong>) abajo del
+            todo para guardarlo.
+          </li>
+        </ol>
+        <div class="lado-a-lado estrecho">
+          <figure class="captura">
+            <img src="capturas/14-ingreso.png" alt="Registrar ingreso" />
+            <figcaption>Ingreso: el cambio que trajo el dueño.</figcaption>
+          </figure>
+          <figure class="captura">
+            <img src="capturas/15-egreso.png" alt="Registrar egreso" />
+            <figcaption>Egreso: el pago al panadero.</figcaption>
+          </figure>
+        </div>
+
+        <h2>Contar la caja sin cerrarla</h2>
+        <div class="lado-a-lado alineado">
+          <p>
+            Sirve para controlar en medio del día. Tocá <strong>Contar caja</strong>, contá los
+            billetes y monedas, escribí el total en <strong>Efectivo contado</strong> y tocá
+            <strong>Guardar conteo</strong>. Arriba vas a ver si <strong>cuadra</strong>, si
+            <strong>falta</strong> o si <strong>sobra</strong>. La caja sigue abierta.
+          </p>
+          <figure class="captura chica">
+            <img src="capturas/17-contar-caja.png" alt="Contar caja" />
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 9 CERRAR -->
+    <section class="pagina" id="cap-9">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">9</span>
+          <div>
+            <h1>Contar y cerrar la caja</h1>
+            <p>
+              Al terminar el turno se cuenta la plata del cajón y se compara con lo que dice el
+              sistema.
+            </p>
+          </div>
+        </header>
+
+        <ol class="pasos">
+          <li>Terminá la última venta.</li>
+          <li>Andá a <strong>Caja</strong> y tocá <strong>Cerrar caja</strong>.</li>
+          <li>
+            En <strong>Lo que pasó desde que se abrió</strong> está cuánto
+            <strong>tiene que haber</strong>.
+          </li>
+          <li>Contá todos los billetes y monedas del cajón.</li>
+          <li>Escribí el total en <strong>Efectivo contado</strong>.</li>
+          <li>
+            Mirá el resultado: <strong>Cuadra</strong>, <strong>Falta</strong> o
+            <strong>Sobra</strong>.
+          </li>
+          <li>Si hay diferencia, <strong>volvé a contar</strong> antes de seguir.</li>
+          <li>Tocá <strong>Cerrar caja</strong>.</li>
+        </ol>
+
+        <figure class="captura" data-recorte="0.16,0.07,0.84,0.93">
+          <img src="capturas/24-cerrar-falta.png" alt="Cerrar la caja con un faltante" />
+          <figcaption>
+            Tenía que haber $63.000 y se contaron $62.000: <strong>falta $1.000</strong>.
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">9 · Contar y cerrar la caja</p>
+        <h2>Sistema contra dinero contado</h2>
+        <table class="tabla diferencias">
+          <thead>
+            <tr>
+              <th>Diferencia</th>
+              <th>Qué muestra</th>
+              <th>Qué significa</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="ok">$0</td>
+              <td><strong>Cuadra</strong></td>
+              <td>Está correcto: hay lo que tiene que haber.</td>
+            </tr>
+            <tr>
+              <td class="falta">negativa (−)</td>
+              <td><strong>Falta</strong></td>
+              <td>Hay <strong>menos</strong> plata de la que tendría que haber.</td>
+            </tr>
+            <tr>
+              <td class="sobra">positiva (+)</td>
+              <td><strong>Sobra</strong></td>
+              <td>Hay <strong>más</strong> plata de la que tendría que haber.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <figure
+          class="captura angosta"
+          data-captura="25-cerrar-cuadra"
+          data-marcas="contado,resultado,cerrar"
+          data-recorte="0.3,0.34,0.56,0.645"
+        >
+          <img src="capturas/25-cerrar-cuadra.png" alt="Cerrar la caja: cuadra" />
+          <figcaption>
+            <span class="m">1</span> Efectivo contado. <span class="m">2</span> El resultado.
+            <span class="m">3</span> Cerrar caja. Arriba del botón está
+            <strong>Observación</strong>.
+          </figcaption>
+        </figure>
+
+        <div class="recuadro-azul">
+          <h2>Si hay diferencia</h2>
+          <ul>
+            <li>Volvé a contar todo, despacio, separando billetes por valor.</li>
+            <li>Pensá si algún vuelto se dio mal o si salió plata sin registrar el egreso.</li>
+            <li>
+              Revisá que ninguna venta cobrada con tarjeta, transferencia o Mercado Pago haya
+              quedado como efectivo.
+            </li>
+            <li>
+              Si la diferencia sigue, escribí en <strong>Observación</strong> qué pasó y cerrá la
+              caja. Queda registrada con tu nombre y el responsable la ve en Reportes.
+            </li>
+          </ul>
+        </div>
+        <p class="chico">
+          Una caja cerrada no se puede modificar. Si al cerrar aparece
+          <strong>Hace falta un encargado</strong>, no la cierres vos: llamá al responsable.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================ 10 STOCK -->
+    <section class="pagina" id="cap-10">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">10</span>
+          <div>
+            <h1>Stock</h1>
+            <p>Muestra cuánto hay de cada producto. Baja solo con cada venta.</p>
+          </div>
+        </header>
+
+        <figure class="captura" data-recorte="0.16,0.07,0.84,0.93">
+          <img src="capturas/18-stock.png" alt="Stock" />
+        </figure>
+
+        <table class="tabla estados">
+          <tbody>
+            <tr>
+              <td><span class="estado normal">● Stock normal</span></td>
+              <td>Hay suficiente.</td>
+            </tr>
+            <tr>
+              <td><span class="estado bajo">▲ Stock bajo</span></td>
+              <td>
+                Quedan pocas unidades: hay que reponer. En Vender se ve como
+                <strong>«Quedan 3 u.»</strong>.
+              </td>
+            </tr>
+            <tr>
+              <td><span class="estado sin">✕ Sin stock</span></td>
+              <td>No queda ninguna. En Vender aparece en rojo.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>Para buscar un producto</strong>, escribí parte del nombre o el código en
+          <strong>Buscar productos</strong>. Los botones <strong>Stock bajo</strong> y
+          <strong>Sin stock</strong> muestran solo lo que hay que reponer, y
+          <strong>Categoría</strong> filtra por góndola.
+        </p>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">10 · Stock</p>
+        <h2>Cuando llega mercadería</h2>
+        <div class="lado-a-lado">
+          <ol class="pasos">
+            <li>Andá a <strong>Stock</strong> y buscá el producto.</li>
+            <li>Tocá <strong>Ajustar</strong> en su fila.</li>
+            <li>Dejá marcado <strong>Entraron / salieron</strong>.</li>
+            <li>
+              En <strong>Cantidad</strong>, escribí cuántas unidades llegaron (por ejemplo,
+              <strong>12</strong>). Abajo te muestra cuántas van a quedar.
+            </li>
+            <li>En <strong>Motivo</strong>, tocá <strong>Entrada de mercadería</strong>.</li>
+            <li>Tocá <strong>Guardar ajuste</strong>.</li>
+          </ol>
+          <figure class="captura">
+            <img
+              src="capturas/18b-entrada-mercaderia.png"
+              alt="Ajustar el stock: entrada de mercadería"
+            />
+          </figure>
+        </div>
+
+        <div class="consejo">
+          <strong>Roturas y vencidos</strong>
+          Por el mismo camino se saca lo que se rompió o se venció: en
+          <strong>Qué pasó</strong> elegí <strong>Rotura</strong> o <strong>Pérdida</strong>,
+          escribí la cantidad y el motivo. Cada ajuste queda guardado con tu nombre y la fecha.
+        </div>
+        <div class="importante">
+          <strong>Importante</strong>
+          Si el número del sistema no coincide con lo que hay en la góndola y no sabés por qué, no
+          lo corrijas de a uno: hacé un <strong>inventario</strong> (capítulo 11).
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 11 INVENTARIO -->
+    <section class="pagina" id="cap-11">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">11</span>
+          <div>
+            <h1>Inventario</h1>
+            <p>
+              Inventario sirve para comprobar que lo que hay físicamente en el negocio coincida con
+              lo que dice el sistema.
+            </p>
+          </div>
+        </header>
+
+        <div class="flujo cuatro">
+          <div>
+            <span>1</span><strong>Nuevo inventario</strong>
+            <p>Elegir qué contar</p>
+          </div>
+          <div class="flecha">→</div>
+          <div>
+            <span>2</span><strong>Contar</strong>
+            <p>Producto por producto</p>
+          </div>
+          <div class="flecha">→</div>
+          <div>
+            <span>3</span><strong>Revisar</strong>
+            <p>Ver las diferencias</p>
+          </div>
+          <div class="flecha">→</div>
+          <div>
+            <span>4</span><strong>Aplicar</strong>
+            <p>Corregir el stock</p>
+          </div>
+        </div>
+
+        <h2>1 · Nuevo inventario</h2>
+        <div class="lado-a-lado alineado">
+          <ol class="pasos">
+            <li>Andá a <strong>Inventario</strong> y tocá <strong>Nuevo inventario</strong>.</li>
+            <li>
+              Elegí <strong>Todo el negocio</strong> o <strong>Una categoría</strong>. Para empezar,
+              conviene de a una categoría.
+            </li>
+            <li>Tocá <strong>Empezar a contar</strong>.</li>
+          </ol>
+          <figure class="captura chica">
+            <img src="capturas/20-nuevo-inventario.png" alt="Nuevo inventario" />
+          </figure>
+        </div>
+
+        <div class="ejemplo">
+          <strong>Ejemplo</strong>
+          <div class="cuenta-grande">
+            <div><span>Sistema</span><strong>10</strong></div>
+            <div><span>Contado</span><strong>8</strong></div>
+            <div class="resultado falta"><span>Diferencia</span><strong>−2</strong></div>
+          </div>
+          <p>El sistema decía 10 paquetes de arroz y en la góndola hay 8: faltan 2.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">11 · Inventario</p>
+        <h2>2 · Contar</h2>
+        <ol class="pasos">
+          <li>
+            Escaneá el producto (o escribí su nombre) en
+            <strong>Escaneá o escribí el producto que estás contando</strong>
+            <span class="m">1</span>.
+          </li>
+          <li>
+            El cursor salta a su casilla <strong>Contado</strong>: escribí cuántos hay y apretá
+            <kbd>Enter</kbd>. Aparece un ✓ cuando se guarda <span class="m">2</span>.
+          </li>
+          <li>
+            Seguí con el siguiente. Si de un producto no hay ninguno, poné <strong>0</strong>.
+          </li>
+          <li>
+            Cuando contaste todo, tocá <strong>Terminé de contar</strong> y confirmá con
+            <strong>Sí, terminé</strong>.
+          </li>
+        </ol>
+        <figure class="captura" data-captura="21-inventario-contar" data-marcas="lector,fila">
+          <img src="capturas/21-inventario-contar.png" alt="Contando el inventario" />
+          <figcaption>
+            Mientras escribís ya se ve la diferencia: en rojo si falta, en verde si sobra.
+          </figcaption>
+        </figure>
+        <p class="chico">
+          El conteo se guarda a medida que avanzás: si tenés que cortar, podés seguir más tarde
+          desde <strong>Inventario</strong>. Si lo empezaste por error, tocá
+          <strong>Cancelar inventario</strong>.
+        </p>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">11 · Inventario</p>
+        <h2>3 · Revisar las diferencias</h2>
+        <p>
+          El sistema muestra cuántos productos <strong>faltan</strong>, cuántos
+          <strong>sobran</strong> y cuántos <strong>coinciden</strong>, y la lista de los que tienen
+          diferencia.
+        </p>
+        <figure class="captura" data-captura="22-inventario-revisar" data-marcas="aplicar">
+          <img src="capturas/22-inventario-revisar.png" alt="Revisar diferencias" />
+        </figure>
+
+        <h2>4 · Aplicar</h2>
+        <div class="lado-a-lado alineado">
+          <div>
+            <p>
+              Tocá <strong>APLICAR INVENTARIO</strong> <span class="m">1</span>, leé el aviso y
+              confirmá con <strong>Aplicar inventario</strong>. El stock del sistema pasa a ser lo
+              que contaste.
+            </p>
+            <div class="importante">
+              <strong>Importante</strong>
+              Aplicá <strong>solamente después de revisar</strong> cada diferencia. Si una
+              diferencia es muy grande, volvé a contar ese producto antes. Aplicar
+              <strong>no se puede deshacer</strong>.
+            </div>
+          </div>
+          <figure class="captura chica">
+            <img
+              src="capturas/23-inventario-aplicar.png"
+              alt="Confirmar la aplicación del inventario"
+            />
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 12 REPORTES -->
+    <section class="pagina" id="cap-12">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">12</span>
+          <div>
+            <h1>Reportes</h1>
+            <p>
+              Arriba de todo está el <strong>Resumen de hoy</strong>; abajo, un reporte para cada
+              pregunta.
+            </p>
+          </div>
+        </header>
+
+        <figure class="captura" data-captura="28-reportes" data-marcas="resumen">
+          <img src="capturas/28-reportes.png" alt="Reportes" />
+        </figure>
+
+        <table class="tabla glosario">
+          <tbody>
+            <tr>
+              <th>Total vendido hoy</th>
+              <td>Todo lo vendido en el día, con todas las formas de pago.</td>
+            </tr>
+            <tr>
+              <th>Cantidad de ventas</th>
+              <td>Cuántas ventas se hicieron.</td>
+            </tr>
+            <tr>
+              <th>Efectivo · Transferencia · Mercado Pago</th>
+              <td>Cuánto entró por cada forma de pago.</td>
+            </tr>
+            <tr>
+              <th>Ticket promedio</th>
+              <td>Lo que gasta, en promedio, cada cliente.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="chico">
+          Las ventas anuladas no se cuentan. <strong>Actualizar</strong> trae los números al
+          momento.
+        </p>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">12 · Reportes</p>
+        <h2>Qué pregunta responde cada reporte</h2>
+        <table class="tabla preguntas">
+          <tbody>
+            <tr>
+              <th>Ventas por día</th>
+              <td>«¿Cuánto vendimos hoy? ¿Y cada día de la semana?»</td>
+            </tr>
+            <tr>
+              <th>Ventas por medio de pago</th>
+              <td>«¿Cuánto entró por Mercado Pago?»</td>
+            </tr>
+            <tr>
+              <th>Ventas por producto</th>
+              <td>«¿Qué producto se vendió más?»</td>
+            </tr>
+            <tr>
+              <th>Ventas por usuario</th>
+              <td>«¿Quién hizo las ventas?»</td>
+            </tr>
+            <tr>
+              <th>Cierres de caja</th>
+              <td>«¿Cómo cerraron las cajas? ¿Hubo diferencias?»</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          Dentro de cada reporte elegís el período: <strong>Hoy</strong>,
+          <strong>Últimos 7 días</strong>, <strong>Este mes</strong> o las fechas
+          <strong>Desde</strong> y <strong>Hasta</strong>. En <strong>Más reportes</strong> están
+          <strong>Stock</strong>, <strong>Mermas</strong> e <strong>Inventarios</strong>.
+        </p>
+
+        <figure class="captura">
+          <img src="capturas/29-reporte-medio.png" alt="Ventas por medio de pago" />
+          <figcaption>
+            Ventas por medio de pago: Mercado Pago aparece aparte de las transferencias.
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============================================================ 13 FINAL DEL DÍA -->
+    <section class="pagina" id="cap-13">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">13</span>
+          <div>
+            <h1>Final del día</h1>
+            <p>Antes de irte, seguí esta lista en orden.</p>
+          </div>
+        </header>
+
+        <ul class="checklist">
+          <li>
+            <span class="casilla"></span>
+            <div>
+              <strong>Terminar las ventas</strong>
+              <p>Que no quede ningún producto en el carrito.</p>
+            </div>
+          </li>
+          <li>
+            <span class="casilla"></span>
+            <div>
+              <strong>Revisar Ventas de hoy</strong>
+              <p>Mirá que no haya ventas con la forma de pago equivocada.</p>
+            </div>
+          </li>
+          <li>
+            <span class="casilla"></span>
+            <div>
+              <strong>Contar la caja</strong>
+              <p>Todos los billetes y monedas del cajón.</p>
+            </div>
+          </li>
+          <li>
+            <span class="casilla"></span>
+            <div>
+              <strong>Revisar la diferencia</strong>
+              <p>Si no cuadra, volvé a contar antes de seguir.</p>
+            </div>
+          </li>
+          <li>
+            <span class="casilla"></span>
+            <div>
+              <strong>Cerrar la caja</strong>
+              <p>Caja → Cerrar caja → Efectivo contado → Cerrar caja.</p>
+            </div>
+          </li>
+          <li>
+            <span class="casilla"></span>
+            <div>
+              <strong>Verificar el cierre</strong>
+              <p>Tiene que decir <strong>Caja cerrada</strong>. Arriba a la derecha también.</p>
+            </div>
+          </li>
+        </ul>
+
+        <figure class="captura" data-recorte="0.16,0.07,0.84,0.6">
+          <img src="capturas/26-caja-cerrada-ok.png" alt="Caja cerrada" />
+          <figcaption>Así queda una caja bien cerrada.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============================================================ 14 SI ALGO SALE MAL -->
+    <section class="pagina" id="cap-14">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">14</span>
+          <div>
+            <h1>Si algo sale mal</h1>
+            <p>Los problemas más comunes y qué hacer.</p>
+          </div>
+        </header>
+
+        <table class="tabla problemas">
+          <thead>
+            <tr>
+              <th>Problema</th>
+              <th>Qué hacer</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>No encuentro un producto</td>
+              <td>
+                Buscalo por una parte del nombre o escanealo. Fijate que esté elegido
+                <strong>Todos</strong> y no una categoría. Si no está cargado, cargalo (capítulo 4).
+              </td>
+            </tr>
+            <tr>
+              <td>El lector no encuentra el producto</td>
+              <td>
+                Ese producto no tiene el código cargado. Si es nuevo, tocá
+                <strong>Crear producto</strong>. Si ya existe, buscalo por el nombre en Productos →
+                <strong>Editar</strong> → pasá el lector en <strong>Código de barras</strong> →
+                <strong>Guardar cambios</strong>.
+              </td>
+            </tr>
+            <tr>
+              <td>Me equivoqué agregando una unidad</td>
+              <td>
+                Usá <kbd>←</kbd>: quita una. En el carrito también sirve <strong>−</strong> o
+                <strong>Quitar</strong>.
+              </td>
+            </tr>
+            <tr>
+              <td>Me equivoqué en una venta ya cobrada</td>
+              <td>
+                No se borra. Anotá el número de venta y avisale al responsable para que la anule.
+              </td>
+            </tr>
+            <tr>
+              <td>No me deja vender</td>
+              <td>
+                Revisá que la caja esté abierta. Si en Vender aparece
+                <strong>La caja está cerrada</strong>, tocá <strong>Abrir caja</strong>.
+              </td>
+            </tr>
+            <tr>
+              <td>La caja no coincide</td>
+              <td>
+                Volvé a contar antes de cerrarla. Revisá vueltos, egresos sin registrar y ventas con
+                la forma de pago equivocada.
+              </td>
+            </tr>
+            <tr>
+              <td>El stock no coincide con la mercadería</td>
+              <td>Hacé un inventario de esa categoría (capítulo 11).</td>
+            </tr>
+            <tr>
+              <td>No sé qué pasó con una venta</td>
+              <td>
+                Buscala en <strong>Ventas de hoy</strong>. Para días anteriores,
+                <strong>Ver el historial completo de ventas</strong>.
+              </td>
+            </tr>
+            <tr>
+              <td>No sé cuánto vendimos</td>
+              <td>Andá a <strong>Reportes</strong>: el Resumen de hoy está arriba de todo.</td>
+            </tr>
+            <tr>
+              <td>La caja figura abierta desde otro día</td>
+              <td>No vendas en esa caja: avisale al responsable para que la cierre.</td>
+            </tr>
+            <tr>
+              <td>Me olvidé la contraseña</td>
+              <td>Pedile al responsable que la restablezca. Al entrar vas a elegir una nueva.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="pagina">
+      <div class="contenido">
+        <p class="seguimos">14 · Si algo sale mal</p>
+        <h2>La caja cerrada en Vender</h2>
+        <figure class="captura" data-recorte="0.16,0.07,0.84,0.45">
+          <img src="capturas/27-venta-sin-caja.png" alt="Vender con la caja cerrada" />
+          <figcaption>
+            Con la caja cerrada se puede armar el ticket, pero no cobrar.
+            <strong>Abrir caja</strong> lleva directo a abrirla.
+          </figcaption>
+        </figure>
+        <div class="consejo">
+          <strong>Antes de llamar</strong>
+          Anotá qué estabas haciendo, en qué pantalla y qué mensaje apareció (o sacale una foto a la
+          pantalla con el celular). Con eso, el responsable puede ayudarte mucho más rápido.
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 15 AYUDA -->
+    <section class="pagina" id="cap-15">
+      <div class="contenido">
+        <header class="capitulo">
+          <span class="num">15</span>
+          <div>
+            <h1>Ayuda</h1>
+            <p>Para lo que esta guía no resuelva.</p>
+          </div>
+        </header>
+        <div class="ayuda-final">
+          <p>
+            Si después de revisar esta guía el problema continúa, contactar al
+            <strong>responsable del sistema</strong>.
+          </p>
+        </div>
+        <div class="resumen-final">
+          <h2>Lo más importante, en una línea</h2>
+          <ul>
+            <li>Abrí la caja con lo que hay de verdad en el cajón.</li>
+            <li>Elegí siempre la forma de pago real.</li>
+            <li>Registrá cada ingreso y cada egreso con su motivo.</li>
+            <li>Antes de cerrar, contá dos veces si no cuadra.</li>
+            <li>Tu contraseña es tuya: no la compartas.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <script src="manual.js"></script>
+  </body>
+</html>

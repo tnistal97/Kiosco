@@ -132,6 +132,54 @@ describe('Resolucion de permisos por rol', () => {
     expect(repositor.has('cash.view')).toBe(false)
   })
 
+  it('el operador hace todo el mostrador de un local chico, y nada mas', () => {
+    const operador = permissionsForRole('operador')
+    // Lo que el local necesita de una sola persona.
+    for (const p of [
+      'sales.create',
+      'cash.shift.open',
+      'cash.shift.close',
+      'cash.movement.create',
+      'cash.count.create',
+      'products.create',
+      'products.update',
+      'products.price.update',
+      'categories.manage',
+      'stock.view',
+      'stock.adjust',
+      'inventoryCounts.create',
+      'inventoryCounts.count',
+      'inventoryCounts.apply',
+      'reports.sales.view',
+      'reports.cash.view',
+    ] as const) {
+      expect(operador.has(p), `al operador le falta ${p}`).toBe(true)
+    }
+    // Lo que queda para el duenio.
+    for (const p of [
+      'sales.cancel',
+      'products.cost.view',
+      'products.cost.update',
+      'products.delete',
+      'reports.costs.view',
+      'cash.shift.close.other',
+      'cash.shift.authorize',
+      'clients.manage',
+      'accounts.adjust',
+      'accounts.overrideLimit',
+      'users.view',
+      'users.manage',
+      'branches.view',
+      'branches.manage',
+      'audit.view',
+      'suppliers.manage',
+      'purchases.create',
+      'lots.manage',
+    ] as const) {
+      expect(operador.has(p), `el operador no deberia tener ${p}`).toBe(false)
+    }
+  })
+
   it('los costos y la informacion administrativa no llegan al cajero', () => {
     const cajero = permissionsForRole('cajero')
     expect(cajero.has('reports.costs.view')).toBe(false)

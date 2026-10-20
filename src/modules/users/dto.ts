@@ -13,6 +13,7 @@ export interface UsuarioDTO {
   username: string
   name: string
   isActive: boolean
+  mustChangePassword: boolean
   createdAt: string
   role: { id: number; name: string }
   branch: { id: number; name: string }
@@ -37,6 +38,7 @@ export function parseUsuario(raw: unknown): UsuarioDTO {
     username: texto(raw.username),
     name: texto(raw.name),
     isActive: raw.isActive !== false,
+    mustChangePassword: raw.mustChangePassword === true,
     createdAt: textoOpcional(raw.createdAt) ?? '',
     role: parseReferencia(raw.role),
     branch: parseReferencia(raw.branch),

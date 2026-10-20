@@ -405,6 +405,7 @@ describe('La cuenta corriente de un proveedor no crece con los movimientos', () 
         username: fx.admin.username,
         role: 'admin',
         branchId: fx.branchA.id,
+        mustChangePassword: false,
         permissions: new Set([
           'purchases.create',
           'purchases.update',

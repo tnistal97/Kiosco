@@ -327,6 +327,7 @@ describe('Linea base de los diez caminos', () => {
       username: fx.admin.username,
       role: 'admin',
       branchId: fx.branchA.id,
+      mustChangePassword: false,
       permissions: new Set([
         'purchases.create',
         'purchases.update',

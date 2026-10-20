@@ -244,6 +244,7 @@ describe('Vista previa', () => {
       role: 'admin',
       branchId: fx.branchA.id,
       permissions: permisos,
+      mustChangePassword: false,
     }
     const v = await previsualizarImportacion(
       sesion,
@@ -528,6 +529,7 @@ describe('Importar: permisos', () => {
       role: 'admin',
       branchId: fx.branchA.id,
       permissions: permisos,
+      mustChangePassword: false,
     }
     const v = await previsualizarImportacion(
       sesion,
@@ -546,6 +548,7 @@ describe('Importar: permisos', () => {
       role: 'admin',
       branchId: fx.branchA.id,
       permissions: permisos,
+      mustChangePassword: false,
     }
     const v = await previsualizarImportacion(
       sesion,

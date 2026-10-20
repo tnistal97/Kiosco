@@ -322,3 +322,89 @@ describe('Reseteo de la contrasena de otro', () => {
     expect(await bcrypt.compare(NUEVA, await claveGuardada(fx.cajero))).toBe(true)
   })
 })
+
+describe('Contrasena temporal: hay que cambiarla antes de usar la sesion', () => {
+  async function entrar(username: string, password: string): Promise<string> {
+    const { POST: login } = await import('@/app/api/auth/login/route')
+    const ingreso = await call(login, '/api/auth/login', {
+      method: 'POST',
+      body: { username, password },
+    })
+    expect(ingreso.status).toBe(200)
+    return cookieNueva(ingreso) ?? ''
+  }
+
+  async function verCatalogo(cookie: string) {
+    const { GET } = await import('@/app/api/products/route')
+    return call(GET, '/api/products', { cookie })
+  }
+
+  async function debeCambiarla(user: TestUser): Promise<boolean> {
+    const u = await prisma.user.findUniqueOrThrow({ where: { id: user.id } })
+    return u.mustChangePassword
+  }
+
+  it('el reseteo la marca; entra, pero la API solo deja cambiarla', async () => {
+    const res = await resetear(fx.cajero.id, await sessionCookie(fx.admin))
+    const temporal = (res.body as { claveTemporal?: string }).claveTemporal ?? ''
+    expect(await debeCambiarla(fx.cajero)).toBe(true)
+
+    const cookie = await entrar(fx.cajero.username, temporal)
+
+    const catalogo = await verCatalogo(cookie)
+    expect(catalogo.status).toBe(403)
+    expect(errorDe(catalogo).code).toBe('PASSWORD_CHANGE_REQUIRED')
+
+    // `validate` si contesta, y dice por que: la interfaz muestra la pantalla
+    // para elegir una nueva en vez del menu.
+    const { POST: validar } = await import('@/app/api/auth/validate/route')
+    const sesion = await call(validar, '/api/auth/validate', { method: 'POST', cookie })
+    expect(sesion.status).toBe(200)
+    expect((sesion.body as { user: { mustChangePassword: boolean } }).user.mustChangePassword).toBe(
+      true,
+    )
+
+    const cambio = await cambiar(cookie, {
+      claveActual: temporal,
+      claveNueva: NUEVA,
+      claveConfirmacion: NUEVA,
+    })
+    expect(cambio.status).toBe(200)
+    expect(await debeCambiarla(fx.cajero)).toBe(false)
+
+    // Con la cookie que devolvio el cambio, la aplicacion entera.
+    expect((await verCatalogo(cookieNueva(cambio) ?? '')).status).toBe(200)
+  })
+
+  it('el alta de un empleado tambien la marca', async () => {
+    const rol = await prisma.role.findUniqueOrThrow({ where: { name: 'cajero' } })
+    const { POST } = await import('@/app/api/users/route')
+    const alta = await call(POST, '/api/users', {
+      method: 'POST',
+      cookie: await sessionCookie(fx.admin),
+      body: { username: 'nuevo_empleado', name: 'Empleado Nuevo', password: NUEVA, roleId: rol.id },
+    })
+    expect(alta.status).toBe(201)
+    expect((alta.body as { mustChangePassword: boolean }).mustChangePassword).toBe(true)
+
+    const cookie = await entrar('nuevo_empleado', NUEVA)
+    expect(errorDe(await verCatalogo(cookie)).code).toBe('PASSWORD_CHANGE_REQUIRED')
+  })
+
+  it('cortar la API por la temporal no ensucia la bitacora con rechazos', async () => {
+    const res = await resetear(fx.cajero.id, await sessionCookie(fx.admin))
+    const temporal = (res.body as { claveTemporal?: string }).claveTemporal ?? ''
+    const cookie = await entrar(fx.cajero.username, temporal)
+    await verCatalogo(cookie)
+
+    const rechazos = await prisma.auditLog.count({
+      where: { userId: fx.cajero.id, actionType: 'deny' },
+    })
+    expect(rechazos).toBe(0)
+  })
+
+  it('quien no la tiene marcada no nota nada', async () => {
+    expect(await debeCambiarla(fx.cajero)).toBe(false)
+    expect((await verCatalogo(await sessionCookie(fx.cajero))).status).toBe(200)
+  })
+})

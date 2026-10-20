@@ -160,6 +160,11 @@ model User {
   /// con el que fue emitido; si no coincide con el actual, la sesion se rechaza.
   sessionVersion Int @default(0)
 
+  /// La contrasena la eligio otra persona (alta o reseteo) y es temporal.
+  /// Mientras sea verdadero, la sesion solo sirve para cambiarla: el resto de
+  /// la API responde PASSWORD_CHANGE_REQUIRED. Cambiar la propia lo apaga.
+  mustChangePassword Boolean @default(false)
+
   logs             AuditLog[]
   costChanges      ProductCostHistory[]
   sales            Sale[]                      @relation("SaleCreatedBy")

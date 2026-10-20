@@ -38,6 +38,12 @@ export interface RouteConfig<A extends AuthMode, TBody, TQuery> {
   query?: z.ZodType<TQuery>
   /** Identificador de la operacion, p. ej. "POST /api/sales". */
   audit: string
+  /**
+   * La ruta se puede usar con una contrasena temporal. Solo las que hacen
+   * falta para cambiarla: la propia de cambio y `validate`. Ver
+   * `User.mustChangePassword`.
+   */
+  conClaveTemporal?: boolean
 }
 
 export interface RouteContext<A extends AuthMode, TBody, TQuery> {
@@ -121,6 +127,13 @@ export function handler<A extends AuthMode, TBody = undefined, TQuery = undefine
           } else {
             requireUser(session)
           }
+          if (session?.mustChangePassword === true && config.conClaveTemporal !== true) {
+            throw new AppError(
+              403,
+              'PASSWORD_CHANGE_REQUIRED',
+              'Antes de seguir tenés que cambiar la contraseña temporal.',
+            )
+          }
         }
 
         const body = config.body ? await parseJsonBody(req, config.body) : (undefined as TBody)
@@ -168,6 +181,9 @@ async function auditarRechazo(
   req: NextRequest,
 ): Promise<void> {
   if (!(error instanceof AppError) || error.status !== 403) return
+  // No es un intento de hacer algo que no se puede: es alguien que todavia no
+  // cambio la contrasena temporal. Registrarlo llenaria la bitacora de ruido.
+  if (error.code === 'PASSWORD_CHANGE_REQUIRED') return
 
   try {
     const session = await getSessionQuietly(req)

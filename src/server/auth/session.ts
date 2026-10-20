@@ -21,6 +21,11 @@ export interface Session {
   role: string
   branchId: number
   permissions: ReadonlySet<Permission>
+  /**
+   * La contrasena es temporal (la eligio otra persona). La sesion existe, pero
+   * solo sirve para cambiarla: `handler` corta el resto de la API.
+   */
+  mustChangePassword: boolean
 }
 
 /**
@@ -48,6 +53,7 @@ export async function getSession(req: Request): Promise<Session | null> {
       branchId: true,
       isActive: true,
       sessionVersion: true,
+      mustChangePassword: true,
       role: { select: { name: true } },
     },
   })
@@ -66,5 +72,6 @@ export async function getSession(req: Request): Promise<Session | null> {
     role: user.role.name,
     branchId: user.branchId,
     permissions: permissionsForRole(user.role.name),
+    mustChangePassword: user.mustChangePassword,
   }
 }

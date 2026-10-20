@@ -32,3 +32,6 @@ package-lock.json
 *.log
 *.dump
 *.sql
+
+# Datos que escribe scripts/manual-house/capturas.ts en cada corrida.
+docs/manual-house/capturas/

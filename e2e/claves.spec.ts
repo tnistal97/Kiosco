@@ -4,7 +4,8 @@ import { campoClave, entrar, salir } from './ayudantes'
 /**
  * Contrasenas desde la aplicacion (P0-A), de punta a punta y en un navegador
  * de verdad: el administrador resetea, el empleado entra con la temporal y la
- * cambia por una propia. Hasta ahora todo esto era SSH y un guion.
+ * cambia por una propia. Hasta ahora todo esto era SSH y un guion. Con la
+ * temporal no hay menu ni pantallas: solo la que pide elegir una nueva.
  *
  * Usa un usuario PROPIO, creado aca con un nombre unico: cambiarle la clave a
  * uno del seed romperia las demas pruebas, que entran con la clave del seed.
@@ -29,7 +30,7 @@ async function rechazado(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/login/)
 }
 
-test('el administrador resetea, el empleado entra con la temporal y la cambia', async ({
+test('el administrador resetea, el empleado entra con la temporal y tiene que cambiarla', async ({
   page,
 }) => {
   const usuario = `clave_${Date.now().toString(36)}`
@@ -77,19 +78,25 @@ test('el administrador resetea, el empleado entra con la temporal y la cambia', 
   await expect(dialogo).toBeHidden()
   await salir(page)
 
-  // 2. La de antes ya no sirve; la temporal si.
+  // 2. La de antes ya no sirve; la temporal si, pero solo para elegir otra.
   await entrarCon(page, usuario, INICIAL)
   await rechazado(page)
   await entrarCon(page, usuario, temporal)
-  await adentro(page)
+  const obligatorio = page.getByRole('heading', { name: 'Elegí tu contraseña' })
+  await expect(obligatorio).toBeVisible()
+  await expect(page.getByRole('button', { name: /cuenta de/i })).toHaveCount(0)
 
-  // 3. La cambia por una propia en Configuracion, y sigue adentro.
-  await page.goto('/configuracion')
-  await page.getByLabel(/Contraseña actual/).fill(temporal)
-  await page.getByLabel(/^Contraseña nueva/).fill(PROPIA)
-  await page.getByLabel(/Repetí la contraseña nueva/).fill(PROPIA)
-  await page.getByRole('button', { name: 'Cambiar contraseña' }).click()
-  await expect(page.getByText(/Contraseña cambiada/)).toBeVisible()
+  // Ir a otra pantalla no la saltea: sigue pidiendo la nueva.
+  await page.goto('/venta')
+  await expect(obligatorio).toBeVisible()
+  await expect(page.locator('[data-barcode-input]')).toHaveCount(0)
+
+  // 3. La cambia por una propia ahi mismo, y entra.
+  await page.getByRole('textbox', { name: 'Contraseña temporal' }).fill(temporal)
+  await page.getByRole('textbox', { name: 'Contraseña nueva', exact: true }).fill(PROPIA)
+  await page.getByRole('textbox', { name: 'Repetí la contraseña nueva' }).fill(PROPIA)
+  await page.getByRole('button', { name: 'Guardar y entrar' }).click()
+  await adentro(page)
 
   await page.reload()
   await adentro(page)

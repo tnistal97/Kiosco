@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="es-AR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kiosco House · Guía rápida</title>
+    <meta name="description" content="Guía de una hoja para tener al lado de la caja." />
+    <!-- Fuente editable. PDF: npx tsx scripts/manual-house/pdf.ts -->
+    <link rel="stylesheet" href="manual.css" />
+    <style>
+      .guia {
+        padding: 12mm 14mm 0;
+      }
+      .guia .contenido {
+        height: 278mm;
+      }
+      .guia-cabecera {
+        display: flex;
+        align-items: center;
+        gap: 5mm;
+        padding: 0 0 4mm;
+        margin-bottom: 5mm;
+        border-bottom: 0.8mm solid var(--azul);
+      }
+      .guia-cabecera .logo {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 15mm;
+        height: 15mm;
+        border-radius: 3.5mm;
+        background: var(--tinta);
+        color: #fff;
+        font-size: 22pt;
+        font-weight: 700;
+      }
+      .guia-cabecera h1 {
+        font-size: 26pt;
+        color: var(--tinta);
+      }
+      .guia-cabecera p {
+        margin: 1mm 0 0;
+        color: var(--gris);
+        font-size: 12pt;
+      }
+      .guia-cabecera .web {
+        margin-left: auto;
+        text-align: right;
+        color: var(--gris);
+        font-size: 10.5pt;
+      }
+      .guia-cabecera .web strong {
+        display: block;
+        color: var(--azul-oscuro);
+        font-size: 13pt;
+      }
+
+      .bloques {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5mm;
+      }
+      .bloque {
+        padding: 5mm 6mm 4.5mm;
+        border: 0.4mm solid #d3dbe7;
+        border-radius: 3mm;
+        background: #fff;
+      }
+      .bloque h2 {
+        display: flex;
+        align-items: center;
+        gap: 3mm;
+        margin: 0 0 3mm;
+        font-size: 15pt;
+        letter-spacing: 0.04em;
+        color: var(--azul-oscuro);
+      }
+      .bloque h2 span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 8.5mm;
+        height: 8.5mm;
+        border-radius: 50%;
+        background: var(--azul);
+        color: #fff;
+        font-size: 13pt;
+      }
+      .bloque.vender {
+        grid-row: span 3;
+        display: flex;
+        flex-direction: column;
+      }
+      .bloque.vender .teclas-grandes {
+        flex: 1;
+      }
+      .bloque.vender .teclas-grandes td {
+        padding: 0;
+        height: 16.6%;
+      }
+      .bloque.vender .teclas-grandes td {
+        font-size: 16pt;
+      }
+      .bloque.vender .teclas-grandes kbd {
+        min-width: 11mm;
+        font-size: 17pt;
+      }
+      .lista-grande {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .lista-grande li {
+        display: flex;
+        align-items: center;
+        gap: 4mm;
+        padding: 1.9mm 0;
+        border-bottom: 0.3mm solid var(--linea);
+        font-size: 14pt;
+      }
+      .lista-grande li:last-child {
+        border-bottom: 0;
+      }
+      .lista-grande .n {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+        width: 7.5mm;
+        height: 7.5mm;
+        border-radius: 50%;
+        border: 0.5mm solid var(--azul);
+        color: var(--azul);
+        font-size: 11pt;
+        font-weight: 700;
+      }
+      .teclas-grandes {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .teclas-grandes td {
+        padding: 2.4mm 0;
+        border-bottom: 0.3mm solid var(--linea);
+        font-size: 14pt;
+      }
+      .teclas-grandes tr:last-child td {
+        border-bottom: 0;
+      }
+      .teclas-grandes td:first-child {
+        width: 36mm;
+      }
+      .teclas-grandes kbd {
+        min-width: 9mm;
+        padding: 0.6mm 2.4mm;
+        font-size: 14pt;
+        border-radius: 1.6mm;
+      }
+      .teclas-grandes .accion {
+        font-weight: 600;
+        color: var(--tinta);
+      }
+      .nota-lector {
+        margin-top: 4mm;
+        padding: 3mm 4mm;
+        border-radius: 2mm;
+        background: var(--azul-claro);
+        color: var(--azul-oscuro);
+        font-size: 11pt;
+      }
+      .problemas {
+        margin-top: 5mm;
+        padding: 4mm 6mm;
+        border-radius: 3mm;
+        border: 0.4mm solid #f0c98a;
+        background: var(--ambar-fondo);
+      }
+      .problemas h2 {
+        margin: 0 0 2mm;
+        font-size: 15pt;
+        letter-spacing: 0.04em;
+        color: var(--ambar);
+      }
+      .problemas ul {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4mm;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .problemas li {
+        font-size: 12pt;
+        line-height: 1.35;
+      }
+      .problemas li strong {
+        display: block;
+        color: var(--tinta);
+      }
+      .problemas li span {
+        color: var(--ambar);
+        font-weight: 600;
+      }
+      .guia-pie {
+        margin-top: 3mm;
+        color: var(--gris);
+        font-size: 9.5pt;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="pagina guia" data-sin-pie>
+      <div class="contenido">
+        <div class="guia-cabecera">
+          <div class="logo">H</div>
+          <div>
+            <h1>Kiosco House</h1>
+            <p>Guía rápida para la caja</p>
+          </div>
+          <div class="web"><strong>kiosco.nistal.net</strong>tu usuario y tu contraseña</div>
+        </div>
+
+        <div class="bloques">
+          <div class="bloque">
+            <h2><span>1</span>EMPEZAR</h2>
+            <ul class="lista-grande">
+              <li><span class="n">1</span>Entrar al sistema</li>
+              <li><span class="n">2</span>Abrir la caja con lo que hay en el cajón</li>
+            </ul>
+          </div>
+
+          <div class="bloque vender">
+            <h2><span>2</span>VENDER</h2>
+            <table class="teclas-grandes">
+              <tbody>
+                <tr>
+                  <td>escribir</td>
+                  <td class="accion">buscar</td>
+                </tr>
+                <tr>
+                  <td><kbd>↑</kbd> <kbd>↓</kbd></td>
+                  <td class="accion">elegir</td>
+                </tr>
+                <tr>
+                  <td><kbd>→</kbd></td>
+                  <td class="accion">agregar</td>
+                </tr>
+                <tr>
+                  <td><kbd>←</kbd></td>
+                  <td class="accion">quitar</td>
+                </tr>
+                <tr>
+                  <td><kbd>Enter</kbd></td>
+                  <td class="accion">continuar</td>
+                </tr>
+                <tr>
+                  <td><kbd>Esc</kbd></td>
+                  <td class="accion">volver</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="bloque">
+            <h2><span>3</span>COBRAR</h2>
+            <ul class="lista-grande">
+              <li><span class="n">1</span>Elegir cómo paga</li>
+              <li><span class="n">2</span>Escribir lo recibido</li>
+              <li><span class="n">3</span>Revisar el vuelto</li>
+              <li><span class="n">4</span>Confirmar la venta</li>
+            </ul>
+          </div>
+
+          <div class="bloque">
+            <h2><span>4</span>CERRAR EL DÍA</h2>
+            <ul class="lista-grande">
+              <li><span class="n">1</span>Contar la caja</li>
+              <li><span class="n">2</span>Revisar la diferencia</li>
+              <li><span class="n">3</span>Cerrar la caja</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="problemas">
+          <h2>SI ALGO NO ANDA</h2>
+          <ul>
+            <li><strong>No deja vender</strong><span>→ revisar que la caja esté abierta</span></li>
+            <li>
+              <strong>El código no aparece</strong><span>→ revisar el producto en Productos</span>
+            </li>
+            <li><strong>El stock está mal</strong><span>→ hacer un inventario</span></li>
+          </ul>
+        </div>
+        <p class="guia-pie">
+          Más detalle en la guía completa. Si el problema sigue, avisale al responsable del sistema.
+        </p>
+      </div>
+    </section>
+    <script src="manual.js"></script>
+  </body>
+</html>

@@ -25,6 +25,7 @@ export const POST = handler(
   {
     auth: 'session',
     audit: 'POST /api/auth/validate',
+    conClaveTemporal: true,
   },
   async ({ session }) => {
     const timeZone = await zonaDeSucursal(prisma, session.branchId)
@@ -37,6 +38,7 @@ export const POST = handler(
         role: session.role,
         branchId: session.branchId,
         permissions: [...session.permissions].sort(),
+        mustChangePassword: session.mustChangePassword,
       },
       branch: { timeZone, hoy: hoyEn(timeZone) },
     }

@@ -39,6 +39,7 @@ export const CAMPOS_PUBLICOS = {
   username: true,
   name: true,
   isActive: true,
+  mustChangePassword: true,
   createdAt: true,
   role: { select: { id: true, name: true } },
   branch: { select: { id: true, name: true } },
@@ -49,6 +50,8 @@ export interface UsuarioPublico {
   username: string
   name: string
   isActive: boolean
+  /** Sigue con la contrasena que le dieron: todavia no entro a cambiarla. */
+  mustChangePassword: boolean
   createdAt: Date
   role: { id: number; name: string }
   branch: { id: number; name: string }
@@ -119,6 +122,9 @@ export async function crearUsuario(
         password: hash,
         roleId: input.roleId,
         branchId: session.branchId,
+        // La eligio quien da el alta: la conocen dos personas. Al entrar por
+        // primera vez, el empleado tiene que cambiarla.
+        mustChangePassword: true,
       },
       select: CAMPOS_PUBLICOS,
     })
@@ -277,7 +283,7 @@ export async function cambiarMiClave(
   const actualizado = await prisma.$transaction(async (tx) => {
     const u = await tx.user.update({
       where: { id: session.userId },
-      data: { password: hash, sessionVersion: { increment: 1 } },
+      data: { password: hash, sessionVersion: { increment: 1 }, mustChangePassword: false },
       select: { sessionVersion: true },
     })
 
@@ -356,7 +362,8 @@ export async function resetearClave(
   await prisma.$transaction(async (tx) => {
     await tx.user.update({
       where: { id },
-      data: { password: hash, sessionVersion: { increment: 1 } },
+      // Temporal: la conoce quien la reseteo. Hay que cambiarla al entrar.
+      data: { password: hash, sessionVersion: { increment: 1 }, mustChangePassword: true },
     })
 
     await audit(tx, {
@@ -366,7 +373,12 @@ export async function resetearClave(
       recordId: id,
       action: 'password_reset',
       // Quien, a quien y si la genero el sistema. Nunca la clave.
-      after: { usuario: destino.username, generada, sesionesCerradas: true },
+      after: {
+        usuario: destino.username,
+        generada,
+        sesionesCerradas: true,
+        debeCambiarla: true,
+      },
       origin: 'POST /api/users/:id/password',
     })
   })

@@ -702,6 +702,7 @@ describe('Diferencia de costo', () => {
       username: 'deposito',
       role: 'deposito',
       branchId: fx.branchA.id,
+      mustChangePassword: false,
       permissions: new Set(['purchases.receive', 'purchases.view'] as const),
     }
 

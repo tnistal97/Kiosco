@@ -22,6 +22,7 @@ export const SESION_ADMIN: SesionCliente = {
   role: 'admin',
   branchId: 1,
   branchName: 'Almacen Centro',
+  debeCambiarClave: false,
   timeZone: 'America/Argentina/Buenos_Aires',
   permissions: [...permissionsForRole('admin')],
 }
@@ -35,6 +36,7 @@ export const SESION_REPOSITOR: SesionCliente = {
   branchId: 1,
   timeZone: 'America/Argentina/Buenos_Aires',
   branchName: 'Almacen Centro',
+  debeCambiarClave: false,
   permissions: ['products.view', 'stock.view', 'stock.adjust'],
 }
 
@@ -53,6 +55,7 @@ export const SESION_COMPRAS: SesionCliente = {
   branchId: 1,
   timeZone: 'America/Argentina/Buenos_Aires',
   branchName: 'Almacen Centro',
+  debeCambiarClave: false,
   permissions: [
     'products.view',
     'products.create',
@@ -74,6 +77,7 @@ export const SESION_CAJERO: SesionCliente = {
   branchId: 1,
   timeZone: 'America/Argentina/Buenos_Aires',
   branchName: 'Almacen Centro',
+  debeCambiarClave: false,
   permissions: [
     'sales.create',
     'sales.view',

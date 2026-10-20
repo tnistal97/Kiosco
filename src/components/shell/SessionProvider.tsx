@@ -34,6 +34,11 @@ export interface SesionCliente {
    */
   timeZone: string
   permissions: string[]
+  /**
+   * Entro con una contrasena temporal. Hasta cambiarla, el armazon muestra
+   * solo la pantalla para elegir una nueva (`CambioDeClaveObligatorio`).
+   */
+  debeCambiarClave: boolean
 }
 
 interface Valor {

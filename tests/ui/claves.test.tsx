@@ -37,6 +37,7 @@ const LUCIA: UsuarioDTO = {
   username: 'lucia',
   name: 'Lucia Bravo',
   isActive: true,
+  mustChangePassword: false,
   createdAt: '2026-08-06T14:00:00.000Z',
   role: { id: 5, name: 'cajero' },
   branch: { id: 1, name: 'Casa central' },

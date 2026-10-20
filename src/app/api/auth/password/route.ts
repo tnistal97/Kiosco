@@ -30,6 +30,8 @@ export const POST = handler(
     auth: 'session',
     body: cambiarMiClaveSchema,
     audit: 'POST /api/auth/password',
+    // Es justamente la ruta para dejar de tener una contrasena temporal.
+    conClaveTemporal: true,
   },
   async ({ req, session, body }) => {
     const { sessionVersion } = await cambiarMiClave(session, body, origenDe(req))

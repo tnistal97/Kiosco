@@ -49,6 +49,15 @@ function fechaCorta(iso: string): string {
   })
 }
 
+/** Todavia entra con la contrasena que le dieron: la va a tener que cambiar. */
+function ClaveTemporal() {
+  return (
+    <p className="mt-0.5 text-xs text-warning" data-clave-temporal>
+      Contraseña temporal: la cambia al entrar
+    </p>
+  )
+}
+
 export default function UsuariosPage() {
   const { session } = useSession()
   const puedeAdministrar = usePermiso('users.manage')
@@ -180,6 +189,7 @@ export default function UsuariosPage() {
                           <TD>
                             <p className="font-medium text-ink">{u.name}</p>
                             <p className="text-xs text-ink-faint">@{u.username}</p>
+                            {u.isActive && u.mustChangePassword && <ClaveTemporal />}
                           </TD>
                           <TD className="text-ink-muted">{rolLegible(u.role.name)}</TD>
                           <TD className="text-ink-muted">{u.branch.name}</TD>
@@ -253,6 +263,7 @@ export default function UsuariosPage() {
                         <p className="truncate text-sm font-medium text-ink">{u.name}</p>
                         <p className="text-xs text-ink-faint">@{u.username}</p>
                         <p className="mt-1 text-xs text-ink-muted">{rolLegible(u.role.name)}</p>
+                        {u.isActive && u.mustChangePassword && <ClaveTemporal />}
                       </div>
                       {u.isActive ? (
                         <Badge tone="success">

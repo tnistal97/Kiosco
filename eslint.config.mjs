@@ -299,6 +299,9 @@ export default tseslint.config(
       // que si se revisa es src/app/sw.ts.
       'public/sw.js',
       'public/sw.js.map',
+      // Posiciones de las marcas del manual de House: datos que escribe
+      // scripts/manual-house/capturas.ts en cada corrida.
+      'docs/manual-house/capturas/marcas.js',
     ],
   },
 

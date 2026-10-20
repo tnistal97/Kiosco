@@ -801,6 +801,67 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
     'lots.view',
     'inventoryCounts.view',
   ],
+
+  /**
+   * Operador de un local chico, donde una sola persona hace todo el
+   * mostrador: vende, abre y cierra su caja, carga los productos que van
+   * llegando y hace el inventario. Nacio para el primer almacen real, que
+   * arranca con el catalogo vacio y lo carga quien atiende.
+   *
+   * Ningun rol anterior alcanzaba sin dar de mas. El supervisor no puede dar
+   * de alta con el formulario completo, ni cambiar precios, ni contar un
+   * inventario; el encargado si, pero tambien ve costos y margen, autoriza su
+   * propio faltante, cierra la caja de otro, corrige saldos de clientes a mano
+   * y administra proveedores.
+   *
+   * Lo que tiene, y por que:
+   *   - Caja del cajero mas ingresos y egresos (`cash.movement.create`): el
+   *     cambio que entra y el pago al delivery salen del mismo cajon.
+   *   - Catalogo sin costo: alta, edicion, precio y categorias. El costo y la
+   *     ganancia quedan para el duenio (`products.cost.*`, `reports.costs.view`).
+   *   - Ajustar stock (`stock.adjust`): sin compras habilitadas, es la UNICA
+   *     forma de sumar la mercaderia que llega ("Entraron / salieron") y de
+   *     sacar lo roto o vencido. Exige motivo y queda con su nombre. No le da
+   *     nada que el inventario no le de: aplicar un conteo tambien corrige.
+   *   - El inventario entero, incluido aplicar. Es la excepcion al "quien
+   *     cuenta no aplica": con una sola persona en el local no hay otro que
+   *     revise. Cada aplicacion queda en la bitacora con su autor.
+   *   - Reportes de ventas, caja y stock, sin costos ni la cartera de clientes.
+   *
+   * Lo que NO tiene, a proposito: anular ventas (`sales.cancel`), autorizar
+   * diferencias o cerrar la caja de otro, la ficha y los saldos de los clientes (`clients.manage`,
+   * `accounts.adjust`, `accounts.overrideLimit`), usuarios, sucursales,
+   * bitacora, compras, proveedores y lotes.
+   */
+  operador: [
+    'sales.create',
+    'sales.view',
+    'products.view',
+    'products.create',
+    'products.quickCreate',
+    'products.update',
+    'products.price.update',
+    'categories.manage',
+    'stock.view',
+    'stock.adjust',
+    'cash.view',
+    'cash.movement.create',
+    'cash.count.create',
+    'cash.shift.open',
+    'cash.shift.close',
+    'reports.sales.view',
+    'reports.cash.view',
+    'reports.inventory.view',
+    'clients.view',
+    'accounts.view',
+    'accounts.charge',
+    'accounts.payment',
+    'inventoryCounts.view',
+    'inventoryCounts.create',
+    'inventoryCounts.count',
+    'inventoryCounts.review',
+    'inventoryCounts.apply',
+  ],
 }
 
 const EMPTY: ReadonlySet<Permission> = new Set()

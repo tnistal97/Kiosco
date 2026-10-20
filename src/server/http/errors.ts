@@ -38,6 +38,8 @@ export type ErrorCode =
   | 'INVALID_CREDENTIALS'
   | 'ACCOUNT_DISABLED'
   | 'SESSION_EXPIRED'
+  /** La contrasena es temporal: hasta cambiarla, la sesion no sirve para otra cosa. */
+  | 'PASSWORD_CHANGE_REQUIRED'
   | 'INSUFFICIENT_STOCK'
   | 'PRODUCT_NOT_IN_BRANCH'
   | 'SALE_ALREADY_CANCELED'
