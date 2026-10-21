@@ -81,7 +81,10 @@ function StockContenido() {
     pageSize: POR_PAGINA,
     // De la A a la Z. Sin pedirlo, la API ordena al reves y la lista
     // empezaba por la Z aunque el encabezado dijera "▲".
-    filtrosIniciales: { sortBy: 'name', sortDir: 'asc' },
+    //
+    // Solo los activos: la mercaderia de un producto dado de baja no esta a
+    // la venta, y sin pedirlo la API los devuelve tambien.
+    filtrosIniciales: { sortBy: 'name', sortDir: 'asc', estado: 'activos' },
   })
 
   const [ajustando, setAjustando] = useState<Product | null>(null)

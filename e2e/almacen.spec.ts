@@ -323,3 +323,36 @@ test.describe('El stock ya no se edita desde la ficha', () => {
     await expect(ficha.getByText(/no se puede cambiar la unidad de venta/i)).toHaveCount(1)
   })
 })
+
+test.describe('Los dados de baja no se mezclan con el catálogo', () => {
+  // Productos y Stock piden solo los activos: un catalogo reemplazado entero
+  // (House) no puede quedar mezclado con el real. Los de baja, a un toque.
+  const activo = PRODUCTOS.gaseosa.nombre
+  const deBaja = PRODUCTOS.deBaja.nombre
+  const filas = (page: Page, texto: string) => page.getByRole('row').filter({ hasText: texto })
+
+  test('Productos y Stock muestran solo los activos; los de baja, desde "Más acciones"', async ({
+    page,
+  }) => {
+    await entrar(page, 'admin')
+
+    await page.goto('/productos')
+    await buscar(page, 'Gaseosa')
+    await expect(filaCon(page, activo)).toBeVisible()
+    await expect(filas(page, deBaja)).toHaveCount(0)
+
+    await page.getByRole('button', { name: /más acciones/i }).click()
+    await page.getByRole('menuitem', { name: 'Ver dados de baja' }).click()
+    await expect(filaCon(page, deBaja)).toBeVisible()
+    await expect(filas(page, activo)).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Ver activos' }).click()
+    await expect(filaCon(page, activo)).toBeVisible()
+    await expect(filas(page, deBaja)).toHaveCount(0)
+
+    await page.goto('/stock')
+    await buscar(page, 'Gaseosa')
+    await expect(filaCon(page, activo)).toBeVisible()
+    await expect(filas(page, deBaja)).toHaveCount(0)
+  })
+})

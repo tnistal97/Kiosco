@@ -3,14 +3,14 @@
 Material para el personal del primer local (House). No es documentación técnica:
 está escrito para quien atiende el mostrador.
 
-| Archivo                         | Qué es                                                     |
-| ------------------------------- | ---------------------------------------------------------- |
-| `Manual_Kiosco_House.pdf`       | La guía completa, 32 hojas A4, para imprimir o mandar.     |
-| `Guia_Rapida_Kiosco_House.pdf`  | Una sola hoja A4 para tener al lado de la caja.            |
+| Archivo                         | Qué es                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| `Manual_Kiosco_House.pdf`       | La guía completa, 32 hojas A4, para imprimir o mandar.                   |
+| `Guia_Rapida_Kiosco_House.pdf`  | Una sola hoja A4 para tener al lado de la caja.                          |
 | `Manual_Kiosco_House.html`      | Fuente editable de la guía. Cada `<section class="pagina">` es una hoja. |
-| `Guia_Rapida_Kiosco_House.html` | Fuente editable de la hoja rápida.                         |
-| `manual.css`, `manual.js`       | Estilos y armado (pie, índice, recortes, marcas naranjas). |
-| `capturas/`                     | Capturas de la aplicación real y `marcas.js` (generados).  |
+| `Guia_Rapida_Kiosco_House.html` | Fuente editable de la hoja rápida.                                       |
+| `manual.css`, `manual.js`       | Estilos y armado (pie, índice, recortes, marcas naranjas).               |
+| `capturas/`                     | Capturas de la aplicación real y `marcas.js` (generados).                |
 
 Ningún archivo lleva contraseñas. La clave inicial de cada persona se entrega
 aparte.

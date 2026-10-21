@@ -89,7 +89,12 @@ function ProductosContenido() {
     pageSize: POR_PAGINA,
     // De la A a la Z. Sin pedirlo, la API ordena al reves y la lista
     // empezaba por la Z aunque el encabezado dijera "▲".
-    filtrosIniciales: { sortBy: 'name', sortDir: 'asc' },
+    //
+    // Solo los activos: sin pedirlo, la API devuelve tambien los dados de
+    // baja, y un catalogo que se reemplazo entero (House, la demostracion
+    // fuera de uso) quedaba mezclado con el real. Los de baja siguen a un
+    // toque, en "Más acciones → Ver dados de baja".
+    filtrosIniciales: { sortBy: 'name', sortDir: 'asc', estado: 'activos' },
   })
 
   const [proveedores, setProveedores] = useState<ProveedorDTO[]>([])
@@ -224,11 +229,11 @@ function ProductosContenido() {
                 onClick={() => {
                   aplicarFiltros({
                     ...filtros,
-                    estado: filtros.estado === 'inactivos' ? 'todos' : 'inactivos',
+                    estado: filtros.estado === 'inactivos' ? 'activos' : 'inactivos',
                   })
                 }}
               >
-                {filtros.estado === 'inactivos' ? 'Ver todos los productos' : 'Ver dados de baja'}
+                {filtros.estado === 'inactivos' ? 'Ver productos activos' : 'Ver dados de baja'}
               </DropdownItem>
             </DropdownMenu>
             {puedeCrear && (
@@ -254,10 +259,10 @@ function ProductosContenido() {
             type="button"
             className="min-h-touch font-semibold text-primary underline underline-offset-2"
             onClick={() => {
-              aplicarFiltros({ ...filtros, estado: 'todos' })
+              aplicarFiltros({ ...filtros, estado: 'activos' })
             }}
           >
-            Ver todos
+            Ver activos
           </button>
         </p>
       )}
