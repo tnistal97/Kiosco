@@ -30,10 +30,11 @@
  *
  * Deja `imagenes.json` (para el guion de carga) e `imagenes.md` (para leer).
  * Con `--solo <texto>` busca solo los productos cuyo nombre lo contiene: sirve
- * para probar, o para repetir unos pocos.
+ * para probar, o para repetir unos pocos. Con `--compra <manifiesto.json>`
+ * (el de `scripts/incorporar-compra.ts`), solo los productos de esa compra.
  */
 import './entorno'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { PrismaClient } from '@prisma/client'
 import {
   codigoDeUnidad,
@@ -398,11 +399,21 @@ async function main(): Promise<void> {
   }
 
   const solo = argumento('--solo')
+  const compra = argumento('--compra')
+  const deLaCompra =
+    compra === null
+      ? null
+      : (
+          JSON.parse(readFileSync(compra, 'utf8')) as { productos: Array<{ nombre: string }> }
+        ).productos.map((p) => p.nombre)
   const productos = await prisma.product.findMany({
     where: {
       branchId: Number(sucursal),
       isActive: true,
-      ...(solo === null ? {} : { name: { contains: solo, mode: 'insensitive' as const } }),
+      AND: [
+        solo === null ? {} : { name: { contains: solo, mode: 'insensitive' as const } },
+        deLaCompra === null ? {} : { name: { in: deLaCompra } },
+      ],
     },
     select: { name: true, barcodes: { where: { isPrimary: true }, select: { code: true } } },
     orderBy: { name: 'asc' },

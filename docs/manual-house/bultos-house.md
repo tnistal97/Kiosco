@@ -8,6 +8,11 @@ stock en unidades: 20 bultos × 20 = 400 sobres.
 Lo hace `scripts/normalizar-bultos.ts`. La regla está en `scripts/lib/bultos.ts` y la
 aplicación en `scripts/lib/normalizar-bultos.ts`.
 
+> **Auditoría del 22/10/2026, contra las fotos de los tickets:** la cantidad de las 12
+> filas ya eran **unidades**. El ticket imprime "2(4) x precio por bulto", y la lista tiene
+> 2 × 4 = 8. La normalización multiplicó dos veces: hay 2872 unidades de más en 12
+> productos. No se corrigió. Ver [`auditoria-stock-house.md`](auditoria-stock-house.md).
+
 ## Qué es cada cantidad
 
 El dueño confirmó el 22/10/2026 que en las filas de bulto la cantidad cuenta **bultos**.

@@ -1,0 +1,449 @@
+{
+  "marca": "compra-tickets2-house-2026-10",
+  "descripcion": "Segunda tanda de House: presupuesto manuscrito de 4 hojas (Stock/Tickets2). Precio $0, sin codigos, categoria \"Sin categoría\". Solo lo que se leyo con seguridad y no se parece a nada del catalogo.",
+  "fotos": {
+    "WhatsApp Image 2026-10-22 at 2.11.12 PM.jpeg": "04cf9e7bc74a950bed6b7685aab3ef761c3c6fada29123857b4b545a8fa6daf8",
+    "WhatsApp Image 2026-10-22 at 2.11.12 PM (1).jpeg": "37aba11557e8a1a5aad9b1a092a146f029c505b48dad48e0b1ee08c1f1e83f3f",
+    "WhatsApp Image 2026-10-22 at 2.11.12 PM (2).jpeg": "0225fd2f9c2c103fb0316b009491ed22a9664ad4786abdef8b878b8b72a8038c",
+    "WhatsApp Image 2026-10-22 at 2.11.13 PM.jpeg": "930d51c64cb44eee6b6cc57821ab1d653024663ac9af7faaacba511b9c6d905e"
+  },
+  "productos": [
+    {
+      "nombre": "Copos con azúcar",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 1",
+      "textoOriginal": "COPOS C/AZUCAR"
+    },
+    {
+      "nombre": "Copos sin azúcar",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 2",
+      "textoOriginal": "COPOS S/AZUCAR"
+    },
+    {
+      "nombre": "Copos integrales",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 3",
+      "textoOriginal": "COPOS INTEGRALES"
+    },
+    {
+      "nombre": "Almohaditas choco",
+      "cantidad": 4,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 4",
+      "textoOriginal": "ALMOHADITAS CHOCO"
+    },
+    {
+      "nombre": "Almohaditas avellanas",
+      "cantidad": 4,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 5",
+      "textoOriginal": "\" AVELLANAS"
+    },
+    {
+      "nombre": "Almohaditas limón",
+      "cantidad": 4,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 6",
+      "textoOriginal": "\" LIMON"
+    },
+    {
+      "nombre": "Granola mix energético",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 7",
+      "textoOriginal": "GRANOLA MIX ENERGETICO"
+    },
+    {
+      "nombre": "Granola cereal mix",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 8",
+      "textoOriginal": "\" CEREAL MIX"
+    },
+    {
+      "nombre": "Granola 5 semillas",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 9",
+      "textoOriginal": "\" 5 SEMILLAS"
+    },
+    {
+      "nombre": "Granola choco Nutrifood",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 10",
+      "textoOriginal": "\" CHOCO NUTRIFOOD"
+    },
+    {
+      "nombre": "Quinoa pop",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 11",
+      "textoOriginal": "QUINOA POP"
+    },
+    {
+      "nombre": "Quinoa pop con algarroba",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 1 fila 12",
+      "textoOriginal": "\" \" C/ALGAR"
+    },
+    {
+      "nombre": "Harina de almendras Cumaná",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 1",
+      "textoOriginal": "H ALMENDRAS CUMANA"
+    },
+    {
+      "nombre": "Harina de coco Cumaná",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 2",
+      "textoOriginal": "H COCO CUMANA"
+    },
+    {
+      "nombre": "Nueces",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 3",
+      "textoOriginal": "NUECES"
+    },
+    {
+      "nombre": "Almendras",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 4",
+      "textoOriginal": "ALMENDRAS"
+    },
+    {
+      "nombre": "Pasas Flame",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 5",
+      "textoOriginal": "PASAS FLAME"
+    },
+    {
+      "nombre": "Chips de banana",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 6",
+      "textoOriginal": "CHIPS BANANA"
+    },
+    {
+      "nombre": "Mix frutos secos",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 7",
+      "textoOriginal": "MIX F SECOS"
+    },
+    {
+      "nombre": "Mix frutos secos con pasas",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 8",
+      "textoOriginal": "MIX F SECOS C/PASAS"
+    },
+    {
+      "nombre": "Mix frutos secos con chips y pasas",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 9",
+      "textoOriginal": "\" \" \" C/CHIPS Y PASAS"
+    },
+    {
+      "nombre": "Maní sin sal",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 10",
+      "textoOriginal": "MANI S/SAL"
+    },
+    {
+      "nombre": "Sal fina Gell Singh",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 11",
+      "textoOriginal": "SAL FINA GELL SINGH"
+    },
+    {
+      "nombre": "Sal gruesa Gell Singh",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 12",
+      "textoOriginal": "SAL GRUESA GELL SINGH"
+    },
+    {
+      "nombre": "Sal fina Macrozen",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 13",
+      "textoOriginal": "SAL FINA MACROZEN"
+    },
+    {
+      "nombre": "Sal gruesa Macrozen",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 14",
+      "textoOriginal": "SAL GRUESA MACROZEN"
+    },
+    {
+      "nombre": "Fideos Wakas maíz",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 2 fila 15",
+      "textoOriginal": "FIDEO WAKAS MAIZ"
+    },
+    {
+      "nombre": "Fideos Wakas kale",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 1",
+      "textoOriginal": "FIDEOS WAKAS KALE"
+    },
+    {
+      "nombre": "Premezcla Delicel universal",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 2",
+      "textoOriginal": "PREMEZCLA DELICEL UNIVERSAL"
+    },
+    {
+      "nombre": "Premezcla universal Natuzen 450 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 3",
+      "textoOriginal": "PREMEZCLA UNI NATUZEN 450GR"
+    },
+    {
+      "nombre": "Donina frutos del bosque",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 5",
+      "textoOriginal": "DONINA FRUTOS DEL BOSQUE"
+    },
+    {
+      "nombre": "Donina frutos secos",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 6",
+      "textoOriginal": "\" FRUTOS SECOS"
+    },
+    {
+      "nombre": "Donina 5 semillas",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 7",
+      "textoOriginal": "\" 5 SEMILLAS"
+    },
+    {
+      "nombre": "Donina chips choco",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 8",
+      "textoOriginal": "\" CHIPS CHOCO"
+    },
+    {
+      "nombre": "Chocolina Natuzen",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 9",
+      "textoOriginal": "CHOCOLINA NATUZEN"
+    },
+    {
+      "nombre": "Chips choco Smams",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 10",
+      "textoOriginal": "CHIPS CHOCO SMAMS"
+    },
+    {
+      "nombre": "Rosquita Smams",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 11",
+      "textoOriginal": "ROSQUITA SMAMS"
+    },
+    {
+      "nombre": "Choco Smams",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 12",
+      "textoOriginal": "CHOCO SMAMS"
+    },
+    {
+      "nombre": "Mix ensaladas Cumaná",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 13",
+      "textoOriginal": "MIX ENSALADAS CUMANA"
+    },
+    {
+      "nombre": "Chía Cumaná",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 14",
+      "textoOriginal": "CHIA CUMANA"
+    },
+    {
+      "nombre": "Lino Cumaná",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 3 fila 15",
+      "textoOriginal": "LINO CUMANA"
+    },
+    {
+      "nombre": "Girasol Cumaná",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 4 fila 1",
+      "textoOriginal": "GIRASOL CUMANA"
+    },
+    {
+      "nombre": "Sésamo integral Cumaná",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 4 fila 2",
+      "textoOriginal": "SESAMO INTEGRAL CUMANA"
+    },
+    {
+      "nombre": "Cacao amargo Dicomere",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 4 fila 4",
+      "textoOriginal": "CACAO AMARGO DICOMERE"
+    },
+    {
+      "nombre": "Barritas del Campo",
+      "cantidad": 8,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 4 fila 5",
+      "textoOriginal": "BARRITAS DEL CAMPO"
+    },
+    {
+      "nombre": "Barrita proteica Wik",
+      "cantidad": 4,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 4 fila 6",
+      "textoOriginal": "WIK BARRITA PROTEICA"
+    },
+    {
+      "nombre": "Barrita Barra Brava arándanos",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 4 fila 8",
+      "textoOriginal": "BARRITA BARRA BRAVA ARANDANOS"
+    },
+    {
+      "nombre": "Iron Bar",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 4 fila 9",
+      "textoOriginal": "IRON BAR"
+    },
+    {
+      "nombre": "Barrita Entronuts",
+      "cantidad": 4,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 4 fila 10",
+      "textoOriginal": "BARRITA ENTRONUTS"
+    },
+    {
+      "nombre": "Barritas Praderas",
+      "cantidad": 5,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "hoja 4 fila 11",
+      "textoOriginal": "BARRITAS PRADERAS"
+    }
+  ],
+  "noCargados": [
+    {
+      "textoOriginal": "BOLITAS CHOCO",
+      "cantidad": 3,
+      "origen": "hoja 1 fila 13",
+      "clasificacion": "AMBIGUO",
+      "motivo": "se parece a \"Cereal Nesquik bolitas chocolate 230 g\" (#270): sin marca ni peso no se sabe si es el mismo"
+    },
+    {
+      "textoOriginal": "ANILLITOS FRUTALES",
+      "cantidad": 3,
+      "origen": "hoja 1 fila 14",
+      "clasificacion": "AMBIGUO",
+      "motivo": "se parece a \"Cereal Lasfor Arttos frutales 500 g\" (aritos frutales): sin marca ni peso no se sabe si es el mismo"
+    },
+    {
+      "textoOriginal": "CANUAS(?) CHIA, LINO Y GIRASOL",
+      "cantidad": 2,
+      "origen": "hoja 3 fila 4",
+      "clasificacion": "REVISAR",
+      "motivo": "la primera palabra no se lee con seguridad: no se carga"
+    },
+    {
+      "textoOriginal": "ARANDANOS CUMANA",
+      "cantidad": 1,
+      "origen": "hoja 4 fila 3",
+      "clasificacion": "REVISAR",
+      "motivo": "la cantidad (1) no cierra con el importe (2 x 3060): no se carga"
+    },
+    {
+      "textoOriginal": "MUECAS(?) PROTEICA",
+      "cantidad": 4,
+      "origen": "hoja 4 fila 7",
+      "clasificacion": "REVISAR",
+      "motivo": "la primera palabra no se lee con seguridad: no se carga"
+    }
+  ]
+}
