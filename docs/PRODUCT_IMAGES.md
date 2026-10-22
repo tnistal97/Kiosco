@@ -137,7 +137,12 @@ Para cargar una dudosa: mirarla, y si está bien, cambiarle el estado a
 2. `sharp` pasa a ser dependencia directa (ya venía instalada como opcional de
    Next): `npm ci` tiene que poder instalar el binario de la plataforma del
    servidor.
-3. Cargar las fotos con `cargar-imagenes --ensayo` y después `--aplicar`, con
+3. En House, ANTES de las fotos, pasar a unidades los productos cargados como
+   bulto (`scripts/normalizar-bultos.ts`, ver
+   [docs/manual-house/bultos-house.md](manual-house/bultos-house.md)): el
+   manifiesto de House ya tiene los nombres por unidad, y una foto cuyo
+   producto todavía se llama "… bulto x20" no encuentra a quién ponérsela.
+4. Cargar las fotos con `cargar-imagenes --ensayo` y después `--aplicar`, con
    un autor administrador.
 
 No hay cambios de Nginx, CSP ni dominios: las fotos se sirven desde el mismo

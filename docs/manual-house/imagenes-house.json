@@ -3,7 +3,7 @@
   "sucursal": 1,
   "tiendas": ["www.carrefour.com.ar", "www.jumbo.com.ar", "www.masonline.com.ar"],
   "resumen": {
-    "encontradas": 148,
+    "encontradas": 147,
     "dudosas": 37,
     "noEncontradas": 7
   },
@@ -66,20 +66,6 @@
     },
     {
       "nombre": "Aceitunas Natura girasol 5 L",
-      "codigo": null,
-      "estado": "encontrada",
-      "coincidencia": "nombre",
-      "tienda": "Jumbo",
-      "paginaUrl": "https://www.jumbo.com.ar/aceite-natura-de-girasol-6/p",
-      "imagenUrl": "https://jumboargentina.vteximg.com.br/arquivos/ids/242529/Aceite-Natura-De-Girasol-Aceite-Natura-De-Girasol--5-Lt-1-87095.jpg?v=636386295046700000",
-      "nombreEnTienda": "Aceite Natura De Girasol  5 Lt",
-      "marcaEnTienda": "NATURA",
-      "codigoEnTienda": "7790272004112",
-      "nota": "Mismo nombre, marca y medida.",
-      "revision": "Revisada a ojo: la foto es la del producto. La foto es ACEITE Natura de girasol 5 L: el nombre de la lista dice \"Aceitunas\"."
-    },
-    {
-      "nombre": "Aceitunas Natura girasol 5 L (bulto x4)",
       "codigo": null,
       "estado": "encontrada",
       "coincidencia": "nombre",
@@ -219,8 +205,10 @@
       "revision": "Revisada a ojo: la foto es la del producto. Mismo código: es Baggio Fresh naranja (\"Baño\" en la lista)."
     },
     {
-      "nombre": "Baño Pronto naranja 1L bulto x8",
-      "codigo": "37790036000320",
+      "nombre": "Baño Pronto naranja 1L",
+      "codigo": "7790036000329",
+      "nombreEnLista": "Baño Pronto naranja 1L bulto x8",
+      "codigoEnLista": "37790036000320",
       "estado": "encontrada",
       "coincidencia": "codigo-de-unidad",
       "tienda": "Carrefour",
@@ -233,8 +221,10 @@
       "revision": "Revisada a ojo: la foto es la del producto. Foto de la unidad: es Baggio Pronto naranja 1 L (\"Baño\" en la lista)."
     },
     {
-      "nombre": "Baño Pronto naranja 200cc bulto x18",
-      "codigo": "27790036000569",
+      "nombre": "Baño Pronto naranja 200cc",
+      "codigo": "7790036000565",
+      "nombreEnLista": "Baño Pronto naranja 200cc bulto x18",
+      "codigoEnLista": "27790036000569",
       "estado": "encontrada",
       "coincidencia": "codigo-de-unidad",
       "tienda": "Jumbo",
@@ -457,18 +447,20 @@
       "revision": "Revisada a ojo: la foto es la del producto."
     },
     {
-      "nombre": "Cerveza Andes Roja lata 473cc bulto x6",
-      "codigo": "7792798002337",
+      "nombre": "Cerveza Andes Roja lata 473cc",
+      "codigo": null,
+      "nombreEnLista": "Cerveza Andes Roja lata 473cc bulto x6",
+      "codigoEnLista": "7792798002337",
       "estado": "encontrada",
-      "coincidencia": "codigo",
+      "coincidencia": "nombre",
       "tienda": "Jumbo",
-      "paginaUrl": "https://www.jumbo.com.ar/cerveza-andes-origen-roja-473cc-6un/p",
-      "imagenUrl": "https://jumboargentina.vteximg.com.br/arquivos/ids/890523/Cerveza-Andes-Origen-Roja-473cc-6un-1-392880.jpg?v=638987206134500000",
-      "nombreEnTienda": "Cerveza Roja 473 Cc x 6 Un Andes",
+      "paginaUrl": "https://www.jumbo.com.ar/cerveza-andes-origen-roja-473cc/p",
+      "imagenUrl": "https://jumboargentina.vteximg.com.br/arquivos/ids/890521/Cerveza-Andes-Origen-Roja-473cc-1-392873.jpg?v=638987206127800000",
+      "nombreEnTienda": "Cerveza Roja 473 Cc Andes",
       "marcaEnTienda": "ANDES",
-      "codigoEnTienda": "7792798002337",
-      "nota": "Mismo código de barras.",
-      "revision": "Revisada a ojo: la foto es la del producto."
+      "codigoEnTienda": "7792798992317",
+      "nota": "4 productos de Jumbo coinciden igual",
+      "revision": "Revisada a ojo y aprobada. Es la lata suelta de Andes Origen Roja 473 cc. La foto anterior salía del código de la lista, que es el del pack de 6."
     },
     {
       "nombre": "Cerveza Corona descartable 710cc",
@@ -499,8 +491,10 @@
       "revision": "Revisada a ojo: la foto es la del producto."
     },
     {
-      "nombre": "Cerveza Corona porrón 330/355cc bulto x6",
-      "codigo": "2792798003723",
+      "nombre": "Cerveza Corona porrón 330/355cc",
+      "codigo": null,
+      "nombreEnLista": "Cerveza Corona porrón 330/355cc bulto x6",
+      "codigoEnLista": "2792798003723",
       "estado": "dudosa",
       "coincidencia": "nombre",
       "tienda": "Carrefour",
@@ -653,8 +647,10 @@
       "revision": "Revisada a ojo: la foto es la del producto."
     },
     {
-      "nombre": "Clight limonada rosa 7.5g bulto x20",
-      "codigo": "7622201682019",
+      "nombre": "Clight limonada rosa 7.5g",
+      "codigo": null,
+      "nombreEnLista": "Clight limonada rosa 7.5g bulto x20",
+      "codigoEnLista": "7622201682019",
       "estado": "encontrada",
       "coincidencia": "nombre",
       "tienda": "Más Online",
@@ -667,8 +663,10 @@
       "revision": "Revisada a ojo y aprobada. La foto es el sobre de Clight Limonada Rosa; el código de la lista es el de la caja."
     },
     {
-      "nombre": "Clight manzana deliciosa 7g bulto x20",
-      "codigo": "7622201703073",
+      "nombre": "Clight manzana deliciosa 7g",
+      "codigo": null,
+      "nombreEnLista": "Clight manzana deliciosa 7g bulto x20",
+      "codigoEnLista": "7622201703073",
       "estado": "encontrada",
       "coincidencia": "nombre",
       "tienda": "Carrefour",
@@ -681,8 +679,10 @@
       "revision": "Revisada a ojo y aprobada. La foto es el sobre de Clight Manzana Deliciosa."
     },
     {
-      "nombre": "Clight naranja 8g bulto x20",
-      "codigo": "7622201703103",
+      "nombre": "Clight naranja 8g",
+      "codigo": null,
+      "nombreEnLista": "Clight naranja 8g bulto x20",
+      "codigoEnLista": "7622201703103",
       "estado": "encontrada",
       "coincidencia": "nombre",
       "tienda": "Carrefour",
@@ -695,8 +695,10 @@
       "revision": "Revisada a ojo y aprobada. La foto es el sobre de Clight Naranja; el código de la lista es el de la caja."
     },
     {
-      "nombre": "Clight naranja dulce 7.5g bulto x20",
-      "codigo": "7622201703134",
+      "nombre": "Clight naranja dulce 7.5g",
+      "codigo": null,
+      "nombreEnLista": "Clight naranja dulce 7.5g bulto x20",
+      "codigoEnLista": "7622201703134",
       "estado": "encontrada",
       "coincidencia": "nombre",
       "tienda": "Carrefour",
@@ -1017,8 +1019,10 @@
       "revision": "Revisada a ojo: la foto es la del producto."
     },
     {
-      "nombre": "Encendedor Candela bulto x25",
-      "codigo": "7798322400686",
+      "nombre": "Encendedor Candela",
+      "codigo": null,
+      "nombreEnLista": "Encendedor Candela bulto x25",
+      "codigoEnLista": "7798322400686",
       "estado": "dudosa",
       "coincidencia": "nombre",
       "tienda": "Carrefour",
@@ -2025,8 +2029,10 @@
       "revision": "Revisada a ojo: la foto es la del producto."
     },
     {
-      "nombre": "Puré de tomate Noel brick 520 g (bulto x12)",
+      "nombre": "Puré de tomate Noel brick 520 g",
       "codigo": null,
+      "nombreEnLista": "Puré de tomate Noel brick 520 g (bulto x12)",
+      "codigoEnLista": null,
       "estado": "encontrada",
       "coincidencia": "nombre",
       "tienda": "Carrefour",
@@ -2151,18 +2157,20 @@
       "revision": "Revisada a ojo y aprobada. La foto es Rebozador Preferido 1 kg."
     },
     {
-      "nombre": "Red Bull 250ml bulto x4",
-      "codigo": "9002490203306",
+      "nombre": "Red Bull 250ml",
+      "codigo": null,
+      "nombreEnLista": "Red Bull 250ml bulto x4",
+      "codigoEnLista": "9002490203306",
       "estado": "encontrada",
-      "coincidencia": "codigo",
-      "tienda": "Carrefour",
-      "paginaUrl": "https://www.carrefour.com.ar/bebida-energizante-red-bull-regular-x4-250-ml-336218/p",
-      "imagenUrl": "https://carrefourar.vteximg.com.br/arquivos/ids/277297/9002490203306_E01.jpg?v=638128491338030000",
-      "nombreEnTienda": "Bebida energizante Red Bull regular x4 250 ml",
+      "coincidencia": "nombre",
+      "tienda": "Más Online",
+      "paginaUrl": "https://www.masonline.com.ar/energy-drink-red-bull-250-cc-2/p",
+      "imagenUrl": "https://masonlineprod.vteximg.com.br/arquivos/ids/273654/front-view-16103.jpg?v=638121693791400000",
+      "nombreEnTienda": "Energizante Red Bull 250ml",
       "marcaEnTienda": "Red Bull",
-      "codigoEnTienda": "9002490203306",
-      "nota": "Mismo código de barras.",
-      "revision": "Revisada a ojo: la foto es la del producto."
+      "codigoEnTienda": "9002490100070",
+      "nota": "Elegida entre los resultados de Más Online: la lata suelta.",
+      "revision": "Revisada a ojo y aprobada. Es la lata suelta de Red Bull 250 ml. La foto anterior salía del código de la lista, que es el del pack de 4."
     },
     {
       "nombre": "Relleno Nutella 140 g",
@@ -2697,5 +2705,6 @@
       "revision": "Revisada a ojo: la foto es la del producto."
     }
   ],
-  "revisado": "Revisión a ojo de cada foto, una por una, contra el nombre de la lista."
+  "revisado": "Revisión a ojo de cada foto, una por una, contra el nombre de la lista.",
+  "normalizado": "22/10/2026: nombres y códigos del catálogo por unidad (docs/manual-house/bultos-house.md). `nombreEnLista` y `codigoEnLista` son los de antes; \"Aceitunas Natura girasol 5 L (bulto x4)\" se sumó a su unidad, que tiene su propia entrada."
 }

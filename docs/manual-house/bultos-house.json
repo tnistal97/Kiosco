@@ -1,0 +1,17 @@
+{
+  "descripcion": "Códigos de la UNIDAD verificados para los productos de House que estaban cargados como bulto. Lo lee scripts/normalizar-bultos.ts con --codigos. Un bulto que no está acá queda sin código: se le pone a mano desde la ficha, mirando la etiqueta. Ver bultos-house.md.",
+  "codigosDeUnidad": [
+    {
+      "bulto": "Baño Pronto naranja 1L bulto x8",
+      "codigoDelBulto": "37790036000320",
+      "codigoDeUnidad": "7790036000329",
+      "verificacion": "El código de la lista es un DUN-14 (código de bulto GS1: indicador 3 + el código de la unidad sin su verificador). El de la unidad que contiene, 7790036000329, es el que Carrefour publica para «Jugo natural Baggio pronto naranja 1 l.» (búsqueda del 22/10/2026, docs/manual-house/imagenes-house.json)."
+    },
+    {
+      "bulto": "Baño Pronto naranja 200cc bulto x18",
+      "codigoDelBulto": "27790036000569",
+      "codigoDeUnidad": "7790036000565",
+      "verificacion": "El código de la lista es un DUN-14 (indicador 2 + el código de la unidad sin su verificador). El de la unidad que contiene, 7790036000565, es el que Jumbo publica para «Jugo Listo Baggio Pronto Naranja 200cc» (búsqueda del 22/10/2026, docs/manual-house/imagenes-house.json)."
+    }
+  ]
+}

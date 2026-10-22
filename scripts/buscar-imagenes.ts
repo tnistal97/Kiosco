@@ -84,6 +84,13 @@ export interface EntradaDelManifiesto {
    * o dejar pendiente una encontrada--.
    */
   revision?: string
+  /**
+   * El nombre y el codigo que tenia en la lista, cuando el catalogo los cambio
+   * despues de la busqueda: los bultos que pasaron a contarse por unidad. Ver
+   * scripts/normalizar-bultos.ts.
+   */
+  nombreEnLista?: string
+  codigoEnLista?: string | null
 }
 
 interface ProductoDeTienda {
