@@ -288,7 +288,8 @@ test.describe('El lector encuentra por cualquiera de los codigos', () => {
     const ficha = await abrirFicha(page, PRODUCTOS.gaseosa.nombre)
     await masOpciones(ficha)
     await ficha.getByLabel('Otros códigos').fill('9002222200002')
-    await ficha.getByRole('button', { name: 'Agregar' }).click()
+    // Exacto: la ficha tiene tambien «Agregar foto».
+    await ficha.getByRole('button', { name: 'Agregar', exact: true }).click()
     await expect(ficha.getByText('9002222200002')).toHaveCount(1)
     await ficha.getByRole('button', { name: 'Guardar cambios' }).click()
     await page.waitForTimeout(2000)
@@ -354,5 +355,64 @@ test.describe('Los dados de baja no se mezclan con el catálogo', () => {
     await buscar(page, 'Gaseosa')
     await expect(filaCon(page, activo)).toBeVisible()
     await expect(filas(page, deBaja)).toHaveCount(0)
+  })
+})
+
+test.describe('Fotos de productos', () => {
+  // Una foto de catalogo de verdad no hace falta: alcanza con una imagen que el
+  // navegador pueda decodificar. El servidor la recorta, la achica y la guarda
+  // como WebP; lo que se comprueba aca es el recorrido entero.
+  const nombre = PRODUCTOS.yerba.nombre
+
+  test('se pone desde la ficha, se ve en Productos y en Vender, y se quita', async ({ page }) => {
+    const { default: sharp } = await import('sharp')
+    const foto = await sharp({
+      create: { width: 600, height: 600, channels: 3, background: '#ffffff' },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: { width: 300, height: 400, channels: 3, background: '#2e7d32' },
+          })
+            .png()
+            .toBuffer(),
+          left: 150,
+          top: 100,
+        },
+      ])
+      .png()
+      .toBuffer()
+
+    await entrar(page, 'admin')
+    const ficha = await abrirFicha(page, nombre)
+    await expect(ficha.getByRole('img', { name: `${nombre}: sin foto` })).toBeVisible()
+
+    await ficha.locator('input[type="file"]').setInputFiles({
+      name: 'yerba.png',
+      mimeType: 'image/png',
+      buffer: foto,
+    })
+    await expect(page.getByText('Foto guardada.')).toBeVisible()
+    await expect(ficha.getByRole('img', { name: `Foto de ${nombre}` })).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    const miniatura = filaCon(page, nombre).locator('img[src*="/imagen?v="]')
+    await expect(miniatura).toBeVisible()
+    // Se cargo de verdad: una imagen rota tiene ancho natural cero.
+    await expect
+      .poll(() => miniatura.evaluate((img: HTMLImageElement) => img.naturalWidth))
+      .toBeGreaterThan(0)
+
+    await page.goto('/venta')
+    await page.keyboard.type('Yerba mate', { delay: 30 })
+    await expect(
+      page.locator('[data-fila]').filter({ hasText: nombre }).locator('img[src*="/imagen?v="]'),
+    ).toBeVisible()
+
+    const otraVez = await abrirFicha(page, nombre)
+    await otraVez.getByRole('button', { name: 'Quitar foto' }).click()
+    await expect(page.getByText('Foto quitada.')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(filaCon(page, nombre).locator('img')).toHaveCount(0)
   })
 })

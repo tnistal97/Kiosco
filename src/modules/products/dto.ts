@@ -57,6 +57,8 @@ export interface ProductoDTO {
   minimumStock: TextoCantidad
   /** OK | LOW | OUT. Lo calcula el servidor; si no viene, se calcula aca. */
   estado: EstadoStock
+  /** Donde esta la foto, ya con su version. Null si no tiene. */
+  imageUrl: string | null
   /**
    * Costo de compra. `undefined` cuando la sesion no tiene
    * `products.cost.view`: el servidor NO manda la clave, y aca no se inventa.
@@ -125,6 +127,7 @@ export function parseProducto(raw: unknown): ProductoDTO {
     // cacheada, un endpoint que todavia no lo incluye-- se calcula aca con la
     // MISMA funcion, no con una copia de la regla.
     estado: parseEstado(raw.estado) ?? estadoDeStock(totalStock, minimumStock),
+    imageUrl: parseDireccionDeImagen(raw.imageUrl),
   }
 
   // La clave `cost` solo existe si el servidor la mando, y solo la manda a
@@ -139,6 +142,15 @@ export function parseProducto(raw: unknown): ProductoDTO {
   }
 
   return producto
+}
+
+/**
+ * Solo una direccion de este mismo sitio. La arma el servidor, pero termina en
+ * un `src`: una respuesta vieja o rara no puede hacer que la pantalla pida
+ * imagenes a otro lado.
+ */
+function parseDireccionDeImagen(raw: unknown): string | null {
+  return typeof raw === 'string' && raw.startsWith('/api/products/') ? raw : null
 }
 
 function parseRentabilidad(raw: unknown): Rentabilidad | null {

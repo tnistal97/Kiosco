@@ -88,12 +88,17 @@ const nextConfig: NextConfig = {
    * `Cache-Control: no-store` sobre /api es la segunda mitad del problema del
    * service worker: sin ella, el cache HTTP del propio navegador guarda las
    * respuestas privadas aunque el service worker no lo haga.
+   *
+   * Menos la foto de un producto (`/api/products/:id/imagen`), que fija su
+   * propio cache: es la foto del envase, no un dato privado, y con la version
+   * en la direccion se puede guardar para siempre. Si esta regla la pisara, la
+   * caja volveria a pedir cada foto en cada pantalla. Ver docs/PRODUCT_IMAGES.md.
    */
   // eslint-disable-next-line @typescript-eslint/require-await -- Next exige que headers() sea async
   async headers() {
     return [
       {
-        source: '/api/:path*',
+        source: '/api/:path((?!products/\\d+/imagen$).*)',
         headers: [
           { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, private' },
           { key: 'Pragma', value: 'no-cache' },

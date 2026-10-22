@@ -48,6 +48,7 @@ const GASEOSA: ProductoDTO = {
   expiredStock: '0.000',
   minimumStock: '6.000',
   estado: 'OK',
+  imageUrl: null,
 }
 
 type Pedido = { metodo: string; ruta: string; cuerpo: unknown }

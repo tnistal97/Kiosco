@@ -315,6 +315,16 @@ model Product {
   /// rastrear lotes no tiene donde guardarse. Lo impide un CHECK.
   expirationTracking String @default("NONE")
 
+  /// Huella de la foto (`ProductImage.sha256`), o null si no tiene.
+  ///
+  /// Una copia, y a proposito: es la version que va en la direccion de la foto,
+  /// y el listado y el lector la necesitan en cada fila. Leida desde aca no
+  /// cuesta ninguna consulta; desde `ProductImage` costaba una mas por pedido
+  /// en el lector, que es el camino mas caliente del sistema. La mantiene un
+  /// disparador de `ProductImage`: la aplicacion no la escribe nunca, y no
+  /// puede quedar desfasada. Ver docs/PRODUCT_IMAGES.md.
+  imageSha256 String? @db.Char(64)
+
   stocks       BranchStock[]
   saleItems    SaleItem[]
   movements    StockMovement[]
@@ -327,6 +337,7 @@ model Product {
   lots         ProductLot[]
   assignments  LotAssignment[]
   countLines   InventoryCountLine[]
+  image        ProductImage?
   category     Category              @relation(fields: [categoryId], references: [id])
   branch       Branch                @relation(fields: [branchId], references: [id])
 
@@ -643,6 +654,45 @@ model ProductBarcode {
 
   @@unique([code], map: "ProductBarcode_code_key")
   @@index([productId])
+}
+
+/// La foto de un producto: una como mucho, para reconocerlo de un vistazo en
+/// Productos y en la caja.
+///
+/// En la base y no en el disco: son pocas y chicas --una miniatura WebP de
+/// 480 px, entre 10 y 40 kB--, el respaldo de la base ya las incluye, y no hay
+/// una carpeta mas que crear en el servidor, permisos que ajustar ni archivos
+/// huerfanos que limpiar. Tabla aparte y no una columna de `Product` para que
+/// el listado no arrastre los bytes: lee solo la huella, que un disparador
+/// copia en `Product.imageSha256`. Ver docs/PRODUCT_IMAGES.md.
+model ProductImage {
+  productId Int @id
+
+  /// Siempre `image/webp`: el servidor la vuelve a codificar al guardarla, sea
+  /// cual sea el formato en que llego. Lo impide un CHECK.
+  mimeType String
+
+  data Bytes
+
+  width  Int
+  height Int
+
+  /// Huella del contenido, en hexadecimal. Viaja en la direccion de la foto
+  /// (`?v=`): otra foto es otra direccion, y el navegador la pide de nuevo en
+  /// vez de mostrar la vieja que tenia guardada.
+  sha256 String @db.Char(64)
+
+  /// De donde salio: la pagina del producto en la tienda o en el sitio del
+  /// fabricante. Null cuando la subio alguien desde la ficha.
+  sourceUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// CASCADE, como los codigos de barras: una foto no es historia, es un
+  /// atributo. Sin el producto no significa nada, y conservarla impediria
+  /// borrar un producto cargado por error.
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 /// Cada cambio de costo de un producto. Inmutable.

@@ -202,6 +202,7 @@ describe('La cadena oficial', () => {
       '20260813140000_phase4d_inventory_counts',
       '20260814100000_phase5a_indices_de_lectura',
       '20261020190000_user_must_change_password',
+      '20261022100000_product_images',
     ])
   })
 

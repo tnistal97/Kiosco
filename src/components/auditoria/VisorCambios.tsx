@@ -47,6 +47,11 @@ const ETIQUETAS: Record<string, string> = {
   branchId: 'Sucursal',
   amount: 'Importe',
   origen: 'Origen',
+  // Fotos de productos: la huella identifica la foto; el origen, de donde salio.
+  sha256: 'Huella de la foto',
+  sourceUrl: 'Sacada de',
+  width: 'Ancho (px)',
+  height: 'Alto (px)',
 }
 
 /** Campos que se leen mejor como dinero. */

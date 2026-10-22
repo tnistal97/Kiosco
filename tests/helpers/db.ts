@@ -35,6 +35,7 @@ const TABLES = [
   // impiden vaciar la base entre pruebas. Es la unica puerta.
   'StockMovement',
   'ProductCostHistory',
+  'ProductImage',
   'ProductBarcode',
   'PurchaseReceiptItem',
   'PurchaseReceipt',

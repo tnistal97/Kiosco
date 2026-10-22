@@ -43,6 +43,7 @@ import {
 import { ActividadReciente } from './ActividadReciente'
 import { CampoCodigoDeBarras } from './CampoCodigoDeBarras'
 import { CodigosDeBarras } from './CodigosDeBarras'
+import { FotoEnFicha } from './FotoEnFicha'
 import { Trazabilidad } from './Trazabilidad'
 
 /**
@@ -77,6 +78,7 @@ export function DialogoProducto({
   categorias,
   proveedores,
   onCategoriaCreada,
+  onFotoCambiada,
 }: {
   /** null = alta. */
   producto: ProductoDTO | null
@@ -87,11 +89,14 @@ export function DialogoProducto({
   proveedores: ProveedorDTO[]
   /** Se recargan las categorias despues de crear una desde aca. */
   onCategoriaCreada?: () => void
+  /** La foto se guarda sola, sin cerrar la ficha: el listado se recarga para mostrarla. */
+  onFotoCambiada?: () => void
 }) {
   const puedeEditarPrecio = usePermiso('products.price.update')
   const puedeVerCosto = usePermiso('products.cost.view')
   const puedeEditarCosto = usePermiso('products.cost.update')
   const puedeCrearCategoria = usePermiso('categories.manage')
+  const puedeEditarProducto = usePermiso('products.update')
   const usaLotes = useFuncion('lotes')
   const esAlta = producto === null
   const botonGuardar = useRef<HTMLButtonElement>(null)
@@ -108,6 +113,8 @@ export function DialogoProducto({
    * no quiere decir "sin codigos": guardar antes mandaba [] y los borraba.
    */
   const [alternativosLeidos, setAlternativosLeidos] = useState(false)
+  /** De donde salio la foto. Viene con el detalle, igual que los alternativos. */
+  const [fuenteDeFoto, setFuenteDeFoto] = useState<string | null>(null)
   const [categoria, setCategoria] = useState('')
   const [proveedor, setProveedor] = useState('')
   const [descripcion, setDescripcion] = useState('')
@@ -130,6 +137,7 @@ export function DialogoProducto({
     setCodigo(producto?.barcode ?? '')
     setAlternativos([])
     setAlternativosLeidos(producto === null)
+    setFuenteDeFoto(null)
     setCategoria(String(producto?.category.id ?? ''))
     setProveedor(String(producto?.supplier?.id ?? ''))
     setDescripcion(producto?.description ?? '')
@@ -178,21 +186,30 @@ export function DialogoProducto({
 
   // Al abrir la ficha de un producto que ya existe se traen sus codigos
   // alternativos, que el listado no manda: la caja pide hasta cien productos
-  // por peticion y no los necesita.
+  // por peticion y no los necesita. Lo mismo el origen de la foto.
   useEffect(() => {
     if (!abierto || producto === null) return
     let vivo = true
     void apiRequest(`/api/products/${producto.id}`, {
-      parse: (raw): string[] => {
-        if (typeof raw !== 'object' || raw === null) return []
-        const lista = (raw as { alternateBarcodes?: unknown }).alternateBarcodes
-        return Array.isArray(lista) ? lista.filter((c): c is string => typeof c === 'string') : []
+      parse: (raw): { alternativos: string[]; fuente: string | null } => {
+        if (typeof raw !== 'object' || raw === null) return { alternativos: [], fuente: null }
+        const { alternateBarcodes: lista, imageSourceUrl: fuente } = raw as {
+          alternateBarcodes?: unknown
+          imageSourceUrl?: unknown
+        }
+        return {
+          alternativos: Array.isArray(lista)
+            ? lista.filter((c): c is string => typeof c === 'string')
+            : [],
+          fuente: typeof fuente === 'string' && fuente.startsWith('https://') ? fuente : null,
+        }
       },
     })
-      .then((lista) => {
+      .then(({ alternativos: lista, fuente }) => {
         if (!vivo) return
         setAlternativos(lista)
         setAlternativosLeidos(true)
+        setFuenteDeFoto(fuente)
       })
       .catch(() => {
         // Sin los alternativos la ficha sigue siendo utilizable. No se manda
@@ -406,6 +423,22 @@ export function DialogoProducto({
           <Alert tone="danger" title="No se guardó">
             {error}
           </Alert>
+        )}
+
+        {/* La foto, arriba: es lo primero que se mira para saber si es el
+            producto que se buscaba. Solo al editar: en el alta todavia no
+            hay producto al que colgarsela. */}
+        {!esAlta && (
+          <FotoEnFicha
+            productoId={producto.id}
+            nombre={producto.name}
+            imageUrl={producto.imageUrl}
+            fuente={fuenteDeFoto}
+            puedeCambiar={puedeEditarProducto}
+            onCambio={() => {
+              onFotoCambiada?.()
+            }}
+          />
         )}
 
         {/* Lo justo para crear un producto: nombre, categoría, precio,

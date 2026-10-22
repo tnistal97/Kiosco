@@ -93,7 +93,10 @@ export class NetworkError extends Error {
 
 export interface RequestOptions<T> {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
-  /** Se serializa como JSON. */
+  /**
+   * Se serializa como JSON. Un `Blob` --una foto-- viaja tal cual, con su
+   * propio tipo.
+   */
   body?: unknown
   /** Convierte la respuesta cruda en el tipo esperado. */
   parse: (data: unknown) => T
@@ -139,7 +142,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions<T>): P
       credentials: 'include',
       ...(body === undefined
         ? {}
-        : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+        : body instanceof Blob
+          ? { headers: { 'Content-Type': body.type || 'application/octet-stream' }, body }
+          : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
       ...(signal ? { signal } : {}),
     })
   } catch (causa) {

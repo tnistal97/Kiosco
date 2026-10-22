@@ -60,6 +60,7 @@
     "react-dom": "^19.0.1",
     "react-hot-toast": "^2.5.2",
     "serwist": "^9.5.12",
+    "sharp": "^0.35.3",
     "zod": "^4.4.3",
     "zustand": "^5.0.5"
   },

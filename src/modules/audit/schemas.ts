@@ -10,6 +10,9 @@ import { paginationQuerySchema } from '@/server/http/pagination'
 export const TABLAS_AUDITADAS = [
   'User',
   'Product',
+  // La foto de un producto: alta, cambio y baja, con la huella y el origen.
+  // Ver docs/PRODUCT_IMAGES.md.
+  'ProductImage',
   'BranchStock',
   'StockMovement',
   'Sale',

@@ -54,6 +54,7 @@ import { estadoDeStock, type EstadoStock } from '@/modules/inventory/minimum'
 import { etiquetaDeTipo } from '@/modules/inventory/movement-types'
 import { calcularRentabilidad, type Rentabilidad } from './margen'
 import { registrarCambioDeCosto } from './costo'
+import { direccionDeImagen } from './imagen'
 import {
   motivoDeCantidadInvalida,
   unidadDeCompraODefecto,
@@ -92,6 +93,11 @@ export interface ProductoListado {
   /** OK | LOW | OUT. Calculado al leer, nunca guardado. */
   estado: EstadoStock
   /**
+   * Donde esta la foto, con su version (`?v=`), o null si no tiene. Ver
+   * docs/PRODUCT_IMAGES.md.
+   */
+  imageUrl: string | null
+  /**
    * Solo para quien tiene `products.cost.view`. Cuando no lo tiene, la clave
    * NO ESTA en el objeto: no viaja un null que despues alguien pueda
    * confundir con "no hay costo cargado".
@@ -119,13 +125,17 @@ function paraBitacora(
     cost: Dinero | null
     minimumStock: Cantidad
     suppliers?: Array<{ supplier: { id: number; name: string } }>
+    imageSha256?: string | null
   },
   session: Session,
 ): Record<string, unknown> {
   // `suppliers` sale de la fila y entra como un solo id: la bitacora registra
   // QUE cambio, y el objeto anidado del proveedor principal ocuparia tres
   // lineas para decir un numero.
-  const { price, cost, minimumStock, suppliers, ...resto } = fila
+  //
+  // `imageSha256` sale y no entra: la foto tiene su propia entrada en la
+  // bitacora (`ProductImage`), y editar el precio no es un cambio de foto.
+  const { price, cost, minimumStock, suppliers, imageSha256: _foto, ...resto } = fila
   return {
     ...resto,
     price: aMonto(price),
@@ -176,6 +186,12 @@ const CAMPOS_PRODUCTO = {
     select: { supplier: { select: { id: true, name: true } } },
     take: 1,
   },
+  /**
+   * Solo la huella de la foto, que es su version: una columna, sin consulta de
+   * mas. Los bytes se piden aparte, de a uno y desde el navegador, que despues
+   * los guarda.
+   */
+  imageSha256: true,
 } as const
 
 /** Fila cruda tal como sale de Prisma con `CAMPOS_PRODUCTO`. */
@@ -193,6 +209,7 @@ type FilaProducto = {
   lotTracking: string
   category: { id: number; name: string }
   suppliers: Array<{ supplier: { id: number; name: string } }>
+  imageSha256: string | null
 }
 
 /**
@@ -254,6 +271,7 @@ function aProductoListado(
     // reposicion --hay que pedirle al proveedor-- y lo vencido tambien hay que
     // reponerlo. Lo vendible es otra pregunta y tiene su propio numero.
     estado: estadoDeStock(stock, minimo),
+    imageUrl: fila.imageSha256 === null ? null : direccionDeImagen(fila.id, fila.imageSha256),
   }
 
   if (!puedeVerCosto(session)) return base
@@ -577,6 +595,11 @@ export interface ProductoDetallado extends ProductoListado {
   /** Todos los codigos menos el principal. */
   alternateBarcodes: string[]
   /**
+   * De donde salio la foto, si salio de internet. Solo en el detalle: es para
+   * quien revisa si la foto es la del producto, no para el listado.
+   */
+  imageSourceUrl: string | null
+  /**
    * Todos los proveedores, principal primero.
    *
    * Solo en el detalle. El listado devuelve hasta cien productos por peticion y
@@ -593,6 +616,7 @@ export async function obtenerProducto(
     where: { id, branchId: session.branchId },
     select: {
       ...CAMPOS_PRODUCTO,
+      image: { select: { sourceUrl: true } },
       barcodes: { select: { code: true, isPrimary: true }, orderBy: { id: 'asc' } },
       stocks: { where: { branchId: session.branchId }, select: { quantity: true } },
     },
@@ -622,6 +646,7 @@ export async function obtenerProducto(
     ...aProductoListado(fila, stocks[0]?.quantity ?? null, session, vencido.get(fila.id)),
     barcode: barcodes.find((b) => b.isPrimary)?.code ?? null,
     alternateBarcodes: barcodes.filter((b) => !b.isPrimary).map((b) => b.code),
+    imageSourceUrl: fila.image?.sourceUrl ?? null,
     suppliers: vinculos.map((v) => ({
       supplierId: v.supplierId,
       name: v.supplier.name,
@@ -831,6 +856,8 @@ export async function crearProductoEn(
     lotTracking: fila.lotTracking,
     category: { id: categoria.id, name: categoria.name },
     suppliers: [],
+    // Un producto que se acaba de crear no tiene foto: se le pone despues.
+    imageSha256: null,
     branchId: fila.branchId,
   }
 

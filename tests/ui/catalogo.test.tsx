@@ -42,6 +42,7 @@ function producto(id: number, name: string, extra: Partial<Product> = {}): Produ
     expiredStock: '0.000',
     minimumStock: '0.000',
     estado: 'OK',
+    imageUrl: null,
     ...extra,
   }
 }

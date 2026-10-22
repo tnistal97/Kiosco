@@ -27,6 +27,7 @@ const POR_PAGINA = 25
 const NOMBRE_TABLA: Record<string, string> = {
   User: 'Usuarios',
   Product: 'Productos',
+  ProductImage: 'Fotos de productos',
   BranchStock: 'Stock',
   Sale: 'Ventas',
   CashRegisterMovement: 'Movimientos de caja',

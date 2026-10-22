@@ -33,6 +33,7 @@ import {
   aviso,
 } from '@/components/ui'
 import { DialogoProducto } from '@/components/productos/DialogoProducto'
+import { FotoDeProducto } from '@/components/productos/FotoDeProducto'
 import { usePermiso } from '@/components/shell/SessionProvider'
 import { useProducts, type CampoOrden, type Product } from '@/hooks/useProducts'
 import { apiRequest, lista, mensajeDeError, esObjeto, numero, texto } from '@/lib/api-client'
@@ -332,12 +333,17 @@ function ProductosContenido() {
                   {products.map((p) => (
                     <TR key={p.id}>
                       <TD>
-                        <p className="font-semibold text-ink">{p.name}</p>
-                        {!p.isActive && (
-                          <Badge tone="warning" className="mt-1">
-                            <span aria-hidden="true">⊘</span> Dado de baja
-                          </Badge>
-                        )}
+                        <div className="flex items-center gap-3">
+                          <FotoDeProducto src={p.imageUrl} />
+                          <div className="min-w-0">
+                            <p className="font-semibold text-ink">{p.name}</p>
+                            {!p.isActive && (
+                              <Badge tone="warning" className="mt-1">
+                                <span aria-hidden="true">⊘</span> Dado de baja
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
                       </TD>
                       <TD secondary className="text-ink-muted">
                         {p.category.name}
@@ -381,7 +387,8 @@ function ProductosContenido() {
             {products.map((p) => (
               <CardListItem key={p.id}>
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                  <FotoDeProducto src={p.imageUrl} />
+                  <div className="min-w-0 flex-1">
                     <p className="text-base font-semibold text-ink">{p.name}</p>
                     <p className="mt-0.5 text-sm text-ink-muted">{p.category.name}</p>
                     <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-ink">
@@ -432,6 +439,9 @@ function ProductosContenido() {
         proveedores={proveedores}
         onCategoriaCreada={() => {
           void fetchCategories()
+        }}
+        onFotoCambiada={() => {
+          void fetchProducts()
         }}
         onCerrar={() => {
           setDialogoAbierto(false)

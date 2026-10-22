@@ -19,6 +19,7 @@ import {
   cn,
   formatMoney,
 } from '@/components/ui'
+import { FotoDeProducto } from '@/components/productos/FotoDeProducto'
 import type { Product } from '@/hooks/useProducts'
 import { aMilesimas } from '@/lib/cantidad'
 import {
@@ -158,6 +159,10 @@ export function ProductBrowser({
   // El lugar del "/ kg" se reserva solo si hay algo que se pesa a la vista:
   // alinea los precios sin dejar un hueco en una lista de puras unidades.
   const hayPorPeso = productos.some((p) => esFraccionable(p.saleUnit))
+  // Lo mismo con la foto: el cuadrado aparece en todas las filas apenas una
+  // la tiene --asi los nombres quedan alineados--, y en un catalogo sin fotos
+  // no aparece en ninguna.
+  const hayFotos = productos.some((p) => p.imageUrl !== null)
   const centinela = useRef<HTMLDivElement>(null)
   /** La fila que recibe el foco con Tab. Sigue a la marcada. */
   const [enfocada, setEnfocada] = useState(0)
@@ -296,6 +301,7 @@ export function ProductBrowser({
                   favorito={esFavorito(p.id)}
                   enCarrito={enCarrito?.get(p.id) ?? null}
                   lugarParaUnidad={hayPorPeso}
+                  lugarParaFoto={hayFotos}
                   onElegir={onElegir}
                   onFavorito={onFavorito}
                 />
@@ -374,6 +380,7 @@ const FilaDeProducto = memo(function FilaDeProducto({
   favorito,
   enCarrito,
   lugarParaUnidad,
+  lugarParaFoto,
   onElegir,
   onFavorito,
 }: {
@@ -387,6 +394,8 @@ const FilaDeProducto = memo(function FilaDeProducto({
   enCarrito: string | null
   /** Reservar el lugar del "/ kg" aunque este no lo use, para alinear los precios. */
   lugarParaUnidad: boolean
+  /** Reservar el cuadrado de la foto aunque este no tenga, para alinear los nombres. */
+  lugarParaFoto: boolean
   onElegir: (producto: Product) => void
   onFavorito: (productId: number) => void
 }) {
@@ -439,7 +448,23 @@ const FilaDeProducto = memo(function FilaDeProducto({
         {/* EL NOMBRE MANDA: se lleva todo el ancho sobrante y, si no entra,
             usa un segundo renglon en vez de cortarse. "Aceite de girasol
             900 ml" no puede terminar en "Aceite de girasol 9…". */}
-        <span className={cn(CELDA_NOMBRE, 'flex items-baseline gap-1.5')}>
+        {/* Con foto, centrado: el cuadrado de 32 px es lo mas alto del
+            renglon, y alineado por la base el nombre quedaba arriba del precio. */}
+        <span
+          className={cn(
+            CELDA_NOMBRE,
+            'flex gap-1.5',
+            lugarParaFoto ? 'items-center' : 'items-baseline',
+          )}
+        >
+          {/* La foto, de 32 px: entra en el renglon de 40 sin agrandarlo. En
+              el telefono no: ahi el ancho es para el nombre, y la fila de dos
+              renglones creceria. */}
+          {lugarParaFoto && (
+            <span className="hidden self-center sm:flex">
+              <FotoDeProducto src={producto.imageUrl} tamano="sm" />
+            </span>
+          )}
           {/* Cuanto hay ya en el carrito, delante del nombre: es lo que
               cambian → y ←, y se ve sin mirar el otro panel. En el mismo
               renglon, para que agregar no haga crecer la fila (V6). */}

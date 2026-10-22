@@ -43,21 +43,28 @@ export interface CallOptions {
   params?: Record<string, string>
   /** Cuerpo crudo, para probar JSON mal formado. */
   rawBody?: string
+  /** Cuerpo binario --una foto-- con su tipo. */
+  bytes?: { data: Uint8Array; type: string }
+  /** Cabeceras de mas, p. ej. `If-None-Match`. */
+  headers?: Record<string, string>
 }
 
 export function buildRequest(path: string, options: CallOptions = {}): NextRequest {
-  const { method = 'GET', body, cookie, rawBody } = options
+  const { method = 'GET', body, cookie, rawBody, bytes } = options
 
-  const headers = new Headers()
+  const headers = new Headers(options.headers)
   if (cookie) headers.set('cookie', cookie)
   if (body !== undefined || rawBody !== undefined) {
     headers.set('content-type', 'application/json')
   }
+  if (bytes) headers.set('content-type', bytes.type)
 
   return new NextRequest(new URL(path, BASE), {
     method,
     headers,
-    body: rawBody ?? (body !== undefined ? JSON.stringify(body) : undefined),
+    body: bytes
+      ? new Uint8Array(bytes.data)
+      : (rawBody ?? (body !== undefined ? JSON.stringify(body) : undefined)),
   })
 }
 
