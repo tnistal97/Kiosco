@@ -169,9 +169,15 @@ barras").
   en [`imagenes-house.json`](imagenes-house.json).
 - **Corona porrón y Encendedor Candela:** siguen sin foto. Estaban entre las ambiguas.
 
-## 6. En producción (todavía no)
+## 6. En producción
 
-Producción sigue con las 192 filas de antes. Cuando se despliegue, en este orden:
+Aplicado el 22/10/2026 a las 12:47 UTC, con la versión `a2b54e2`. El ensayo y la
+aplicación dieron lo mismo que la sección 3: 12 pasos, ninguno para revisar, 191
+productos y 3695 unidades. Una segunda pasada no encontró nada que hacer. Después se
+cargaron las 147 fotos, y una segunda carga no escribió ninguna. El catálogo de
+producción quedó igual, fila por fila, al que se revisó en local.
+
+Se hizo en este orden:
 
 1. Desplegar la rama, con la migración de fotos de `docs/PRODUCT_IMAGES.md`.
 2. Normalizar, primero en ensayo. El ensayo hace todo dentro de una transacción, muestra
