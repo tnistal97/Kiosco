@@ -1,0 +1,237 @@
+{
+  "marca": "correccion-tickets1-house-2026-10",
+  "fuente": "Fotos de Tickets 1 (2 facturas B, 17 fotos), releídas el 2026-10-29 renglón por renglón; ver auditoria-stock-house.md y ticket3/README.md. Lo aplica scripts/corregir-tickets1.ts.",
+  "regla": "El ticket imprime 'q(n) x precio por bulto': q bultos de n unidades. Las planillas ya tenían q x n; normalizar-bultos volvió a multiplicar. Se descuenta exactamente lo que sumó de más; lo posterior queda.",
+  "stock": [
+    {
+      "nombre": "Aceitunas Natura girasol 5 L",
+      "ticket": "1(1) x 19999,00 y 2(4) x 79996,00",
+      "unidadesTicket": 9,
+      "agregadoPorLaNormalizacion": 32,
+      "exceso": 24,
+      "evidencia": "T1-B foto 3.05.47 PM (1): ACE.NATURA GIR.5LT 1(1) x 19999,00 y ACE.NATURA GIR.5LT Bul.4 2(4) x 79996,00 = 159992,00 (79996 = 4 x 19999). Planilla: 1 y 8."
+    },
+    {
+      "nombre": "Puré de tomate Noel brick 520 g",
+      "ticket": "2(12) x 8147,90",
+      "unidadesTicket": 24,
+      "agregadoPorLaNormalizacion": 264,
+      "exceso": 264,
+      "evidencia": "T1-B foto 3.05.45 PM (1): PUR.TOM.NOEL BRICK 520GR Bul.12 2(12) x 8147,90 = 16295,80. Planilla: 24."
+    },
+    {
+      "nombre": "Baño Pronto naranja 1L",
+      "ticket": "1(8) x 15191,99",
+      "unidadesTicket": 8,
+      "agregadoPorLaNormalizacion": 56,
+      "exceso": 56,
+      "evidencia": "T1-A foto 3.05.44 PM (1): ALI.BAGGIO PRONTO NAR.1LT Bul.8 1(8) x 15191,99. Planilla: 8."
+    },
+    {
+      "nombre": "Baño Pronto naranja 200cc",
+      "ticket": "1(18) x 13030,10",
+      "unidadesTicket": 18,
+      "agregadoPorLaNormalizacion": 306,
+      "exceso": 306,
+      "evidencia": "T1-A foto 3.05.44 PM (1): ALI.BAGGIO PRONTO NAR.200CC Bul.18 1(18) x 13030,10. Planilla: 18."
+    },
+    {
+      "nombre": "Cerveza Andes Roja lata 473cc",
+      "ticket": "1(6) x 13465,34",
+      "unidadesTicket": 6,
+      "agregadoPorLaNormalizacion": 30,
+      "exceso": 30,
+      "evidencia": "T1-A fotos 3.05.44 PM (1) y (2): CERVEZA ANDES ROJA LATA 473CC Bul.6 1(6) x 13465,34. Planilla: 6."
+    },
+    {
+      "nombre": "Cerveza Corona porrón 330/355cc",
+      "ticket": "2(6) x 19000,58",
+      "unidadesTicket": 12,
+      "agregadoPorLaNormalizacion": 60,
+      "exceso": 60,
+      "evidencia": "T1-A fotos 3.05.44 PM (1) y (2): CERVEZA CORONA PORRON 330/355CC Bul.6 2(6) x 19000,58 = 38001,16. Planilla: 12."
+    },
+    {
+      "nombre": "Encendedor Candela",
+      "ticket": "1(25) x 7724,94",
+      "unidadesTicket": 25,
+      "agregadoPorLaNormalizacion": 600,
+      "exceso": 600,
+      "evidencia": "T1-A foto 3.05.44 PM (2): ENC.CANDELA Bul.25 1(25) x 7724,94. Planilla: 25."
+    },
+    {
+      "nombre": "Red Bull 250ml",
+      "ticket": "1(4) x 12346,40",
+      "unidadesTicket": 4,
+      "agregadoPorLaNormalizacion": 12,
+      "exceso": 12,
+      "evidencia": "T1-A foto 3.05.44 PM (2): ENE.RED BULL 250ML Bul.4 1(4) x 12346,40. Planilla: 4."
+    },
+    {
+      "nombre": "Clight limonada rosa 7.5g",
+      "ticket": "1(20) x 7380,03",
+      "unidadesTicket": 20,
+      "agregadoPorLaNormalizacion": 380,
+      "exceso": 380,
+      "evidencia": "T1-A foto 3.05.43 PM (2): JUG.CLIGHT LIMONADA ROSA VIT.C+D 7,5GR Bul.2 1(20) x 7380,03 (la descripción se corta en 'Bul.2'; el 20 sale de 1(20)). Planilla: 20."
+    },
+    {
+      "nombre": "Clight manzana deliciosa 7g",
+      "ticket": "1(20) x 7380,03",
+      "unidadesTicket": 20,
+      "agregadoPorLaNormalizacion": 380,
+      "exceso": 380,
+      "evidencia": "T1-A foto 3.05.43 PM (2): JUG.CLIGHT MZA.DELICIOSA VIT.C+D 7GR Bul.20 1(20) x 7380,03. Planilla: 20."
+    },
+    {
+      "nombre": "Clight naranja dulce 7.5g",
+      "ticket": "1(20) x 7380,03",
+      "unidadesTicket": 20,
+      "agregadoPorLaNormalizacion": 380,
+      "exceso": 380,
+      "evidencia": "T1-A foto 3.05.43 PM (2): JUG.CLIGHT NAR.DCE.VIT.C+D 7,5GR Bul.20 1(20) x 7380,03. Planilla: 20."
+    },
+    {
+      "nombre": "Clight naranja 8g",
+      "ticket": "1(20) x 7380,03",
+      "unidadesTicket": 20,
+      "agregadoPorLaNormalizacion": 380,
+      "exceso": 380,
+      "evidencia": "T1-A foto 3.05.43 PM (2): JUG.CLIGHT NAR.VIT.C+D 8GR Bul.20 1(20) x 7380,03. Planilla: 20."
+    }
+  ],
+  "codigos": [
+    {
+      "nombre": "Monster Mango Loco lata 473cc",
+      "actual": "7798427620045",
+      "corregido": "7798422620045",
+      "clasificacion": "VERIFICADO_EN_TICKET",
+      "evidencia": "T1-A foto 3.05.44 PM (2), ampliada: ENE.MONSTER MANGO LOCO LATA 473CM3 / 7798422620045. La planilla 2 (fila 25) lo copió 7798427620045, con el dígito verificador inválido."
+    },
+    {
+      "nombre": "Papas fritas Pehuamar acanaladas 230g",
+      "actual": "7790310985553",
+      "corregido": "7790310983553",
+      "clasificacion": "VERIFICADO_EN_TICKET",
+      "evidencia": "T1-A foto 3.05.43 PM (1), ampliada: PAP.FRI.PEHUAMAR ACANALADAS 230GR / 7790310983553. Planilla 2 fila 81: 7790310985553 (inválido)."
+    },
+    {
+      "nombre": "Vino Nieto Senetiner Malbec DOC 750cc",
+      "actual": "7790070608767",
+      "corregido": "7790070760876",
+      "clasificacion": "VERIFICADO_EN_TICKET",
+      "evidencia": "T1-A foto 3.05.35 PM, ampliada: VIN.NIETO SENETINER MALBEC DOC 750CC / 7790070760876. Planilla 2 fila 106: 7790070608767 (inválido)."
+    }
+  ],
+  "descripciones": [
+    {
+      "nombre": "Cerveza Corona porrón 330/355cc",
+      "buscar": "2792798003723",
+      "reemplazo": "7792798003723",
+      "clasificacion": "VERIFICADO_EN_TICKET como código de la línea de bulto; NO_CONFIRMADO como código de la botella",
+      "evidencia": "T1-A fotos 3.05.44 PM (1) y (2), ampliada: CERVEZA CORONA PORRON 330/355CC Bul.6 / 7792798003723. Es la línea del bulto x6: no se usa como código de venta (Carrefour publica la botella de 330 ml con 7792798003709, que es SUGERIDO_INTERNET y tampoco se carga)."
+    }
+  ],
+  "nombres": [
+    {
+      "actual": "Aceitunas Cañuelas verdes 500 cc",
+      "corregido": "Aceite de oliva Cañuelas 500 cc",
+      "evidencia": "T1-B foto 3.05.47 PM (1): ACE.CA?UELAS OLIVA500CC (código 7792180005182). En el mismo ticket ACE. es aceite y ACEITU. es aceitunas."
+    },
+    {
+      "actual": "Aceitunas Natura girasol 5 L",
+      "corregido": "Aceite de girasol Natura 5 L",
+      "evidencia": "T1-B foto 3.05.47 PM (1): ACE.NATURA GIR.5LT (7790272004112). La foto ya cargada es el aceite Natura de girasol 5 L."
+    },
+    {
+      "actual": "Garbanzos Fainax 200 g",
+      "corregido": "Harina de garbanzo Fainax 200 g",
+      "evidencia": "T1-B: HAR.GARBANZO FAINAX 200GR (7798139291033)."
+    },
+    {
+      "actual": "Jabón lavarropas Ayudín Glaciar triple poder 2L",
+      "corregido": "Lavandina Ayudín Glaciar triple poder 2L",
+      "evidencia": "T1-A foto 3.05.43 PM (2): LAV.AYUDIN GLACIAR TRIPLE PODER 2LT (7793253003753); en el mismo ticket el jabón líquido es JAB.LIQ. La tienda publica ese código como lavandina."
+    },
+    {
+      "actual": "Jabón lavarropas Ayudín Lavanda triple poder 2L",
+      "corregido": "Lavandina Ayudín Lavanda triple poder 2L",
+      "evidencia": "T1-A foto 3.05.43 PM (2): LAV.AYUDIN LAVANDA TRIPLE PODER 2LT (7793253003722)."
+    },
+    {
+      "actual": "Jabón lavarropas Querubín clásica 2L",
+      "corregido": "Lavandina Querubín clásica 2L",
+      "evidencia": "T1-A foto 3.05.43 PM (2): LAV.QUERUBIN CLASICA 2LT (7791905000037)."
+    },
+    {
+      "actual": "Baño Fresh Liviano multifruta 1L",
+      "corregido": "Baggio Fresh Liviano multifruta 1L",
+      "evidencia": "T1-A foto 3.05.44 PM (1): ALI.BAGGIO FRESH LIVIANO MULTIFRUT.1LT (7790036975399)."
+    },
+    {
+      "actual": "Baño Fresh Liviano naranja dulce 1L",
+      "corregido": "Baggio Fresh Liviano naranja dulce 1L",
+      "evidencia": "T1-A foto 3.05.44 PM (1): ALI.BAGGIO FRESH LIVIANO NAR.DCE.1LT (7790036975382)."
+    },
+    {
+      "actual": "Baño Pronto naranja 1L",
+      "corregido": "Baggio Pronto naranja 1L",
+      "evidencia": "T1-A foto 3.05.44 PM (1): ALI.BAGGIO PRONTO NAR.1LT Bul.8."
+    },
+    {
+      "actual": "Baño Pronto naranja 200cc",
+      "corregido": "Baggio Pronto naranja 200cc",
+      "evidencia": "T1-A foto 3.05.44 PM (1): ALI.BAGGIO PRONTO NAR.200CC Bul.18."
+    },
+    {
+      "actual": "Agua Aquarius manzana 500cc",
+      "corregido": "Agua Aquarius manzana 600cc",
+      "evidencia": "T1-A foto 3.05.44 PM (1): AGU.AQUARIUS MZA.600CC (7790895009211); la tienda publica ese código como 600 ml."
+    },
+    {
+      "actual": "Agua Aquarius pomelo 500cc",
+      "corregido": "Agua Aquarius pomelo 600cc",
+      "evidencia": "T1-A foto 3.05.44 PM (1): AGU.AQUARIUS POM.600CC (7790895009228)."
+    },
+    {
+      "actual": "Curitas Nitos Frozen 20un",
+      "corregido": "Curitas Niños Frozen 20un",
+      "evidencia": "T1-A foto 3.05.44 PM (1): APOSITO CURITAS NI?OS FROZEN 20UN: la impresora pone ? por la Ñ (CA?UELAS, PA?O)."
+    },
+    {
+      "actual": "Macito 3D Mega 143g",
+      "corregido": "Maicito 3D Mega 143g",
+      "evidencia": "T1-A foto 3.05.43 PM (1): MAICITO 3D MEGA 143GR (7790310985137)."
+    },
+    {
+      "actual": "Macito Doritos Dinamita 82g",
+      "corregido": "Maicito Doritos Dinamita 82g",
+      "evidencia": "T1-A foto 3.05.43 PM (1): MAICITO DORITOS DINAMITA 82GR."
+    },
+    {
+      "actual": "Macito Doritos Sweet Chili 74g",
+      "corregido": "Maicito Doritos Sweet Chili 74g",
+      "evidencia": "T1-A foto 3.05.43 PM (1): MAICITO DORITOS SWEET CHILI 74GR."
+    },
+    {
+      "actual": "Macito Pehuamar 260g",
+      "corregido": "Maicito Pehuamar 260g",
+      "evidencia": "T1-A foto 3.05.43 PM (1): MAICITO PEHUAMAR 260GR."
+    },
+    {
+      "actual": "Ramitas Pehuamar queso 120g",
+      "corregido": "Ramitas Pep queso 120g",
+      "evidencia": "T1-A: RAMITAS PEP QUESO 120GR (7790310985182); la tienda publica ese código con la marca Pep."
+    },
+    {
+      "actual": "Cereal bar Flow yogur frutilla bosque 6 x 27 g",
+      "corregido": "Cereal bar Flow yogur frutos del bosque 6 x 27 g",
+      "evidencia": "T1-B: CER.BAR.FLOW C/YOGUR FR.BOSQ.6UNX27GR (7790380016205); ese mismo código es 'Flow frutos bosque y yogur 6u 27g' en la tienda."
+    },
+    {
+      "actual": "Cereal Lasfor Arttos frutales 500 g",
+      "corregido": "Cereal Lasfor Aritos frutales 500 g",
+      "evidencia": "T1-B: CER.LASFOR ARITOS FRUTALES 500GR (7798169802872)."
+    }
+  ]
+}

@@ -11,7 +11,10 @@ aplicación en `scripts/lib/normalizar-bultos.ts`.
 > **Auditoría del 22/10/2026, contra las fotos de los tickets:** la cantidad de las 12
 > filas ya eran **unidades**. El ticket imprime "2(4) x precio por bulto", y la lista tiene
 > 2 × 4 = 8. La normalización multiplicó dos veces: hay 2872 unidades de más en 12
-> productos. No se corrigió. Ver [`auditoria-stock-house.md`](auditoria-stock-house.md).
+> productos. Ver [`auditoria-stock-house.md`](auditoria-stock-house.md).
+>
+> **Corregido el 29/10/2026** con `scripts/corregir-tickets1.ts`, que descuenta solo el
+> exceso y conserva lo posterior. Ver [`ticket3/README.md`](ticket3/README.md).
 
 ## Qué es cada cantidad
 

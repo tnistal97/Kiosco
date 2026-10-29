@@ -18,6 +18,10 @@ está escrito para quien atiende el mostrador.
 | `auditoria-stock-house.md`        | Los tickets contra las listas y el stock, y la segunda tanda (Tickets 2).    |
 | `tickets2/compra-tickets2.json`   | La segunda tanda, que carga `scripts/incorporar-compra.ts`.                  |
 | `tickets2/imagenes-tickets2.json` | Las fotos de los productos de la segunda tanda, revisadas a ojo.             |
+| `correcciones-tickets1.json`      | Lo que corrige `scripts/corregir-tickets1.ts`: bultos, códigos y nombres.    |
+| `ticket3/README.md`               | Ticket3 y la corrección de Tickets 1: qué se leyó, qué se carga y por qué.   |
+| `ticket3/compra-ticket3.json`     | Ticket3, que carga `scripts/incorporar-compra.ts`.                           |
+| `ticket3/imagenes-ticket3.json`   | Las fotos de los productos de Ticket3, revisadas a ojo.                      |
 
 Ningún archivo lleva contraseñas. La clave inicial de cada persona se entrega
 aparte.

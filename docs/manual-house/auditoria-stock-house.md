@@ -2,6 +2,9 @@
 
 22/10/2026. Todo es local, nada de esto se desplegó.
 
+> **29/10/2026:** los bultos, los códigos y los nombres de Tickets 1 se corrigieron, y se
+> incorporó Ticket3. Ver [`ticket3/README.md`](ticket3/README.md). Tickets 2 sigue solo local.
+
 - **Rama:** `feat/house-tickets2-stock-audit`, que sale de `fix/house-unit-stock-normalization`.
 - **Bases:**
   - `kiosco_house_dev` es el House local de antes y **no se tocó**.

@@ -1,0 +1,450 @@
+{
+  "marca": "compra-ticket3-house-dn-0103-00487394",
+  "ticket": "DN, Control Interno Nro. 0103-00487394, 20/10/2026 02:29:55 p.m.",
+  "fuente": "Leído a ojo de las 7 fotos de Stock/Ticket3 (suma de renglones = subtotal impreso 362250.01); el Excel de ChatGPT se comparó después. Ver docs/manual-house/ticket3/README.md.",
+  "huellaDeLoQueSeCarga": "9cbeb1636aaf4b91098d04a76da86a37b9371a91b77540aac61359b649f56786",
+  "excelChatGpt": "2003b6d05950e0b4edb7eb8346de9ef19f61dbd1e2bb4a3ed0cbe111925b8450",
+  "fotos": {
+    "WhatsApp Image 2026-10-29 at 12.04.03 PM (1).jpeg": "f9e24f6d6d8b8c269c00cc8531e1e0464815379401e88a0bb92a1b5000d710df",
+    "WhatsApp Image 2026-10-29 at 12.04.03 PM.jpeg": "d4e8c66a42a27d4979441b84789e3e48bb5a91ae35faa0d312e59f183ef2b6bb",
+    "WhatsApp Image 2026-10-29 at 12.04.03 PM (2).jpeg": "77b7b6608986026d1578e79e7ae61fa0f5aeee9b61691ca61d9d1cd37949682f",
+    "WhatsApp Image 2026-10-29 at 12.04.04 PM.jpeg": "255d4e650e9a1c243aca79f8a669fdde9038d88d16d0793411eddfefefa0b03e",
+    "WhatsApp Image 2026-10-29 at 12.04.04 PM (1).jpeg": "279701ccc104548f3e917179d1f20d27f8c28a985ad3dae2ebf6f400e308556d",
+    "WhatsApp Image 2026-10-29 at 12.04.04 PM (2).jpeg": "19c30b62bd14805e3a47ff38e4217edf333076362ccfa2ac69892eb29194aa31",
+    "WhatsApp Image 2026-10-29 at 12.04.05 PM.jpeg": "0c61b823ab0277ffa3991e9dcbcf2cf3869e093adce53d047f314e312764bfca"
+  },
+  "productos": [
+    {
+      "nombre": "Fideos cinta ancha remolacha Petrucchelli",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 2, 3",
+      "textoOriginal": "FIDEOS CINTA ANCHA REMOLACHA PETRUCCHELLI"
+    },
+    {
+      "nombre": "Fideos cinta ancha integrales Petrucchelli",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 4, 5",
+      "textoOriginal": "FIDEOS CINTA ANCHA INTEGRALES PETRUCCHELLI"
+    },
+    {
+      "nombre": "Galletitas Chocolinas 250 g",
+      "cantidad": 4,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 6, 7, 8, 9",
+      "textoOriginal": "GALLETITAS CHOCOLINAS X 250gr"
+    },
+    {
+      "nombre": "Galletitas Chocolinas 170 g",
+      "cantidad": 4,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 10, 11, 12, 13",
+      "textoOriginal": "GALLETITAS CHOCOLINAS 170g"
+    },
+    {
+      "nombre": "Azúcar Ledesma 1 kg",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 14, 15, 16, 17, 18",
+      "textoOriginal": "AZUCAR LEDESMA X 1 KG"
+    },
+    {
+      "nombre": "Oreo tripack 354 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 19, 20",
+      "textoOriginal": "OREO TRIPACK X 354GR"
+    },
+    {
+      "nombre": "Pepitos tripack 357 g",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 21, 22, 23",
+      "textoOriginal": "PEPITOS TRIPACK X 357GR"
+    },
+    {
+      "nombre": "Azúcar La Tikay 1 kg",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 24, 25, 26",
+      "textoOriginal": "AZUCAR LA TIKAY 1kg"
+    },
+    {
+      "nombre": "Sinfonía clásicas Gaona 4 x 50 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 27, 43",
+      "textoOriginal": "SINFONIA CLASICAS GAONA 4 X 50 GR"
+    },
+    {
+      "nombre": "Oreo clásica 182,5 g",
+      "cantidad": 6,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 28, 29, 30, 31, 32, 33",
+      "textoOriginal": "OREO CLASICA X 182.5g"
+    },
+    {
+      "nombre": "Oreo sin gluten 95 g",
+      "cantidad": 4,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 34, 35, 36, 37",
+      "textoOriginal": "OREO SIN GLUTEN X 95 GR"
+    },
+    {
+      "nombre": "Sal fina Dos Anclas salero 250 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 38, 39",
+      "textoOriginal": "SAL FINA DOS ANCLAS SALERO X 250grs"
+    },
+    {
+      "nombre": "Sal con ajo Dos Anclas salero 200 g",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 40",
+      "textoOriginal": "SAL CON AJO DOS ANCLAS SALERO X200GR"
+    },
+    {
+      "nombre": "Cerealitas granola 243 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 41, 42",
+      "textoOriginal": "CEREALITAS GRANOLA 243G"
+    },
+    {
+      "nombre": "Oreo BTS 2026 118 g",
+      "cantidad": 4,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 44, 45, 46, 47",
+      "textoOriginal": "OREO BTS 2026 X 118 GR"
+    },
+    {
+      "nombre": "Cerealitas avena y miel 243 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 48, 49",
+      "textoOriginal": "CEREALITAS AVENA Y MIEL 243G"
+    },
+    {
+      "nombre": "Tostadas Equilibrio dulces light Manieri 200 g",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 50, 51, 52",
+      "textoOriginal": "TOSTADAS EQUILIBRIO DULCES LIGHT MANIERI 2…"
+    },
+    {
+      "nombre": "Tostadas sin sal Manieri 200 g",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 53, 54, 55",
+      "textoOriginal": "TOSTADAS SIN SAL MANIERI 200G"
+    },
+    {
+      "nombre": "Galletitas Frutigran avena y pasas Granix",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 56, 57",
+      "textoOriginal": "GALLETITAS FRUTIGRAN AVENA Y PASAS GRANIX …"
+    },
+    {
+      "nombre": "Galletitas Frutigran salvado dulce Granix",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 58, 59",
+      "textoOriginal": "GALLETITAS FRUTIGRAN SALVADO DULCE GRANIX"
+    },
+    {
+      "nombre": "Galletitas Frutigran avenas y frutos rojos",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 60, 61",
+      "textoOriginal": "GALLETITAS FRUTIGRAN AVENAS Y FRUTOS ROJOS"
+    },
+    {
+      "nombre": "Tostadas de arroz clásica Manieri 120 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 62, 67",
+      "textoOriginal": "TOSTADAS ARROZ CLASICA MANIERI 120G"
+    },
+    {
+      "nombre": "Tostadas de arroz dulce Manieri 120 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 63, 64",
+      "textoOriginal": "TOSTADAS ARROZ DULCE MANIERI 120G"
+    },
+    {
+      "nombre": "Tostadas de arroz sin sal Manieri 120 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 65, 66",
+      "textoOriginal": "TOSTADAS ARROZ SIN SAL MANIERI 120G"
+    },
+    {
+      "nombre": "Tostadas salvado Manieri 200 g",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 68, 69, 70",
+      "textoOriginal": "TOSTADAS SALVADO MANIERI 200G"
+    },
+    {
+      "nombre": "Tostadas Equilibrio light Manieri 200 g",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 71, 72, 73",
+      "textoOriginal": "TOSTADAS EQUILIBRIO LIGHT MANIERI 200G"
+    },
+    {
+      "nombre": "Tostadas Equilibrio 4 semillas Manieri 200 g",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 74, 75, 76",
+      "textoOriginal": "TOSTADAS EQUILIBRIO 4 SEMILLAS MANIERI 200G"
+    },
+    {
+      "nombre": "Cerealitas salvado 208 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 77, 78",
+      "textoOriginal": "CEREALITAS SALVADO 208G"
+    },
+    {
+      "nombre": "Cerealitas clásicas 212 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 79, 80",
+      "textoOriginal": "CEREALITAS CLASICAS X 212GR"
+    },
+    {
+      "nombre": "Pasta dental Odolito tutti frutti 50 g",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 81, 82, 83",
+      "textoOriginal": "PASTA DENTAL ODOLITO TUTTI FUTTI 50G"
+    },
+    {
+      "nombre": "Colgate Luminous White 70 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 84",
+      "textoOriginal": "COLGATE LUMINOUS WHITE 70g"
+    },
+    {
+      "nombre": "Arroz Lucchetti integral 1 kg",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 85, 86",
+      "textoOriginal": "ARROZ LUCCHETTI INTEGRAL 1 KG"
+    },
+    {
+      "nombre": "Fetuchini con morrón El Colono 300 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 87, 88",
+      "textoOriginal": "FETUCHINI CON MORRON EL COLONO 300G"
+    },
+    {
+      "nombre": "Capelettini Giacomo mix legumbre verdura",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 89, 94",
+      "textoOriginal": "GIACOMO CAPELETTINI MIX LEGUMBRE VERDURA"
+    },
+    {
+      "nombre": "Tirabuzón con espinaca El Colono 300 g",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 90",
+      "textoOriginal": "TIRABUZON CON ESPINACA EL COLONO 300G"
+    },
+    {
+      "nombre": "Tirabuzón al huevo El Colono 300 g",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 91",
+      "textoOriginal": "TIRABUZON AL HUEVO EL COLONO 300G"
+    },
+    {
+      "nombre": "Lucchettinis carne Lucchetti 500 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 92",
+      "textoOriginal": "LUCCHETTINIS CARNE x 500gr LUCCHETTI"
+    },
+    {
+      "nombre": "Lucchettinis espinaca y queso Lucchetti 500 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 93",
+      "textoOriginal": "LUCCHETTINIS DE ESPINACA Y QUESO x 500gr LUC…"
+    },
+    {
+      "nombre": "Crema dental Colgate Total 12 Whitening 90 g",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 95",
+      "textoOriginal": "CREMA DENTAL COLGATE TOTAL 12 WHIT 90G"
+    },
+    {
+      "nombre": "Arroz 2 Hermanos carnaroli 500 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 96, 97",
+      "textoOriginal": "ARROZ 2 HNOS CARNAROLI 500GR"
+    },
+    {
+      "nombre": "Jabón Dove original 90 g",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 98, 99, 100",
+      "textoOriginal": "JABON DOVE ORIGINAL 90gr"
+    },
+    {
+      "nombre": "Leche entera sachet 3% La Serenísima",
+      "cantidad": 4,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 101",
+      "textoOriginal": "LECHE ENTERA SACHET 3 % LA SERENISIMA"
+    },
+    {
+      "nombre": "Sal entrefina Dos Anclas paquete 500 g",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 102, 103, 104",
+      "textoOriginal": "SAL ENTREFINA PAQUETE DOS ANCLAS 500G"
+    },
+    {
+      "nombre": "Sal gruesa Dos Anclas paquete 500 g",
+      "cantidad": 3,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 105, 106, 107",
+      "textoOriginal": "SAL GRUESA PAQUETE DOS ANCLAS X 500G"
+    },
+    {
+      "nombre": "Arroz Gallo integral 500 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 108, 109",
+      "textoOriginal": "ARROZ GALLO INTEGRAL x 500gr"
+    },
+    {
+      "nombre": "Harina 0000 Favorita 1 kg",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 110, 111",
+      "textoOriginal": "HARINA 0000 1K FAVORITA"
+    },
+    {
+      "nombre": "Café instantáneo La Virginia selección tostado",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 112",
+      "textoOriginal": "CAFE INSTANTANEO LA VIRGINIA SELECCION TOS…"
+    },
+    {
+      "nombre": "Café instantáneo La Virginia suave frasco",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 113",
+      "textoOriginal": "CAFE INSTANTANEO LA VIRGINIA SUAVE FRASCO …"
+    },
+    {
+      "nombre": "Café instantáneo Kalma descafeinado frasco 100 g",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 114",
+      "textoOriginal": "CAFE INSTANTANEO KALMA DESCAF FCO 100G"
+    },
+    {
+      "nombre": "Café Dolca frasco 100 g",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 115",
+      "textoOriginal": "CAFE DOLCA FRASCO 100gr"
+    },
+    {
+      "nombre": "Café instantáneo La Morenita intenso frasco",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 116",
+      "textoOriginal": "CAFE INSTANTANEO LA MORENITA INTENSO FRAS…"
+    },
+    {
+      "nombre": "Pasta dental Colgate triple acción 90 g",
+      "cantidad": 2,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 117, 118",
+      "textoOriginal": "PASTA DENTAL COLGATE TRIPLE ACCION 90G"
+    },
+    {
+      "nombre": "Shampoo Pantene Pro-V bambú 400 ml",
+      "cantidad": 1,
+      "codigo": null,
+      "accion": "crear",
+      "origen": "T3-DN-0103-00487394 filas 119",
+      "textoOriginal": "SHAMPOO PANTENE PRO-V BAMBU 400ML"
+    }
+  ],
+  "noCargados": [
+    {
+      "nombre": "Queso rallado La Quesera 100 u x 8 g",
+      "cantidad": 1,
+      "clasificacion": "REVISAR",
+      "motivo": "caja de 100 sobres de 8 g comprada como 1 (1.000 x 19860.01). Cargar 1 caja o 100 sobres cambia el stock por 100: lo decide el dueño. No se carga."
+    }
+  ]
+}
