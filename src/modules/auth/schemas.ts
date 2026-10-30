@@ -3,6 +3,7 @@
  */
 
 import { z } from 'zod'
+import { normalizeUsername } from '@/modules/users/username'
 
 /**
  * Credenciales.
@@ -13,10 +14,13 @@ import { z } from 'zod'
  * valida el formato de la contrasena, porque las de los usuarios existentes
  * no tienen por que cumplir las reglas actuales y rechazarlas en el login
  * los dejaria afuera.
+ *
+ * El usuario sale en su forma canonica: "Franco" y " FRANCO " son la misma
+ * persona, y el limite de intentos los cuenta juntos.
  */
 export const loginSchema = z
   .object({
-    username: z.string().trim().min(1).max(50),
+    username: z.string().overwrite(normalizeUsername).min(1).max(50),
     password: z.string().min(1).max(200),
   })
   .strict()

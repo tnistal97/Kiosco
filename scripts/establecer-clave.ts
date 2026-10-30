@@ -27,6 +27,7 @@ import './entorno'
 import { createInterface } from 'node:readline'
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
+import { normalizeUsername } from '@/modules/users/username'
 
 const prisma = new PrismaClient()
 
@@ -57,7 +58,7 @@ async function leerDeEntradaEstandar(): Promise<string> {
 }
 
 async function main(): Promise<void> {
-  const usuario = process.argv[2]
+  const usuario = normalizeUsername(process.argv[2] ?? '')
   if (!usuario) {
     throw new Error('Falta el nombre de usuario. Uso: npx tsx scripts/establecer-clave.ts admin')
   }

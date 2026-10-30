@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Alert, Button, Card, CardHeader, Field, Input, aviso } from '@/components/ui'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { PASSWORD_MIN } from '@/modules/users/schemas'
@@ -14,18 +14,8 @@ import { PASSWORD_MIN } from '@/modules/users/schemas'
  *
  * Al cambiarla se cierran las sesiones de la persona en OTROS equipos. En
  * este sigue adentro: el servidor le devuelve una cookie nueva.
- *
- * `primerIngreso` es la misma operacion vista desde la pantalla que obliga a
- * cambiar una contrasena temporal (`CambioDeClaveObligatorio`): la actual se
- * llama por su nombre y, al terminar, quien la usa decide a donde ir.
  */
-export function CambiarMiClave({
-  primerIngreso = false,
-  alCambiar,
-}: {
-  primerIngreso?: boolean
-  alCambiar?: () => void
-} = {}) {
+export function CambiarMiClave() {
   const [actual, setActual] = useState('')
   const [nueva, setNueva] = useState('')
   const [confirmacion, setConfirmacion] = useState('')
@@ -48,10 +38,6 @@ export function CambiarMiClave({
         body: { claveActual: actual, claveNueva: nueva, claveConfirmacion: confirmacion },
         parse: () => null,
       })
-      if (alCambiar) {
-        alCambiar()
-        return
-      }
       setActual('')
       setNueva('')
       setConfirmacion('')
@@ -63,7 +49,7 @@ export function CambiarMiClave({
     }
   }
 
-  const formulario: ReactNode = (
+  const formulario = (
     <form className="flex flex-col gap-4" onSubmit={(e) => void guardar(e)} noValidate>
       {error && (
         <Alert tone="danger" title="No se cambió">
@@ -71,7 +57,7 @@ export function CambiarMiClave({
         </Alert>
       )}
 
-      <Field label={primerIngreso ? 'Contraseña temporal' : 'Contraseña actual'} required>
+      <Field label="Contraseña actual" required>
         <Input
           type="password"
           name="claveActual"
@@ -120,21 +106,12 @@ export function CambiarMiClave({
       </Field>
 
       <div className="flex justify-end">
-        <Button
-          type="submit"
-          variant="primary"
-          size={primerIngreso ? 'lg' : 'md'}
-          block={primerIngreso}
-          loading={enviando}
-          disabled={!valido}
-        >
-          {primerIngreso ? 'Guardar y entrar' : 'Cambiar contraseña'}
+        <Button type="submit" variant="primary" loading={enviando} disabled={!valido}>
+          Cambiar contraseña
         </Button>
       </div>
     </form>
   )
-
-  if (primerIngreso) return formulario
 
   return (
     <Card>

@@ -151,15 +151,18 @@ const CASOS: Caso[] = [
   {
     nombre: 'dar de alta personal',
     permiso: 'users.manage',
-    ejecutar: (u) =>
-      invocar('@/app/api/users/route', 'POST', '/api/users', u, {
+    // `empleado`: el unico rol que asigna cualquiera que administre usuarios.
+    ejecutar: async (u) => {
+      const rol = await prisma.role.findUniqueOrThrow({ where: { name: 'empleado' } })
+      return invocar('@/app/api/users/route', 'POST', '/api/users', u, {
         body: {
           username: 'nuevo_de_prueba',
           name: 'Nuevo',
           password: 'Clave-Larga-1234',
-          roleId: 1,
+          roleId: rol.id,
         },
-      }),
+      })
+    },
   },
   {
     nombre: 'ver el historial de ventas',

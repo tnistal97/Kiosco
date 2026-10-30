@@ -32,88 +32,90 @@ Los nombres están en castellano porque son los que ya existen en la base. El
 pedido sugería nombres en inglés; la equivalencia es directa y renombrarlos
 habría exigido migrar los usuarios existentes sin ganar nada.
 
-| Rol          | Equivale a  | Para qué es                                                                                                                                                                                                                             |
-| ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `duenio`     | OWNER       | Hoy idéntico a `admin`. Separado porque con varias sucursales van a divergir: `admin` administra la suya, `duenio` las ve todas.                                                                                                        |
-| `admin`      | ADMIN       | Todo, dentro de su sucursal.                                                                                                                                                                                                            |
-| `encargado`  | MANAGER     | Opera y administra el día a día. No toca usuarios ni la bitácora.                                                                                                                                                                       |
-| `supervisor` | SUPERVISOR  | Cajero con capacidad de anular y de mover la caja. Es el escalón que faltaba: sin él, cada anulación necesita al administrador.                                                                                                         |
-| `cajero`     | CASHIER     | Vende, cobra y arquea. Nada más.                                                                                                                                                                                                        |
-| `vendedor`   | CASHIER     | Alias histórico de `cajero`, con el mismo alcance. Existe porque es el rol que tienen los usuarios en la base.                                                                                                                          |
-| `repositor`  | STOCK_CLERK | Repone mercadería. Ve el catálogo y ajusta stock; no vende ni ve la caja.                                                                                                                                                               |
-| `compras`    | PURCHASING  | Catálogo, proveedores y entrada de mercadería. **No vende y no toca la caja**: separar quién compra de quién cobra es el control básico contra el desvío de mercadería.                                                                 |
-| `auditor`    | AUDITOR     | Solo lectura, incluida la bitácora. Ni un permiso de escritura, a propósito: quien revisa no debe poder modificar lo que revisa.                                                                                                        |
-| `operador`   | —           | Todo el mostrador de un local chico atendido por una persona: vende, abre y cierra su caja con ingresos y egresos, carga productos, precios y la mercadería que llega, hace el inventario entero. Sin costos, sin anular, sin usuarios. |
+| Rol           | Equivale a  | Para qué es                                                                                                                                                                                                                                                  |
+| ------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `duenio`      | OWNER       | Hoy idéntico a `admin`. Separado porque con varias sucursales van a divergir: `admin` administra la suya, `duenio` las ve todas.                                                                                                                             |
+| `admin`       | ADMIN       | Todo, dentro de su sucursal.                                                                                                                                                                                                                                 |
+| `encargado`   | MANAGER     | Opera y administra el día a día. No toca usuarios ni la bitácora.                                                                                                                                                                                            |
+| `supervisor`  | SUPERVISOR  | Cajero con capacidad de anular y de mover la caja. Es el escalón que faltaba: sin él, cada anulación necesita al administrador.                                                                                                                              |
+| `cajero`      | CASHIER     | Vende, cobra y arquea. Nada más.                                                                                                                                                                                                                             |
+| `vendedor`    | CASHIER     | Alias histórico de `cajero`, con el mismo alcance. Existe porque es el rol que tienen los usuarios en la base.                                                                                                                                               |
+| `repositor`   | STOCK_CLERK | Repone mercadería. Ve el catálogo y ajusta stock; no vende ni ve la caja.                                                                                                                                                                                    |
+| `compras`     | PURCHASING  | Catálogo, proveedores y entrada de mercadería. **No vende y no toca la caja**: separar quién compra de quién cobra es el control básico contra el desvío de mercadería.                                                                                      |
+| `auditor`     | AUDITOR     | Solo lectura, incluida la bitácora. Ni un permiso de escritura, a propósito: quien revisa no debe poder modificar lo que revisa.                                                                                                                             |
+| `operador`    | —           | Todo el mostrador de un local chico atendido por una persona: vende, abre y cierra su caja con ingresos y egresos, carga productos, precios y la mercadería que llega, hace el inventario entero. Sin costos, sin anular, sin usuarios.                      |
+| `admin_local` | —           | Administrador de UN local: lo del `operador`, más anular ventas, cerrar la caja de otro, autorizar una diferencia y administrar a los usuarios de su sucursal. Solo ve y asigna `admin_local` y `empleado`. Nada de costos, sucursales, bitácora ni compras. |
+| `empleado`    | —           | Atiende el mostrador: vende, cobra, abre y cierra su caja, registra ingresos y egresos, mira el catálogo y el stock, y cuenta en un inventario. No corrige precios, stock ni ventas.                                                                         |
 
 ## Rol × permiso
 
-| Permiso                     | duenio | admin | encargado | supervisor | cajero | vendedor | repositor | compras | auditor | operador |
-| --------------------------- | :----: | :---: | :-------: | :--------: | :----: | :------: | :-------: | :-----: | :-----: | :------: |
-| `sales.create`              |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |
-| `sales.view`                |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |    ✔     |
-| `sales.cancel`              |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `products.view`             |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ✔     |    ✔    |    ✔    |    ✔     |
-| `products.create`           |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ✔     |
-| `products.quickCreate`      |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ✔     |
-| `products.update`           |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ✔     |
-| `products.price.update`     |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ✔     |
-| `products.cost.view`        |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `products.cost.update`      |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `products.delete`           |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `categories.manage`         |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ✔     |
-| `stock.view`                |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ✔     |    ✔    |    ✔    |    ✔     |
-| `stock.adjust`              |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ✔     |    ✔    |    ·    |    ✔     |
-| `inventory.movements.view`  |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ✔     |    ✔    |    ✔    |    ·     |
-| `cash.view`                 |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |    ✔     |
-| `cash.movement.create`      |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ✔     |
-| `cash.count.create`         |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |
-| `cash.shift.open`           |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |
-| `cash.shift.close`          |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |
-| `cash.shift.close.other`    |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `cash.shift.authorize`      |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `reports.sales.view`        |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ✔     |
-| `reports.costs.view`        |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ·     |
-| `reports.inventory.view`    |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ✔     |
-| `reports.cash.view`         |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ✔     |
-| `reports.purchases.view`    |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ·     |
-| `audit.view`                |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ·     |
-| `users.view`                |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ·     |
-| `users.manage`              |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `branches.view`             |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ·     |
-| `branches.manage`           |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `suppliers.view`            |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ·     |
-| `suppliers.manage`          |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `purchases.view`            |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ·     |
-| `purchases.create`          |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `purchases.update`          |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `purchases.receive`         |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `purchases.cancel`          |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `reports.clients.view`      |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ·     |
-| `clients.view`              |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |    ✔     |
-| `clients.manage`            |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `accounts.view`             |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |    ✔     |
-| `accounts.charge`           |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |
-| `accounts.payment`          |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |
-| `accounts.adjust`           |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `accounts.overrideLimit`    |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `supplierAccounts.view`     |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ·     |
-| `supplierAccounts.payment`  |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `supplierAccounts.credit`   |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `supplierAccounts.adjust`   |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `supplierAccounts.overpay`  |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `supplierAccounts.allocate` |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `purchaseReturns.view`      |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ✔     |    ✔    |    ✔    |    ·     |
-| `purchaseReturns.create`    |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `purchaseReturns.confirm`   |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `lots.view`                 |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ✔     |    ✔    |    ✔    |    ·     |
-| `lots.manage`               |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |
-| `lots.tracking.relax`       |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `lots.adjust`               |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |
-| `inventoryCounts.view`      |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ✔     |    ✔    |    ✔    |    ✔     |
-| `inventoryCounts.create`    |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ✔     |    ·    |    ·    |    ✔     |
-| `inventoryCounts.count`     |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ✔     |    ·    |    ·    |    ✔     |
-| `inventoryCounts.review`    |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ✔     |
-| `inventoryCounts.apply`     |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ✔     |
+| Permiso                     | duenio | admin | encargado | supervisor | cajero | vendedor | repositor | compras | auditor | operador | admin_local | empleado |
+| --------------------------- | :----: | :---: | :-------: | :--------: | :----: | :------: | :-------: | :-----: | :-----: | :------: | :---------: | :------: |
+| `sales.create`              |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |      ✔      |    ✔     |
+| `sales.view`                |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |    ✔     |      ✔      |    ✔     |
+| `sales.cancel`              |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ✔      |    ·     |
+| `products.view`             |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ✔     |    ✔    |    ✔    |    ✔     |      ✔      |    ✔     |
+| `products.create`           |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ✔     |      ✔      |    ·     |
+| `products.quickCreate`      |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ✔     |      ✔      |    ·     |
+| `products.update`           |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ✔     |      ✔      |    ·     |
+| `products.price.update`     |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ✔     |      ✔      |    ·     |
+| `products.cost.view`        |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `products.cost.update`      |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `products.delete`           |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ·      |    ·     |
+| `categories.manage`         |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ✔     |      ✔      |    ·     |
+| `stock.view`                |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ✔     |    ✔    |    ✔    |    ✔     |      ✔      |    ✔     |
+| `stock.adjust`              |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ✔     |    ✔    |    ·    |    ✔     |      ✔      |    ·     |
+| `inventory.movements.view`  |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ✔     |    ✔    |    ✔    |    ·     |      ·      |    ·     |
+| `cash.view`                 |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |    ✔     |      ✔      |    ✔     |
+| `cash.movement.create`      |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ✔     |      ✔      |    ✔     |
+| `cash.count.create`         |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |      ✔      |    ✔     |
+| `cash.shift.open`           |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |      ✔      |    ✔     |
+| `cash.shift.close`          |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |      ✔      |    ✔     |
+| `cash.shift.close.other`    |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ✔      |    ·     |
+| `cash.shift.authorize`      |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ✔      |    ·     |
+| `reports.sales.view`        |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ✔     |      ✔      |    ·     |
+| `reports.costs.view`        |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ·     |      ·      |    ·     |
+| `reports.inventory.view`    |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ✔     |      ✔      |    ·     |
+| `reports.cash.view`         |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ✔     |      ✔      |    ·     |
+| `reports.purchases.view`    |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ·     |      ·      |    ·     |
+| `audit.view`                |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ·     |      ·      |    ·     |
+| `users.view`                |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ·     |      ✔      |    ·     |
+| `users.manage`              |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ✔      |    ·     |
+| `branches.view`             |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ·     |      ·      |    ·     |
+| `branches.manage`           |   ✔    |   ✔   |     ·     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ·      |    ·     |
+| `suppliers.view`            |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ·     |      ·      |    ·     |
+| `suppliers.manage`          |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `purchases.view`            |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ·     |      ·      |    ·     |
+| `purchases.create`          |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `purchases.update`          |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `purchases.receive`         |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `purchases.cancel`          |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `reports.clients.view`      |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ✔    |    ·     |      ·      |    ·     |
+| `clients.view`              |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |    ✔     |      ✔      |    ✔     |
+| `clients.manage`            |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ·      |    ·     |
+| `accounts.view`             |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ✔    |    ✔     |      ✔      |    ✔     |
+| `accounts.charge`           |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |      ✔      |    ✔     |
+| `accounts.payment`          |   ✔    |   ✔   |     ✔     |     ✔      |   ✔    |    ✔     |     ·     |    ·    |    ·    |    ✔     |      ✔      |    ✔     |
+| `accounts.adjust`           |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ·      |    ·     |
+| `accounts.overrideLimit`    |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ·      |    ·     |
+| `supplierAccounts.view`     |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ✔    |    ·     |      ·      |    ·     |
+| `supplierAccounts.payment`  |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `supplierAccounts.credit`   |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ·      |    ·     |
+| `supplierAccounts.adjust`   |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ·      |    ·     |
+| `supplierAccounts.overpay`  |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ·      |    ·     |
+| `supplierAccounts.allocate` |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `purchaseReturns.view`      |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ✔     |    ✔    |    ✔    |    ·     |      ·      |    ·     |
+| `purchaseReturns.create`    |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `purchaseReturns.confirm`   |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `lots.view`                 |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ✔     |    ✔    |    ✔    |    ·     |      ·      |    ·     |
+| `lots.manage`               |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ✔    |    ·    |    ·     |      ·      |    ·     |
+| `lots.tracking.relax`       |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ·      |    ·     |
+| `lots.adjust`               |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ·     |      ·      |    ·     |
+| `inventoryCounts.view`      |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ✔     |    ✔    |    ✔    |    ✔     |      ✔      |    ✔     |
+| `inventoryCounts.create`    |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ✔     |    ·    |    ·    |    ✔     |      ✔      |    ·     |
+| `inventoryCounts.count`     |   ✔    |   ✔   |     ✔     |     ·      |   ·    |    ·     |     ✔     |    ·    |    ·    |    ✔     |      ✔      |    ✔     |
+| `inventoryCounts.review`    |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ✔     |      ✔      |    ·     |
+| `inventoryCounts.apply`     |   ✔    |   ✔   |     ✔     |     ✔      |   ·    |    ·     |     ·     |    ·    |    ·    |    ✔     |      ✔      |    ·     |
 
 ### Quien cuenta no aplica
 

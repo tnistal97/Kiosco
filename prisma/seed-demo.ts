@@ -496,6 +496,8 @@ async function main() {
     'repositor',
     'compras',
     'auditor',
+    'admin_local',
+    'empleado',
   ]) {
     const r = await prisma.role.create({ data: { name: nombre } })
     roles.set(nombre, r.id)

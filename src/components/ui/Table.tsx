@@ -12,9 +12,22 @@ import { cn } from './cn'
  * horizontal vive dentro de `TableWrap` y no en el `body`.
  */
 
-export function TableWrap({ children, className }: { children: ReactNode; className?: string }) {
+export function TableWrap({
+  children,
+  className,
+  etiqueta,
+}: {
+  children: ReactNode
+  className?: string
+  /**
+   * Para una tabla que no entra a lo ancho: la vuelve una region con nombre que
+   * toma el foco, asi tambien se desplaza con el teclado.
+   */
+  etiqueta?: string
+}) {
   return (
     <div
+      {...(etiqueta ? { role: 'region', 'aria-label': etiqueta, tabIndex: 0 } : {})}
       className={cn(
         // `min-w-0` no sobra: dentro de un contenedor flex o grid el ancho
         // minimo por omision es el del contenido, asi que una tabla ancha

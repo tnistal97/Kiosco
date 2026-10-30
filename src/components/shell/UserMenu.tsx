@@ -17,7 +17,9 @@ import type { SesionCliente } from './SessionProvider'
 /** Nombre legible del rol. La base guarda el identificador. */
 const ROL_LEGIBLE: Record<string, string> = {
   duenio: 'Dueño',
-  admin: 'Administrador',
+  admin: 'Administrador general',
+  admin_local: 'Administrador',
+  empleado: 'Empleado',
   encargado: 'Encargado',
   supervisor: 'Supervisor',
   cajero: 'Cajero',

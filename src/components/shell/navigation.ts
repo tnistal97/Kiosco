@@ -48,12 +48,13 @@ export interface GrupoNav {
  *
  * Cinco tareas a la vista, con el nombre que les da quien atiende: Vender,
  * Caja, Productos, Stock, Inventario. Debajo, separado, lo que se usa de vez
- * en cuando: Clientes, Reportes, Configuracion. Nada mas.
+ * en cuando: Clientes, Reportes, Configuracion. Y Usuarios, solo para quien
+ * administra el personal del local.
  *
  * Lo que salio del menu NO se borro:
  *  - Movimientos se abre desde Stock ("Ver movimientos").
  *  - Ventas se abre desde Caja y desde Inicio.
- *  - Usuarios, Sucursales y el historial de cambios, desde Configuracion.
+ *  - Sucursales y el historial de cambios, desde Configuracion.
  *  - Lotes y Compras (ordenes, proveedores, devoluciones) son funciones
  *    opcionales: aparecen solo si la instalacion las habilita.
  */
@@ -120,6 +121,9 @@ export const NAVEGACION: GrupoNav[] = [
           'reports.purchases.view',
         ],
       },
+      // `users.manage` y no `users.view`: quien solo mira la lista (el auditor)
+      // la abre desde Configuracion, como antes.
+      { href: '/usuarios', label: 'Usuarios', permission: 'users.manage' },
       { href: '/configuracion', label: 'Configuración', matchPrefix: true },
     ],
   },

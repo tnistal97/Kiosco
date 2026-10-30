@@ -1,6 +1,7 @@
 {
   "marca": "compra-tickets2-house-2026-10",
-  "descripcion": "Segunda tanda de House: presupuesto manuscrito de 4 hojas (Stock/Tickets2). Precio $0, sin codigos, categoria \"Sin categoría\". Solo lo que se leyo con seguridad y no se parece a nada del catalogo.",
+  "motivo": "Carga Tickets 2",
+  "descripcion": "Segunda tanda de House: presupuesto manuscrito de 4 hojas (Stock/Tickets2). Precio $0, sin codigos, categoria \"Sin categoría\". Se cargan solo las lineas CONFIRMADO, comparadas contra el catalogo de produccion del 30/10 (244 productos, con Ticket3): ninguna existia.",
   "fotos": {
     "WhatsApp Image 2026-10-22 at 2.11.12 PM.jpeg": "04cf9e7bc74a950bed6b7685aab3ef761c3c6fada29123857b4b545a8fa6daf8",
     "WhatsApp Image 2026-10-22 at 2.11.12 PM (1).jpeg": "37aba11557e8a1a5aad9b1a092a146f029c505b48dad48e0b1ee08c1f1e83f3f",
@@ -393,7 +394,7 @@
       "textoOriginal": "IRON BAR"
     },
     {
-      "nombre": "Barrita Entronuts",
+      "nombre": "Barrita Entrenuts",
       "cantidad": 4,
       "codigo": null,
       "accion": "crear",
@@ -415,14 +416,14 @@
       "cantidad": 3,
       "origen": "hoja 1 fila 13",
       "clasificacion": "AMBIGUO",
-      "motivo": "se parece a \"Cereal Nesquik bolitas chocolate 230 g\" (#270): sin marca ni peso no se sabe si es el mismo"
+      "motivo": "se parece a \"Cereal Nesquik bolitas chocolate 230 g\" (#261): sin marca ni peso no se sabe si es el mismo"
     },
     {
       "textoOriginal": "ANILLITOS FRUTALES",
       "cantidad": 3,
       "origen": "hoja 1 fila 14",
       "clasificacion": "AMBIGUO",
-      "motivo": "se parece a \"Cereal Lasfor Arttos frutales 500 g\" (aritos frutales): sin marca ni peso no se sabe si es el mismo"
+      "motivo": "se parece a \"Cereal Lasfor Aritos frutales 500 g\" (#260): sin marca ni peso no se sabe si es el mismo"
     },
     {
       "textoOriginal": "CANUAS(?) CHIA, LINO Y GIRASOL",
@@ -445,5 +446,6 @@
       "clasificacion": "REVISAR",
       "motivo": "la primera palabra no se lee con seguridad: no se carga"
     }
-  ]
+  ],
+  "huellaDeLoQueSeCarga": "a6678efbae25ad4269d35c0ce36832c36e24a351e391c8fd3c31834f93235c7f"
 }

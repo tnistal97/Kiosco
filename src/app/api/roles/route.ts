@@ -1,21 +1,14 @@
 // src/app/api/roles/route.ts
-import { prisma } from '@/lib/prisma'
 import { handler } from '@/server/http/handler'
 import { knownRoles, permissionsForRole } from '@/server/authz/permissions'
+import { listarRolesAsignables } from '@/modules/users/service'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * Tope duro. Estos catalogos son chicos por naturaleza --un almacen tiene
- * una sucursal, decenas de categorias y proveedores-- pero un `findMany` sin
- * limite es una bomba de tiempo: el dia que alguien cargue diez mil filas,
- * la pantalla intenta traerlas todas.
- */
-const TOPE = 500
-
-/**
- * Roles disponibles, con los permisos que otorga cada uno.
+ * Roles disponibles, con los permisos que otorga cada uno. El administrador de
+ * un local recibe solo los que puede asignar.
  *
  * Ya no existe `POST /api/roles`. Crear un rol desde la API no servia de
  * nada: los permisos no viven en la tabla `Role` sino en el catalogo del
@@ -31,12 +24,8 @@ export const GET = handler(
     permission: 'users.view',
     audit: 'GET /api/roles',
   },
-  async () => {
-    const roles = await prisma.role.findMany({
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' },
-      take: TOPE,
-    })
+  async ({ session }) => {
+    const roles = await listarRolesAsignables(session)
 
     return roles.map((rol) => ({
       ...rol,

@@ -6,6 +6,7 @@
  * El manifiesto (por ejemplo docs/manual-house/tickets2/compra-tickets2.json):
  *
  *   { "marca": "compra-tickets2-house-2026-10",
+ *     "motivo": "Carga Tickets 2",
  *     "productos": [ { "nombre": "Nueces", "cantidad": 5, "codigo": null,
  *                      "accion": "crear", "origen": "hoja 2 fila 3" } ] }
  *
@@ -71,6 +72,7 @@ async function main(): Promise<boolean> {
 
   const manifiesto = JSON.parse(readFileSync(archivo, 'utf8')) as {
     marca?: string
+    motivo?: string
     productos?: LineaDeCompra[]
   }
   if (
@@ -85,6 +87,7 @@ async function main(): Promise<boolean> {
     sucursal,
     autor,
     marca: manifiesto.marca,
+    ...(manifiesto.motivo ? { motivo: manifiesto.motivo } : {}),
     lineas: manifiesto.productos,
     aplicar,
   })

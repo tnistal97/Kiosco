@@ -69,6 +69,7 @@ export type ErrorCode =
    */
   | 'PRODUCT_ALREADY_EXISTS'
   | 'DUPLICATE_USERNAME'
+  | 'LAST_ADMIN'
   | 'INSUFFICIENT_CASH'
   | 'CASH_REGISTER_MISMATCH'
   // Turnos de caja. Ver docs/CASH_SHIFT_MODEL.md.

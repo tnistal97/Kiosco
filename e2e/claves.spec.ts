@@ -63,18 +63,18 @@ test('el administrador resetea, el empleado entra con la temporal y tiene que ca
   )
   expect(estado).toBe(201)
 
-  // 1. El administrador resetea desde Usuarios. La temporal se ve una vez.
+  // 1. El administrador restablece desde Usuarios, con una temporal que elige.
   await page.goto('/usuarios')
-  await page.getByRole('button', { name: `Acciones de ${nombre}` }).click()
-  await page.getByRole('menuitem', { name: 'Resetear contraseña' }).click()
+  await page
+    .getByRole('row', { name: new RegExp(nombre) })
+    .getByRole('button', { name: 'Restablecer contraseña' })
+    .click()
 
+  const temporal = 'temporal1'
   const dialogo = page.getByRole('dialog')
-  await expect(dialogo).toContainText('se cierran en el acto las sesiones abiertas')
-  await dialogo.getByRole('button', { name: 'Resetear' }).click()
-
-  const temporal = ((await dialogo.getByTestId('clave-temporal').textContent()) ?? '').trim()
-  expect(temporal).toMatch(/^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/)
-  await dialogo.getByRole('button', { name: 'Listo' }).click()
+  await dialogo.getByRole('textbox', { name: 'Nueva contraseña temporal' }).fill(temporal)
+  await dialogo.getByRole('textbox', { name: 'Repetir contraseña' }).fill(temporal)
+  await dialogo.getByRole('button', { name: 'Restablecer' }).click()
   await expect(dialogo).toBeHidden()
   await salir(page)
 
@@ -82,7 +82,7 @@ test('el administrador resetea, el empleado entra con la temporal y tiene que ca
   await entrarCon(page, usuario, INICIAL)
   await rechazado(page)
   await entrarCon(page, usuario, temporal)
-  const obligatorio = page.getByRole('heading', { name: 'Elegí tu contraseña' })
+  const obligatorio = page.getByRole('heading', { name: 'Cambiá tu contraseña' })
   await expect(obligatorio).toBeVisible()
   await expect(page.getByRole('button', { name: /cuenta de/i })).toHaveCount(0)
 
@@ -92,10 +92,9 @@ test('el administrador resetea, el empleado entra con la temporal y tiene que ca
   await expect(page.locator('[data-barcode-input]')).toHaveCount(0)
 
   // 3. La cambia por una propia ahi mismo, y entra.
-  await page.getByRole('textbox', { name: 'Contraseña temporal' }).fill(temporal)
-  await page.getByRole('textbox', { name: 'Contraseña nueva', exact: true }).fill(PROPIA)
-  await page.getByRole('textbox', { name: 'Repetí la contraseña nueva' }).fill(PROPIA)
-  await page.getByRole('button', { name: 'Guardar y entrar' }).click()
+  await page.getByRole('textbox', { name: 'Nueva contraseña' }).fill(PROPIA)
+  await page.getByRole('textbox', { name: 'Repetir contraseña' }).fill(PROPIA)
+  await page.getByRole('button', { name: 'Guardar contraseña' }).click()
   await adentro(page)
 
   await page.reload()

@@ -39,9 +39,9 @@ export function generarClaveTemporal(grupos = 3): string {
  *
  * Resetear la clave de alguien es poder entrar como esa persona. Si esa
  * persona puede hacer cosas que quien resetea no puede, el reseteo es una
- * escalada de privilegios con un paso de mas. Hoy solo `duenio` y `admin`
- * tienen `users.manage`, y los dos tienen todos los permisos, asi que la regla
- * no corta a nadie; esta para el dia en que un rol intermedio lo reciba.
+ * escalada de privilegios con un paso de mas. `admin_local` tiene
+ * `users.manage` sin tener todos los permisos: esta regla es la segunda barrera
+ * despues de su alcance (`rolesDelAlcance`), que ya deja afuera a esos usuarios.
  */
 export function permisosQueFaltan(
   deQuienActua: ReadonlySet<Permission>,

@@ -1,27 +1,21 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Alert, Button, Dialog, Field, Input, RadioGroup, aviso } from '@/components/ui'
-import { apiRequest, esObjeto, mensajeDeError } from '@/lib/api-client'
+import { Alert, Button, Dialog, Field, Input, aviso } from '@/components/ui'
+import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import type { UsuarioDTO } from '@/modules/users/dto'
-import { PASSWORD_MIN } from '@/modules/users/schemas'
-
-type Modo = 'generar' | 'escribir'
-
-/** La respuesta del reseteo. La clave solo viene si la genero el servidor. */
-function parseReseteo(raw: unknown): { claveTemporal: string | null } {
-  const clave = esObjeto(raw) ? raw.claveTemporal : undefined
-  return { claveTemporal: typeof clave === 'string' ? clave : null }
-}
+import { CLAVE_TEMPORAL_MIN } from '@/modules/users/schemas'
 
 /**
- * Reseteo de la contrasena de un empleado.
+ * Restablecer la contrasena de un empleado.
  *
- * Dos pasos en el mismo dialogo: confirmar, y despues mostrar la clave
- * temporal UNA vez. Al cerrarse, la clave se borra del estado: no queda en
- * ningun lado de la pantalla.
+ * El administrador escribe una temporal sencilla y se la dice. La API puede
+ * generarla, pero esa clave hay que anotarla y dictarla: escribirla uno es lo
+ * mas simple para quien esta atendiendo el local.
  *
- * El reseteo cierra en el acto las sesiones abiertas de esa persona.
+ * Restablecer cierra en el acto las sesiones abiertas de esa persona, y al
+ * entrar tiene que elegir una nueva. Al cerrar el dialogo, lo escrito se borra
+ * del estado.
  */
 export function ResetearClave({
   usuario,
@@ -31,168 +25,109 @@ export function ResetearClave({
   onCerrar: () => void
 }) {
   const abierto = usuario !== null
-  const [modo, setModo] = useState<Modo>('generar')
   const [clave, setClave] = useState('')
+  const [repetida, setRepetida] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [hecho, setHecho] = useState(false)
-  const [temporal, setTemporal] = useState<string | null>(null)
 
   useEffect(() => {
     if (!abierto) return
-    setModo('generar')
     setClave('')
+    setRepetida('')
     setEnviando(false)
     setError(null)
-    setHecho(false)
-    setTemporal(null)
   }, [abierto, usuario?.id])
 
-  function cerrar() {
-    // La clave no sobrevive al dialogo.
-    setTemporal(null)
-    setClave('')
-    onCerrar()
-  }
-
-  const valido = modo === 'generar' || clave.length >= PASSWORD_MIN
+  const noCoincide = repetida.length > 0 && clave !== repetida
+  const valido = clave.length >= CLAVE_TEMPORAL_MIN && clave === repetida
 
   async function confirmar() {
     if (!usuario || enviando || !valido) return
     setEnviando(true)
     setError(null)
     try {
-      const r = await apiRequest(`/api/users/${usuario.id}/password`, {
+      await apiRequest(`/api/users/${String(usuario.id)}/password`, {
         method: 'POST',
-        body: modo === 'escribir' ? { claveNueva: clave } : {},
-        parse: parseReseteo,
+        body: { claveNueva: clave, claveConfirmacion: repetida },
+        parse: () => null,
       })
-      setTemporal(r.claveTemporal)
-      setClave('')
-      setHecho(true)
-      aviso.ok('Contraseña reseteada. Sus sesiones abiertas se cerraron.')
+      aviso.ok('Contraseña restablecida. El usuario deberá elegir una nueva al ingresar.')
+      onCerrar()
     } catch (err) {
-      setError(mensajeDeError(err, 'No se pudo resetear la contraseña.'))
-    } finally {
+      setError(mensajeDeError(err, 'No se pudo restablecer la contraseña.'))
       setEnviando(false)
-    }
-  }
-
-  async function copiar(texto: string) {
-    try {
-      await navigator.clipboard.writeText(texto)
-      aviso.ok('Contraseña copiada.')
-    } catch {
-      aviso.atencion('El navegador no permitió copiar. Anotala a mano.')
     }
   }
 
   return (
     <Dialog
       open={abierto}
-      onClose={cerrar}
-      title={usuario ? `Resetear la contraseña de ${usuario.name}` : 'Resetear contraseña'}
+      onClose={onCerrar}
+      title="Contraseña temporal"
       size="md"
       dismissible={!enviando}
       footer={
-        hecho ? (
-          <Button variant="primary" onClick={cerrar}>
-            Listo
+        <>
+          <Button variant="secondary" onClick={onCerrar} disabled={enviando}>
+            Cancelar
           </Button>
-        ) : (
-          <>
-            <Button variant="secondary" onClick={cerrar} disabled={enviando}>
-              Cancelar
-            </Button>
-            <Button
-              variant="danger"
-              loading={enviando}
-              disabled={!valido}
-              onClick={() => void confirmar()}
-            >
-              Resetear
-            </Button>
-          </>
-        )
+          <Button
+            variant="primary"
+            loading={enviando}
+            disabled={!valido}
+            onClick={() => void confirmar()}
+          >
+            Restablecer
+          </Button>
+        </>
       }
     >
-      {hecho ? (
-        <div className="flex flex-col gap-4">
-          {temporal ? (
-            <>
-              <p className="text-sm text-ink-muted">
-                Contraseña temporal de <strong className="text-ink">@{usuario?.username}</strong>:
-              </p>
-              <div className="flex items-center gap-2">
-                <code
-                  data-testid="clave-temporal"
-                  className="flex-1 rounded-md border border-line bg-sunken px-3 py-2 text-center font-mono text-lg tracking-wide text-ink select-all"
-                >
-                  {temporal}
-                </code>
-                <Button variant="secondary" onClick={() => void copiar(temporal)}>
-                  Copiar
-                </Button>
-              </div>
-              <Alert tone="warning" title="No se vuelve a mostrar">
-                Anotala o copiala ahora. Dásela en persona y pedile que la cambie en Configuración
-                apenas entre.
-              </Alert>
-            </>
-          ) : (
-            <Alert tone="success" title="Contraseña cambiada">
-              Dásela en persona y pedile que la cambie en Configuración apenas entre.
-            </Alert>
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {error && (
-            <Alert tone="danger" title="No se reseteó">
-              {error}
-            </Alert>
-          )}
+      <div className="flex flex-col gap-4">
+        {error && (
+          <Alert tone="danger" title="No se restableció">
+            {error}
+          </Alert>
+        )}
 
-          <p className="text-sm text-ink-muted">
-            La contraseña actual deja de funcionar y se cierran en el acto las sesiones abiertas de{' '}
-            <strong className="text-ink">{usuario?.name}</strong>. Queda registrado en la bitácora.
-          </p>
+        <p className="text-sm text-ink-muted">
+          Elegí una contraseña para <strong className="text-ink">{usuario?.name}</strong> y
+          decísela. La va a usar una sola vez: al entrar elige una nueva.
+        </p>
 
-          <RadioGroup<Modo>
-            legend="Nueva contraseña"
-            name="modo-reseteo"
-            value={modo}
-            onChange={setModo}
-            options={[
-              {
-                value: 'generar',
-                label: 'Generar una temporal',
-                description: 'La crea el sistema y se muestra una sola vez.',
-              },
-              {
-                value: 'escribir',
-                label: 'Escribirla yo',
-                description: `Al menos ${PASSWORD_MIN} caracteres.`,
-              },
-            ]}
+        <Field
+          label="Nueva contraseña temporal"
+          required
+          hint={`Al menos ${String(CLAVE_TEMPORAL_MIN)} caracteres.`}
+        >
+          <Input
+            type="password"
+            name="claveNueva"
+            autoComplete="new-password"
+            value={clave}
+            disabled={enviando}
+            onChange={(e) => {
+              setClave(e.target.value)
+            }}
           />
+        </Field>
 
-          {modo === 'escribir' && (
-            <Field label="Contraseña nueva" required hint={`Al menos ${PASSWORD_MIN} caracteres.`}>
-              <Input
-                type="password"
-                name="claveNueva"
-                autoComplete="new-password"
-                value={clave}
-                disabled={enviando}
-                onChange={(e) => {
-                  setClave(e.target.value)
-                }}
-              />
-            </Field>
-          )}
-        </div>
-      )}
+        <Field
+          label="Repetir contraseña"
+          required
+          error={noCoincide ? 'No coincide con la anterior.' : null}
+        >
+          <Input
+            type="password"
+            name="claveConfirmacion"
+            autoComplete="new-password"
+            value={repetida}
+            disabled={enviando}
+            onChange={(e) => {
+              setRepetida(e.target.value)
+            }}
+          />
+        </Field>
+      </div>
     </Dialog>
   )
 }

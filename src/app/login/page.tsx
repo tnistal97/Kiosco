@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Alert, Button, Field, Input, cn } from '@/components/ui'
 import { ApiError, apiRequest, mensajeDeError } from '@/lib/api-client'
+import { normalizeUsername } from '@/modules/users/username'
 import { useCartStore } from '@/store/cart'
 import { useSession } from '@/components/shell/SessionProvider'
 
@@ -123,7 +124,7 @@ function Formulario() {
     try {
       await apiRequest('/api/auth/login', {
         method: 'POST',
-        body: { username: usuario.trim(), password: clave },
+        body: { username: normalizeUsername(usuario), password: clave },
         parse: () => null,
       })
       // `refresh` para que el armazon vuelva a pedir la sesion al servidor.

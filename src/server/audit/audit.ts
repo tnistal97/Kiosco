@@ -37,6 +37,11 @@ export type AuditAction =
   // se busca cuando alguien dice "yo no cambie mi clave".
   | 'password_change'
   | 'password_reset'
+  // Personal: el cambio de rol y la baja son los hechos que se buscan cuando
+  // alguien pregunta quien le dio acceso a quien.
+  | 'activate'
+  | 'deactivate'
+  | 'role_change'
   // Una importacion de productos: la entrada que resume el archivo. Cada
   // producto deja ademas su propio 'create' o 'update'.
   | 'import'

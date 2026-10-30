@@ -165,12 +165,12 @@ describe('Costo en la ficha del producto', () => {
 describe('Navegacion filtrada por permiso', () => {
   it('el administrador ve las tareas del dia y, separado, lo de vez en cuando', () => {
     // V5: cinco tareas arriba --Vender, Caja, Productos, Stock, Inventario--
-    // y abajo Clientes, Reportes y Configuracion. Sin grupos con titulo.
+    // y abajo Clientes, Reportes, Usuarios y Configuracion. Sin grupos con titulo.
     const grupos = navegacionPara(new Set(SESION_ADMIN.permissions))
     expect(grupos.map((g) => g.title)).toEqual([undefined, undefined])
     expect(grupos.map((g) => g.items.map((i) => i.label))).toEqual([
       ['Inicio', 'Vender', 'Caja', 'Productos', 'Stock', 'Inventario'],
-      ['Clientes', 'Reportes', 'Configuración'],
+      ['Clientes', 'Reportes', 'Usuarios', 'Configuración'],
     ])
   })
 

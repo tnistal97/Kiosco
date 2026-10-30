@@ -177,7 +177,10 @@ export function MatrizPermisos({ roles }: { roles: RolDTO[] }) {
         })}
       </div>
 
-      <TableWrap className="hidden rounded-none border-x-0 border-b-0 lg:block">
+      <TableWrap
+        etiqueta="Matriz de permisos por rol"
+        className="hidden rounded-none border-x-0 border-b-0 lg:block"
+      >
         <Table caption="Matriz de permisos por rol">
           <THead>
             <TR>

@@ -6,8 +6,7 @@
  * El servidor es el que decide --eso lo prueba
  * `tests/integration/users-password.test.ts`--. Aca se prueba lo que ve y
  * manda la interfaz: que no se pueda mandar un formulario que el servidor va
- * a rechazar, que la clave temporal se muestre una vez y se olvide al cerrar,
- * y que Configuracion no diga cosas falsas.
+ * a rechazar, y que Configuracion no diga cosas falsas.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -16,6 +15,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { SessionProvider } from '@/components/shell/SessionProvider'
 import { CambiarMiClave } from '@/components/usuarios/CambiarMiClave'
+import { CambioDeClaveObligatorio } from '@/components/usuarios/CambioDeClaveObligatorio'
 import { ResetearClave } from '@/components/usuarios/ResetearClave'
 import ConfiguracionPage from '@/app/configuracion/page'
 import type { UsuarioDTO } from '@/modules/users/dto'
@@ -27,9 +27,15 @@ vi.mock('@/lib/api-client', async () => {
   return { ...real, apiRequest: peticion }
 })
 
+const navegar = vi.hoisted(() => vi.fn())
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: navegar, refresh: vi.fn() }),
+}))
+
 beforeEach(() => {
   peticion.mockReset()
   peticion.mockResolvedValue(null)
+  navegar.mockReset()
 })
 
 const LUCIA: UsuarioDTO = {
@@ -106,55 +112,106 @@ describe('Cambiar la contrasena propia', () => {
 })
 
 describe('Resetear la contrasena de un empleado', () => {
-  it('por omision genera una temporal, la muestra una vez y la olvida al cerrar', async () => {
-    peticion.mockResolvedValueOnce({ claveTemporal: 'k7mq-4tzp-w9ha' })
+  it('pide la temporal dos veces, con el largo minimo, y la manda', async () => {
+    peticion.mockResolvedValueOnce(null)
     const u = userEvent.setup()
     const onCerrar = vi.fn()
-    const { rerender } = render(<ResetearClave usuario={LUCIA} onCerrar={onCerrar} />)
-
-    await screen.findByRole('dialog')
-    expect(screen.getByText(/se cierran en el acto las sesiones abiertas/)).toBeInTheDocument()
-
-    await u.click(screen.getByRole('button', { name: 'Resetear' }))
-
-    expect(await screen.findByTestId('clave-temporal')).toHaveTextContent('k7mq-4tzp-w9ha')
-    expect(screen.getByText('No se vuelve a mostrar')).toBeInTheDocument()
-
-    const [ruta, opciones] = peticion.mock.calls[0] as [string, { body: unknown }]
-    expect(ruta).toBe('/api/users/7/password')
-    expect(opciones.body).toEqual({})
-
-    await u.click(screen.getByRole('button', { name: 'Listo' }))
-    expect(onCerrar).toHaveBeenCalled()
-
-    // Si el dialogo se vuelve a abrir, la clave anterior ya no esta.
-    rerender(<ResetearClave usuario={null} onCerrar={onCerrar} />)
-    rerender(<ResetearClave usuario={LUCIA} onCerrar={onCerrar} />)
-    await screen.findByRole('dialog')
-    expect(screen.queryByText('k7mq-4tzp-w9ha')).not.toBeInTheDocument()
-  })
-
-  it('escribirla a mano exige el largo minimo y la manda', async () => {
-    // Lo que devuelve `parseReseteo` cuando el servidor no genero ninguna.
-    peticion.mockResolvedValueOnce({ claveTemporal: null })
-    const u = userEvent.setup()
-    render(<ResetearClave usuario={LUCIA} onCerrar={() => undefined} />)
+    render(<ResetearClave usuario={LUCIA} onCerrar={onCerrar} />)
     await screen.findByRole('dialog')
 
-    await u.click(screen.getByLabelText(/Escribirla yo/))
-    const resetear = screen.getByRole('button', { name: 'Resetear' })
-    expect(resetear).toBeDisabled()
+    const restablecer = screen.getByRole('button', { name: 'Restablecer' })
+    expect(restablecer).toBeDisabled()
 
-    await u.type(screen.getByLabelText(/^Contraseña nueva/), 'otra-clave-99')
-    expect(resetear).toBeEnabled()
-    await u.click(resetear)
+    await u.type(screen.getByLabelText(/^Nueva contraseña temporal/), 'corta')
+    await u.type(screen.getByLabelText(/^Repetir contraseña/), 'corta')
+    expect(restablecer).toBeDisabled()
+
+    await u.clear(screen.getByLabelText(/^Nueva contraseña temporal/))
+    await u.clear(screen.getByLabelText(/^Repetir contraseña/))
+    await u.type(screen.getByLabelText(/^Nueva contraseña temporal/), 'temporal1')
+    await u.type(screen.getByLabelText(/^Repetir contraseña/), 'temporal2')
+    expect(restablecer).toBeDisabled()
+    expect(screen.getByText('No coincide con la anterior.')).toBeInTheDocument()
+
+    await u.clear(screen.getByLabelText(/^Repetir contraseña/))
+    await u.type(screen.getByLabelText(/^Repetir contraseña/), 'temporal1')
+    expect(restablecer).toBeEnabled()
+    await u.click(restablecer)
 
     await waitFor(() => {
-      expect(peticion).toHaveBeenCalledTimes(1)
+      expect(onCerrar).toHaveBeenCalled()
     })
-    const [, opciones] = peticion.mock.calls[0] as [string, { body: unknown }]
-    expect(opciones.body).toEqual({ claveNueva: 'otra-clave-99' })
-    expect(await screen.findByText('Contraseña cambiada')).toBeInTheDocument()
+    const [ruta, opciones] = peticion.mock.calls[0] as [string, { body: unknown }]
+    expect(ruta).toBe('/api/users/7/password')
+    expect(opciones.body).toEqual({ claveNueva: 'temporal1', claveConfirmacion: 'temporal1' })
+  })
+
+  it('si el servidor rechaza, lo muestra y no cierra', async () => {
+    peticion.mockRejectedValueOnce(new Error('No se pudo'))
+    const u = userEvent.setup()
+    const onCerrar = vi.fn()
+    render(<ResetearClave usuario={LUCIA} onCerrar={onCerrar} />)
+    await screen.findByRole('dialog')
+
+    await u.type(screen.getByLabelText(/^Nueva contraseña temporal/), 'temporal1')
+    await u.type(screen.getByLabelText(/^Repetir contraseña/), 'temporal1')
+    await u.click(screen.getByRole('button', { name: 'Restablecer' }))
+
+    expect(await screen.findByText('No se restableció')).toBeInTheDocument()
+    expect(onCerrar).not.toHaveBeenCalled()
+  })
+})
+
+describe('Cambio obligatorio de la contrasena temporal', () => {
+  function dibujar() {
+    render(
+      <SessionProvider session={{ ...SESION_ADMIN, debeCambiarClave: true }} comercio="House">
+        <CambioDeClaveObligatorio />
+      </SessionProvider>,
+    )
+    return userEvent.setup()
+  }
+
+  it('son dos campos y un boton: no pide la temporal otra vez', () => {
+    dibujar()
+    expect(screen.getByRole('heading', { name: 'Cambiá tu contraseña' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Nueva contraseña/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Repetir contraseña/)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/temporal/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Guardar contraseña' })).toBeDisabled()
+  })
+
+  it('no se habilita con una corta ni si no coinciden, y avisa', async () => {
+    const u = dibujar()
+    const guardar = screen.getByRole('button', { name: 'Guardar contraseña' })
+
+    await u.type(screen.getByLabelText(/^Nueva contraseña/), 'corta')
+    await u.type(screen.getByLabelText(/^Repetir contraseña/), 'corta')
+    expect(guardar).toBeDisabled()
+
+    await u.clear(screen.getByLabelText(/^Nueva contraseña/))
+    await u.clear(screen.getByLabelText(/^Repetir contraseña/))
+    await u.type(screen.getByLabelText(/^Nueva contraseña/), 'mi-clave-propia')
+    await u.type(screen.getByLabelText(/^Repetir contraseña/), 'mi-clave-distinta')
+    expect(guardar).toBeDisabled()
+    expect(screen.getByText('No coincide con la anterior.')).toBeInTheDocument()
+  })
+
+  it('al guardar manda las dos y entra al sistema', async () => {
+    const u = dibujar()
+    await u.type(screen.getByLabelText(/^Nueva contraseña/), 'mi-clave-propia')
+    await u.type(screen.getByLabelText(/^Repetir contraseña/), 'mi-clave-propia')
+    await u.click(screen.getByRole('button', { name: 'Guardar contraseña' }))
+
+    await waitFor(() => {
+      expect(navegar).toHaveBeenCalledWith('/')
+    })
+    const [ruta, opciones] = peticion.mock.calls[0] as [string, { body: unknown }]
+    expect(ruta).toBe('/api/auth/password/temporal')
+    expect(opciones.body).toEqual({
+      claveNueva: 'mi-clave-propia',
+      claveConfirmacion: 'mi-clave-propia',
+    })
   })
 })
 

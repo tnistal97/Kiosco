@@ -42,6 +42,8 @@ export interface OpcionesDeCompra {
   autor: number
   /** Identifica la compra en la bitacora: la segunda vez no se aplica. */
   marca: string
+  /** Motivo de los movimientos de stock. Por omision, "Compra <marca>". */
+  motivo?: string
   lineas: readonly LineaDeCompra[]
   /** false: hace todo, comprueba y deshace. */
   aplicar: boolean
@@ -114,7 +116,8 @@ export async function incorporarCompra(
   opciones: OpcionesDeCompra,
 ): Promise<ResultadoDeCompra> {
   const { sucursal, marca } = opciones
-  const motivo = (linea: LineaDeCompra) => `Compra ${marca} · ${linea.origen}`
+  const motivo = (linea: LineaDeCompra) =>
+    `${opciones.motivo ?? `Compra ${marca}`} · ${linea.origen}`
   try {
     return await db.$transaction(
       async (tx) => {

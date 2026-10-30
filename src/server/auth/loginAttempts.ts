@@ -11,6 +11,8 @@
  * moverlo a la base o a Redis. Queda anotado en docs/SECURITY_AUDIT.md.
  */
 
+import { normalizeUsername } from '@/modules/users/username'
+
 const MAX_INTENTOS = 8
 const VENTANA_MS = 15 * 60 * 1000 // 15 minutos
 const BLOQUEO_MS = 15 * 60 * 1000
@@ -29,7 +31,7 @@ const registros = new Map<string, Registro>()
  * usuario permitiria bloquear al encargado a proposito.
  */
 function clave(username: string, ip: string): string {
-  return `${username.toLowerCase()}|${ip}`
+  return `${normalizeUsername(username)}|${ip}`
 }
 
 function limpiarVencidos(ahora: number): void {

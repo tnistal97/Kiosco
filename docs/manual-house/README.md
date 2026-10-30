@@ -16,6 +16,7 @@ está escrito para quien atiende el mostrador.
 | `imagenes-house.md`               | Las fotos de los productos: cuáles se encontraron, cuáles faltan.            |
 | `imagenes-house.json`             | El manifiesto de fotos que carga `scripts/cargar-imagenes.ts`.               |
 | `auditoria-stock-house.md`        | Los tickets contra las listas y el stock, y la segunda tanda (Tickets 2).    |
+| `tickets2/README.md`              | Tickets 2 contra el catálogo actual: qué se leyó, qué se carga y por qué.    |
 | `tickets2/compra-tickets2.json`   | La segunda tanda, que carga `scripts/incorporar-compra.ts`.                  |
 | `tickets2/imagenes-tickets2.json` | Las fotos de los productos de la segunda tanda, revisadas a ojo.             |
 | `correcciones-tickets1.json`      | Lo que corrige `scripts/corregir-tickets1.ts`: bultos, códigos y nombres.    |

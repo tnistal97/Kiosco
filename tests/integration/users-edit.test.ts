@@ -62,8 +62,13 @@ describe('Quien puede modificar', () => {
   })
 })
 
-describe('Nadie se edita a si mismo', () => {
-  it('el administrador no puede cambiarse el rol', async () => {
+describe('El propio usuario', () => {
+  it('el ultimo administrador no puede cambiarse el rol', async () => {
+    // Los demas roles con `users.manage` de la fixture quedan desactivados.
+    await prisma.user.updateMany({
+      where: { id: { not: fx.admin.id }, role: { name: { in: ['duenio', 'admin_local'] } } },
+      data: { isActive: false },
+    })
     const rolCajero = await prisma.role.findUniqueOrThrow({ where: { name: 'cajero' } })
 
     const res = await editar(fx.admin.id, await sessionCookie(fx.admin), { roleId: rolCajero.id })

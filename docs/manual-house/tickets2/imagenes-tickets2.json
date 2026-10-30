@@ -80,7 +80,7 @@
       "revision": "DUDOSA: La única Brava con arándanos es \"chocolate y arándanos 45 g\"; el presupuesto dice \"BARRA BRAVA ARANDANOS\": confirmar marca y sabor."
     },
     {
-      "nombre": "Barrita Entronuts",
+      "nombre": "Barrita Entrenuts",
       "codigo": null,
       "estado": "dudosa",
       "coincidencia": "nombre",
@@ -91,7 +91,7 @@
       "marcaEnTienda": "ENTRENUTS",
       "codigoEnTienda": "7798446310168",
       "nota": "Ninguna tienda tiene un producto parecido.",
-      "revision": "DUDOSA: El presupuesto dice ENTRONUTS; Entrenuts tiene barras proteicas de tres sabores (naranja-chocolate, lemon pie, frutilla): no se sabe cuál."
+      "revision": "DUDOSA: El presupuesto dice ENTRONUTS, y en esas hojas la e manuscrita se lee como o (ALMONDRAS, PROMOZCLA); Entrenuts tiene barras proteicas de tres sabores (naranja-chocolate, lemon pie, frutilla): no se sabe cuál."
     },
     {
       "nombre": "Barrita proteica Wik",
@@ -575,13 +575,13 @@
       "estado": "encontrada",
       "coincidencia": "nombre",
       "tienda": "Carrefour",
-      "paginaUrl": "https://www.carrefour.com.ar/premrezcla-universal-dicomere-sin-gluten-450-grs-764452/p",
-      "imagenUrl": "https://carrefourar.vteximg.com.br/arquivos/ids/892784/7793323024862_02.jpg?v=639173085246970000",
-      "nombreEnTienda": "Premezcla universal Dicomere sin gluten 450 grs",
-      "marcaEnTienda": "Dicomere",
-      "codigoEnTienda": "7793323024862",
-      "nota": "la marca \"Dicomere\" no está en el nombre; faltan: delicel",
-      "revision": "APROBADA: el envase dice \"Premezcla Universal\" (panadería y repostería) DeliCel, 500 g (7798160700047); es la única universal de Delicel en las tiendas (las otras son de bizcochuelo, ñoquis y pan casero). El presupuesto no dice el peso."
+      "paginaUrl": "https://www.carrefour.com.ar/premezcla-para-panaderia-y-reposteria-delicel-500-g-sin-tacc/p",
+      "imagenUrl": "https://carrefourar.vteximg.com.br/arquivos/ids/180101/7798160700047_02.jpg?v=637468584069",
+      "nombreEnTienda": "Premezcla para panadería y repostería DeliCel 500 g. sin TACC",
+      "marcaEnTienda": "Delicel",
+      "codigoEnTienda": "7798160700047",
+      "nota": "Corregida a mano el 30/10: el manifiesto anterior apuntaba a una foto de Dicomere 450 g.",
+      "revision": "APROBADA: el envase de la foto dice DeliCel \"Premezcla Universal, panadería y repostería\", 500 g (7798160700047). Es la única universal de DeliCel en las tiendas (las otras son de bizcochuelo, ñoquis y pan casero). El presupuesto no dice el peso."
     },
     {
       "nombre": "Premezcla universal Natuzen 450 g",
@@ -595,7 +595,7 @@
       "marcaEnTienda": null,
       "codigoEnTienda": null,
       "nota": "la marca \"Dicomere\" no está en el nombre; faltan: natuzen",
-      "revision": "SIN_IMAGEN: la única \"Premezcla Natuzen 450 g\" de las tiendas es, en la foto, para bizcochuelo: no es la universal (el buscador había traído una Dicomere: otra marca)."
+      "revision": "SIN_IMAGEN: buscada de nuevo el 30/10. Natuzen tiene premezclas de 450 g para bizcochuelo, pizza y pan, ninguna universal: no se aprueba ninguna."
     },
     {
       "nombre": "Quinoa pop",

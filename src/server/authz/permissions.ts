@@ -440,6 +440,37 @@ const PERFIL_CAJA: readonly Permission[] = [
   'accounts.payment',
 ]
 
+/** Todo el mostrador de un local chico. Ver `operador`, mas abajo. */
+const PERFIL_OPERADOR: readonly Permission[] = [
+  'sales.create',
+  'sales.view',
+  'products.view',
+  'products.create',
+  'products.quickCreate',
+  'products.update',
+  'products.price.update',
+  'categories.manage',
+  'stock.view',
+  'stock.adjust',
+  'cash.view',
+  'cash.movement.create',
+  'cash.count.create',
+  'cash.shift.open',
+  'cash.shift.close',
+  'reports.sales.view',
+  'reports.cash.view',
+  'reports.inventory.view',
+  'clients.view',
+  'accounts.view',
+  'accounts.charge',
+  'accounts.payment',
+  'inventoryCounts.view',
+  'inventoryCounts.create',
+  'inventoryCounts.count',
+  'inventoryCounts.review',
+  'inventoryCounts.apply',
+]
+
 const ROLE_PRESETS: Record<string, readonly Permission[]> = {
   /**
    * Duenio del negocio. Hoy identico a `admin`.
@@ -833,34 +864,45 @@ const ROLE_PRESETS: Record<string, readonly Permission[]> = {
    * `accounts.adjust`, `accounts.overrideLimit`), usuarios, sucursales,
    * bitacora, compras, proveedores y lotes.
    */
-  operador: [
-    'sales.create',
-    'sales.view',
-    'products.view',
-    'products.create',
-    'products.quickCreate',
-    'products.update',
-    'products.price.update',
-    'categories.manage',
-    'stock.view',
-    'stock.adjust',
-    'cash.view',
+  operador: PERFIL_OPERADOR,
+
+  /**
+   * Administrador de UN local: el operador, ahora con gente a cargo.
+   *
+   * Lo que suma al operador, y por que:
+   *   - Usuarios (`users.view`, `users.manage`): da de alta y administra a los
+   *     empleados de SU sucursal. El alcance lo fija `rolesDelAlcance`: no ve
+   *     ni toca a nadie mas, y solo asigna los roles de `ROLES_DE_LOCAL`.
+   *   - Cerrar la caja de otro y autorizar una diferencia
+   *     (`cash.shift.close.other`, `cash.shift.authorize`): un empleado no
+   *     autoriza su propio faltante, y si en el local nadie puede, la caja
+   *     queda abierta hasta que venga el duenio.
+   *   - Anular ventas (`sales.cancel`): el empleado no puede, por lo mismo.
+   *
+   * NO es un `admin`: sin costos, sin sucursales, sin bitacora, sin compras ni
+   * proveedores, y sin nada que afecte a otro local.
+   */
+  admin_local: [
+    ...PERFIL_OPERADOR,
+    'sales.cancel',
+    'cash.shift.close.other',
+    'cash.shift.authorize',
+    'users.view',
+    'users.manage',
+  ],
+
+  /**
+   * Empleado de un local: atiende el mostrador.
+   *
+   * La caja del cajero mas ingresos y egresos: el pago al delivery sale del
+   * mismo cajon. Mira el catalogo y el stock sin cambiarlos, y cuenta en un
+   * inventario que abre y aplica el administrador.
+   */
+  empleado: [
+    ...PERFIL_CAJA,
     'cash.movement.create',
-    'cash.count.create',
-    'cash.shift.open',
-    'cash.shift.close',
-    'reports.sales.view',
-    'reports.cash.view',
-    'reports.inventory.view',
-    'clients.view',
-    'accounts.view',
-    'accounts.charge',
-    'accounts.payment',
     'inventoryCounts.view',
-    'inventoryCounts.create',
     'inventoryCounts.count',
-    'inventoryCounts.review',
-    'inventoryCounts.apply',
   ],
 }
 
@@ -878,4 +920,26 @@ export function permissionsForRole(roleName: string): ReadonlySet<Permission> {
 /** Roles reconocidos. Util para la pantalla de usuarios y para los tests. */
 export function knownRoles(): string[] {
   return Object.keys(ROLE_PRESETS)
+}
+
+/** Los roles del personal de un local: lo que asigna `admin_local`. */
+export const ROLES_DE_LOCAL: readonly string[] = ['empleado', 'admin_local']
+
+/**
+ * Hasta donde llega quien administra usuarios.
+ *
+ * Quien tiene todos los permisos no tiene limite (`null`), y quien solo mira
+ * tampoco: no puede cambiar nada. El administrador de un local llega hasta
+ * `ROLES_DE_LOCAL`: no ve las demas cuentas de la sucursal, no las toca y no
+ * puede crear a nadie con mas poder que el suyo. La sucursal la acota aparte
+ * cada consulta del servicio.
+ */
+export function rolesDelAlcance(permisos: ReadonlySet<Permission>): readonly string[] | null {
+  if (!permisos.has('users.manage')) return null
+  return PERMISSIONS.every((p) => permisos.has(p)) ? null : ROLES_DE_LOCAL
+}
+
+/** Roles que pueden administrar usuarios: un local no puede quedarse sin ninguno. */
+export function rolesAdministradores(): string[] {
+  return knownRoles().filter((r) => permissionsForRole(r).has('users.manage'))
 }

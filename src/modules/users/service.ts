@@ -9,10 +9,16 @@
  */
 
 import bcrypt from 'bcrypt'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { audit } from '@/server/audit/audit'
+import { audit, type DbClient } from '@/server/audit/audit'
 import { conflict, forbidden, invalid, notFound, rateLimited } from '@/server/http/errors'
-import { knownRoles } from '@/server/authz/permissions'
+import {
+  knownRoles,
+  permissionsForRole,
+  rolesAdministradores,
+  rolesDelAlcance,
+} from '@/server/authz/permissions'
 import type { Session } from '@/server/auth/session'
 import { estaBloqueado, registrarExito, registrarFallo } from '@/server/auth/loginAttempts'
 import { paginado, toSkipTake, type Paginated } from '@/server/http/pagination'
@@ -21,12 +27,16 @@ import type {
   CambiarMiClaveInput,
   CrearUsuarioInput,
   EditarUsuarioInput,
+  ElegirClaveInput,
   ListarUsuariosQuery,
   ResetearClaveInput,
 } from './schemas'
 
 /** Coste de bcrypt. 12 rondas: ~250 ms por hash en el hardware actual. */
 const BCRYPT_ROUNDS = 12
+
+/** Los roles son pocos por naturaleza; el tope es para no pedir sin limite. */
+const TOPE_DE_ROLES = 500
 
 /**
  * Campos que pueden salir del servidor.
@@ -57,11 +67,86 @@ export interface UsuarioPublico {
   branch: { id: number; name: string }
 }
 
+/** Una sola a la vez por sucursal: ver `exigirOtroAdministrador`. */
+const LLAVE_DE_ADMINISTRADORES = 7302
+
+/** Filtro de Prisma con el alcance de quien administra. */
+function alcanceDe(session: Session) {
+  const roles = rolesDelAlcance(session.permissions)
+  return roles === null ? {} : { role: { name: { in: [...roles] } } }
+}
+
+/** El rol pedido existe, tiene permisos definidos y quien actua puede asignarlo. */
+async function rolAsignable(
+  session: Session,
+  roleId: number,
+): Promise<{ id: number; name: string }> {
+  const rol = await prisma.role.findUnique({ where: { id: roleId } })
+  if (!rol) throw invalid('El rol indicado no existe')
+
+  // Un rol sin permisos definidos crearia un usuario que no puede hacer nada
+  // y nadie entenderia por que.
+  if (!knownRoles().includes(rol.name)) {
+    throw invalid(
+      `El rol "${rol.name}" no tiene permisos definidos. Roles validos: ${knownRoles().join(', ')}`,
+    )
+  }
+
+  const alcance = rolesDelAlcance(session.permissions)
+  if (alcance !== null && !alcance.includes(rol.name)) {
+    throw forbidden('No podés asignar ese rol.')
+  }
+  return rol
+}
+
+async function exigirNombreLibre(
+  cliente: DbClient,
+  username: string,
+  salvo: number | null = null,
+): Promise<void> {
+  const yaExiste = await cliente.user.findUnique({ where: { username } })
+  if (yaExiste && yaExiste.id !== salvo) {
+    throw conflict('Ya existe un usuario con ese nombre', { code: 'DUPLICATE_USERNAME' })
+  }
+}
+
+function administra(rol: string, activo: boolean): boolean {
+  return activo && permissionsForRole(rol).has('users.manage')
+}
+
+/**
+ * Un local no se queda sin administrador.
+ *
+ * Cuenta solo a quienes quien actua puede ver: para el administrador de un
+ * local, las cuentas generales de la sucursal no cuentan, porque no son su
+ * reemplazo en el mostrador. El bloqueo es para dos administradores que se
+ * quitan el rol a la vez: el segundo espera y ve lo que hizo el primero.
+ */
+async function exigirOtroAdministrador(
+  tx: Prisma.TransactionClient,
+  session: Session,
+  id: number,
+): Promise<void> {
+  const alcance = rolesDelAlcance(session.permissions)
+  const roles = rolesAdministradores().filter((r) => alcance === null || alcance.includes(r))
+  const otros = await tx.user.count({
+    where: {
+      branchId: session.branchId,
+      isActive: true,
+      id: { not: id },
+      role: { name: { in: roles } },
+    },
+  })
+  if (otros === 0) {
+    throw conflict('El local no puede quedarse sin administrador.', { code: 'LAST_ADMIN' })
+  }
+}
+
 /**
  * Personal de la sucursal, paginado.
  *
- * Un administrador ve el personal de SU sucursal. Ver el de todas sera una
- * funcion aparte cuando exista la pantalla.
+ * Un administrador ve el personal de SU sucursal, hasta donde llega su
+ * alcance. Ver el de todas sera una funcion aparte cuando exista la pantalla.
  */
 export async function listarUsuarios(
   session: Session,
@@ -69,6 +154,7 @@ export async function listarUsuarios(
 ): Promise<Paginated<UsuarioPublico>> {
   const where = {
     branchId: session.branchId,
+    ...alcanceDe(session),
     ...(query.estado === 'todos' ? {} : { isActive: query.estado === 'activos' }),
   }
 
@@ -85,6 +171,16 @@ export async function listarUsuarios(
   return paginado(usuarios, total, query)
 }
 
+/** Roles que quien administra puede asignar, los unicos que ve en el formulario. */
+export function listarRolesAsignables(session: Session) {
+  return prisma.role.findMany({
+    where: alcanceDe(session).role ?? {},
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+    take: TOPE_DE_ROLES,
+  })
+}
+
 /**
  * Alta de usuario.
  *
@@ -96,21 +192,8 @@ export async function crearUsuario(
   session: Session,
   input: CrearUsuarioInput,
 ): Promise<UsuarioPublico> {
-  const rol = await prisma.role.findUnique({ where: { id: input.roleId } })
-  if (!rol) throw invalid('El rol indicado no existe')
-
-  // Un rol sin permisos definidos crearia un usuario que no puede hacer nada
-  // y nadie entenderia por que.
-  if (!knownRoles().includes(rol.name)) {
-    throw invalid(
-      `El rol "${rol.name}" no tiene permisos definidos. Roles validos: ${knownRoles().join(', ')}`,
-    )
-  }
-
-  const yaExiste = await prisma.user.findUnique({ where: { username: input.username } })
-  if (yaExiste) {
-    throw conflict('Ya existe un usuario con ese nombre', { code: 'DUPLICATE_USERNAME' })
-  }
+  const rol = await rolAsignable(session, input.roleId)
+  await exigirNombreLibre(prisma, input.username)
 
   const hash = await bcrypt.hash(input.password, BCRYPT_ROUNDS)
 
@@ -153,52 +236,58 @@ export async function crearUsuario(
 /**
  * Modificacion de un usuario del personal.
  *
- * Tres barreras, y las tres importan:
+ * Las barreras, y por que importan:
  *
- *  1. Solo usuarios de la misma sucursal. Un administrador no toca el
- *     personal de otro local.
- *  2. Nadie se edita a si mismo por aca. Sin esto, el unico administrador
- *     podria darse de baja o bajarse el rol y dejar el sistema sin nadie que
- *     pueda administrarlo.
- *  3. Dar de baja incrementa `sessionVersion`, con lo que las sesiones
- *     abiertas de esa persona dejan de valer en el acto. Sin eso, quien tiene
- *     la pestania abierta sigue operando hasta que venza el token.
+ *  1. Solo usuarios de la misma sucursal y dentro del alcance de quien actua.
+ *     Un administrador no toca el personal de otro local, y el de un local no
+ *     toca las cuentas generales de la sucursal.
+ *  2. Nadie se desactiva a si mismo, y el local no se queda sin administrador
+ *     (`exigirOtroAdministrador`). El propio nombre y usuario si se corrigen.
+ *  3. Desactivar incrementa `sessionVersion`, con lo que las sesiones abiertas
+ *     de esa persona dejan de valer en el acto. Sin eso, quien tiene la
+ *     pestania abierta sigue operando hasta que venza el token.
+ *
+ * Cada hecho deja su propia entrada en la bitacora: el cambio de datos, el de
+ * rol y el de estado se buscan por separado.
  */
 export async function editarUsuario(
   session: Session,
   id: number,
   input: EditarUsuarioInput,
 ): Promise<UsuarioPublico> {
-  if (id === session.userId) {
-    throw conflict(
-      'No podes modificar tu propio usuario desde esta pantalla. Pediselo a otro administrador.',
-    )
+  if (id === session.userId && input.isActive === false) {
+    throw conflict('No podés desactivar tu propio usuario.')
   }
 
-  const antes = await prisma.user.findFirst({
-    where: { id, branchId: session.branchId },
-    select: { ...CAMPOS_PUBLICOS, sessionVersion: true },
-  })
-  if (!antes) throw notFound('Usuario no encontrado')
-
-  if (input.roleId !== undefined) {
-    const rol = await prisma.role.findUnique({ where: { id: input.roleId } })
-    if (!rol) throw invalid('El rol indicado no existe')
-    if (!knownRoles().includes(rol.name)) {
-      throw invalid(
-        `El rol "${rol.name}" no tiene permisos definidos. Roles validos: ${knownRoles().join(', ')}`,
-      )
-    }
-  }
-
-  // Dar de baja revoca; volver a habilitar no toca la version.
-  const revoca = input.isActive === false && antes.isActive
+  const rolNuevo = input.roleId === undefined ? null : await rolAsignable(session, input.roleId)
 
   return prisma.$transaction(async (tx) => {
+    // Primero el bloqueo y despues la lectura: lo que se lee ya incluye lo que
+    // hizo el administrador que iba adelante.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LLAVE_DE_ADMINISTRADORES}::int, ${session.branchId}::int)`
+
+    const antes = await tx.user.findFirst({
+      where: { id, branchId: session.branchId, ...alcanceDe(session) },
+      select: CAMPOS_PUBLICOS,
+    })
+    if (!antes) throw notFound('Usuario no encontrado')
+
+    if (input.username !== undefined) await exigirNombreLibre(tx, input.username, id)
+
+    const rolDespues = rolNuevo?.name ?? antes.role.name
+    const activoDespues = input.isActive ?? antes.isActive
+    if (administra(antes.role.name, antes.isActive) && !administra(rolDespues, activoDespues)) {
+      await exigirOtroAdministrador(tx, session, id)
+    }
+
+    // Desactivar revoca; volver a activar no toca la version.
+    const revoca = antes.isActive && !activoDespues
+
     const despues = await tx.user.update({
       where: { id },
       data: {
         ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.username !== undefined ? { username: input.username } : {}),
         ...(input.roleId !== undefined ? { roleId: input.roleId } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         ...(revoca ? { sessionVersion: { increment: 1 } } : {}),
@@ -206,27 +295,44 @@ export async function editarUsuario(
       select: CAMPOS_PUBLICOS,
     })
 
-    await audit(tx, {
+    const hecho = {
       userId: session.userId,
       branchId: session.branchId,
       table: 'User',
       recordId: id,
-      action: 'update',
-      // Ni hash ni sessionVersion: la bitacora guarda que cambio, no como
-      // esta hecha la sesion.
-      before: {
-        name: antes.name,
-        rol: antes.role.name,
-        isActive: antes.isActive,
-      },
-      after: {
-        name: despues.name,
-        rol: despues.role.name,
-        isActive: despues.isActive,
-        ...(revoca ? { sesionesRevocadas: true } : {}),
-      },
       origin: 'PUT /api/users/:id',
-    })
+    }
+
+    // Ni hash ni sessionVersion: la bitacora guarda que cambio, no como esta
+    // hecha la sesion.
+    if (antes.name !== despues.name || antes.username !== despues.username) {
+      await audit(tx, {
+        ...hecho,
+        action: 'update',
+        before: { name: antes.name, username: antes.username },
+        after: { name: despues.name, username: despues.username },
+      })
+    }
+    if (antes.role.name !== despues.role.name) {
+      await audit(tx, {
+        ...hecho,
+        action: 'role_change',
+        before: { usuario: despues.username, rol: antes.role.name },
+        after: { usuario: despues.username, rol: despues.role.name },
+      })
+    }
+    if (antes.isActive !== despues.isActive) {
+      await audit(tx, {
+        ...hecho,
+        action: despues.isActive ? 'activate' : 'deactivate',
+        before: { usuario: despues.username, isActive: antes.isActive },
+        after: {
+          usuario: despues.username,
+          isActive: despues.isActive,
+          ...(revoca ? { sesionesRevocadas: true } : {}),
+        },
+      })
+    }
 
     return despues
   })
@@ -305,6 +411,58 @@ export async function cambiarMiClave(
   return { sessionVersion: actualizado.sessionVersion }
 }
 
+/**
+ * Salir de una contrasena temporal: elegir la propia en la primera pantalla.
+ *
+ * No pide la actual, y no es un agujero: el reseteo incrementa `sessionVersion`
+ * y el alta no deja sesiones, asi que una sesion con `mustChangePassword` nacio
+ * necesariamente escribiendo la temporal en el login, hace un momento. Pedirla
+ * otra vez no protege nada y es un paso mas para alguien que recien empieza.
+ *
+ * Por eso mismo solo sirve con una temporal: el resto de las sesiones cambia la
+ * clave con `cambiarMiClave`, sabiendo la actual.
+ */
+export async function elegirClaveDefinitiva(
+  session: Session,
+  input: ElegirClaveInput,
+): Promise<{ sessionVersion: number }> {
+  if (!session.mustChangePassword) {
+    throw conflict('Tu contraseña se cambia desde Configuración, con la actual.')
+  }
+
+  const usuario = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { password: true },
+  })
+  if (!usuario) throw notFound('Usuario no encontrado')
+
+  if (await bcrypt.compare(input.claveNueva, usuario.password)) {
+    throw invalid('Elegí una contraseña distinta de la temporal.', { campo: 'claveNueva' })
+  }
+
+  const hash = await bcrypt.hash(input.claveNueva, BCRYPT_ROUNDS)
+
+  return prisma.$transaction(async (tx) => {
+    const u = await tx.user.update({
+      where: { id: session.userId },
+      data: { password: hash, sessionVersion: { increment: 1 }, mustChangePassword: false },
+      select: { sessionVersion: true },
+    })
+
+    await audit(tx, {
+      userId: session.userId,
+      branchId: session.branchId,
+      table: 'User',
+      recordId: session.userId,
+      action: 'password_change',
+      after: { dejoLaTemporal: true },
+      origin: 'POST /api/auth/password/temporal',
+    })
+
+    return u
+  })
+}
+
 /** Lo que devuelve el reseteo. La clave, solo si la genero el servidor. */
 export interface ClaveReseteada {
   /**
@@ -325,7 +483,8 @@ export interface ClaveReseteada {
  *  2. La propia no: esa se cambia sabiendo la actual (`cambiarMiClave`).
  *     Sin esto, una sesion robada con `users.manage` cambia la clave del
  *     duenio sin conocerla.
- *  3. Solo personal de la misma sucursal, igual que la edicion.
+ *  3. Solo personal de la misma sucursal y dentro del alcance, igual que la
+ *     edicion.
  *  4. Nadie resetea a alguien que puede hacer cosas que el no puede: seria
  *     entrar como esa persona y heredar sus permisos.
  *
@@ -342,7 +501,7 @@ export async function resetearClave(
   }
 
   const destino = await prisma.user.findFirst({
-    where: { id, branchId: session.branchId },
+    where: { id, branchId: session.branchId, ...alcanceDe(session) },
     select: { id: true, username: true, role: { select: { name: true } } },
   })
   if (!destino) throw notFound('Usuario no encontrado')

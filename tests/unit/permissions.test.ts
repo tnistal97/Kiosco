@@ -5,7 +5,13 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { PERMISSIONS, permissionsForRole, knownRoles } from '@/server/authz/permissions'
+import {
+  ROLES_DE_LOCAL,
+  rolesDelAlcance,
+  PERMISSIONS,
+  permissionsForRole,
+  knownRoles,
+} from '@/server/authz/permissions'
 
 describe('Resolucion de permisos por rol', () => {
   it('el administrador tiene todos los permisos', () => {
@@ -48,12 +54,66 @@ describe('Resolucion de permisos por rol', () => {
    */
   const ADMINISTRATIVOS = ['admin', 'duenio']
 
-  it('ningun rol operativo puede administrar usuarios', () => {
+  it('ningun rol operativo puede administrar usuarios, salvo el administrador del local', () => {
     for (const rol of knownRoles()) {
-      if (ADMINISTRATIVOS.includes(rol)) continue
+      if (ADMINISTRATIVOS.includes(rol) || rol === 'admin_local') continue
       expect(permissionsForRole(rol).has('users.manage'), `${rol} puede administrar usuarios`).toBe(
         false,
       )
+    }
+  })
+
+  it('el administrador del local tiene todo lo del operador y nada de la instalacion', () => {
+    const local = permissionsForRole('admin_local')
+    for (const p of permissionsForRole('operador')) expect(local.has(p), p).toBe(true)
+
+    for (const p of [
+      'branches.manage',
+      'branches.view',
+      'audit.view',
+      'products.cost.view',
+      'products.delete',
+      'reports.costs.view',
+    ] as const) {
+      expect(local.has(p), p).toBe(false)
+    }
+  })
+
+  it('el administrador del local llega hasta los roles de su local', () => {
+    const alcance = rolesDelAlcance(permissionsForRole('admin_local'))
+    expect(alcance).toEqual(ROLES_DE_LOCAL)
+    expect(rolesDelAlcance(permissionsForRole('admin'))).toBeNull()
+    expect(rolesDelAlcance(permissionsForRole('duenio'))).toBeNull()
+  })
+
+  it('el empleado no tiene un permiso que su administrador no tenga', () => {
+    const local = permissionsForRole('admin_local')
+    for (const p of permissionsForRole('empleado')) expect(local.has(p), p).toBe(true)
+  })
+
+  it('el empleado atiende, pero no administra ni corrige', () => {
+    const empleado = permissionsForRole('empleado')
+    for (const p of [
+      'sales.create',
+      'cash.shift.open',
+      'cash.shift.close',
+      'products.view',
+      'stock.view',
+      'inventoryCounts.count',
+    ] as const) {
+      expect(empleado.has(p), p).toBe(true)
+    }
+    for (const p of [
+      'users.view',
+      'users.manage',
+      'sales.cancel',
+      'products.update',
+      'products.price.update',
+      'stock.adjust',
+      'inventoryCounts.apply',
+      'cash.shift.authorize',
+    ] as const) {
+      expect(empleado.has(p), p).toBe(false)
     }
   })
 

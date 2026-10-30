@@ -31,7 +31,11 @@ interface Endpoint {
  * alcanza con la sesion y la clave actual. Exigir un permiso dejaria a un
  * cajero sin forma de cambiar la propia.
  */
-const SIN_PERMISO_A_PROPOSITO = new Set(['POST /api/auth/validate', 'POST /api/auth/password'])
+const SIN_PERMISO_A_PROPOSITO = new Set([
+  'POST /api/auth/validate',
+  'POST /api/auth/password',
+  'POST /api/auth/password/temporal',
+])
 
 function rutasDeApi(dir: string, acc: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {

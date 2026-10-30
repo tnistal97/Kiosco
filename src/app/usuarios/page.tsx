@@ -11,12 +11,9 @@ import {
   CardListItem,
   ConfirmationDialog,
   Dialog,
-  DropdownItem,
-  DropdownMenu,
   EmptyState,
   ErrorState,
   Field,
-  IconButton,
   Input,
   Pagination,
   Select,
@@ -36,35 +33,53 @@ import { rolLegible } from '@/components/shell/UserMenu'
 import { usePermiso, useSession } from '@/components/shell/SessionProvider'
 import { apiRequest, mensajeDeError } from '@/lib/api-client'
 import { parsePaginaUsuarios, parseRoles, type RolDTO, type UsuarioDTO } from '@/modules/users/dto'
-import { PASSWORD_MIN } from '@/modules/users/schemas'
+import { CLAVE_TEMPORAL_MIN } from '@/modules/users/schemas'
+import { normalizeUsername } from '@/modules/users/username'
 
 const POR_PAGINA = 25
 
-function fechaCorta(iso: string): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
-}
+/** El rol que se ofrece primero: es a quien se da de alta casi siempre. */
+const ROL_POR_DEFECTO = 'empleado'
 
-/** Todavia entra con la contrasena que le dieron: la va a tener que cambiar. */
-function ClaveTemporal() {
-  return (
-    <p className="mt-0.5 text-xs text-warning" data-clave-temporal>
-      Contraseña temporal: la cambia al entrar
-    </p>
+function EstadoDe({ usuario }: { usuario: UsuarioDTO }) {
+  return usuario.isActive ? (
+    <Badge tone="success">
+      <span aria-hidden="true">✓</span> Activo
+    </Badge>
+  ) : (
+    <Badge tone="warning">
+      <span aria-hidden="true">⊘</span> Desactivado
+    </Badge>
   )
 }
 
+function ContrasenaDe({ usuario }: { usuario: UsuarioDTO }) {
+  return usuario.mustChangePassword ? (
+    <span className="text-sm text-warning" data-clave-temporal>
+      Debe cambiar contraseña
+    </span>
+  ) : (
+    <span className="text-sm text-ink-muted">Al día</span>
+  )
+}
+
+/**
+ * Usuarios de un local.
+ *
+ * La usa quien administra el local, que no es una persona tecnica: una lista
+ * con lo que hace falta ver y los botones a la vista, sin menus escondidos. Las
+ * reglas (a quien ve, que roles asigna, que no se puede deshacer) estan en el
+ * servidor; aca solo se esconde lo que igual responderia que no.
+ */
 export default function UsuariosPage() {
   const { session } = useSession()
+  const puedeVer = usePermiso('users.view')
   const puedeAdministrar = usePermiso('users.manage')
+  // La matriz de permisos es para quien administra el sistema entero.
+  const verMatriz = usePermiso('branches.manage')
 
   const [usuarios, setUsuarios] = useState<UsuarioDTO[]>([])
   const [roles, setRoles] = useState<RolDTO[]>([])
-  const [estado, setEstado] = useState('todos')
   const [pagina, setPagina] = useState(1)
   const [total, setTotal] = useState(0)
   const [paginas, setPaginas] = useState(1)
@@ -77,14 +92,11 @@ export default function UsuariosPage() {
   const [reseteando, setReseteando] = useState<UsuarioDTO | null>(null)
 
   const cargar = useCallback(async () => {
+    if (!puedeVer) return
     setCargando(true)
     setError(null)
     try {
-      const params = new URLSearchParams({
-        page: String(pagina),
-        pageSize: String(POR_PAGINA),
-        estado,
-      })
+      const params = new URLSearchParams({ page: String(pagina), pageSize: String(POR_PAGINA) })
       const r = await apiRequest(`/api/users?${params.toString()}`, {
         parse: parsePaginaUsuarios,
       })
@@ -92,34 +104,35 @@ export default function UsuariosPage() {
       setTotal(r.pagination.total)
       setPaginas(r.pagination.totalPages)
     } catch (err) {
-      setError(mensajeDeError(err, 'No se pudo cargar el personal.'))
+      setError(mensajeDeError(err, 'No se pudo cargar la lista.'))
     } finally {
       setCargando(false)
     }
-  }, [pagina, estado])
+  }, [pagina, puedeVer])
 
   useEffect(() => {
     void cargar()
   }, [cargar])
 
   useEffect(() => {
+    if (!puedeVer) return
     apiRequest('/api/roles', { parse: parseRoles })
       .then(setRoles)
       .catch(() => {
         setRoles([])
       })
-  }, [])
+  }, [puedeVer])
 
   async function alternarEstado() {
     if (!cambiandoEstado) return
     const nuevo = !cambiandoEstado.isActive
     try {
-      await apiRequest(`/api/users/${cambiandoEstado.id}`, {
+      await apiRequest(`/api/users/${String(cambiandoEstado.id)}`, {
         method: 'PUT',
         body: { isActive: nuevo },
         parse: () => null,
       })
-      aviso.ok(nuevo ? 'Usuario habilitado.' : 'Usuario dado de baja.')
+      aviso.ok(nuevo ? 'Usuario activado.' : 'Usuario desactivado.')
       setCambiandoEstado(null)
       void cargar()
     } catch (err) {
@@ -128,125 +141,114 @@ export default function UsuariosPage() {
     }
   }
 
-  return (
-    <PageContainer>
-      <Card padded={false}>
-        <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
-          <Select
-            aria-label="Estado"
-            value={estado}
-            onChange={(e) => {
-              setEstado(e.target.value)
-              setPagina(1)
-            }}
-            className="w-auto"
-          >
-            <option value="todos">Todos</option>
-            <option value="activos">Activos</option>
-            <option value="inactivos">Dados de baja</option>
-          </Select>
+  if (!puedeVer) {
+    return (
+      <PageContainer>
+        <EmptyState
+          title="Esta pantalla es para administradores"
+          description="Si necesitás algo de acá, pedíselo al administrador del local."
+        />
+      </PageContainer>
+    )
+  }
 
-          {puedeAdministrar && (
+  /** Los botones de una fila. La propia solo se edita. */
+  function Acciones({ usuario, compactas = false }: { usuario: UsuarioDTO; compactas?: boolean }) {
+    if (!puedeAdministrar) return null
+    const propio = usuario.id === session?.userId
+    return (
+      <div className={compactas ? 'mt-3 flex flex-wrap gap-2' : 'flex justify-end gap-2'}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            setEditando(usuario)
+          }}
+        >
+          Editar
+        </Button>
+        {!propio && (
+          <>
             <Button
-              variant="primary"
-              className="ml-auto"
+              size="sm"
+              variant="secondary"
               onClick={() => {
-                setAltaAbierta(true)
+                setReseteando(usuario)
               }}
             >
-              Nuevo usuario
+              Restablecer contraseña
             </Button>
-          )}
-        </div>
+            <Button
+              size="sm"
+              variant={usuario.isActive ? 'danger' : 'secondary'}
+              onClick={() => {
+                setCambiandoEstado(usuario)
+              }}
+            >
+              {usuario.isActive ? 'Desactivar' : 'Activar'}
+            </Button>
+          </>
+        )}
+      </div>
+    )
+  }
 
+  return (
+    <PageContainer>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-semibold text-ink">
+          Usuarios de {session?.branchName ?? 'la sucursal'}
+        </h2>
+        {puedeAdministrar && (
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={() => {
+              setAltaAbierta(true)
+            }}
+          >
+            + Nuevo usuario
+          </Button>
+        )}
+      </div>
+
+      <Card padded={false}>
         <div className="p-3">
           {error ? (
             <ErrorState description={error} onRetry={() => void cargar()} />
           ) : cargando ? (
             <SkeletonRows rows={5} />
           ) : usuarios.length === 0 ? (
-            <EmptyState title="No hay usuarios con ese filtro" />
+            <EmptyState title="Todavía no hay usuarios" />
           ) : (
             <>
               <div className="hidden lg:block">
                 <TableWrap className="border-0">
-                  <Table caption="Personal de la sucursal">
+                  <Table caption="Usuarios del local">
                     <THead>
                       <TR>
+                        <TH>Nombre</TH>
                         <TH>Usuario</TH>
                         <TH>Rol</TH>
-                        <TH>Sucursal</TH>
                         <TH>Estado</TH>
-                        <TH>Alta</TH>
-                        <TH align="right">
-                          <span className="sr-only">Acciones</span>
-                        </TH>
+                        <TH>Contraseña</TH>
+                        <TH align="right">Acciones</TH>
                       </TR>
                     </THead>
                     <TBody>
                       {usuarios.map((u) => (
                         <TR key={u.id}>
-                          <TD>
-                            <p className="font-medium text-ink">{u.name}</p>
-                            <p className="text-xs text-ink-faint">@{u.username}</p>
-                            {u.isActive && u.mustChangePassword && <ClaveTemporal />}
-                          </TD>
+                          <TD className="font-medium text-ink">{u.name}</TD>
+                          <TD className="text-ink-muted">{u.username}</TD>
                           <TD className="text-ink-muted">{rolLegible(u.role.name)}</TD>
-                          <TD className="text-ink-muted">{u.branch.name}</TD>
                           <TD>
-                            {u.isActive ? (
-                              <Badge tone="success">
-                                <span aria-hidden="true">✓</span> Activo
-                              </Badge>
-                            ) : (
-                              <Badge tone="warning">
-                                <span aria-hidden="true">⊘</span> De baja
-                              </Badge>
-                            )}
+                            <EstadoDe usuario={u} />
                           </TD>
-                          <TD className="text-ink-muted">{fechaCorta(u.createdAt)}</TD>
+                          <TD>
+                            <ContrasenaDe usuario={u} />
+                          </TD>
                           <TD align="right">
-                            {puedeAdministrar && u.id !== session?.userId && (
-                              <DropdownMenu
-                                trigger={
-                                  <IconButton label={`Acciones de ${u.name}`} size="sm">
-                                    <svg
-                                      className="h-5 w-5"
-                                      viewBox="0 0 24 24"
-                                      fill="currentColor"
-                                      aria-hidden="true"
-                                    >
-                                      <circle cx="12" cy="5" r="1.6" />
-                                      <circle cx="12" cy="12" r="1.6" />
-                                      <circle cx="12" cy="19" r="1.6" />
-                                    </svg>
-                                  </IconButton>
-                                }
-                              >
-                                <DropdownItem
-                                  onClick={() => {
-                                    setEditando(u)
-                                  }}
-                                >
-                                  Editar
-                                </DropdownItem>
-                                <DropdownItem
-                                  onClick={() => {
-                                    setReseteando(u)
-                                  }}
-                                >
-                                  Resetear contraseña
-                                </DropdownItem>
-                                <DropdownItem
-                                  tone={u.isActive ? 'danger' : 'default'}
-                                  onClick={() => {
-                                    setCambiandoEstado(u)
-                                  }}
-                                >
-                                  {u.isActive ? 'Dar de baja' : 'Habilitar'}
-                                </DropdownItem>
-                              </DropdownMenu>
-                            )}
+                            <Acciones usuario={u} />
                           </TD>
                         </TR>
                       ))}
@@ -261,73 +263,34 @@ export default function UsuariosPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-ink">{u.name}</p>
-                        <p className="text-xs text-ink-faint">@{u.username}</p>
+                        <p className="text-xs text-ink-faint">{u.username}</p>
                         <p className="mt-1 text-xs text-ink-muted">{rolLegible(u.role.name)}</p>
-                        {u.isActive && u.mustChangePassword && <ClaveTemporal />}
+                        <ContrasenaDe usuario={u} />
                       </div>
-                      {u.isActive ? (
-                        <Badge tone="success">
-                          <span aria-hidden="true">✓</span> Activo
-                        </Badge>
-                      ) : (
-                        <Badge tone="warning">
-                          <span aria-hidden="true">⊘</span> De baja
-                        </Badge>
-                      )}
+                      <EstadoDe usuario={u} />
                     </div>
-                    {puedeAdministrar && u.id !== session?.userId && (
-                      <div className="mt-3 flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="flex-1"
-                          onClick={() => {
-                            setEditando(u)
-                          }}
-                        >
-                          Editar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="flex-1"
-                          onClick={() => {
-                            setReseteando(u)
-                          }}
-                        >
-                          Contraseña
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={u.isActive ? 'danger' : 'secondary'}
-                          className="flex-1"
-                          onClick={() => {
-                            setCambiandoEstado(u)
-                          }}
-                        >
-                          {u.isActive ? 'Dar de baja' : 'Habilitar'}
-                        </Button>
-                      </div>
-                    )}
+                    <Acciones usuario={u} compactas />
                   </CardListItem>
                 ))}
               </CardList>
 
-              <Pagination
-                className="mt-4"
-                page={pagina}
-                pageSize={POR_PAGINA}
-                total={total}
-                totalPages={paginas}
-                onPageChange={setPagina}
-                disabled={cargando}
-              />
+              {paginas > 1 && (
+                <Pagination
+                  className="mt-4"
+                  page={pagina}
+                  pageSize={POR_PAGINA}
+                  total={total}
+                  totalPages={paginas}
+                  onPageChange={setPagina}
+                  disabled={cargando}
+                />
+              )}
             </>
           )}
         </div>
       </Card>
 
-      <MatrizPermisos roles={roles} />
+      {verMatriz && <MatrizPermisos roles={roles} />}
 
       <FormularioUsuario
         abierto={altaAbierta || editando !== null}
@@ -348,6 +311,7 @@ export default function UsuariosPage() {
         usuario={reseteando}
         onCerrar={() => {
           setReseteando(null)
+          void cargar()
         }}
       />
 
@@ -358,18 +322,18 @@ export default function UsuariosPage() {
         }}
         onConfirm={alternarEstado}
         variant={cambiandoEstado?.isActive ? 'danger' : 'primary'}
-        confirmLabel={cambiandoEstado?.isActive ? 'Dar de baja' : 'Habilitar'}
-        title={cambiandoEstado?.isActive ? 'Dar de baja al usuario' : 'Habilitar al usuario'}
+        confirmLabel={cambiandoEstado?.isActive ? 'Desactivar' : 'Activar'}
+        title={cambiandoEstado?.isActive ? 'Desactivar usuario' : 'Activar usuario'}
         message={
           cambiandoEstado?.isActive ? (
             <>
-              <strong className="text-ink">{cambiandoEstado.name}</strong> no va a poder entrar más.
-              Sus sesiones abiertas se cierran en el acto y su historial se conserva entero.
+              <strong className="text-ink">{cambiandoEstado.name}</strong> no va a poder entrar más
+              y se le cierra la sesión ahora. Lo que hizo queda guardado.
             </>
           ) : (
             <>
               <strong className="text-ink">{cambiandoEstado?.name}</strong> va a poder volver a
-              entrar con su usuario y contraseña de antes.
+              entrar con su usuario y su contraseña de antes.
             </>
           )
         }
@@ -381,9 +345,9 @@ export default function UsuariosPage() {
 /**
  * Alta y edicion.
  *
- * La contrasena solo aparece en el alta. Cambiarla es una operacion distinta,
- * con su propia comprobacion: mezclarla con la edicion del perfil permitiria
- * cambiarla sin conocer la anterior.
+ * La contrasena solo aparece en el alta, a la vista y sin repetirla: es una
+ * temporal que el administrador le dice al empleado, y despues no se puede ver
+ * mas. Cambiarla es otra operacion: "Restablecer contraseña".
  */
 function FormularioUsuario({
   abierto,
@@ -409,10 +373,11 @@ function FormularioUsuario({
 
   useEffect(() => {
     if (!abierto) return
+    const porDefecto = roles.find((r) => r.name === ROL_POR_DEFECTO) ?? roles[0]
     setNombre(usuario?.name ?? '')
     setUsername(usuario?.username ?? '')
     setClave('')
-    setRol(String(usuario?.role.id ?? roles[0]?.id ?? ''))
+    setRol(String(usuario?.role.id ?? porDefecto?.id ?? ''))
     setError(null)
     setEnviando(false)
   }, [abierto, usuario, roles])
@@ -420,7 +385,8 @@ function FormularioUsuario({
   const valido =
     nombre.trim().length > 0 &&
     rol !== '' &&
-    (esAlta ? username.trim().length >= 3 && clave.length >= PASSWORD_MIN : true)
+    normalizeUsername(username).length >= 3 &&
+    (!esAlta || clave.length >= CLAVE_TEMPORAL_MIN)
 
   async function guardar() {
     if (enviando || !valido) return
@@ -433,7 +399,7 @@ function FormularioUsuario({
           // Sin `branchId`: la sucursal la fija el servidor con la de la
           // sesión. Mandarla hace fallar la petición entera.
           body: {
-            username: username.trim(),
+            username: normalizeUsername(username),
             name: nombre.trim(),
             password: clave,
             roleId: Number(rol),
@@ -441,9 +407,13 @@ function FormularioUsuario({
           parse: () => null,
         })
       } else {
-        await apiRequest(`/api/users/${usuario.id}`, {
+        await apiRequest(`/api/users/${String(usuario.id)}`, {
           method: 'PUT',
-          body: { name: nombre.trim(), roleId: Number(rol) },
+          body: {
+            name: nombre.trim(),
+            username: normalizeUsername(username),
+            roleId: Number(rol),
+          },
           parse: () => null,
         })
       }
@@ -454,6 +424,11 @@ function FormularioUsuario({
       setEnviando(false)
     }
   }
+
+  // Un rol que quien edita no puede asignar se muestra igual: el formulario no
+  // puede cambiarlo sin querer.
+  const opciones =
+    usuario && !roles.some((r) => r.id === usuario.role.id) ? [usuario.role, ...roles] : roles
 
   return (
     <Dialog
@@ -485,7 +460,7 @@ function FormularioUsuario({
           </Alert>
         )}
 
-        <Field label="Nombre y apellido" required>
+        <Field label="Nombre" required>
           <Input
             value={nombre}
             disabled={enviando}
@@ -495,40 +470,40 @@ function FormularioUsuario({
           />
         </Field>
 
-        {esAlta && (
-          <>
-            <Field label="Usuario" required hint="Letras, números, punto, guion y guion bajo.">
-              <Input
-                value={username}
-                disabled={enviando}
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                onChange={(e) => {
-                  setUsername(e.target.value)
-                }}
-              />
-            </Field>
+        <Field label="Usuario" required hint="Con esto entra al sistema. Sin espacios.">
+          <Input
+            value={username}
+            disabled={enviando}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            onChange={(e) => {
+              setUsername(e.target.value)
+            }}
+          />
+        </Field>
 
-            <Field
-              label="Contraseña"
-              required
-              hint={`Al menos ${PASSWORD_MIN} caracteres. Se guarda cifrada; nadie puede verla después.`}
-            >
-              <Input
-                type="password"
-                value={clave}
-                disabled={enviando}
-                autoComplete="new-password"
-                onChange={(e) => {
-                  setClave(e.target.value)
-                }}
-              />
-            </Field>
-          </>
+        {esAlta && (
+          <Field
+            label="Contraseña temporal"
+            required
+            hint={`Al menos ${String(CLAVE_TEMPORAL_MIN)} caracteres. Decísela: la usa una sola vez y al entrar elige otra.`}
+          >
+            <Input
+              value={clave}
+              disabled={enviando}
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(e) => {
+                setClave(e.target.value)
+              }}
+            />
+          </Field>
         )}
 
-        <Field label="Rol" required hint="Define qué puede hacer. Ver la matriz más abajo.">
+        <Field label="Rol" required>
           <Select
             value={rol}
             disabled={enviando}
@@ -536,20 +511,13 @@ function FormularioUsuario({
               setRol(e.target.value)
             }}
           >
-            {roles.map((r) => (
+            {opciones.map((r) => (
               <option key={r.id} value={r.id}>
                 {rolLegible(r.name)}
               </option>
             ))}
           </Select>
         </Field>
-
-        {!esAlta && (
-          <Alert tone="info">
-            La contraseña no se cambia desde acá: se resetea desde las acciones del usuario, en la
-            lista.
-          </Alert>
-        )}
       </div>
     </Dialog>
   )
